@@ -1,0 +1,62 @@
+name: epitaka_app
+description: "ePitaka - Tipitaka Reader in Multiple Languages"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  scrollable_positioned_list: ^0.3.8
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Navigation
+  go_router: ^17.3.0
+
+  # Database
+  drift: ^2.25.1
+  sqlite3: ^2.4.7
+  sqlite3_flutter_libs: ^0.5.42
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # Localization
+  intl: ^0.20.2
+  flutter_localizations:
+    sdk: flutter
+
+  # Storage for preferences
+  shared_preferences: ^2.3.5
+
+  # Networking & file handling
+  http: ^1.6.0
+  archive: ^4.0.0
+
+  # TTS
+  flutter_tts: ^4.2.5
+  supertonic_flutter: ^2.0.0
+  audioplayers: ^6.8.1
+  dio: ^5.4.0
+
+  # Utils
+  cupertino_icons: ^1.0.8
+  super_clipboard: ^0.9.1
+
+flutter:
+  uses-material-design: true
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.25.1
+  build_runner: ^2.4.14
+  riverpod_generator: ^2.6.5
+  riverpod_lint: ^2.6.5
+  custom_lint: ^0.7.5

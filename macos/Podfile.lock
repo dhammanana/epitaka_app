@@ -1,0 +1,40 @@
+PODS:
+  - flutter_tts (0.0.1):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - irondash_engine_context (0.0.1):
+    - FlutterMacOS
+  - super_native_extensions (0.0.1):
+    - FlutterMacOS
+  - supertonic_flutter (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - flutter_tts (from `Flutter/ephemeral/.symlinks/plugins/flutter_tts/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - irondash_engine_context (from `Flutter/ephemeral/.symlinks/plugins/irondash_engine_context/macos`)
+  - super_native_extensions (from `Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos`)
+  - supertonic_flutter (from `Flutter/ephemeral/.symlinks/plugins/supertonic_flutter/macos`)
+
+EXTERNAL SOURCES:
+  flutter_tts:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_tts/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  irondash_engine_context:
+    :path: Flutter/ephemeral/.symlinks/plugins/irondash_engine_context/macos
+  super_native_extensions:
+    :path: Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos
+  supertonic_flutter:
+    :path: Flutter/ephemeral/.symlinks/plugins/supertonic_flutter/macos
+
+SPEC CHECKSUMS:
+  flutter_tts: 64651204e5d276ffea5a910f942d5e9785a96085
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  irondash_engine_context: da62996ee25616d2f01bbeb85dc115d813359478
+  super_native_extensions: 85efee3a7495b46b04befcfc86ed12069264ebf3
+  supertonic_flutter: f54a197dc675f78077d568204974ba2ec0e862e1
+
+PODFILE CHECKSUM: d16f5e5d196d1ca9863d7a71d5885cad7ffa7d2d
+
+COCOAPODS: 1.16.2
