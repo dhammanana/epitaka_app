@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/books_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/pali_text_utils.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
 
@@ -98,7 +100,7 @@ class LibraryBrowser extends ConsumerWidget {
 
 /// ── Category Tab Bar ──────────────────────────────────────────────────────
 
-class _CategoryTabBar extends StatelessWidget {
+class _CategoryTabBar extends ConsumerWidget {
   final ColorScheme colors;
   final List<LibraryFilter> filters;
 
@@ -120,7 +122,9 @@ class _CategoryTabBar extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final script = ref.watch(settingsProvider).paliScript;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppDimensions.marginMobile),
       padding: const EdgeInsets.all(4),
@@ -156,7 +160,7 @@ class _CategoryTabBar extends StatelessWidget {
             Tab(
               height: 40,
               icon: Icon(_categoryIcon(filter), size: 16),
-              text: filter.label,
+              text: convertPaliToScript(filter.label, script),
               iconMargin: const EdgeInsets.only(bottom: 2),
             ),
         ],
@@ -227,7 +231,7 @@ class _CategoryTabContent extends StatelessWidget {
 
 /// ── Nikaya Section ────────────────────────────────────────────────────────
 
-class _NikayaSection extends StatefulWidget {
+class _NikayaSection extends ConsumerStatefulWidget {
   final BookNikaya nikaya;
   final ColorScheme colors;
   final bool isLast;
@@ -239,25 +243,36 @@ class _NikayaSection extends StatefulWidget {
   });
 
   @override
-  State<_NikayaSection> createState() => _NikayaSectionState();
+  ConsumerState<_NikayaSection> createState() => _NikayaSectionState();
 }
 
-class _NikayaSectionState extends State<_NikayaSection> {
+class _NikayaSectionState extends ConsumerState<_NikayaSection> {
   bool _expanded = false;
 
-  IconData _nikayaIcon(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('vinaya')) return Icons.account_balance;
-    if (n.contains('sutta')) return Icons.description;
-    if (n.contains('abhidhamma')) return Icons.psychology;
-    if (n.contains('pariv')) return Icons.menu_book;
-    return Icons.auto_stories;
+  @override
+  void initState() {
+    super.initState();
+    _initExpanded();
+  }
+
+  void _initExpanded() {
+    final level = ref.read(settingsProvider).libraryExpandLevel;
+    _expanded = level != LibraryExpandLevel.collapsed;
   }
 
   @override
   Widget build(BuildContext context) {
+    // Re-init expand state when setting changes
+    ref.listen(settingsProvider, (prev, next) {
+      if (prev?.libraryExpandLevel != next.libraryExpandLevel) {
+        setState(() => _expanded = next.libraryExpandLevel != LibraryExpandLevel.collapsed);
+      }
+    });
+
     final nikaya = widget.nikaya;
     final colors = widget.colors;
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayName = convertPaliToScript(nikaya.name, script);
 
     // A sub-nikaya is "redundant" when it adds no information beyond the
     // nikaya itself — either it has no name of its own (an empty
@@ -293,8 +308,9 @@ class _NikayaSectionState extends State<_NikayaSection> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    nikaya.name,
+                    displayName,
                     style: AppTypography.bodyTranslation.copyWith(
+                      fontFamily: scriptFontFamily(script),
                       color: _expanded ? colors.primary : colors.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
@@ -326,27 +342,56 @@ class _NikayaSectionState extends State<_NikayaSection> {
       ],
     );
   }
+
+  IconData _nikayaIcon(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('vinaya')) return Icons.account_balance;
+    if (n.contains('sutta')) return Icons.description;
+    if (n.contains('abhidhamma')) return Icons.psychology;
+    if (n.contains('pariv')) return Icons.menu_book;
+    return Icons.auto_stories;
+  }
 }
 
 /// ── Sub-Nikaya Section ────────────────────────────────────────────────────
 
-class _SubNikayaSection extends StatefulWidget {
+class _SubNikayaSection extends ConsumerStatefulWidget {
   final BookSubNikaya subNikaya;
   final ColorScheme colors;
 
   const _SubNikayaSection({required this.subNikaya, required this.colors});
 
   @override
-  State<_SubNikayaSection> createState() => _SubNikayaSectionState();
+  ConsumerState<_SubNikayaSection> createState() => _SubNikayaSectionState();
 }
 
-class _SubNikayaSectionState extends State<_SubNikayaSection> {
-  bool _expanded = true;
+class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
+  bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initExpanded();
+  }
+
+  void _initExpanded() {
+    final level = ref.read(settingsProvider).libraryExpandLevel;
+    _expanded = level == LibraryExpandLevel.expand;
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Re-init expand state when setting changes
+    ref.listen(settingsProvider, (prev, next) {
+      if (prev?.libraryExpandLevel != next.libraryExpandLevel) {
+        setState(() => _expanded = next.libraryExpandLevel == LibraryExpandLevel.expand);
+      }
+    });
+
     final sub = widget.subNikaya;
     final colors = widget.colors;
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayName = convertPaliToScript(sub.name, script);
 
     return Column(
       children: [
@@ -375,8 +420,9 @@ class _SubNikayaSectionState extends State<_SubNikayaSection> {
               children: [
                 Expanded(
                   child: Text(
-                    sub.name,
+                    displayName,
                     style: AppTypography.bodyTranslation.copyWith(
+                      fontFamily: scriptFontFamily(script),
                       color: _expanded ? colors.primary : colors.onSurfaceVariant,
                       fontWeight: _expanded ? FontWeight.w600 : FontWeight.w400,
                       fontSize: 14,
@@ -426,6 +472,9 @@ class _BookRowState extends ConsumerState<_BookRow> {
     final book = widget.book;
     final colors = widget.colors;
     final hasRelated = book.relatedBooks.isNotEmpty;
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayName = convertPaliToScript(book.book.displayName, script);
+    final paliFont = scriptFontFamily(script);
 
     return Column(
       children: [
@@ -450,8 +499,9 @@ class _BookRowState extends ConsumerState<_BookRow> {
               children: [
                 Expanded(
                   child: Text(
-                    book.book.displayName,
+                    displayName,
                     style: AppTypography.bodyTranslation.copyWith(
+                      fontFamily: paliFont,
                       color: colors.onSurface,
                     ),
                   ),
@@ -515,6 +565,10 @@ class _RelatedBookRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef widgetRef) {
+    final script = widgetRef.watch(settingsProvider).paliScript;
+    final displayName = convertPaliToScript(ref.bookName, script);
+    final paliFont = scriptFontFamily(script);
+
     return InkWell(
       onTap: () {
         widgetRef.read(readerTabsProvider.notifier).openTab(
@@ -556,8 +610,9 @@ class _RelatedBookRow extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                ref.bookName,
+                displayName,
                 style: AppTypography.bodyTranslation.copyWith(
+                  fontFamily: paliFont,
                   color: colors.onSurfaceVariant,
                   fontSize: 14,
                 ),

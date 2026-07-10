@@ -1,5 +1,6 @@
 name: epitaka_app
-description: "ePitaka - Tipitaka Reader in Multiple Languages"
+
+escription: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
 version: 1.0.0+1
 
@@ -47,9 +48,83 @@ dependencies:
   # Utils
   cupertino_icons: ^1.0.8
   super_clipboard: ^0.9.1
+  audio_service: ^0.18.19
+  permission_handler: ^11.3.1
+
+  # AI inferer
+  flutter_onnxruntime: ^1.8.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/db/
+    - assets/fonts/
+    - assets/models/
+    - assets/config/
+
+  fonts:
+    - family: NotoSansSinhala
+      fonts:
+        - asset: assets/fonts/NotoSansSinhala-Regular.ttf
+        - asset: assets/fonts/NotoSansSinhala-Bold.ttf
+          weight: 700
+
+    - family: NotoSansDevanagari
+      fonts:
+        - asset: assets/fonts/NotoSansDevanagari-Regular.ttf
+        - asset: assets/fonts/NotoSansDevanagari-Bold.ttf
+          weight: 700
+
+    - family: NotoSerif
+      fonts:
+        - asset: assets/fonts/NotoSerif-VariableFont_wdth,wght.ttf
+
+    - family: NotoSansTaiTham
+      fonts:
+        - asset: assets/fonts/NotoSansTaiTham-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSansTaiTham-Bold.ttf
+          weight: 700
+
+    - family: PaliSerifTaiLnTilok
+      fonts:
+        - asset: assets/fonts/Pali_SerifTaiLnTilok.ttf
+
+    - family: Pyidaungsu
+      fonts:
+        - asset: assets/fonts/Pyidaungsu-Regular.ttf
+        - asset: assets/fonts/Pyidaungsu-Bold.ttf
+          weight: 700
+
+    - family: NotoSansLao
+      fonts:
+        - asset: assets/fonts/NotoSansLao-Regular.ttf
+        - asset: assets/fonts/NotoSansLao-Bold.ttf
+          weight: 700
+
+    - family: LaoPaliRegular
+      fonts:
+        - asset: assets/fonts/LaoPaliRegular.ttf
+
+    - family: NotoSansBrahmi
+      fonts:
+        - asset: assets/fonts/NotoSansBrahmi-Regular.ttf
+
+    - family: DejaVuSans
+      fonts:
+        - asset: assets/fonts/DejaVuSans.ttf
+        - asset: assets/fonts/DejaVuSans-Bold.ttf
+          weight: 700
+
+    - family: OpenSans
+      fonts:
+        - asset: assets/fonts/OpenSans-Regular.ttf
+        - asset: assets/fonts/OpenSans-Bold.ttf
+          weight: 700
+
+    - family: NotoSansChakma
+      fonts:
+        - asset: assets/fonts/NotoSansChakma-Regular.ttf
 
 dev_dependencies:
   flutter_test:
@@ -60,3 +135,25 @@ dev_dependencies:
   riverpod_generator: ^2.6.5
   riverpod_lint: ^2.6.5
   custom_lint: ^0.7.5
+  flutter_launcher_icons: "^0.14.4"
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#hexcode"
+    theme_color: "#hexcode"
+  windows:
+    generate: true
+    image_path: "assets/icon.png"
+    icon_size: 48 # min:48, max:256, default: 48
+  macos:
+    generate: true
+    image_path: "assets/icon.png"
+  android_notification_icon:
+    image_path: "assets/logo_mono.png"
+    name: "mic_notification" 

@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
+import '../features/search/widgets/search_screen.dart';
 import '../features/settings/screens/appearance_settings_screen.dart';
 import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
@@ -15,6 +16,7 @@ class AppRoutes {
 
   static const library = '/';
   static const reader = '/reader';
+  static const search = '/search';
   static const settings = '/settings';
   static const appearanceSettings = '/settings/appearance';
   static const readingOptions = '/settings/reading';
@@ -23,7 +25,9 @@ class AppRoutes {
   static const contents = '/contents/:bookId';
 }
 
-/// Build the [GoRouter] configuration.
+/// The `_buildRouter()` function is called from `app.dart`.
+/// The FTS index gate is applied via the top-level `builder` parameter,
+/// so every route is gated without redundant re-mounts.
 GoRouter buildRouter() {
   return GoRouter(
     initialLocation: AppRoutes.library,
@@ -38,6 +42,11 @@ GoRouter buildRouter() {
         path: '/reader',
         name: 'reader',
         builder: (context, state) => const ReaderScreen(),
+      ),
+      GoRoute(
+        path: '/search',
+        name: 'search',
+        builder: (context, state) => const SearchScreen(),
       ),
       GoRoute(
         path: '/settings',

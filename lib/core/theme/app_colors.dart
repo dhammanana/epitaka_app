@@ -83,6 +83,9 @@ class AppColors {
   static const Color accentTeal = Color(0xff2A6B6B);
   static const Color accentGold = Color(0xff9A7B2E);
 
+  static const Color successGreen = Color(0xff2E7D32);
+  static const Color warningAmber = Color(0xffF9A825);
+
   static const List<Color> accentPresets = [
     accentSaffron,
     accentMaroon,

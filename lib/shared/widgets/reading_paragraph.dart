@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_typography.dart';
 import '../../features/reader/providers/reader_provider.dart';
+import '../../core/utils/pali_search_utils.dart';
+import '../../core/utils/pali_text_utils.dart';
+import '../../core/utils/pali_script_converter.dart';
 
 /// Display mode for translation in the reader.
 enum ParagraphDisplayMode {
@@ -15,7 +19,7 @@ enum ParagraphDisplayMode {
 /// a vertical line flush with the left edge to group lines in the same paragraph,
 /// page number badges at page starts, heading titles at section starts,
 /// and optional search highlighting.
-class ReadingParagraph extends StatelessWidget {
+class ReadingParagraph extends ConsumerWidget {
   final ParagraphData paragraph;
   final bool isFirst;
   final String? bookName;
@@ -37,6 +41,15 @@ class ReadingParagraph extends StatelessWidget {
   /// paragraph's own paraId, otherwise a repeated/non-unique lineId would
   /// incorrectly highlight the same line number in other paragraphs.
   final int? ttsHighlightParaId;
+
+  /// Optional per-line GlobalKeys, keyed by lineId. When provided (only
+  /// meaningful in [ParagraphDisplayMode.lineByLine], since the other
+  /// modes join every line's text into one continuous block), the reader
+  /// screen can use these to fine-scroll to a specific line inside this
+  /// paragraph via `Scrollable.ensureVisible`, since
+  /// ScrollablePositionedList can only address whole items (paragraphs),
+  /// not individual lines within them.
+  final Map<int, GlobalKey>? lineKeys;
 
   // Legacy params
   final double paliFontSize;
@@ -61,6 +74,7 @@ class ReadingParagraph extends StatelessWidget {
     this.searchQuery,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
+    this.lineKeys,
     this.paliFontSize = 19,
     this.paliLineHeight = 32 / 19,
     this.translationFontSize = 17,
@@ -68,37 +82,41 @@ class ReadingParagraph extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final script = ref.watch(settingsProvider).paliScript;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Book title at the very top
-        if (isFirst) _buildBookTitle(colors),
+        if (isFirst) _buildBookTitle(colors, script),
 
         // Heading (if this paragraph starts a new section)
         if (paragraph.heading != null)
-          _buildHeading(paragraph.heading!, colors),
+          _buildHeading(paragraph.heading!, colors, script),
 
         // Page number badge at page start
         if (paragraph.isPageStart && paragraph.pageNumber != null)
           _buildPageBadge(paragraph.pageNumber!, colors),
 
         // Content with vertical line flush to left
-        _buildContentWithVerticalLine(colors),
+        _buildContentWithVerticalLine(colors, script),
       ],
     );
   }
 
-  Widget _buildBookTitle(ColorScheme colors) {
+  Widget _buildBookTitle(ColorScheme colors, Script script) {
+    final convertedTitle = convertPaliToScript(bookName ?? '', script);
+    final scriptFont = scriptFontFamily(script);
     return Padding(
       padding: const EdgeInsets.only(bottom: 32, left: 12),
       child: Column(
         children: [
           Text(
-            bookName ?? '',
+            convertedTitle,
             style: AppTypography.displayPali.copyWith(
+              fontFamily: scriptFont,
               color: colors.primary,
             ),
             textAlign: TextAlign.center,
@@ -120,7 +138,8 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Render a heading with style matching its level (h1=largest, h6=smallest).
-  Widget _buildHeading(ParagraphHeading heading, ColorScheme colors) {
+  Widget _buildHeading(ParagraphHeading heading, ColorScheme colors, Script script) {
+    final convertedTitle = convertPaliToScript(heading.title, script);
     final level = heading.level.clamp(1, 6);
     final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
@@ -141,11 +160,11 @@ class ReadingParagraph extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            heading.title,
+            convertedTitle,
             style: TextStyle(
               fontSize: fontSize,
               fontWeight: weight,
-              fontFamily: paliTypography.fontFamily.fontFamily,
+              fontFamily: scriptFontFamily(script),
               color: colors.primary,
               height: 1.3,
             ),
@@ -205,7 +224,7 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Vertical line at the very left, with content spaced minimally.
-  Widget _buildContentWithVerticalLine(ColorScheme colors) {
+  Widget _buildContentWithVerticalLine(ColorScheme colors, Script script) {
     return Padding(
       padding: const EdgeInsets.only(left: 5, top: 4, bottom: 4),
       child: IntrinsicHeight(
@@ -227,8 +246,10 @@ class ReadingParagraph extends StatelessWidget {
             // Lines content - takes all remaining space
             Expanded(
               child: displayMode == ParagraphDisplayMode.sideBySide
-                  ? _buildSideBySide(colors)
-                  : _buildLinesStacked(colors),
+                  ? _buildSideBySide(colors, script)
+                  : displayMode == ParagraphDisplayMode.hideJoinLines
+                      ? _buildJoinedPali(colors, script)
+                      : _buildLinesStacked(colors, script),
             ),
           ],
         ),
@@ -236,24 +257,16 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  Widget _buildSideBySide(ColorScheme colors) {
+  Widget _buildSideBySide(ColorScheme colors, Script script) {
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: showPali
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: paragraph.lines
-                        .where((l) => l.paliText != null && l.paliText!.isNotEmpty)
-                        .map((l) => Padding(
-                              padding: const EdgeInsets.only(right: 8, bottom: 6),
-                              child: _buildPaliLine(l.paliText!, colors),
-                            ))
-                        .toList(),
-                  )
-                : const SizedBox.shrink(),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildJoinedPali(colors, script),
+            ),
           ),
           Container(
             width: 1,
@@ -271,8 +284,7 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Stacked layout: line by line with Pāli then translation below.
-  /// Issue 4 fix: highlight only the translation text row, not the whole block.
-  Widget _buildLinesStacked(ColorScheme colors) {
+  Widget _buildLinesStacked(ColorScheme colors, Script script) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraph.lines.map((line) {
@@ -282,13 +294,14 @@ class ReadingParagraph extends StatelessWidget {
             line.lineId == ttsHighlightLineId;
 
         return Padding(
+          key: lineKeys?[line.lineId],
           padding: const EdgeInsets.only(bottom: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Pali line — never highlighted for TTS (Issue 4)
               if (showPali && line.paliText != null && line.paliText!.isNotEmpty)
-                _buildPaliLine(line.paliText!, colors),
+                _buildPaliLine(line.paliText!, colors, script),
               // Translation lines — highlighted wrapper ONLY here
               if (displayMode == ParagraphDisplayMode.lineByLine &&
                   showTranslation)
@@ -315,6 +328,20 @@ class ReadingParagraph extends StatelessWidget {
         );
       }).toList(),
     );
+  }
+
+  /// Join all Pāli lines in this paragraph into one continuous block.
+  Widget _buildJoinedPali(ColorScheme colors, Script script) {
+    if (!showPali) return const SizedBox.shrink();
+
+    final text = paragraph.lines
+        .map((l) => l.paliText)
+        .where((t) => t != null && t.trim().isNotEmpty)
+        .join(' ');
+
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    return _buildPaliLine(text, colors, script);
   }
 
   Widget _buildAllTranslations(ColorScheme colors) {
@@ -370,10 +397,12 @@ class ReadingParagraph extends StatelessWidget {
     return widgets;
   }
 
-  Widget _buildPaliLine(String text, ColorScheme colors) {
+  Widget _buildPaliLine(String text, ColorScheme colors, Script script) {
+    final convertedText = convertPaliToScript(text, script);
     final effectiveColor = paliTypography.effectiveColor(paliColor);
+    final scriptFont = scriptFontFamily(script);
     final baseStyle = TextStyle(
-      fontFamily: paliTypography.fontFamily.fontFamily,
+      fontFamily: scriptFont,
       fontSize: paliTypography.fontSize,
       fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: paliTypography.italic ? FontStyle.italic : FontStyle.normal,
@@ -384,10 +413,11 @@ class ReadingParagraph extends StatelessWidget {
     );
 
     if (searchQuery != null && searchQuery!.isNotEmpty) {
-      return _buildHighlightedText(text, searchQuery!, baseStyle, colors);
+      final convertedQuery = convertSearchQueryForScript(searchQuery!, script);
+      return _buildHighlightedText(convertedText, convertedQuery, baseStyle, colors);
     }
 
-    final spans = _parseHtml(text, baseStyle);
+    final spans = _parseHtml(convertedText, baseStyle);
     return Text.rich(TextSpan(style: baseStyle, children: spans));
   }
 
@@ -451,28 +481,82 @@ class ReadingParagraph extends StatelessWidget {
   ) {
     if (query.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
-    final lowerText = text.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-    final spans = <InlineSpan>[];
-    int start = 0;
+    final normalizedText = normalizePaliFuzzy(text).toLowerCase();
+    
+    // Get normalized terms
+    final terms = normalizePaliFuzzy(query)
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
 
-    while (true) {
-      final index = lowerText.indexOf(lowerQuery, start);
-      if (index == -1) {
-        spans.add(TextSpan(text: text.substring(start), style: baseStyle));
-        break;
+    if (terms.isEmpty) return [TextSpan(text: text, style: baseStyle)];
+
+    // Find all match intervals: [start, end] (exclusive end)
+    final intervals = <_HighlightInterval>[];
+    for (final term in terms) {
+      int pos = 0;
+      while (true) {
+        final idx = normalizedText.indexOf(term, pos);
+        if (idx == -1) break;
+        intervals.add(_HighlightInterval(idx, idx + term.length));
+        pos = idx + 1; // Slide forward to find other matches
       }
-      if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index), style: baseStyle));
+    }
+
+    if (intervals.isEmpty) {
+      return [TextSpan(text: text, style: baseStyle)];
+    }
+
+    // Sort intervals by start, then by end descending
+    intervals.sort((a, b) {
+      final cmp = a.start.compareTo(b.start);
+      if (cmp != 0) return cmp;
+      return b.end.compareTo(a.end);
+    });
+
+    // Merge overlapping or adjacent intervals
+    final merged = <_HighlightInterval>[];
+    var current = intervals.first;
+    for (int i = 1; i < intervals.length; i++) {
+      final next = intervals[i];
+      if (next.start <= current.end) {
+        // Overlap or touch
+        if (next.end > current.end) {
+          current = _HighlightInterval(current.start, next.end);
+        }
+      } else {
+        merged.add(current);
+        current = next;
+      }
+    }
+    merged.add(current);
+
+    // Build spans using merged intervals
+    final spans = <InlineSpan>[];
+    int lastIdx = 0;
+    for (final interval in merged) {
+      if (interval.start > lastIdx) {
+        spans.add(TextSpan(
+          text: text.substring(lastIdx, interval.start),
+          style: baseStyle,
+        ));
       }
       spans.add(TextSpan(
-        text: text.substring(index, index + query.length),
+        text: text.substring(interval.start, interval.end),
         style: baseStyle.copyWith(
           backgroundColor: colors.primary.withValues(alpha: 0.2),
           fontWeight: FontWeight.w700,
         ),
       ));
-      start = index + query.length;
+      lastIdx = interval.end;
+    }
+
+    if (lastIdx < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastIdx),
+        style: baseStyle,
+      ));
     }
 
     return spans;
@@ -516,6 +600,12 @@ class ReadingParagraph extends StatelessWidget {
 
     return spans;
   }
+}
+
+class _HighlightInterval {
+  final int start;
+  final int end;
+  const _HighlightInterval(this.start, this.end);
 }
 
 /// Helper: extract all words (without tags) from an HTML string.

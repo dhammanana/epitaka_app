@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/pali_script_converter.dart';
+import '../../search/providers/search_provider.dart';
+
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -47,12 +53,8 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: 'English',
                 onTap: () {},
               ),
-              _SettingsTile(
-                icon: Icons.translate,
-                title: 'Script',
-                subtitle: 'Roman',
-                onTap: () {},
-              ),
+              _ScriptPickerTile(),
+              _LibraryExpandTile(colors: colors),
             ],
           ),
 
@@ -112,6 +114,35 @@ class SettingsScreen extends ConsumerWidget {
                 title: 'Text-to-Speech',
                 subtitle: 'Voice & speed',
                 onTap: () => context.push('/settings/tts'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: AppDimensions.md),
+
+          // ── Search ──────────────────────────────────────────────────
+          SettingsSection(
+            title: 'Search',
+            colors: colors,
+            showDividers: true,
+            children: [
+              _SearchExpandToggle(colors: colors),
+              _RebuildIndexTile(colors: colors),
+            ],
+          ),
+
+          const SizedBox(height: AppDimensions.md),
+
+          // ── Dictionaries ────────────────────────────────────────────
+          SettingsSection(
+            title: 'Dictionaries',
+            colors: colors,
+            children: [
+              _SettingsTile(
+                icon: Icons.menu_book,
+                title: 'Dictionary Settings',
+                subtitle: 'Configure dictionaries',
+                onTap: () {},
               ),
             ],
           ),
@@ -210,6 +241,189 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
+/// Script picker tile with popup menu selection.
+class _ScriptPickerTile extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colors = Theme.of(context).colorScheme;
+    final currentScript = settings.paliScript;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.translate, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Text(
+              'Script',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          PopupMenuButton<Script>(
+            initialValue: currentScript,
+            onSelected: (script) {
+              ref.read(settingsProvider.notifier).setPaliScript(script);
+            },
+            itemBuilder: (context) => [
+              for (final info in listOfScripts)
+                PopupMenuItem(
+                  value: info.script,
+                  child: Text(_scriptLabel(info)),
+                ),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _currentScriptLabel(currentScript),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _scriptLabel(ScriptInfo info) {
+    return '${info.nameInLocale} (${info.script.name})';
+  }
+
+  String _currentScriptLabel(Script script) {
+    for (final info in listOfScripts) {
+      if (info.script == script) return info.nameInLocale;
+    }
+    return script.name;
+  }
+}
+
+/// Library expand level tile with popup menu selection.
+class _LibraryExpandTile extends ConsumerWidget {
+  final ColorScheme colors;
+
+  const _LibraryExpandTile({required this.colors});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final current = settings.libraryExpandLevel;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.unfold_more, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Library Browser',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Default expand level',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<LibraryExpandLevel>(
+            initialValue: current,
+            onSelected: (level) {
+              ref.read(settingsProvider.notifier).setLibraryExpandLevel(level);
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: LibraryExpandLevel.collapsed,
+                child: Row(
+                  children: [
+                    Icon(Icons.unfold_less, size: 18, color: colors.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    const Text('Collapsed'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: LibraryExpandLevel.category,
+                child: Row(
+                  children: [
+                    Icon(Icons.unfold_more, size: 18, color: colors.primary),
+                    const SizedBox(width: 8),
+                    const Text('Category'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: LibraryExpandLevel.expand,
+                child: Row(
+                  children: [
+                    Icon(Icons.unfold_more_double, size: 18, color: colors.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    const Text('Expand'),
+                  ],
+                ),
+              ),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _expandLabel(current),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _expandLabel(LibraryExpandLevel level) {
+    switch (level) {
+      case LibraryExpandLevel.collapsed:
+        return 'Collapsed';
+      case LibraryExpandLevel.category:
+        return 'Category';
+      case LibraryExpandLevel.expand:
+        return 'Expand';
+    }
+  }
+}
+
 /// Theme picker tile with radio-style selection.
 class _ThemePickerTile extends ConsumerWidget {
   @override
@@ -287,6 +501,181 @@ class _ThemePickerTile extends ConsumerWidget {
         return 'Paper (Light)';
       case ThemePreference.dark:
         return 'Dark';
+    }
+  }
+}
+
+/// Toggle for expanding/collapsing search result groups by default.
+class _SearchExpandToggle extends ConsumerWidget {
+  final ColorScheme colors;
+
+  const _SearchExpandToggle({required this.colors});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expand = ref.watch(expandSearchResultsProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.unfold_more, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Text(
+              'Expand results by default',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          Switch(
+            value: expand,
+            activeTrackColor: colors.primary,
+            onChanged: (val) =>
+                ref.read(expandSearchResultsProvider.notifier).state = val,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Button to rebuild the search index, with confirmation dialog.
+/// Does NOT auto-trigger the rebuild on mount.
+class _RebuildIndexTile extends ConsumerStatefulWidget {
+  final ColorScheme colors;
+
+  const _RebuildIndexTile({required this.colors});
+
+  @override
+  ConsumerState<_RebuildIndexTile> createState() => _RebuildIndexTileState();
+}
+
+class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
+  bool _isRebuilding = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.refresh, color: widget.colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => _confirmRebuild(context),
+                  child: Text(
+                    'Rebuild search index',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: widget.colors.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Re-indexes Pāli texts & translations',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: widget.colors.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isRebuilding)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.play_arrow, size: 20),
+              color: widget.colors.primary,
+              onPressed: () => _confirmRebuild(context),
+              tooltip: 'Rebuild',
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmRebuild(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rebuild Search Index?'),
+        content: const Text(
+          'This will delete and rebuild the full-text search index from scratch. '
+          'It may take a few seconds on slower devices. '
+          'You can continue using the app while indexing runs in the background.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _triggerRebuild();
+            },
+            child: const Text('Rebuild'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _triggerRebuild() async {
+    setState(() => _isRebuilding = true);
+    try {
+      final appDb = await ref.read(appDbProvider.future);
+      final epitakaDb = await ref.read(epitakaDbProvider.future);
+      await appDb.rebuildSearchIndex(epitakaDb);
+
+      // Also rebuild translation indexes for any available translations
+      try {
+        final available = await ref.read(translationRegistryProvider.future);
+        for (final trans in available) {
+          if (!trans.isAvailable) continue;
+          final translationDb =
+              await ref.read(translationDbProvider(trans.language).future);
+          if (translationDb != null) {
+            await appDb.buildTranslationSearchIndex(
+                trans.languageCode, translationDb);
+          }
+        }
+      } catch (_) {}
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Search index rebuilt successfully'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Rebuild failed'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRebuilding = false);
     }
   }
 }

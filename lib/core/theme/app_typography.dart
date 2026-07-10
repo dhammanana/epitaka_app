@@ -7,7 +7,7 @@ class AppTypography {
   AppTypography._();
 
   // ── Font Families ───────────────────────────────────────────────────
-  static const String paliFont = 'Noto Serif';
+  static const String paliFont = 'NotoSerif';
   static const String translationFont = 'Inter';
 
   // ── Text Styles ─────────────────────────────────────────────────────

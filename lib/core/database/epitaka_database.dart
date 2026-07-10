@@ -82,6 +82,16 @@ class EpitakaDatabase extends _$EpitakaDatabase {
     );
   }
 
+  /// Get the nearest heading title at or before [paraId] for a [bookId].
+  Future<String?> getHeadingTitleAtPara(String bookId, int paraId) async {
+    final rows = await customSelect(
+      'SELECT title FROM headings WHERE book_id = ? AND para_id <= ? ORDER BY para_id DESC LIMIT 1',
+      variables: [Variable.withString(bookId), Variable.withInt(paraId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['title'] as String?;
+  }
+
   /// Open an existing SQLite database at [dbPath].
   static Future<EpitakaDatabase> open(String dbPath) async {
     final file = File(dbPath);

@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/pali_text_utils.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../widgets/library_browser.dart';
@@ -314,10 +316,8 @@ class _ReadingTab extends ConsumerWidget {
       ],
     );
   }
-}
-
-/// Card for an open tab in the Reading tab.
-class _OpenTabCard extends StatelessWidget {
+}/// Card for an open tab in the Reading tab.
+class _OpenTabCard extends ConsumerWidget {
   final ReaderTabInfo tab;
   final ColorScheme colors;
   final VoidCallback onTap;
@@ -331,7 +331,10 @@ class _OpenTabCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayBookName = convertPaliToScript(tab.bookName, script);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
@@ -368,26 +371,29 @@ class _OpenTabCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      tab.bookName,
-                      style: AppTypography.bodyTranslation.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     if (tab.currentParaId != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          'Para ${tab.currentParaId}',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 11,
-                          ),
+                      Text(
+                        'Para ${tab.currentParaId}',
+                        style: AppTypography.bodyTranslation.copyWith(
+                          fontFamily: scriptFontFamily(script),
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        displayBookName,
+                        style: AppTypography.labelSmall.copyWith(
+                          fontFamily: scriptFontFamily(script),
+                          color: colors.onSurfaceVariant,
+                          fontSize: 11,
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -474,17 +480,8 @@ class _BookmarksTab extends ConsumerWidget {
               children: bookmarks.map((bm) => _BookmarkCard(
                 bookmark: bm,
                 colors: colors,
-                onTap: () => _openBook(context, ref, bm.bookId, bm.bookName, bm.paraId),
-                onDelete: () {
-      _deleteBookmark(ref, bm.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Removed: ${bm.name}'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    },
+                onTap: () => _openBook(context, ref, bm.bookId, bm.bookName, bm.paraId, bm.lineId),
+                onDelete: () => _confirmDeleteBookmark(context, ref, bm.id, bm.name),
               )).toList(),
             );
           },
@@ -541,7 +538,8 @@ class _BookmarksTab extends ConsumerWidget {
               children: history.map((entry) => _HistoryCard(
                 entry: entry,
                 colors: colors,
-                onTap: () => _openBook(context, ref, entry.bookId, entry.bookName, entry.paraId),
+                onTap: () => _openBook(context, ref, entry.bookId, entry.bookName, entry.paraId, entry.lineId),
+                onDelete: () => _confirmDeleteHistory(context, ref, entry.id, entry.bookName ?? entry.bookId),
               )).toList(),
             );
           },
@@ -550,33 +548,102 @@ class _BookmarksTab extends ConsumerWidget {
     );
   }
 
-  void _openBook(BuildContext context, WidgetRef ref, String bookId, String? bookName, int? paraId) {
+  void _openBook(BuildContext context, WidgetRef ref, String bookId, String? bookName, int? paraId, [int? lineId]) {
     ref.read(readerTabsProvider.notifier).openTab(
       ReaderTabInfo(
         bookId: bookId,
         bookName: bookName ?? bookId,
         initialParaId: paraId,
+        initialLineId: lineId,
       ),
     );
     context.push('/reader');
+  }
+
+  void _confirmDeleteBookmark(BuildContext context, WidgetRef ref, int id, String name) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove Bookmark?'),
+        content: Text('Delete bookmark "$name"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _deleteBookmark(ref, id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Removed: $name'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _deleteBookmark(WidgetRef ref, int id) async {
     try {
       final db = await ref.read(appDbProvider.future);
       await db.deleteBookmark(id);
-      // Invalidate the provider to refresh the list
       ref.invalidate(bookmarksProvider);
     } catch (e) {
       // Silently fail
     }
+  }
+
+  void _confirmDeleteHistory(BuildContext context, WidgetRef ref, int id, String label) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove History Entry?'),
+        content: Text('Delete history entry for "$label"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _deleteHistoryEntry(ref, id);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteHistoryEntry(WidgetRef ref, int id) async {
+    try {
+      final db = await ref.read(appDbProvider.future);
+      await db.deleteHistoryEntry(id);
+      ref.invalidate(historyProvider);
+    } catch (_) {}
   }
 }
 
 
 // ── Bookmark Card ────────────────────────────────────────────────────────
 
-class _BookmarkCard extends StatelessWidget {
+class _BookmarkCard extends ConsumerWidget {
   final Bookmark bookmark;
   final ColorScheme colors;
   final VoidCallback onTap;
@@ -590,7 +657,12 @@ class _BookmarkCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayName = convertPaliToScript(bookmark.name, script);
+    final displayBookName = convertPaliToScript(
+        bookmark.bookName ?? bookmark.bookId, script);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
@@ -629,8 +701,9 @@ class _BookmarkCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      bookmark.name,
+                      displayName,
                       style: AppTypography.bodyTranslation.copyWith(
+                        fontFamily: scriptFontFamily(script),
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
                       ),
@@ -651,8 +724,9 @@ class _BookmarkCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        bookmark.bookName ?? bookmark.bookId,
+                        displayBookName,
                         style: AppTypography.labelSmall.copyWith(
+                          fontFamily: scriptFontFamily(script),
                           color: colors.primary.withValues(alpha: 0.7),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -685,6 +759,36 @@ class _HistorySection extends ConsumerWidget {
   final ColorScheme colors;
 
   const _HistorySection({required this.colors});
+
+  void _confirmDeleteHistory(BuildContext context, WidgetRef ref, int id, String label) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove History Entry?'),
+        content: Text('Delete history entry for "$label"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              ref.read(appDbProvider.future).then((db) async {
+                await db.deleteHistoryEntry(id);
+                ref.invalidate(historyProvider);
+              });
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -749,10 +853,12 @@ class _HistorySection extends ConsumerWidget {
                       bookId: entry.bookId,
                       bookName: entry.bookName ?? entry.bookId,
                       initialParaId: entry.paraId,
+                      initialLineId: entry.lineId,
                     ),
                   );
                   context.push('/reader');
                 },
+                onDelete: () => _confirmDeleteHistory(context, ref, entry.id, entry.bookName ?? entry.bookId),
               )).toList(),
             );
           },
@@ -764,20 +870,25 @@ class _HistorySection extends ConsumerWidget {
 
 // ── History Card ─────────────────────────────────────────────────────────
 
-class _HistoryCard extends StatelessWidget {
+class _HistoryCard extends ConsumerWidget {
   final ReadingHistoryData entry;
   final ColorScheme colors;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   const _HistoryCard({
     required this.entry,
     required this.colors,
     required this.onTap,
+    required this.onDelete,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final timeAgo = _formatTimeAgo(entry.updatedAt);
+    final script = ref.watch(settingsProvider).paliScript;
+    final displayBookName = convertPaliToScript(
+        entry.bookName ?? entry.bookId, script);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -815,46 +926,68 @@ class _HistoryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Main title: paragraph location
+                    if (entry.paraId != null)
+                      Text(
+                        'Para ${entry.paraId}',
+                        style: AppTypography.bodyTranslation.copyWith(
+                          fontFamily: scriptFontFamily(script),
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    // Secondary: book name
                     Text(
-                      entry.bookName ?? entry.bookId,
-                      style: AppTypography.bodyTranslation.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 14,
+                      displayBookName,
+                      style: AppTypography.labelSmall.copyWith(
+                        fontFamily: scriptFontFamily(script),
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Row(
-                      children: [
-                        Text(
-                          timeAgo,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 11,
-                          ),
-                        ),
-                        if (entry.readCount > 1) ...[
-                          const SizedBox(width: 8),
-                          Icon(Icons.touch_app, size: 10, color: colors.outline),
-                          const SizedBox(width: 2),
+                    // Timestamp + read count
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        children: [
                           Text(
-                            '${entry.readCount}',
+                            timeAgo,
                             style: AppTypography.labelSmall.copyWith(
-                              color: colors.outline,
+                              color: colors.onSurfaceVariant,
                               fontSize: 10,
                             ),
                           ),
+                          if (entry.readCount > 1) ...[
+                            const SizedBox(width: 8),
+                            Icon(Icons.touch_app, size: 10, color: colors.outline),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${entry.readCount}',
+                              style: AppTypography.labelSmall.copyWith(
+                                color: colors.outline,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 12,
-                color: colors.outline,
+              IconButton(
+                onPressed: onDelete,
+                icon: Icon(Icons.delete_outline, size: 16, color: colors.error.withValues(alpha: 0.6)),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 28,
+                  minHeight: 28,
+                ),
               ),
             ],
           ),

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/pali_text_utils.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 
@@ -47,11 +49,11 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   void _onSearch(String query) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
-      ref.read(searchProvider.notifier).search(query);
+      ref.read(searchProvider.notifier).search(query: query);
     });
   }
 
-  void _onResultTap(SearchResult result) {
+  void _onResultTap(SearchResultItem result) {
     // Get the current search query from the state for highlighting
     final query = switch (ref.read(searchProvider)) {
       SearchResults(:final query) => query,
@@ -62,8 +64,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
     ref.read(readerTabsProvider.notifier).openTab(
           ReaderTabInfo(
             bookId: result.bookId,
-            bookName: result.bookName ?? result.bookId,
-            initialParaId: result.paraId,
+            bookName: result.bookId,
+            initialParaId: result.firstParaId,
             searchQuery: query,
           ),
         );
@@ -113,9 +115,9 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                   ),
                 ),
                 const Spacer(),
-                if (searchState is SearchResults && searchState.results.isNotEmpty)
+                if (searchState is SearchResults && searchState.totalResults > 0)
                   Text(
-                    '${searchState.results.length} results',
+                    '${searchState.totalResults} results',
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -164,7 +166,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
               onChanged: _onSearch,
               onSubmitted: (query) {
                 _debounce?.cancel();
-                ref.read(searchProvider.notifier).search(query);
+                ref.read(searchProvider.notifier).search(query: query);
               },
             ),
           ),
@@ -204,8 +206,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
         );
       case SearchLoading():
         return const Center(child: CircularProgressIndicator());
-      case SearchResults(:final results, :final query):
-        if (results.isEmpty) {
+      case SearchResults(:final groups, :final query, :final totalResults):
+        if (totalResults == 0 || groups.isEmpty) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -226,24 +228,43 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
             ),
           );
         }
+        // Flatten all items from all groups
+        final allItems = groups.expand((g) => g.items).toList();
         return ListView.separated(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.symmetric(
             horizontal: AppDimensions.marginMobile,
           ),
-          itemCount: results.length,
+          itemCount: allItems.length,
           separatorBuilder: (_, _) => Divider(
             height: 1,
             color: colors.outlineVariant.withValues(alpha: 0.5),
           ),
           itemBuilder: (context, index) {
-            final result = results[index];
+            final result = allItems[index];
             return _SearchResultTile(
               result: result,
               onTap: () => _onResultTap(result),
               colors: colors,
             );
           },
+        );
+      case SearchIndexing(:final progress, :final status):
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(value: progress > 0 ? progress : null),
+              const SizedBox(height: 8),
+              Text(
+                status,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         );
       case SearchError(:final message):
         return Center(
@@ -262,8 +283,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   }
 }
 
-class _SearchResultTile extends StatelessWidget {
-  final SearchResult result;
+class _SearchResultTile extends ConsumerWidget {
+  final SearchResultItem result;
   final VoidCallback onTap;
   final ColorScheme colors;
 
@@ -274,7 +295,12 @@ class _SearchResultTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final script = ref.watch(settingsProvider).paliScript;
+    final paliText = convertPaliToScript(result.paliText, script);
+    final paliFont = scriptFontFamily(script);
+    final translation = result.translation;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
@@ -296,7 +322,7 @@ class _SearchResultTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  result.bookName ?? result.bookId,
+                  result.bookId,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.primary,
                     fontWeight: FontWeight.w600,
@@ -304,7 +330,7 @@ class _SearchResultTile extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  '§${result.paraId}',
+                  '§${result.firstParaId}',
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -318,16 +344,32 @@ class _SearchResultTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            // Snippet
-            if (result.snippet != null)
+            // Pāli snippet
+            if (paliText.isNotEmpty)
               Text(
-                result.snippet!,
+                paliText,
                 style: AppTypography.bodyPali.copyWith(
+                  fontFamily: paliFont,
                   fontSize: 15,
                   color: colors.onSurface,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+              ),
+            // Translation snippet
+            if (translation != null && translation.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  translation,
+                  style: AppTypography.bodyTranslation.copyWith(
+                    fontSize: 13,
+                    color: colors.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
           ],
         ),

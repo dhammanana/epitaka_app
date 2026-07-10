@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -119,20 +121,23 @@ class ReaderDataState {
   }
 }
 
-/// StateNotifier that loads paragraphs in pages (200 at a time) for a single book.
+/// StateNotifier that loads ALL paragraphs for a book at once.
+///
+/// Previously this loaded in pages of 200 paragraphs (lazy pagination)
+/// triggered by scroll position. Now it loads everything in a single
+/// query for simplicity and to enable the draggable scroll thumb (which
+/// needs to know the total item count).
 class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   final Ref _ref;
   final String _bookId;
-  int _offset = 0;
   int? _scrollToParaId;
-  static const int _pageSize = 200;
 
-  /// All headings for this book (loaded once on first page load).
+  /// All headings for this book (loaded once).
   List<HeadingInfo>? _headings;
 
   ReaderDataNotifier(this._ref, this._bookId, {this._scrollToParaId})
       : super(ReaderDataState(bookId: _bookId)) {
-    _loadFirstPage();
+    _loadBook();
   }
 
   int? get scrollTarget => _scrollToParaId;
@@ -141,35 +146,49 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     _scrollToParaId = null;
   }
 
-  Future<void> ensureLoaded(int paraId) async {
-    while (state.hasMore &&
-        state.paragraphs.every((p) => p.paraId != paraId)) {
-      await loadMore();
-    }
+  /// Wait until the full book data finishes loading.
+  Future<void> waitUntilLoaded() async {
+    if (state.isLoaded) return;
+    await stream.firstWhere((s) => s.isLoaded);
   }
 
-  Future<void> _loadFirstPage() async {
+  Future<void> _loadBook() async {
+    final sw = Stopwatch()..start();
+    developer.log(
+      '[LOAD] Starting full book load for bookId=$_bookId',
+      name: 'epitaka.reader',
+    );
+
     state = state.copyWith(isLoading: true);
     try {
       // Load headings once
       if (_headings == null) {
         await _loadHeadings();
+        developer.log(
+          '[LOAD] Headings loaded for bookId=$_bookId (${_headings?.length ?? 0} headings)',
+          name: 'epitaka.reader',
+        );
       }
-      await _loadPage(0);
-    } catch (e) {
+
+      await _loadAllParagraphs();
+
+      sw.stop();
+      developer.log(
+        '[LOAD] Full book load complete for bookId=$_bookId '
+        'paraCount=${state.paragraphs.length} elapsedMs=${sw.elapsedMilliseconds}',
+        name: 'epitaka.reader',
+      );
+    } catch (e, stack) {
+      sw.stop();
+      developer.log(
+        '[LOAD] Error loading bookId=$_bookId elapsedMs=${sw.elapsedMilliseconds}: $e\n$stack',
+        name: 'epitaka.reader',
+      );
       state = state.copyWith(
         isLoading: false,
         isLoaded: true,
         error: e.toString(),
       );
-    }
-
-    if (_scrollToParaId != null && state.paragraphs.isNotEmpty) {
-      final containsTarget =
-          state.paragraphs.any((p) => p.paraId == _scrollToParaId);
-      if (!containsTarget && state.hasMore) {
-        _loadUntilTarget();
-      }
     }
   }
 
@@ -196,7 +215,6 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   /// Find the heading that exactly matches [paraId], if any.
   ParagraphHeading? _headingForPara(int paraId) {
     if (_headings == null) return null;
-    // Binary search for the heading at this exact paraId
     for (final h in _headings!) {
       if (h.paraId == paraId) {
         return ParagraphHeading(
@@ -209,34 +227,9 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     return null;
   }
 
-  Future<void> _loadUntilTarget() async {
-    while (
-        _scrollToParaId != null && state.hasMore && state.paragraphs.isNotEmpty) {
-      final containsTarget =
-          state.paragraphs.any((p) => p.paraId == _scrollToParaId);
-      if (containsTarget) break;
-      try {
-        await _loadPage(_offset);
-      } catch (e) {
-        state = state.copyWith(error: e.toString());
-        break;
-      }
-    }
-  }
-
-  Future<void> loadMore() async {
-    if (state.isLoadingMore || !state.hasMore) return;
-    if (!state.isLoaded) return;
-
-    state = state.copyWith(isLoadingMore: true);
-    try {
-      await _loadPage(_offset);
-    } catch (e) {
-      state = state.copyWith(isLoadingMore: false, error: e.toString());
-    }
-  }
-
-  Future<void> _loadPage(int offset) async {
+  /// Load ALL paragraphs for this book in one shot (no pagination) and
+  /// build the full [ParagraphData] list with translations.
+  Future<void> _loadAllParagraphs() async {
     final db = await _ref.read(epitakaDbProvider.future);
     final settings = _ref.read(settingsProvider);
 
@@ -246,34 +239,47 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         ? settings.enabledTranslations.toList()
         : (settings.showTranslation ? [settings.primaryTranslationLang] : <String>[]);
 
-    // Get book info once on first load
-    if (offset == 0 && state.bookName == null) {
-      final books = await (db.select(db.books)
-            ..where((b) => b.bookId.equals(_bookId))
-            ..limit(1))
-          .get();
-      final book = books.isNotEmpty ? books.first : null;
-      if (book != null) {
-        state = state.copyWith(
-          bookName: book.bookName,
-          bookDescription: book.description,
-        );
-      }
+    // ── Get book info ────────────────────────────────────────────────
+    final bookSw = Stopwatch()..start();
+    final books = await (db.select(db.books)
+          ..where((b) => b.bookId.equals(_bookId))
+          ..limit(1))
+        .get();
+    final book = books.isNotEmpty ? books.first : null;
+    bookSw.stop();
+    developer.log(
+      '[LOAD] Book info query: ${bookSw.elapsedMilliseconds}ms, '
+      'name="${book?.bookName ?? '-'}"',
+      name: 'epitaka.reader',
+    );
+
+    if (book != null) {
+      state = state.copyWith(
+        bookName: book.bookName,
+        bookDescription: book.description,
+      );
     }
 
-    // Get distinct para_ids with pagination
+    // ── Get all distinct para_ids (no LIMIT/OFFSET) ──────────────────
+    final paraSw = Stopwatch()..start();
     final paraRows = await db.customSelect(
       'SELECT para_id FROM sentences WHERE book_id = ? '
-      'GROUP BY para_id ORDER BY para_id LIMIT ? OFFSET ?',
-      variables: [Variable(_bookId), Variable(_pageSize), Variable(offset)],
+      'GROUP BY para_id ORDER BY para_id',
+      variables: [Variable(_bookId)],
     ).get();
     final paraIds =
         paraRows.map((r) => r.data['para_id'] as int).toList();
+    paraSw.stop();
+    developer.log(
+      '[LOAD] para_id query: ${paraSw.elapsedMilliseconds}ms, '
+      'paraCount=${paraIds.length}',
+      name: 'epitaka.reader',
+    );
 
     if (paraIds.isEmpty) {
+      developer.log('[LOAD] No paragraphs found for bookId=$_bookId', name: 'epitaka.reader');
       state = state.copyWith(
         isLoading: false,
-        isLoadingMore: false,
         isLoaded: true,
         hasMore: false,
         error: null,
@@ -281,7 +287,8 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       return;
     }
 
-    // Get sentences for these para_ids
+    // ── Get sentences for all para_ids ───────────────────────────────
+    final sentSw = Stopwatch()..start();
     final sentences = await (db.select(db.sentences)
           ..where(
               (s) => s.bookId.equals(_bookId) & s.paraId.isIn(paraIds))
@@ -290,7 +297,15 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
             (s) => OrderingTerm(expression: s.lineId),
           ]))
         .get();
+    sentSw.stop();
+    developer.log(
+      '[LOAD] Sentence query: ${sentSw.elapsedMilliseconds}ms, '
+      'sentenceCount=${sentences.length}',
+      name: 'epitaka.reader',
+    );
 
+    // ── Group into paraId -> lines ───────────────────────────────────
+    final groupSw = Stopwatch()..start();
     final paraLines = <int, List<_RawLine>>{};
     for (final s in sentences) {
       final pageValue = _getPageValue(s, pageColumn);
@@ -311,8 +326,14 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         }
       }
     }
+    groupSw.stop();
+    developer.log(
+      '[LOAD] Grouping sentences: ${groupSw.elapsedMilliseconds}ms',
+      name: 'epitaka.reader',
+    );
 
-    // Load all enabled translations in parallel
+    // ── Load all enabled translations in parallel ────────────────────
+    final transSw = Stopwatch()..start();
     final transByLang = <String, Map<int, Map<int, String>>>{};
     await Future.wait(enabledLangs.map((langCode) async {
       final lang = TranslationLanguage.fromCode(langCode);
@@ -320,11 +341,13 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           await _ref.read(translationDbProvider(lang).future);
       if (translationDb == null) return;
 
+      final tSw = Stopwatch()..start();
       final transSentences = await (translationDb
               .select(translationDb.translationSentences)
             ..where((t) =>
                 t.bookId.equals(_bookId) & t.paraId.isIn(paraIds)))
           .get();
+      tSw.stop();
 
       final langMap = <int, Map<int, String>>{};
       for (final t in transSentences) {
@@ -337,14 +360,24 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         );
       }
       transByLang[langCode] = langMap;
-    }));
 
-    // Build paragraphs with lines
-    final newParagraphs = <ParagraphData>[];
+      developer.log(
+        '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
+        'sentences=${transSentences.length}',
+        name: 'epitaka.reader',
+      );
+    }));
+    transSw.stop();
+    developer.log(
+      '[LOAD] All translations loaded: ${transSw.elapsedMilliseconds}ms total, '
+      'langs=${enabledLangs.length}',
+      name: 'epitaka.reader',
+    );
+
+    // ── Build paragraphs with lines ──────────────────────────────────
+    final buildSw = Stopwatch()..start();
+    final paragraphs = <ParagraphData>[];
     String? previousPageNumber;
-    if (offset > 0 && state.paragraphs.isNotEmpty) {
-      previousPageNumber = state.paragraphs.last.pageNumber;
-    }
 
     for (final entry in paraLines.entries) {
       final paraId = entry.key;
@@ -379,7 +412,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         ));
       }
 
-      newParagraphs.add(ParagraphData(
+      paragraphs.add(ParagraphData(
         paraId: paraId,
         lines: lines,
         pageNumber: pageNumber ?? previousPageNumber,
@@ -391,16 +424,18 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         previousPageNumber = pageNumber;
       }
     }
+    buildSw.stop();
+    developer.log(
+      '[LOAD] Building paragraph objects: ${buildSw.elapsedMilliseconds}ms',
+      name: 'epitaka.reader',
+    );
 
-    _offset = offset + _pageSize;
-
-    final hasMore = paraIds.length >= _pageSize;
+    // ── Emit final state ─────────────────────────────────────────────
     state = state.copyWith(
-      paragraphs: [...state.paragraphs, ...newParagraphs],
+      paragraphs: paragraphs,
       isLoading: false,
-      isLoadingMore: false,
       isLoaded: true,
-      hasMore: hasMore,
+      hasMore: false, // no more pages — everything loaded
       error: null,
     );
   }
@@ -419,7 +454,7 @@ class _RawLine {
   });
 }
 
-/// Provider that loads reader data in pages for a given book.
+/// Provider that loads reader data for a given book (all paragraphs at once).
 final readerDataProvider = StateNotifierProvider.family<
     ReaderDataNotifier, ReaderDataState, String>(
   (ref, bookId) => ReaderDataNotifier(ref, bookId),

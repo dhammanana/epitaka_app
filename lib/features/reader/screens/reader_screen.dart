@@ -56,8 +56,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // every time the tab rebuilds (e.g. on unrelated provider changes).
   final Map<String, int> _lastJumpedParaId = {};
 
-  // Guards against overlapping ensureLoaded-then-jump attempts for the
-  // same (bookId, paraId) request racing each other.
+  // Guards against overlapping jump attempts for the same (bookId, paraId)
+  // request racing each other.
   final Map<String, int> _pendingJumpParaId = {};
 
   /// Visible paragraph indices for the active tab (used for copying fallback).
@@ -85,6 +85,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Tracks which bookId we already restored position for (prevents
   /// re-snapping on rebuild).
   String? _lastRestoredBookId;
+
+  /// Last saved paraId per book (to avoid duplicate saves).
+  final Map<String, int> _lastSavedParaIdPerBook = {};
+
+  /// Debounce timer for scroll-based history saves.
+  Timer? _saveHistoryTimer;
 
   @override
   void initState() {
@@ -183,28 +189,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           lineId: visibleLineId,
         );
 
+        // Save reading history with debounce when user scrolls
+        _scheduleSaveHistory(
+            bookId, readerState.bookName, visibleParaId);
+
         developer.log(
           '[SCROLL] book=$bookId tabIdx=$tabIndex topIndex=$topIndex '
           'paraId=$visibleParaId lineId=$visibleLineId',
           name: 'epitaka.reader',
         );
       }
-
-      // Trigger load-more when we're within the last few items.
-      final readerLen = readerState.paragraphs.length;
-      if (readerState.hasMore && topIndex >= readerLen - 6) {
-        ref.read(readerDataProvider(bookId).notifier).loadMore();
-      }
     }
 
-    // Silverbar: collapse/expand app bar based on scroll direction.
-    //
-    // Uses one-way hysteresis so the appbar behaves like a browser navbar:
-    //   • COLLAPSE: any meaningful downward scroll (> 0.3% viewport).
-    //   • EXPAND  : only after scrolling UP by 5% viewport from the deepest
-    //               point reached since the collapse — filters out all jitter,
-    //               TTS micro-jumps, and deceleration wobble.
-    //   • ALWAYS expand when back at the very top (topIndex == 0).
     // Track visible range for copy operations
     if (visible.isNotEmpty) {
       _visibleStartIndex = visible.first.index;
@@ -218,18 +214,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
-  // ── Unified precise jump-by-paraId ────────────────────────────────────
+  // ── Unified precise jump-by-paraId (and optional lineId) ─────────────
   //
   // This is the single entry point for TOC jumps, TTS auto-scroll, search
-  // result jumps, and tab-restore. It resolves paraId -> index against the
-  // currently loaded paragraphs; if the paragraph isn't loaded yet it asks
-  // the data provider to load up to it and retries. It never estimates a
-  // pixel offset.
+  // result jumps, tab-restore, and bookmark restore. It resolves paraId ->
+  // index against the currently loaded paragraphs; if the paragraph isn't
+  // loaded yet it waits for the data provider. If a lineId is provided, it
+  // adjusts the alignment to show the first lines of the paragraph.
   Future<void> _jumpToParagraph(
     String bookId,
     int paraId, {
     bool animate = true,
     double alignment = 0.0,
+    int? lineId,
   }) async {
     _pendingJumpParaId[bookId] = paraId;
 
@@ -237,35 +234,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     var index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
 
     if (index < 0) {
-      if (!state.isLoaded || !state.hasMore) {
+      if (!state.isLoaded) {
+        // Data is still loading — wait for it.
         developer.log(
-          '[JUMP] book=$bookId paraId=$paraId not found and nothing more to load',
+          '[JUMP] book=$bookId paraId=$paraId data still loading, waiting…',
           name: 'epitaka.reader',
         );
-        return;
+        await ref
+            .read(readerDataProvider(bookId).notifier)
+            .waitUntilLoaded();
+        if (!mounted) return;
+
+        // If a newer jump request came in while we were loading, bail out
+        // and let that one win.
+        if (_pendingJumpParaId[bookId] != paraId) return;
+
+        state = ref.read(readerDataProvider(bookId));
+        index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
       }
-      await ref
-          .read(readerDataProvider(bookId).notifier)
-          .ensureLoaded(paraId);
-      if (!mounted) return;
-
-      // If a newer jump request came in while we were loading, bail out
-      // and let that one win.
-      if (_pendingJumpParaId[bookId] != paraId) return;
-
-      // Wait for the next frame so that ScrollablePositionedList rebuilds with the new paragraphs.
-      final completer = Completer<void>();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        completer.complete();
-      });
-      await completer.future;
-      if (!mounted) return;
-
-      state = ref.read(readerDataProvider(bookId));
-      index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
       if (index < 0) {
         developer.log(
-          '[JUMP] book=$bookId paraId=$paraId still not found after ensureLoaded and frame render',
+          '[JUMP] book=$bookId paraId=$paraId not found (total=${state.paragraphs.length})',
           name: 'epitaka.reader',
         );
         return;
@@ -278,31 +267,40 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // retry next frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _jumpToParagraph(bookId, paraId, animate: animate, alignment: alignment);
+        _jumpToParagraph(bookId, paraId, animate: animate, alignment: alignment, lineId: lineId);
       });
       return;
     }
 
     developer.log(
-      '[JUMP] book=$bookId paraId=$paraId index=$index animate=$animate',
+      '[JUMP] book=$bookId paraId=$paraId index=$index '
+      'lineId=$lineId animate=$animate',
       name: 'epitaka.reader',
     );
 
     _lastJumpedParaId[bookId] = paraId;
 
+    // When a specific lineId is requested, use a small alignment offset
+    // to push the paragraph slightly down, making the first few lines
+    // visible rather than scrunched at the very top edge.
+    final effectiveAlignment = (lineId != null && alignment == 0.0)
+        ? 0.15
+        : alignment;
+
     if (animate) {
       await controller.scrollTo(
         index: index,
-        alignment: alignment,
+        alignment: effectiveAlignment,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     } else {
-      controller.jumpTo(index: index, alignment: alignment);
+      controller.jumpTo(index: index, alignment: effectiveAlignment);
     }
 
-    // Clear initialParaId and remove from _lastJumpedParaId so we can re-jump to the same
-    // paragraph/TOC heading/search result if requested again.
+    // Clear initialParaId / initialLineId and remove from _lastJumpedParaId
+    // so we can re-jump to the same paragraph/heading/search result if
+    // requested again.
     final tabsNotifier = ref.read(readerTabsProvider.notifier);
     final tabsState = ref.read(readerTabsProvider);
     final tabIndex = tabsState.tabs.indexWhere((t) => t.bookId == bookId);
@@ -346,7 +344,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   // ── Reading History ──────────────────────────────────────────────────
-  Future<void> _saveReadingHistory(String bookId, String? bookName) async {
+  Future<void> _saveReadingHistory(
+    String bookId,
+    String? bookName, {
+    int? explicitParaId,
+    int? explicitLineId,
+  }) async {
     try {
       final db = await ref.read(appDbProvider.future);
       final tabsState = ref.read(readerTabsProvider);
@@ -354,14 +357,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       await db.recordReading(
         bookId: bookId,
         bookName: bookName,
-        paraId: tab.currentParaId,
-        lineId: tab.currentLineId,
+        paraId: explicitParaId ?? tab.currentParaId,
+        lineId: explicitLineId ?? tab.currentLineId,
       );
       // Invalidate the history provider so the library screen refreshes
       ref.invalidate(historyProvider);
     } catch (_) {
       // Silently fail — history is non-critical
     }
+  }
+
+  /// Debounced history save triggered by scrolling. Only saves when
+  /// [paraId] changes for this book, then waits 3s of inactivity
+  /// before writing to the database.
+  void _scheduleSaveHistory(String bookId, String? bookName, int paraId) {
+    if (_lastSavedParaIdPerBook[bookId] == paraId) return;
+    _lastSavedParaIdPerBook[bookId] = paraId;
+
+    _saveHistoryTimer?.cancel();
+    _saveHistoryTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      _saveReadingHistory(bookId, bookName);
+    });
   }
 
   // ── Word lookup ──────────────────────────────────────────────────────
@@ -810,6 +827,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _fallbackTimer?.cancel();
+    _saveHistoryTimer?.cancel();
     for (final entry in _itemPositionsListeners.entries) {
       final listener = _positionsListenerRefs[entry.key];
       if (listener != null) {
@@ -863,10 +881,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     // ── Resolve which paragraph (if any) we should jump to this build ──
     //
-    // Priority: an explicit TOC jump (initialParaId, changed since last
-    // time) > a tab-restore target (currentParaId) the first time this
-    // book becomes active. Both go through the same precise
+    // Priority: an explicit TOC/search/bookmark jump (initialParaId, changed
+    // since last time) > a tab-restore target (currentParaId) the first time
+    // this book becomes active. Both go through the same precise
     // _jumpToParagraph path — no pixel estimation, no GlobalKey retries.
+    // If a matching initialLineId is set, the method will also scroll to the
+    // specific line within the paragraph.
     final isNewInitialParaId = activeTab.initialParaId != null &&
         _lastJumpedParaId[activeTab.bookId] != activeTab.initialParaId;
     final isTabRestore = !isNewInitialParaId &&
@@ -875,17 +895,29 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     if (isNewInitialParaId) {
       final targetParaId = activeTab.initialParaId!;
+      final targetLineId = activeTab.initialLineId;
       _lastJumpedParaId[activeTab.bookId] = targetParaId;
+      _lastRestoredBookId = activeTab.bookId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _jumpToParagraph(activeTab.bookId, targetParaId);
+        _jumpToParagraph(
+          activeTab.bookId,
+          targetParaId,
+          lineId: targetLineId,
+        );
       });
     } else if (isTabRestore) {
       _lastRestoredBookId = activeTab.bookId;
       final targetParaId = activeTab.currentParaId!;
+      final targetLineId = activeTab.currentLineId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _jumpToParagraph(activeTab.bookId, targetParaId, animate: false);
+        _jumpToParagraph(
+          activeTab.bookId,
+          targetParaId,
+          animate: false,
+          lineId: targetLineId,
+        );
       });
     }
 
@@ -929,6 +961,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (_appLifecycleState != AppLifecycleState.resumed) return;
       final currentBookId = ref.read(readerTabsProvider).activeTab?.bookId;
       if (currentBookId == null || next.bookId != currentBookId) return;
+      // Save reading history immediately when TTS moves to a new paragraph
+      final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
+      _saveReadingHistory(currentBookId, bookName,
+          explicitParaId: nextParaId, explicitLineId: next.currentLineId);
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         // Keep the TTS-highlighted paragraph a little below the top edge
@@ -985,10 +1022,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             key: _selectionAreaKey,
                             onSelectionChanged: _handleSelectionChanged,
                             contextMenuBuilder: _buildCopyContextMenu,
-                            child: Scrollbar(
-                            thumbVisibility: true,
-                            thickness: 8,
-                            radius: const Radius.circular(4),
                             child: _buildReaderContent(
                               context,
                               readerState,
@@ -1003,9 +1036,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                               ttsHighlightParaId: ttsCurrentParaId,
                             ),
                           ),
-                          ),
                         ),
                       ),
+                    ),
+                    // Draggable scroll thumb on the right edge
+                    Positioned(
+                      right: 2,
+                      top: 0,
+                      bottom: 0,
+                      width: 28,
+                      child: readerState.isLoaded && readerState.paragraphs.isNotEmpty
+                          ? _ReaderDragThumb(
+                              readerState: readerState,
+                              itemScrollController:
+                                  _itemScrollControllers[activeTab.bookId],
+                              itemPositionsListener:
+                                  _itemPositionsListeners[activeTab.bookId],
+                            )
+                          : const SizedBox.shrink(),
                     ),
                     // Floating bottom toolbar
                     Positioned(
@@ -1152,8 +1200,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return const Center(child: Text('No content found.'));
     }
 
-    // Show a loading spinner at the bottom when fetching more pages
-    final showLoader = data.hasMore;
+    // All paragraphs loaded at once — no loading spinner at the bottom
 
     final displayMode = _toParagraphDisplayMode(
         settings.translationDisplayMode, settings.showTranslation);
@@ -1169,21 +1216,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         AppDimensions.marginMobile,
         120,
       ),
-      itemCount: data.paragraphs.length + (showLoader ? 1 : 0),
+      itemCount: data.paragraphs.length,
       itemBuilder: (context, index) {
-        // Loading indicator at the end
-        if (index >= data.paragraphs.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-
         final paragraph = data.paragraphs[index];
 
         return ReadingParagraph(
-          // No longer need a per-paragraph GlobalKey — ScrollablePositionedList
-          // jumps by index, not by locating a rendered widget's context.
           key: ValueKey('para-${activeTab.bookId}-${paragraph.paraId}'),
           paragraph: paragraph,
           isFirst: index == 0,
@@ -1225,6 +1262,202 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       case TranslationDisplayMode.hideJoinLines:
         return ParagraphDisplayMode.hideJoinLines;
     }
+  }
+}
+
+// ── Draggable Scroll Thumb ──────────────────────────────────────────────
+
+/// A thin draggable handle on the right edge of the reader that the user can
+/// grab and drag to scroll through the book quickly. No scrollbar track is
+/// rendered — just the thumb (a small rounded pill).
+///
+/// Position tracking: the thumb's vertical position follows the first visible
+/// item's index as a fraction of the total item count. When dragged, it
+/// jumps (or scrolls via [ItemScrollController]) to the corresponding index.
+class _ReaderDragThumb extends StatefulWidget {
+  final ReaderDataState readerState;
+  final ItemScrollController? itemScrollController;
+  final ItemPositionsListener? itemPositionsListener;
+
+  const _ReaderDragThumb({
+    required this.readerState,
+    this.itemScrollController,
+    this.itemPositionsListener,
+  });
+
+  @override
+  State<_ReaderDragThumb> createState() => _ReaderDragThumbState();
+}
+
+class _ReaderDragThumbState extends State<_ReaderDragThumb> {
+  static const double _thumbHeight = 48.0;
+  static const double _thumbWidth = 20.0;
+
+  /// Scroll position ratio 0.0–1.0 computed from ItemPositionsListener.
+  double _scrollRatio = 0.0;
+
+  /// Thumb's vertical offset (px from top) during a drag (overrides ratio).
+  double? _dragOffset;
+
+  /// Available height for thumb movement (parent height - thumb height).
+  double _availableDragHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.itemPositionsListener?.itemPositions.addListener(_onPositionsChanged);
+  }
+
+  @override
+  void didUpdateWidget(_ReaderDragThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.itemPositionsListener != widget.itemPositionsListener) {
+      oldWidget.itemPositionsListener?.itemPositions
+          .removeListener(_onPositionsChanged);
+      widget.itemPositionsListener?.itemPositions
+          .addListener(_onPositionsChanged);
+    }
+    if (oldWidget.readerState.paragraphs.length !=
+        widget.readerState.paragraphs.length) {
+      // Total count changed — recalculate ratio from current position
+      final positions = widget.itemPositionsListener?.itemPositions.value;
+      if (positions != null) {
+        _updateScrollRatio(positions);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.itemPositionsListener?.itemPositions
+        .removeListener(_onPositionsChanged);
+    super.dispose();
+  }
+
+  void _onPositionsChanged() {
+    final positions = widget.itemPositionsListener?.itemPositions.value;
+    if (positions == null) return;
+    _updateScrollRatio(positions);
+  }
+
+  void _updateScrollRatio(Iterable<ItemPosition>? positions) {
+    if (positions == null || positions.isEmpty) return;
+
+    final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
+      ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+    if (visible.isEmpty) return;
+
+    final topIndex = visible.first.index;
+    final total = widget.readerState.paragraphs.length;
+    if (total <= 1) return;
+
+    // Avoid setState if the thumb is being dragged by the user
+    if (_dragOffset != null) return;
+
+    setState(() {
+      _scrollRatio = topIndex / (total - 1);
+    });
+  }
+
+  void _onDragStart(DragStartDetails details) {
+    setState(() {
+      _dragOffset = details.localPosition.dy - _thumbHeight / 2;
+    });
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    if (_dragOffset == null) return;
+    final newOffset = _dragOffset! + details.delta.dy;
+    setState(() {
+      _dragOffset = newOffset.clamp(0.0, _availableDragHeight);
+    });
+
+    // Scroll in real-time while dragging
+    final total = widget.readerState.paragraphs.length;
+    if (total <= 1) return;
+    final ratio = (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
+    final targetIndex = (ratio * (total - 1)).round();
+
+    widget.itemScrollController?.jumpTo(
+      index: targetIndex.clamp(0, total - 1),
+      alignment: 0.0,
+    );
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    setState(() {
+      _dragOffset = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _availableDragHeight =
+            (constraints.maxHeight - _thumbHeight).clamp(0.0, double.infinity);
+
+        final total = widget.readerState.paragraphs.length;
+        if (total <= 1) return const SizedBox.shrink();
+
+        // Compute thumb position
+        final effectiveRatio = _dragOffset != null
+            ? (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0)
+            : _scrollRatio;
+        final top = effectiveRatio * _availableDragHeight;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onVerticalDragStart: _onDragStart,
+          onVerticalDragUpdate: _onDragUpdate,
+          onVerticalDragEnd: _onDragEnd,
+          child: Stack(
+            children: [
+              // Hit area extension (invisible) for easier grabbing
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Container(
+                    color: Colors.transparent,
+                  ),
+                ),
+              ),
+              // The visible thumb
+              Positioned(
+                top: top,
+                left: 0,
+                right: 0,
+                height: _thumbHeight,
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: _thumbWidth,
+                    height: _thumbHeight * 0.6,
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(
+                        alpha: _dragOffset != null ? 0.5 : 0.3,
+                      ),
+                      borderRadius: BorderRadius.circular(9999),
+                      boxShadow: _dragOffset != null
+                          ? [
+                              BoxShadow(
+                                color: colors.primary.withValues(alpha: 0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -7,6 +7,9 @@ class ReaderTabInfo {
   final String? bookDescription;
   final int? initialParaId;
 
+  /// Specific line ID to scroll to within [initialParaId] on first load.
+  final int? initialLineId;
+
   /// Optional search query to highlight in the reader content.
   final String? searchQuery;
 
@@ -24,6 +27,7 @@ class ReaderTabInfo {
     required this.bookName,
     this.bookDescription,
     this.initialParaId,
+    this.initialLineId,
     this.searchQuery,
     this.scrollOffset,
     this.currentParaId,
@@ -65,6 +69,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
         bookName: existing.bookName,
         bookDescription: existing.bookDescription,
         initialParaId: tab.initialParaId ?? existing.initialParaId,
+        initialLineId: tab.initialLineId ?? existing.initialLineId,
         searchQuery: tab.searchQuery ?? existing.searchQuery,
         scrollOffset: existing.scrollOffset,
         currentParaId: existing.currentParaId,
@@ -120,17 +125,17 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
   /// Update the scroll offset and visible position for a specific tab.
   void updateScrollOffset(int index, double offset, {int? paraId, int? lineId}) {
     if (index < 0 || index >= state.tabs.length) return;
-    final tab = state.tabs[index];
-    final updated = ReaderTabInfo(
-      bookId: tab.bookId,
-      bookName: tab.bookName,
-      bookDescription: tab.bookDescription,
-      initialParaId: tab.initialParaId,
-      searchQuery: tab.searchQuery,
-      scrollOffset: offset,
-      currentParaId: paraId ?? tab.currentParaId,
-      currentLineId: lineId ?? tab.currentLineId,
-    );
+    final tab = state.tabs[index];      final updated = ReaderTabInfo(
+        bookId: tab.bookId,
+        bookName: tab.bookName,
+        bookDescription: tab.bookDescription,
+        initialParaId: tab.initialParaId,
+        initialLineId: tab.initialLineId,
+        searchQuery: tab.searchQuery,
+        scrollOffset: offset,
+        currentParaId: paraId ?? tab.currentParaId,
+        currentLineId: lineId ?? tab.currentLineId,
+      );
     final newTabs = [...state.tabs];
     newTabs[index] = updated;
     state = ReaderTabsState(
@@ -149,6 +154,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       bookName: tab.bookName,
       bookDescription: tab.bookDescription,
       initialParaId: null,
+      initialLineId: null,
       searchQuery: tab.searchQuery,
       scrollOffset: tab.scrollOffset,
       currentParaId: tab.currentParaId,

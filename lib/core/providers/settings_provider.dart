@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
 import '../theme/app_colors.dart';
+import '../utils/pali_script_converter.dart';
 
 /// UI language for the app interface.
 enum AppLanguage {
@@ -26,6 +27,16 @@ enum ThemePreference {
   system,
   light,
   dark,
+}
+
+/// Library expand level for the book browser.
+enum LibraryExpandLevel {
+  /// All book groups and nikayas are collapsed by default.
+  collapsed,
+  /// Category tabs are expanded, but groups inside (sub-nikayas) are collapsed.
+  category,
+  /// All books and groups are fully expanded.
+  expand,
 }
 
 /// Display mode for translations in the reader.
@@ -293,6 +304,12 @@ class AppSettings {
   /// Default copy scope (Pāli, translation, or both).
   final CopyScope copyDefaultScope;
 
+  /// Pāli script conversion target (e.g. Roman, Sinhala, Thai, Myanmar).
+  final Script paliScript;
+
+  /// How deeply the library browser tree expands by default.
+  final LibraryExpandLevel libraryExpandLevel;
+
   static const Color defaultPaliColor = Color(0xFF7A2E1D);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
@@ -321,6 +338,8 @@ class AppSettings {
     this.ttsSupertonicDownloaded = false,
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
+    this.paliScript = Script.roman,
+    this.libraryExpandLevel = LibraryExpandLevel.category,
   });
 
   AppSettings copyWith({
@@ -348,6 +367,8 @@ class AppSettings {
     bool? ttsSupertonicDownloaded,
     CopyQuoteFormat? copyQuoteFormat,
     CopyScope? copyDefaultScope,
+    Script? paliScript,
+    LibraryExpandLevel? libraryExpandLevel,
   }) {
     return AppSettings(
       appLanguage: appLanguage ?? this.appLanguage,
@@ -377,6 +398,8 @@ class AppSettings {
       ttsSupertonicDownloaded: ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
+      paliScript: paliScript ?? this.paliScript,
+      libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
     );
   }
 
@@ -506,6 +529,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsSupertonicDownloaded: prefs.getBool('tts_supertonic_downloaded') ?? false,
       copyQuoteFormat: _parseCopyQuoteFormat(prefs.getString('copy_quote_format') ?? 'none'),
       copyDefaultScope: _parseCopyScope(prefs.getString('copy_default_scope') ?? 'both'),
+      paliScript: _parseScript(prefs.getString('pali_script')),
+      libraryExpandLevel: LibraryExpandLevel.values[
+        prefs.getInt('library_expand_level') ?? LibraryExpandLevel.category.index
+      ],
     );
   }
 
@@ -667,6 +694,32 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(copyDefaultScope: scope);
     await _prefs?.setString('copy_default_scope', scope.name);
   }
+
+  Future<void> setPaliScript(Script script) async {
+    state = state.copyWith(paliScript: script);
+    await _prefs?.setString('pali_script', script.name);
+  }
+
+  Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
+    state = state.copyWith(libraryExpandLevel: level);
+    await _prefs?.setInt('library_expand_level', level.index);
+  }
+
+  /// Returns the display name for a script in the current app language.
+  String scriptDisplayName(Script script) {
+    for (final info in listOfScripts) {
+      if (info.script == script) return info.nameInLocale;
+    }
+    return script.name;
+  }
+}
+
+Script _parseScript(String? value) {
+  if (value == null || value.isEmpty) return Script.roman;
+  return Script.values.firstWhere(
+    (s) => s.name == value,
+    orElse: () => Script.roman,
+  );
 }
 
 final settingsProvider =

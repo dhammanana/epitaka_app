@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/providers/settings_provider.dart';
 import 'core/theme/app_theme.dart';
+import 'features/indexing/index_gate.dart';
 import 'router/app_router.dart';
 
 class EpitakaApp extends ConsumerStatefulWidget {
@@ -41,6 +42,7 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       darkTheme: AppTheme.dark(),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       routerConfig: _router,
+      builder: (context, child) => IndexGate(child: child!),
     );
   }
 }
