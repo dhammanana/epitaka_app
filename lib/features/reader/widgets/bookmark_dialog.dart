@@ -8,17 +8,22 @@ import '../providers/reader_tabs_provider.dart';
 
 /// Dialog to bookmark the current reading position.
 ///
-/// Pre-fills the name field with a suggested name based on book name and page.
+/// Pre-fills the name field with a suggested name based on book name, page,
+/// and nearby heading (Issue 1).
 class BookmarkDialog extends ConsumerStatefulWidget {
   final String bookId;
   final String bookName;
   final String? pageNumber;
+
+  /// Optional nearby heading title to suggest as bookmark name.
+  final String? suggestedHeading;
 
   const BookmarkDialog({
     super.key,
     required this.bookId,
     required this.bookName,
     this.pageNumber,
+    this.suggestedHeading,
   });
 
   @override
@@ -32,9 +37,7 @@ class _BookmarkDialogState extends ConsumerState<BookmarkDialog> {
   @override
   void initState() {
     super.initState();
-    final suggestedName = widget.pageNumber != null && widget.pageNumber!.isNotEmpty
-        ? '${widget.bookName} — p. ${widget.pageNumber}'
-        : widget.bookName;
+    final suggestedName = _buildSuggestedName();
     _nameController = TextEditingController(text: suggestedName);
     _nameController.selection = TextSelection(
       baseOffset: 0,
@@ -95,6 +98,20 @@ class _BookmarkDialogState extends ConsumerState<BookmarkDialog> {
         );
       }
     }
+  }
+
+  /// Build a suggested bookmark name from available context.
+  String _buildSuggestedName() {
+    if (widget.suggestedHeading != null && widget.suggestedHeading!.isNotEmpty) {
+      if (widget.pageNumber != null && widget.pageNumber!.isNotEmpty) {
+        return '${widget.suggestedHeading} — p. ${widget.pageNumber}';
+      }
+      return '${widget.bookName} — ${widget.suggestedHeading}';
+    }
+    if (widget.pageNumber != null && widget.pageNumber!.isNotEmpty) {
+      return '${widget.bookName} — p. ${widget.pageNumber}';
+    }
+    return widget.bookName;
   }
 
   @override
@@ -195,6 +212,7 @@ Future<bool?> showBookmarkDialog(
   required String bookId,
   required String bookName,
   String? pageNumber,
+  String? suggestedHeading,
 }) {
   return showDialog<bool>(
     context: context,
@@ -202,6 +220,7 @@ Future<bool?> showBookmarkDialog(
       bookId: bookId,
       bookName: bookName,
       pageNumber: pageNumber,
+      suggestedHeading: suggestedHeading,
     ),
   );
 }

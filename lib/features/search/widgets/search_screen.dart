@@ -1,18 +1,22 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/models/app_models.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/utils/pali_text_utils.dart';
+import '../../../core/utils/pali_search_utils.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 
-/// The full-page advanced search screen.
+/// The full-page search screen.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -24,17 +28,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   Timer? _debounce;
-
   bool _fuzzy = false;
-  int _distance = 0;
-  bool _showFilters = false;
+  int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
+  bool _isMultiWord = false;
 
   @override
   void initState() {
     super.initState();
-    // Build search index on first open
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(searchProvider.notifier).ensureIndexBuilt();
       _focusNode.requestFocus();
@@ -50,9 +52,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _debounce?.cancel();
+    // Detect multi-word and auto-set distance=3 when second word is typed
+    final wordCount = value.trim().isEmpty
+        ? 0
+        : value.trim().split(RegExp(r'\s+')).length;
+    if (wordCount >= 2 && !_isMultiWord) {
+      setState(() {
+        _isMultiWord = true;
+        if (_wordDistance == 0) _wordDistance = 3;
+      });
+    } else if (wordCount < 2 && _isMultiWord) {
+      setState(() {
+        _isMultiWord = false;
+      });
+    }
 
-    // Fetch suggestions only (no auto-search)
+    _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), () async {
       if (value.trim().isNotEmpty) {
         final suggestions =
@@ -75,10 +90,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _executeSearch() {
     final query = _searchController.text;
     setState(() => _showSuggestions = false);
+    _focusNode.unfocus();
     ref.read(searchProvider.notifier).search(
           query: query,
           fuzzy: _fuzzy,
-          distance: _distance,
+          distance: _wordDistance,
         );
   }
 
@@ -88,21 +104,161 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _executeSearch();
   }
 
-  void _onResultTap(String bookId, String? bookName, int? paraId) {
+  void _onResultTap(BookResultSummary summary, SearchResultItem item) {
     final currentState = ref.read(searchProvider);
     final query = currentState is SearchResults ? currentState.query : null;
 
-    debugPrint('[SEARCH_TAP] bookId: $bookId, bookName: $bookName, paraId: $paraId, query: $query');
-
     ref.read(readerTabsProvider.notifier).openTab(
           ReaderTabInfo(
-            bookId: bookId,
-            bookName: bookName ?? bookId,
-            initialParaId: paraId,
+            bookId: item.bookId,
+            bookName: summary.book.bookName ?? item.bookId,
+            initialParaId: item.paraId,
             searchQuery: query,
           ),
         );
     context.push('/reader');
+  }
+
+  void _onResultLongPress(BookResultSummary summary, SearchResultItem item) {
+    _showResultPreviewDialog(summary, item);
+  }
+
+  Future<void> _showResultPreviewDialog(
+      BookResultSummary summary, SearchResultItem item) async {
+    HapticFeedback.mediumImpact();
+
+    // Open the reader tab first (so "Open in Reader" works)
+    final currentState = ref.read(searchProvider);
+    final searchQuery = currentState is SearchResults ? currentState.query : null;
+    ref.read(readerTabsProvider.notifier).openTab(
+      ReaderTabInfo(
+        bookId: item.bookId,
+        bookName: summary.book.bookName ?? item.bookId,
+        initialParaId: item.paraId,
+        searchQuery: searchQuery,
+      ),
+    );
+
+    try {
+      final epitakaDb = await ref.read(epitakaDbProvider.future);
+      final settings = ref.read(settingsProvider);
+      final activeLang = settings.enabledTranslations.isNotEmpty
+          ? settings.enabledTranslations.first
+          : (settings.showTranslation
+              ? settings.primaryTranslationLang
+              : null);
+
+      // 1. Find nearest heading at or before the matched paraId
+      final headingRows = await epitakaDb.customSelect(
+        'SELECT title, para_id FROM headings '
+        'WHERE book_id = ? AND para_id <= ? '
+        'ORDER BY para_id DESC LIMIT 1',
+        variables: [
+          Variable.withString(item.bookId),
+          Variable.withInt(item.paraId),
+        ],
+      ).get();
+
+      if (headingRows.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No heading found for this result')),
+          );
+        }
+        return;
+      }
+
+      final headingTitle =
+          (headingRows.first.data['title'] as String?) ?? '';
+      final headingParaId = headingRows.first.data['para_id'] as int;
+
+      // 2. Find next heading boundary
+      final nextHeadingRows = await epitakaDb.customSelect(
+        'SELECT para_id FROM headings '
+        'WHERE book_id = ? AND para_id > ? '
+        'ORDER BY para_id ASC LIMIT 1',
+        variables: [
+          Variable.withString(item.bookId),
+          Variable.withInt(headingParaId),
+        ],
+      ).get();
+
+      final endParaId = nextHeadingRows.isNotEmpty
+          ? (nextHeadingRows.first.data['para_id'] as int)
+          : 999999;
+
+      // 3. Load all sentences in the heading section
+      final sentenceRows = await epitakaDb.customSelect(
+        'SELECT para_id, line_id, pali FROM sentences '
+        'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
+        'ORDER BY para_id, line_id',
+        variables: [
+          Variable.withString(item.bookId),
+          Variable.withInt(headingParaId),
+          Variable.withInt(endParaId),
+        ],
+      ).get();
+
+      // 4. Load translations for those sentences
+      final translationMap = <String, String>{};
+      if (activeLang != null) {
+        try {
+          final lang = TranslationLanguage.fromCode(activeLang);
+          final transDb = await ref.read(translationDbProvider(lang).future);
+          if (transDb != null) {
+            final transRows = await transDb.customSelect(
+              'SELECT para_id, line_id, translation FROM sentences '
+              'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
+              'ORDER BY para_id, line_id',
+              variables: [
+                Variable.withString(item.bookId),
+                Variable.withInt(headingParaId),
+                Variable.withInt(endParaId),
+              ],
+            ).get();
+            for (final row in transRows) {
+              final key = '${row.data['para_id']}:${row.data['line_id']}';
+              final t = row.data['translation'] as String?;
+              if (t != null && t.isNotEmpty) {
+                translationMap[key] = t;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 5. Build sentence list
+      final sentences = sentenceRows.map((r) => _PreviewLine(
+            paraId: r.data['para_id'] as int,
+            lineId: r.data['line_id'] as int,
+            pali: r.data['pali'] as String? ?? '',
+            translation:
+                translationMap['${r.data['para_id']}:${r.data['line_id']}'] ??
+                    '',
+          )).toList();
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        useSafeArea: false,
+        builder: (ctx) => _ResultPreviewDialog(
+          bookId: item.bookId,
+          bookName: summary.book.bookName ?? item.bookId,
+          headingTitle: headingTitle,
+          sentences: sentences,
+          matchParaId: item.paraId,
+          paliSnippet: item.paliSnippet ?? item.paliText,
+          searchQuery: searchQuery,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load preview: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -111,51 +267,34 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final searchState = ref.watch(searchProvider);
 
     return Scaffold(
-      appBar: _buildAppBar(colors),
+      appBar: AppBar(
+        toolbarHeight: AppDimensions.appBarHeight,
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          color: colors.onSurfaceVariant,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'Search',
+          style: AppTypography.headlineSmall.copyWith(
+            color: colors.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
       body: Column(
         children: [
           _buildSearchBar(colors),
           _buildOptionsBar(colors, searchState),
           if (_showSuggestions && _suggestions.isNotEmpty)
             _buildSuggestions(colors),
-          if (_showFilters && searchState is SearchResults)
-            _buildFilterBar(colors, searchState),
           Expanded(child: _buildResults(searchState, colors)),
         ],
       ),
-    );
-  }
-
-  PreferredSizeWidget _buildAppBar(ColorScheme colors) {
-    return AppBar(
-      toolbarHeight: AppDimensions.appBarHeight,
-      backgroundColor: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        color: colors.onSurfaceVariant,
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      title: Text(
-        'Search',
-        style: AppTypography.headlineSmall.copyWith(
-          color: colors.onSurface,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      actions: [
-        IconButton(
-          icon: Icon(
-            Icons.filter_list,
-            color: _showFilters ? colors.primary : colors.onSurfaceVariant,
-          ),
-          onPressed: () => setState(() => _showFilters = !_showFilters),
-          tooltip: 'Filter books',
-        ),
-        const SizedBox(width: 4),
-      ],
     );
   }
 
@@ -230,16 +369,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           // Fuzzy toggle
           FilterChip(
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Fuzzy',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: _fuzzy ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
+            label: Text(
+              'Fuzzy',
+              style: AppTypography.labelSmall.copyWith(
+                color: _fuzzy
+                    ? colors.onPrimaryContainer
+                    : colors.onSurfaceVariant,
+              ),
             ),
             selected: _fuzzy,
             onSelected: (val) {
@@ -253,47 +389,100 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(width: 8),
 
-          // Distance selector
-          if (_searchController.text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length >= 2) ...[
-            SizedBox(
-              width: 100,
-              child: DropdownButtonFormField<int>(
-                initialValue: _distance,
-                isDense: true,
-                decoration: InputDecoration(
-                  labelText: 'Distance',
-                  labelStyle: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  filled: true,
-                  fillColor: colors.surfaceContainerHighest,
+          // Word distance selector — auto-highlights when 2+ words detected
+          PopupMenuButton<int>(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            tooltip: 'Word distance',
+            initialValue: _wordDistance,
+            onSelected: (val) {
+              setState(() => _wordDistance = val);
+              if (_searchController.text.isNotEmpty) _executeSearch();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 0, child: Text('Any distance')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 3,
+                child: Row(
+                  children: [
+                    Icon(Icons.check, size: 16, color: Colors.transparent),
+                    SizedBox(width: 8),
+                    Text('Within 3 words'),
+                  ],
                 ),
-                items: [0, 1, 2, 3, 5, 10, 20, 50]
-                    .map((d) => DropdownMenuItem(
-                          value: d,
-                          child: Text(
-                            d == 0 ? 'Off' : d.toString(),
-                            style: AppTypography.labelSmall,
-                          ),
-                        ))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _distance = val);
-                    if (_searchController.text.isNotEmpty) _executeSearch();
-                  }
-                },
+              ),
+              const PopupMenuItem(value: 1, child: Text('Within 1 word')),
+              const PopupMenuItem(value: 2, child: Text('Within 2 words')),
+              const PopupMenuItem(value: 5, child: Text('Within 5 words')),
+              const PopupMenuItem(value: 10, child: Text('Within 10 words')),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _wordDistance > 0
+                    ? colors.secondaryContainer
+                    : (_isMultiWord
+                        ? colors.tertiaryContainer
+                        : colors.surfaceContainerHighest),
+                borderRadius: BorderRadius.circular(16),
+                border: _isMultiWord && _wordDistance == 0
+                    ? Border.all(color: colors.tertiary.withValues(alpha: 0.5))
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.swap_horiz,
+                    size: 14,
+                    color: _wordDistance > 0
+                        ? colors.onSecondaryContainer
+                        : (_isMultiWord
+                            ? colors.onTertiaryContainer
+                            : colors.onSurfaceVariant),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _wordDistance > 0 ? 'Dist: $_wordDistance' : 'Dist',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: _wordDistance > 0
+                          ? colors.onSecondaryContainer
+                          : (_isMultiWord
+                              ? colors.onTertiaryContainer
+                              : colors.onSurfaceVariant),
+                      fontWeight: _wordDistance > 0 || _isMultiWord
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    size: 16,
+                    color: _wordDistance > 0
+                        ? colors.onSecondaryContainer
+                        : (_isMultiWord
+                            ? colors.onTertiaryContainer
+                            : colors.onSurfaceVariant),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-          ],
+          ),
+          const SizedBox(width: 8),
+
+          // Hint text for fuzzy
+          if (_fuzzy)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                '(ā=a, ñ=n, ṭ=t …)',
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                  fontSize: 10,
+                ),
+              ),
+            ),
 
           const Spacer(),
 
@@ -306,7 +495,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
               ),
               child: Text(
-                '${searchState.totalResults} results',
+                '${searchState.totalResults} result${searchState.totalResults == 1 ? '' : 's'}',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary,
                   fontWeight: FontWeight.w600,
@@ -368,13 +557,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ),
                   ),
-                  Text(
-                    '(${sug.fuzzy})',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -398,62 +580,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildFilterBar(ColorScheme colors, SearchResults state) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        AppDimensions.sm,
-        AppDimensions.marginMobile,
-        0,
-      ),
-      padding: const EdgeInsets.all(AppDimensions.sm),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Filter by book category / nikaya',
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: state.filters.asMap().entries.map((entry) {
-              final i = entry.key;
-              final filter = entry.value;
-              return FilterChip(
-                label: Text(
-                  filter.label,
-                  style: AppTypography.labelSmall.copyWith(
-                    fontSize: 11,
-                    color: filter.selected
-                        ? colors.onSecondaryContainer
-                        : colors.onSurfaceVariant,
-                  ),
-                ),
-                selected: filter.selected,
-                onSelected: (_) =>
-                    ref.read(searchProvider.notifier).toggleFilter(i),
-                selectedColor: colors.secondaryContainer,
-                checkmarkColor: colors.secondary,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildResults(SearchState state, ColorScheme colors) {
     switch (state) {
       case SearchIdle():
@@ -462,8 +588,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return _buildIndexingState(colors, status, progress);
       case SearchLoading():
         return const Center(child: CircularProgressIndicator());
-      case SearchResults(:final groups, :final query, :final totalResults):
-        return _buildResultList(colors, groups, query, totalResults);
+      case SearchResults(:final bookSummaries, :final query, :final totalResults):
+        return _buildResultList(colors, bookSummaries, query, totalResults);
       case SearchError(:final message):
         return _buildErrorState(colors, message);
     }
@@ -474,7 +600,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.search, size: 56, color: colors.onSurfaceVariant.withValues(alpha: 0.3)),
+          Icon(
+            Icons.search,
+            size: 56,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: AppDimensions.md),
           Text(
             'Search the Pāli Tipiṭaka',
@@ -486,9 +616,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           SizedBox(
             width: 280,
             child: Text(
-              'Use fuzzy search for diacritic-insensitive matching.\n'
-              'Enable distance to find words near each other.\n'
-              'Filter results by book category or nikaya.',
+              'Search across both Pāli text and translations.\n'
+              'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).',
               textAlign: TextAlign.center,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
@@ -501,7 +630,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildIndexingState(ColorScheme colors, String status, double progress) {
+  Widget _buildIndexingState(
+      ColorScheme colors, String status, double progress) {
     final p = progress.clamp(0.0, 1.0);
     return Center(
       child: Padding(
@@ -509,7 +639,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Animated progress indicator ring
             SizedBox(
               width: 140,
               height: 140,
@@ -526,21 +655,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       color: colors.primary,
                     ),
                   ),
-                  // Percentage text in the center
-                  Text(
-                    p > 0 ? '${(p * 100).toStringAsFixed(0)}%' : '',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 28,
+                  if (p > 0)
+                    Text(
+                      '${(p * 100).toStringAsFixed(0)}%',
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 28,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
             const SizedBox(height: AppDimensions.lg),
-
-            // Status text
             Text(
               'Building Search Index',
               style: AppTypography.headlineSmall.copyWith(
@@ -561,8 +688,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
             const SizedBox(height: AppDimensions.lg),
-
-            // Linear progress bar underneath
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
@@ -574,7 +699,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.xs),
             Text(
-              p > 0 ? '${(p * 100).toStringAsFixed(0)}% complete' : 'Starting…',
+              p > 0
+                  ? '${(p * 100).toStringAsFixed(0)}% complete'
+                  : 'Starting…',
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontSize: 11,
@@ -588,16 +715,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildResultList(
     ColorScheme colors,
-    List<SearchResultGroup> groups,
+    List<BookResultSummary> summaries,
     String query,
     int totalResults,
   ) {
-    if (groups.isEmpty) {
+    if (summaries.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off, size: 48, color: colors.onSurfaceVariant.withValues(alpha: 0.3)),
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+            ),
             const SizedBox(height: AppDimensions.sm),
             Text(
               'No results for "$query"',
@@ -607,7 +738,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.xs),
             Text(
-              'Try enabling fuzzy search or adjusting distance.',
+              'Try enabling fuzzy search or using different terms.',
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                 fontSize: 11,
@@ -625,20 +756,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         AppDimensions.marginMobile,
         AppDimensions.bottomToolbarHeight + AppDimensions.lg,
       ),
-      itemCount: groups.length,
+      itemCount: summaries.length,
       itemBuilder: (context, index) {
-        final group = groups[index];
-        return _BookResultGroup(
-          group: group,
+        final summary = summaries[index];
+        return _BookResultCard(
+          summary: summary,
           colors: colors,
           searchQuery: query,
-          onTapResult: (item) => _onResultTap(
-            item.bookId,
-            group.book.bookName ?? group.book.bookId,
-            item.firstParaId,
-          ),
-          onToggleExpanded: () =>
-              ref.read(searchProvider.notifier).toggleGroupExpanded(index),
+          onTapResult: (item) => _onResultTap(summary, item),
+          onLongPressResult: (item) => _onResultLongPress(summary, item),
+          onToggleExpanded: () {
+            if (summary.isExpanded) {
+              ref.read(searchProvider.notifier).collapseBook(index);
+            } else {
+              ref.read(searchProvider.notifier).expandBook(index);
+            }
+          },
+          onLoadMore: () {
+            ref.read(searchProvider.notifier).loadMoreForBook(index);
+          },
         );
       },
     );
@@ -665,28 +801,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
-// ── Book Result Group ─────────────────────────────────────────────────────
+// ── Book Result Card ─────────────────────────────────────────────────────
 
-class _BookResultGroup extends ConsumerWidget {
-  final SearchResultGroup group;
+class _BookResultCard extends StatelessWidget {
+  final BookResultSummary summary;
   final ColorScheme colors;
   final String searchQuery;
   final void Function(SearchResultItem item) onTapResult;
+  final void Function(SearchResultItem item)? onLongPressResult;
   final VoidCallback onToggleExpanded;
+  final VoidCallback onLoadMore;
 
-  const _BookResultGroup({
-    required this.group,
+  const _BookResultCard({
+    required this.summary,
     required this.colors,
     required this.searchQuery,
     required this.onTapResult,
+    this.onLongPressResult,
     required this.onToggleExpanded,
+    required this.onLoadMore,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(group.book.displayName, script);
-    final paliFont = scriptFontFamily(script);
+  Widget build(BuildContext context) {
+    final displayName = _displayBookName(summary.book);
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppDimensions.sm),
@@ -700,7 +838,7 @@ class _BookResultGroup extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // ── Header ─────────────────────────────────────────────────
           InkWell(
             onTap: onToggleExpanded,
             child: Padding(
@@ -731,18 +869,19 @@ class _BookResultGroup extends ConsumerWidget {
                         Text(
                           displayName,
                           style: AppTypography.labelMedium.copyWith(
-                            fontFamily: paliFont,
                             color: colors.onSurface,
                             fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (group.book.nikaya != null || group.book.category != null)
+                        if (summary.book.nikaya != null || summary.book.category != null)
                           Text(
                             [
-                              if (group.book.nikaya != null) group.book.nikaya,
-                              if (group.book.category != null) group.book.category,
+                              if (summary.book.nikaya != null)
+                                summary.book.nikaya,
+                              if (summary.book.category != null)
+                                summary.book.category,
                             ].join(' · '),
                             style: AppTypography.labelSmall.copyWith(
                               color: colors.onSurfaceVariant,
@@ -756,21 +895,41 @@ class _BookResultGroup extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: colors.surfaceContainerHighest,
+                      color: summary.isExpanded
+                          ? colors.primaryContainer
+                          : colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '${group.totalResults}',
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${summary.totalCount}',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: summary.isExpanded
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                        if (summary.isExpanded && summary.loadedCount < summary.totalCount)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Text(
+                              '/${summary.loadedCount}',
+                              style: AppTypography.labelSmall.copyWith(
+                                color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                                fontSize: 9,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 6),
                   AnimatedRotation(
-                    turns: group.isExpanded ? 0.5 : 0,
+                    turns: summary.isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
                     child: Icon(
                       Icons.expand_more,
@@ -783,120 +942,135 @@ class _BookResultGroup extends ConsumerWidget {
             ),
           ),
 
-          // Items
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Column(
-              children: group.items.map((item) {
-                return _SearchResultItemTile(
-                  item: item,
-                  colors: colors,
-                  searchQuery: searchQuery,
-                  onTap: () => onTapResult(item),
-                );
-              }).toList(),
-            ),
-            crossFadeState: group.isExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 200),
-          ),
+          // ── Expanded results ───────────────────────────────────────
+          if (summary.isExpanded) ...[
+            // Flatten all loaded pages into items
+            ...summary.loadedPages.expand((page) =>
+                page.map((item) => _SearchResultItemTile(
+                      item: item,
+                      colors: colors,
+                      searchQuery: searchQuery,
+                      onTap: () => onTapResult(item),
+                      onLongPress: () => onLongPressResult?.call(item),
+                    ))),
+
+            // Load more button
+            if (!summary.fullyLoaded)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.md,
+                  vertical: 4,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: onLoadMore,
+                    icon: const Icon(Icons.expand_more, size: 18),
+                    label: Text(
+                      'Show more (${summary.totalCount - summary.loadedCount} remaining)',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
+  }
+
+  String _displayBookName(BookInfo book) {
+    return book.displayName ?? book.bookName ?? book.bookId;
   }
 }
 
 // ── Search Result Item Tile ──────────────────────────────────────────────
 
-class _SearchResultItemTile extends ConsumerWidget {
+class _SearchResultItemTile extends StatelessWidget {
   final SearchResultItem item;
   final ColorScheme colors;
   final String searchQuery;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const _SearchResultItemTile({
     required this.item,
     required this.colors,
     required this.searchQuery,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
-    final convertedPaliText = convertPaliToScript(item.paliText, script);
-    final paliFont = scriptFontFamily(script);
-    final translationText = item.translation;
-    final convertedQuery = convertSearchQueryForScript(searchQuery, script);
-
-    // Build a version of paliText with search terms wrapped in <b> tags
-    final highlightedFullText = _buildHighlightedPaliText(
-      convertedPaliText,
-      convertedQuery,
-    );
-
+  Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(AppDimensions.md, 6, AppDimensions.md, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // VRI page indicator
-            if (item.vripage.isNotEmpty) ...[
-              Container(
-                width: 40,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'p.${item.vripage}',
-                  style: AppTypography.labelSmall.copyWith(
-                    fontSize: 9,
-                    color: colors.onSurfaceVariant,
-                  ),
+            // Para badge
+            Container(
+              width: 40,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '§${item.paraId}',
+                style: AppTypography.labelSmall.copyWith(
+                  fontSize: 9,
+                  color: colors.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(width: 8),
-            ],
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Full page Pāli text with highlighted search terms
-                  _HighlightedSnippet(
-                    text: highlightedFullText,
+                  // Pāli text — prefer FTS5 snippet with <mark> tags
+                  // (shows context around the match), fall back to full text.
+                  // When using the snippet, skip client-side searchTerms since
+                  // FTS5 already inserted <mark> tags.
+                  _HtmlRichText(
+                    text: item.paliSnippet ?? item.paliText,
+                    searchTerms: item.paliSnippet != null
+                        ? const []
+                        : _extractSearchTerms(searchQuery),
                     style: AppTypography.bodyPali.copyWith(
-                      fontFamily: paliFont,
                       fontSize: 14,
                       color: colors.onSurface,
                       height: 1.4,
                     ),
-                    highlightStyle: AppTypography.bodyPali.copyWith(
-                      fontFamily: paliFont,
-                      fontSize: 14,
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
-                      height: 1.4,
-                    ),
+                    highlightColor: colors.primary.withValues(alpha: 0.2),
+                    // Show all content — no line limit
+                    maxLines: null,
                   ),
-                  // Translation text (if available)
-                  if (translationText != null && translationText.isNotEmpty) ...[
+                  // Translation text — prefer FTS5 snippet, fall back to full text
+                  if (item.translation != null &&
+                      item.translation!.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(
-                      translationText,
+                    _HtmlRichText(
+                      text: item.translationSnippet ?? item.translation!,
+                      searchTerms: item.translationSnippet != null
+                          ? const []
+                          : _extractSearchTerms(searchQuery),
                       style: TextStyle(
                         fontSize: 12,
                         color: colors.onSurfaceVariant.withValues(alpha: 0.8),
                         fontStyle: FontStyle.italic,
                         height: 1.3,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      highlightColor: colors.primary.withValues(alpha: 0.15),
+                      // Show all content — no line limit
+                      maxLines: null,
                     ),
                   ],
                 ],
@@ -910,117 +1084,577 @@ class _SearchResultItemTile extends ConsumerWidget {
     );
   }
 
-  /// Build a snippet from [paliText] with search-query words wrapped in
-  /// `<b>…</b>` tags, truncated to ~80 words for a compact preview.
-  String _buildHighlightedPaliText(String paliText, String query) {
-    if (paliText.isEmpty) return item.snippet;
-
-    // Truncate to first ~80 words for a compact preview
-    final words = paliText.split(RegExp(r'\s+'));
-    final truncated = words.take(80).join(' ');
-
-    if (query.trim().isEmpty) return truncated;
-
-    // Collect unique search terms (lowercased)
-    final searchTerms = query
-        .toLowerCase()
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .toSet();
-
-    if (searchTerms.isEmpty) return truncated;
-
-    // Wrap each occurrence of any search term in <b>…</b> (case-insensitive)
-    final buffer = StringBuffer();
-    int i = 0;
-    final lower = truncated.toLowerCase();
-
-    while (i < truncated.length) {
-      // Find the earliest match among all search terms at position i
-      String? bestMatch;
-      int bestLen = 0;
-      for (final term in searchTerms) {
-        if (i + term.length <= lower.length &&
-            lower.substring(i, i + term.length) == term) {
-          if (term.length > bestLen) {
-            bestMatch = term;
-            bestLen = term.length;
-          }
-        }
-      }
-      if (bestMatch != null) {
-        buffer.write('<b>');
-        buffer.write(truncated.substring(i, i + bestLen));
-        buffer.write('</b>');
-        i += bestLen;
-      } else {
-        buffer.write(truncated[i]);
-        i++;
-      }
-    }
-
-    return buffer.toString();
-  }
 }
 
-// ── Highlighted Snippet ──────────────────────────────────────────────────
+// ── HTML + Markdown Rich Text Renderer ──────────────────────────────────
 
-class _HighlightedSnippet extends StatelessWidget {
+/// Renders text containing HTML tags (`<b>`, `<i>`, `<u>`, `<mark>`)
+/// and highlights [searchTerms] with a colored background.
+/// Also renders `<br>` as newlines.
+class _HtmlRichText extends StatelessWidget {
   final String text;
+  final List<String> searchTerms;
   final TextStyle style;
-  final TextStyle highlightStyle;
+  final Color highlightColor;
+  final int? maxLines;
 
-  const _HighlightedSnippet({
+  const _HtmlRichText({
     required this.text,
+    this.searchTerms = const [],
     required this.style,
-    required this.highlightStyle,
+    required this.highlightColor,
+    this.maxLines,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Parse <b>...</b> tags from FTS snippet
-    if (!text.contains('<b>')) {
-      return Text(text, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    // First: split HTML tags into segments
+    final segments = _parseHtmlSegments(text);
+
+    // Second: for each segment, apply search highlighting
+    final spans = <TextSpan>[];
+    for (final segment in segments) {
+      if (segment.isHtml) {
+        // Render as styled text
+        spans.add(TextSpan(
+          text: segment.text,
+          style: segment.htmlStyle?.let((s) => _applyStyle(s)),
+        ));
+      } else {
+        // Apply search highlighting to plain text
+        _applyHighlighting(segment.text, spans);
+      }
     }
 
-    final spans = <TextSpan>[];
-    final regex = RegExp(r'<b>(.*?)</b>');
-    int lastEnd = 0;
+    return Text.rich(
+      TextSpan(children: spans, style: style),
+      maxLines: maxLines,
+      // Only ellipsize when a maxLines limit is actually set
+      overflow: maxLines != null ? TextOverflow.ellipsis : TextOverflow.clip,
+    );
+  }
 
-    for (final match in regex.allMatches(text)) {
-      if (match.start > lastEnd) {
+  TextStyle _applyStyle(_HtmlTag tag) {
+    var result = style;
+    switch (tag) {
+      case _HtmlTag.b:
+        result = result.copyWith(fontWeight: FontWeight.w700);
+      case _HtmlTag.i:
+        result = result.copyWith(fontStyle: FontStyle.italic);
+      case _HtmlTag.u:
+        result = result.copyWith(decoration: TextDecoration.underline);
+      case _HtmlTag.mark:
+        result = result.copyWith(
+          backgroundColor: highlightColor,
+          fontWeight: FontWeight.w700,
+        );
+    }
+    return result;
+  }
+
+  void _applyHighlighting(String plainText, List<TextSpan> spans) {
+    if (searchTerms.isEmpty || plainText.isEmpty) {
+      spans.add(TextSpan(text: plainText));
+      return;
+    }
+
+    // Find intervals directly in the original text's position space by
+    // comparing each character through a normalised lens.  This avoids the
+    // index-mismatch bug that would occur if we called
+    // normalizePaliFuzzy() on the whole string (which strips punctuation
+    // and shifts character positions).
+    final lowerText = plainText.toLowerCase();
+    final textLen = lowerText.length;
+    final intervals = <_Interval>[];
+
+    for (final term in searchTerms) {
+      if (term.isEmpty) continue;
+      final termLen = term.length;
+      final maxStart = textLen - termLen;
+      if (maxStart < 0) continue;
+
+      int pos = 0;
+      while (pos <= maxStart) {
+        bool match = true;
+        for (int i = 0; i < termLen; i++) {
+          if (_normChar(lowerText.codeUnitAt(pos + i)) != term.codeUnitAt(i)) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          intervals.add(_Interval(pos, pos + termLen));
+          pos += termLen;
+        } else {
+          pos++;
+        }
+      }
+    }
+
+    if (intervals.isEmpty) {
+      spans.add(TextSpan(text: plainText));
+      return;
+    }
+
+    // Sort and merge overlapping/adjacent intervals
+    intervals.sort((a, b) => a.start.compareTo(b.start));
+    final merged = <_Interval>[];
+    var current = intervals.first;
+    for (int i = 1; i < intervals.length; i++) {
+      final next = intervals[i];
+      if (next.start <= current.end) {
+        if (next.end > current.end) {
+          current = _Interval(current.start, next.end);
+        }
+      } else {
+        merged.add(current);
+        current = next;
+      }
+    }
+    merged.add(current);
+
+    // Build spans using original-text positions (always correct now)
+    int lastIdx = 0;
+    for (final interval in merged) {
+      if (interval.start > lastIdx) {
         spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: style,
+          text: plainText.substring(lastIdx, interval.start),
         ));
       }
       spans.add(TextSpan(
-        text: match.group(1),
-        style: highlightStyle,
+        text: plainText.substring(interval.start, interval.end),
+        style: TextStyle(
+          backgroundColor: highlightColor,
+          fontWeight: FontWeight.w700,
+        ),
       ));
+      lastIdx = interval.end;
+    }
+    if (lastIdx < plainText.length) {
+      spans.add(TextSpan(text: plainText.substring(lastIdx)));
+    }
+  }
+
+  /// Normalise a single lowercased code point for comparison.
+  /// Pāli diacritics → ASCII; everything else (including punctuation)
+  /// passes through unchanged so that positions stay in sync with the
+  /// original [plainText].
+  static int _normChar(int c) {
+    switch (c) {
+      case 0x0101: return 0x61; // ā → a
+      case 0x012B: return 0x69; // ī → i
+      case 0x016B: return 0x75; // ū → u
+      case 0x014D: return 0x6F; // ō → o
+      case 0x1E45: return 0x6E; // ṅ → n
+      case 0x00F1: return 0x6E; // ñ → n
+      case 0x1E6D: return 0x74; // ṭ → t
+      case 0x1E0D: return 0x64; // ḍ → d
+      case 0x1E47: return 0x6E; // ṇ → n
+      case 0x1E37: return 0x6C; // ḷ → l
+      case 0x1E3B: return 0x6C; // ḻ → l
+      case 0x1E43: return 0x6D; // ṃ → m
+      case 0x1E41: return 0x6D; // ṁ → m
+      case 0x1E25: return 0x68; // ḥ → h
+      default:     return c;
+    }
+  }
+
+  /// Parse text with HTML tags into segments.
+  List<_TextSegment> _parseHtmlSegments(String html) {
+    final segments = <_TextSegment>[];
+    final regex = RegExp(r'<(/?)(b|i|u|mark|br)\s*/?>', caseSensitive: false);
+    final stack = <_HtmlTag>[];
+    int lastEnd = 0;
+
+    for (final match in regex.allMatches(html)) {
+      // Add text before this tag
+      if (match.start > lastEnd) {
+        segments.add(_TextSegment(
+          text: html.substring(lastEnd, match.start),
+          isHtml: stack.isNotEmpty,
+          htmlStyle: stack.isNotEmpty ? stack.last : null,
+        ));
+      }
+
+      final isClosing = match.group(1) == '/';
+      final tagName = match.group(2)!.toLowerCase();
+
+      if (tagName == 'br') {
+        // Line break - insert newline
+        segments.add(_TextSegment(
+          text: '\n',
+          isHtml: false,
+        ));
+      } else if (isClosing) {
+        // Closing tag
+        final tag = _HtmlTag.values.firstWhere(
+          (t) => t.name == tagName,
+          orElse: () => _HtmlTag.b,
+        );
+        stack.remove(tag);
+      } else {
+        // Opening tag
+        final tag = _HtmlTag.values.firstWhere(
+          (t) => t.name == tagName,
+          orElse: () => _HtmlTag.b,
+        );
+        stack.add(tag);
+      }
+
       lastEnd = match.end;
     }
 
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: style,
+    // Remaining text after last tag
+    if (lastEnd < html.length) {
+      segments.add(_TextSegment(
+        text: html.substring(lastEnd),
+        isHtml: stack.isNotEmpty,
+        htmlStyle: stack.isNotEmpty ? stack.last : null,
       ));
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
-      maxLines: 3,
-      overflow: TextOverflow.ellipsis,
-    );
+    return segments;
   }
+}
+
+enum _HtmlTag { b, i, u, mark }
+
+class _TextSegment {
+  final String text;
+  final bool isHtml;
+  final _HtmlTag? htmlStyle;
+
+  const _TextSegment({
+    required this.text,
+    required this.isHtml,
+    this.htmlStyle,
+  });
+}
+
+class _Interval {
+  final int start;
+  final int end;
+  const _Interval(this.start, this.end);
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────
 
-/// Format a number (e.g. 1234 -> "1.2k", 12345 -> "12k").
+/// Format a number (e.g. 1234 -> "1.2k").
 String formatCount(int count) {
   if (count < 1000) return count.toString();
   if (count < 10000) return '${(count / 1000).toStringAsFixed(1)}k';
   return '${(count / 1000).toStringAsFixed(0)}k';
+}
+
+extension _Lets<T> on T {
+  R let<R>(R Function(T) fn) => fn(this);
+}
+
+// ── Result Preview Dialog ───────────────────────────────────────────────
+
+/// Data class for a single sentence line in the preview.
+class _PreviewLine {
+  final int paraId;
+  final int lineId;
+  final String pali;
+  final String translation;
+
+  const _PreviewLine({
+    required this.paraId,
+    required this.lineId,
+    required this.pali,
+    this.translation = '',
+  });
+}
+
+/// A full-screen dialog that shows all Pāli + translation lines for the
+/// heading section containing a search match, auto-scrolled to the matched
+/// paragraph.
+class _ResultPreviewDialog extends StatefulWidget {
+  final String bookId;
+  final String bookName;
+  final String headingTitle;
+  final List<_PreviewLine> sentences;
+  final int matchParaId;
+  final String paliSnippet;
+  final String? searchQuery;
+
+  const _ResultPreviewDialog({
+    required this.bookId,
+    required this.bookName,
+    required this.headingTitle,
+    required this.sentences,
+    required this.matchParaId,
+    required this.paliSnippet,
+    this.searchQuery,
+  });
+
+  @override
+  State<_ResultPreviewDialog> createState() => _ResultPreviewDialogState();
+}
+
+class _ResultPreviewDialogState extends State<_ResultPreviewDialog> {
+  final _scrollController = ScrollController();
+  int _firstMatchIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // First line of the matched paragraph (for showing the FTS5 snippet)
+    _firstMatchIndex = widget.sentences
+        .indexWhere((s) => s.paraId == widget.matchParaId);
+    if (_firstMatchIndex < 0) return;
+
+    // Find the exact sentence within the matched paragraph that contains
+    // the search term, so we scroll precisely to it
+    int scrollToIndex = _firstMatchIndex;
+    if (widget.searchQuery != null) {
+      final queryNorm =
+          normalizePaliFuzzy(widget.searchQuery!).toLowerCase();
+      final queryWords = queryNorm
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      if (queryWords.isNotEmpty) {
+        for (int i = _firstMatchIndex;
+            i < widget.sentences.length &&
+                widget.sentences[i].paraId == widget.matchParaId;
+            i++) {
+          final paliNorm =
+              normalizePaliFuzzy(widget.sentences[i].pali).toLowerCase();
+          if (queryWords.any((w) => paliNorm.contains(w))) {
+            scrollToIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    // Scroll to the exact matching sentence using a per-item height estimate
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+
+      double offset = 0;
+      for (int i = 0; i < scrollToIndex && i < widget.sentences.length; i++) {
+        final s = widget.sentences[i];
+        // Paragraph gap between different paragraphs
+        if (i > 0 && s.paraId != widget.sentences[i - 1].paraId) {
+          offset += 12;
+        }
+        // Container vertical padding (top + bottom)
+        offset += 4;
+        // Pāli text height
+        final paliLines = ((s.pali.length / 50).ceil()).clamp(1, 8);
+        offset += paliLines * 22.4; // fontSize 14 × lineHeight 1.6
+        // Translation text height (if present)
+        if (s.translation.isNotEmpty) {
+          final transLines =
+              ((s.translation.length / 50).ceil()).clamp(1, 8);
+          offset += 2 + transLines * 16.8; // top padding + text
+        }
+      }
+
+      _scrollController.animateTo(
+        (offset - 80).clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Dialog(
+      insetPadding: EdgeInsets.zero,
+      backgroundColor: colors.surface,
+      child: Scaffold(
+        backgroundColor: colors.surface,
+        appBar: AppBar(
+          backgroundColor: colors.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.close, color: colors.onSurfaceVariant),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.headingTitle.isNotEmpty
+                    ? widget.headingTitle
+                    : widget.bookName,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (widget.headingTitle.isNotEmpty)
+                Text(
+                  widget.bookName,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop();
+                router.push('/reader');
+              },
+              icon: Icon(Icons.open_in_new, size: 16, color: colors.primary),
+              label: Text(
+                'Open in Reader',
+                style: TextStyle(color: colors.primary),
+              ),
+            ),
+          ],
+        ),
+        body: widget.sentences.isEmpty
+            ? Center(
+                child: Text(
+                  'No sentences found for this section.',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+              )
+            : ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.only(
+                  left: 4,
+                  right: 4,
+                  top: 4,
+                  bottom: 32,
+                ),
+                itemCount: widget.sentences.length,
+                itemBuilder: (context, index) {
+                  final line = widget.sentences[index];
+                  final isMatch = line.paraId == widget.matchParaId;
+                  final isNewPara = index == 0 ||
+                      line.paraId !=
+                          widget.sentences[index - 1].paraId;
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Paragraph gap
+                      if (isNewPara && index > 0)
+                        const SizedBox(height: 12),
+
+                      // Match-highlighted paragraph block
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMatch
+                              ? colors.primaryContainer
+                                  .withValues(alpha: 0.25)
+                              : null,
+                          border: isMatch
+                              ? Border(
+                                  left: BorderSide(
+                                    color: colors.primary,
+                                    width: 3,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Pāli — first line of matched para uses
+                            // FTS5 snippet with <mark> tags
+                            if (isMatch &&
+                                widget.paliSnippet.isNotEmpty &&
+                                index == _firstMatchIndex)
+                              _HtmlRichText(
+                                text: widget.paliSnippet,
+                                searchTerms: const [],
+                                style: AppTypography.bodyPali.copyWith(
+                                  fontSize: 14,
+                                  color: colors.onSurface,
+                                  height: 1.6,
+                                ),
+                                highlightColor: colors.primary
+                                    .withValues(alpha: 0.2),
+                                maxLines: null,
+                              )
+                            else
+                              _HtmlRichText(
+                                text: line.pali,
+                                searchTerms:
+                                    widget.searchQuery != null && !isMatch
+                                        ? _extractSearchTerms(
+                                            widget.searchQuery!)
+                                        : const [],
+                                style: AppTypography.bodyPali.copyWith(
+                                  fontSize: 14,
+                                  color: colors.onSurface,
+                                  height: 1.6,
+                                ),
+                                highlightColor: colors.primary
+                                    .withValues(alpha: 0.2),
+                                maxLines: null,
+                              ),
+                            // Translation
+                            if (line.translation.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: _HtmlRichText(
+                                  text: line.translation,
+                                  searchTerms: widget.searchQuery != null &&
+                                          !isMatch
+                                      ? _extractSearchTerms(
+                                          widget.searchQuery!)
+                                      : const [],
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colors.onSurfaceVariant
+                                        .withValues(alpha: 0.85),
+                                    fontStyle: FontStyle.italic,
+                                    height: 1.4,
+                                  ),
+                                  highlightColor: colors.primary
+                                      .withValues(alpha: 0.15),
+                                  maxLines: null,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
+/// Extract normalized search terms for highlighting (local copy for the
+/// preview dialog).
+List<String> _extractSearchTerms(String query) {
+  return normalizePaliFuzzy(query)
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
 }

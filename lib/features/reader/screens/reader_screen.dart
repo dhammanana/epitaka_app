@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -8,20 +9,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import '../../../core/models/app_models.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
-import '../../../core/theme/app_typography.dart';
-import '../../../features/settings/providers/tts_provider.dart';
-import '../providers/tts_reading_provider.dart';
-import '../../../shared/utils/reading_clipboard.dart';
-import '../../../shared/widgets/reading_paragraph.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/database_provider.dart';
+import '../../../shared/utils/reading_clipboard.dart';
+import '../../../shared/widgets/reading_paragraph.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
-import '../../search/widgets/search_sheet.dart';
+
+import '../../settings/providers/tts_provider.dart';
+import '../../settings/providers/tts_replacements_provider.dart';
+import '../providers/tts_reading_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../widgets/bookmark_dialog.dart';
+import '../widgets/jump_sheet.dart';
+import '../widgets/reader_app_bar.dart';
+import '../widgets/reader_bottom_toolbar.dart';
+import '../widgets/reader_context_menu.dart';
+import '../widgets/reader_drag_thumb.dart';
+import '../widgets/reader_tts_widgets.dart';
 import '../widgets/tab_strip.dart';
 
 /// Reader screen with multiple tabs, showing Pāli text with translations.
@@ -74,9 +83,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // Silverbar: collapsible app bar on scroll
   bool _appBarCollapsed = false;
 
-  // Pixel-based scroll tracking (per book) — replaces the old fractional
-  // itemLeadingEdge approach, which reset every time the top item changed
-  // and caused flicker.
+  // Pixel-based scroll tracking (per book)
   final Map<String, ScrollOffsetListener> _scrollOffsetListeners = {};
   final Map<String, StreamSubscription<double>> _scrollOffsetSubs = {};
   final Map<String, double> _scrollAccum = {};
@@ -91,6 +98,254 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// Debounce timer for scroll-based history saves.
   Timer? _saveHistoryTimer;
+
+  /// Throttle: only update scroll state once per distinct paraId per book.
+  final Map<String, int> _lastScrollParaId = {};
+
+  /// Whether TTS should auto-scroll to the spoken line.
+  /// Set to false when the user manually scrolls away from the TTS position.
+  bool _ttsAutoScroll = true;
+
+  /// Flag to prevent _onPositionsChanged from disabling auto-scroll
+  /// when a TTS-initiated jump is in progress. Cleared after a short
+  /// timer delay to cover layout changes from highlighting.
+  bool _ttsJumpInProgress = false;
+
+  /// Timer to clear _ttsJumpInProgress after a short delay.
+  Timer? _ttsJumpTimer;
+
+  /// Cached system voices loaded from flutter_tts API.
+  List<Map<String, String>>? _cachedSystemVoices;
+  bool _voicesLoading = false;
+
+  /// Issue 4: Target line GlobalKey for precise TTS line scroll.
+  /// Created before a TTS jump, used by Scrollable.ensureVisible after
+  /// the paragraph becomes visible, then cleared.
+  final Map<int, GlobalKey> _ttsTargetLineKeys = {};
+
+  /// The paraId that _ttsTargetLineKeys belong to (for passing to
+  /// ReadingParagraph).
+  int? _ttsTargetParaId;
+
+  // ── In-book search ───────────────────────────────────────────────────
+
+  /// Whether the in-book search bar is visible.
+  bool _showInBookSearch = false;
+
+  /// The current in-book search query.
+  String _inBookQuery = '';
+
+  /// ParaIds that match the current query (diacritic-insensitive, all terms
+  /// in the same line).
+  List<int> _inBookMatchParaIds = [];
+
+  /// Corresponding lineIds for each match (same index as [_inBookMatchParaIds]).
+  List<int> _inBookMatchLineIds = [];
+
+  /// Index into [_inBookMatchParaIds] / [_inBookMatchLineIds] for the
+  /// currently selected match.
+  int _inBookMatchIndex = -1;
+
+  /// Text editing controller for the in-book search field.
+  final _inBookSearchController = TextEditingController();
+
+  /// Focus node for the in-book search field.
+  final _inBookSearchFocusNode = FocusNode();
+
+  /// Get the query currently applied to ReadingParagraph for highlighting.
+  String? get _effectiveSearchQuery {
+    if (_showInBookSearch && _inBookQuery.isNotEmpty) return _inBookQuery;
+    return null;
+  }
+
+  /// Debounce timer for in-book search.
+  Timer? _inBookSearchTimer;
+
+  /// Most recent in-book search query, used to ignore stale async results.
+  String _lastInBookSearchQuery = '';
+
+  /// Run an in-book search on the `sentences` table with a `book_id`
+  /// b-tree filter.  Returns `(para_id, line_id)` pairs so the jump can
+  /// scroll to the exact matching sentence (not just the paragraph start).
+  /// Searches both Pāli text (epitaka.db) and enabled translation texts.
+  Future<void> _runInBookSearch(String query) async {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+
+    _lastInBookSearchQuery = query;
+
+    if (query.trim().isEmpty) {
+      setState(() {
+        _inBookQuery = '';
+        _inBookMatchParaIds = [];
+        _inBookMatchLineIds = [];
+        _inBookMatchIndex = -1;
+      });
+      return;
+    }
+
+    try {
+      final words = query.trim()
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+
+      if (words.isEmpty) {
+        setState(() {
+          _inBookQuery = '';
+          _inBookMatchParaIds = [];
+          _inBookMatchLineIds = [];
+          _inBookMatchIndex = -1;
+        });
+        return;
+      }
+
+      // ── Collect matching (paraId, lineId) pairs ────────────────────
+      //
+      // Both epitaka.db.sentences and translation*.db.sentences have
+      // `book_id`, `para_id`, `line_id` as a composite primary key, so we
+      // can SELECT line_id and jump to the exact sentence.
+
+      final seenKeys = <int>{};
+      final matchParas = <int>[];
+      final matchLines = <int>[];
+
+      void addMatch(int paraId, int lineId) {
+        // Encode (paraId, lineId) into a single int for dedup
+        final key = paraId * 1000000 + lineId;
+        if (seenKeys.add(key)) {
+          matchParas.add(paraId);
+          matchLines.add(lineId);
+        }
+      }
+
+      // 1. Search Pāli text from epitaka.db ─────────────────────────────
+      final epitakaDb = await ref.read(epitakaDbProvider.future);
+      final paliConditions = words
+          .map((_) => "pali LIKE '%' || ? || '%'")
+          .join(' AND ');
+
+      final paliRows = await epitakaDb.customSelect(
+        'SELECT para_id, line_id FROM sentences '
+        'WHERE book_id = ? AND $paliConditions '
+        'ORDER BY para_id, line_id LIMIT 500',
+        variables: [
+          Variable.withString(activeTab.bookId),
+          for (final w in words) Variable.withString(w),
+        ],
+      ).get();
+
+      for (final row in paliRows) {
+        addMatch(row.data['para_id'] as int, row.data['line_id'] as int);
+      }
+
+      // Guard between DB queries
+      if (_lastInBookSearchQuery != query) return;
+
+      // 2. Search translation texts from active translation DBs ─────────
+      final settings = ref.read(settingsProvider);
+      final enabledLangs = settings.enabledTranslations.isNotEmpty
+          ? settings.enabledTranslations.toList()
+          : (settings.showTranslation
+              ? [settings.primaryTranslationLang]
+              : <String>[]);
+
+      for (final langCode in enabledLangs) {
+        if (_lastInBookSearchQuery != query) return;
+
+        try {
+          final lang = TranslationLanguage.fromCode(langCode);
+          final transDb =
+              await ref.read(translationDbProvider(lang).future);
+          if (transDb == null) continue;
+
+          final transConditions = words
+              .map((_) => "translation LIKE '%' || ? || '%'")
+              .join(' AND ');
+
+          final transRows = await transDb.customSelect(
+            'SELECT para_id, line_id FROM sentences '
+            'WHERE book_id = ? AND $transConditions '
+            'ORDER BY para_id, line_id LIMIT 500',
+            variables: [
+              Variable.withString(activeTab.bookId),
+              for (final w in words) Variable.withString(w),
+            ],
+          ).get();
+
+          for (final row in transRows) {
+            addMatch(row.data['para_id'] as int, row.data['line_id'] as int);
+          }
+        } catch (_) {
+          // Translation db may not exist — skip
+        }
+      }
+
+      // Guard
+      if (_lastInBookSearchQuery != query) return;
+
+      setState(() {
+        _inBookQuery = query;
+        _inBookMatchParaIds = matchParas;
+        _inBookMatchLineIds = matchLines;
+        _inBookMatchIndex = matchParas.isEmpty ? -1 : 0;
+      });
+
+      if (matchParas.isNotEmpty) {
+        _jumpToInBookMatch(0);
+      }
+    } catch (e) {
+      debugPrint('[IN-BOOK SEARCH] Error: $e');
+      if (_lastInBookSearchQuery == query) {
+        setState(() {
+          _inBookQuery = '';
+          _inBookMatchParaIds = [];
+          _inBookMatchLineIds = [];
+          _inBookMatchIndex = -1;
+        });
+      }
+    }
+  }
+
+  /// Jump to the [_inBookMatchParaIds] at [index].
+  /// `lineId: 1` scrolls the paragraph to the top of the viewport
+  /// (alignment 0.0) and fine-scrolls to the first line.
+  void _jumpToInBookMatch(int index) {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    if (index < 0 || index >= _inBookMatchParaIds.length) return;
+
+    setState(() => _inBookMatchIndex = index);
+    final lineId = index < _inBookMatchLineIds.length
+        ? _inBookMatchLineIds[index]
+        : 1;
+    _jumpToParagraph(
+      activeTab.bookId,
+      _inBookMatchParaIds[index],
+      animate: true,
+      lineId: lineId,
+    );
+  }
+
+  void _toggleInBookSearch() {
+    setState(() {
+      _showInBookSearch = !_showInBookSearch;
+      if (!_showInBookSearch) {
+        _inBookQuery = '';
+        _inBookMatchParaIds = [];
+        _inBookMatchLineIds = [];
+        _inBookMatchIndex = -1;
+        _inBookSearchController.clear();
+      } else {
+        // Focus the search field after it appears
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _inBookSearchFocusNode.requestFocus();
+        });
+      }
+    });
+  }
+
+
 
   @override
   void initState() {
@@ -130,14 +385,33 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     });
   }
 
+  // ── Scroll offset tracking (collapsible app bar) ───────────────────
+  //
   // Pixel-accurate scroll direction tracking. Accumulates movement in one
   // direction; flips/resets the accumulator if direction reverses. Once the
   // accumulator crosses _kScrollThreshold px, flips the appbar state once
-  // and resets — no bounce, no fractional-viewport noise.
+  // and resets.
+  //
+  // Fix (Issue 2): Don't collapse the appbar when at the top of the
+  // document (topIndex == 0). Check the positions listener before
+  // collapsing to avoid flicker.
   void _onScrollOffsetChanged(String bookId, double delta) {
     if (!mounted || delta == 0) return;
     if (ref.read(readerTabsProvider).activeTab?.bookId != bookId) return;
     if (!Mobile.isPhone(context)) return;
+
+    // Issue 2: Check if at top of document before collapsing
+    final positions = _itemPositionsListeners[bookId]?.itemPositions.value;
+    if (positions != null && positions.isNotEmpty) {
+      final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
+        ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+      if (visible.isNotEmpty && visible.first.index == 0) {
+        // At the very top — never collapse
+        if (_appBarCollapsed) setState(() => _appBarCollapsed = false);
+        _scrollAccum[bookId] = 0;
+        return;
+      }
+    }
 
     final acc = _scrollAccum[bookId] ?? 0;
     final sameDirection = acc == 0 || (delta > 0) == (acc > 0);
@@ -157,7 +431,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // ── Position tracking, silverbar, pagination ─────────────────────────
   //
   // Driven by ItemPositionsListener, which reports the *actual* visible
-  // item indices from the layout — no "pixels / assumedRowHeight" guess.
+  // item indices from the layout.
   void _onPositionsChanged(String bookId) {
     final listener = _itemPositionsListeners[bookId];
     final positions = listener?.itemPositions.value;
@@ -181,23 +455,45 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         final visibleLineId =
             para.lines.isNotEmpty ? para.lines.first.lineId : null;
 
-        ref.read(readerTabsProvider.notifier).updateScrollOffset(
-          tabIndex,
-          topIndex.toDouble(), // kept for backward compatibility with the
-                                // tab-state shape; no longer used to jump.
-          paraId: visibleParaId,
-          lineId: visibleLineId,
-        );
+        if (_lastScrollParaId[bookId] != visibleParaId) {
+          _lastScrollParaId[bookId] = visibleParaId;
 
-        // Save reading history with debounce when user scrolls
-        _scheduleSaveHistory(
-            bookId, readerState.bookName, visibleParaId);
+          ref.read(readerTabsProvider.notifier).updateScrollOffset(
+            tabIndex,
+            topIndex.toDouble(),
+            paraId: visibleParaId,
+            lineId: visibleLineId,
+          );
 
-        developer.log(
-          '[SCROLL] book=$bookId tabIdx=$tabIndex topIndex=$topIndex '
-          'paraId=$visibleParaId lineId=$visibleLineId',
-          name: 'epitaka.reader',
-        );
+          _scheduleSaveHistory(bookId, readerState.bookName, visibleParaId);
+
+          // Detect manual scroll: if TTS is playing and this scroll
+          // was NOT a TTS-initiated jump, disable auto-scroll.
+          // _ttsJumpInProgress is kept true by a timer after each
+          // TTS jump to cover layout changes from highlighting.
+          //
+          // Bug fix: Check if the TTS paragraph is ANYWHERE in the
+          // visible range, not just whether it's the TOP-MOST visible
+          // paragraph. The top-most paragraph can differ from the TTS
+          // paragraph after a fine-scroll (Scrollable.ensureVisible)
+          // without the user having scrolled at all.
+          if (!_ttsJumpInProgress) {
+            final ttsState = ref.read(ttsReadingProvider);
+            if (ttsState.isActive && ttsState.bookId == bookId) {
+              final ttsParaId = ttsState.currentParaId;
+              if (ttsParaId != null) {
+                // Check if any visible paragraph matches the TTS para
+                final ttsIndex = readerState.paragraphs
+                    .indexWhere((p) => p.paraId == ttsParaId);
+                final isTtsInVisibleRange = ttsIndex >= 0 &&
+                    visible.any((p) => p.index == ttsIndex);
+                if (!isTtsInVisibleRange) {
+                  _ttsAutoScroll = false;
+                }
+              }
+            }
+          }
+        }
       }
     }
 
@@ -216,11 +512,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   // ── Unified precise jump-by-paraId (and optional lineId) ─────────────
   //
-  // This is the single entry point for TOC jumps, TTS auto-scroll, search
-  // result jumps, tab-restore, and bookmark restore. It resolves paraId ->
-  // index against the currently loaded paragraphs; if the paragraph isn't
-  // loaded yet it waits for the data provider. If a lineId is provided, it
-  // adjusts the alignment to show the first lines of the paragraph.
+  // Issue 4 fix: When a lineId is provided, create a GlobalKey for that
+  // line, pass it to ReadingParagraph via lineKeys, and after the
+  // paragraph becomes visible, use Scrollable.ensureVisible() to
+  // precisely scroll the specific line into view (instead of guessing
+  // alignment from line index ratio).
   Future<void> _jumpToParagraph(
     String bookId,
     int paraId, {
@@ -235,7 +531,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     if (index < 0) {
       if (!state.isLoaded) {
-        // Data is still loading — wait for it.
         developer.log(
           '[JUMP] book=$bookId paraId=$paraId data still loading, waiting…',
           name: 'epitaka.reader',
@@ -244,9 +539,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             .read(readerDataProvider(bookId).notifier)
             .waitUntilLoaded();
         if (!mounted) return;
-
-        // If a newer jump request came in while we were loading, bail out
-        // and let that one win.
         if (_pendingJumpParaId[bookId] != paraId) return;
 
         state = ref.read(readerDataProvider(bookId));
@@ -263,8 +555,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final controller = _itemScrollControllers[bookId];
     if (controller == null || !controller.isAttached) {
-      // Not laid out yet (e.g. tab just became active this frame) —
-      // retry next frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _jumpToParagraph(bookId, paraId, animate: animate, alignment: alignment, lineId: lineId);
@@ -280,34 +570,97 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     _lastJumpedParaId[bookId] = paraId;
 
-    // When a specific lineId is requested, use a small alignment offset
-    // to push the paragraph slightly down, making the first few lines
-    // visible rather than scrunched at the very top edge.
-    final effectiveAlignment = (lineId != null && alignment == 0.0)
-        ? 0.15
-        : alignment;
+    // Issue 4: Create a GlobalKey for the target line so
+    // Scrollable.ensureVisible can precisely scroll it into view.
+    // Must call setState so the widget rebuilds with the new lineKeys.
+    if (lineId != null) {
+      _ttsTargetParaId = paraId;
+      _ttsTargetLineKeys[lineId] = GlobalKey();
+      if (mounted) setState(() {});
+    }
 
+    // Scroll the paragraph into view using the caller's [alignment]
+    // value (default 0.0 = top of viewport).
     if (animate) {
       await controller.scrollTo(
         index: index,
-        alignment: effectiveAlignment,
+        alignment: alignment,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     } else {
-      controller.jumpTo(index: index, alignment: effectiveAlignment);
+      controller.jumpTo(index: index, alignment: alignment);
     }
 
-    // Clear initialParaId / initialLineId and remove from _lastJumpedParaId
-    // so we can re-jump to the same paragraph/heading/search result if
-    // requested again.
+    // Issue 4: After the paragraph is visible, fine-scroll to the
+    // specific line using Scrollable.ensureVisible on the line's
+    // GlobalKey context.
+    if (lineId != null && mounted) {
+      _scrollToLine(lineId);
+    }
+
+    // Clear initialParaId / initialLineId
     final tabsNotifier = ref.read(readerTabsProvider.notifier);
     final tabsState = ref.read(readerTabsProvider);
     final tabIndex = tabsState.tabs.indexWhere((t) => t.bookId == bookId);
     if (tabIndex >= 0) {
       tabsNotifier.clearInitialParaId(tabIndex);
     }
-    _lastJumpedParaId.remove(bookId);
+    _pendingJumpParaId.remove(bookId);
+  }
+
+  /// Issue 4: After a paragraph has been scrolled into view, fine-scroll
+  /// to the specific line using Scrollable.ensureVisible on the line's
+  /// GlobalKey context (the precise, non-guess-based way).
+  /// Uses a local retry counter in the closure so concurrent retry loops
+  /// from rapid TTS advances don't interfere with each other.
+  static const int _kMaxTtsScrollRetries = 15;
+
+  void _scrollToLine(int lineId) {
+    final key = _ttsTargetLineKeys[lineId];
+    if (key == null) return;
+    // Capture the GlobalKey instance so a subsequent TTS jump that
+    // replaces the map entry doesn't affect this retry loop.
+    final capturedKey = key;
+    var retries = 0; // local to this call — not shared across calls
+
+    void attemptScroll() {
+      if (!mounted) return;
+      final lineContext = capturedKey.currentContext;
+      if (lineContext != null && lineContext.mounted) {
+        developer.log(
+          '[TTS_LINE] Scrollable.ensureVisible line=$lineId',
+          name: 'epitaka.tts',
+        );
+        Scrollable.ensureVisible(
+          lineContext,
+          alignment: 0.3, // show line in upper third of viewport
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+        ).then((_) {
+          if (mounted) {
+            _ttsTargetLineKeys.remove(lineId);
+            _ttsTargetParaId = null;
+          }
+        });
+      } else {
+        retries++;
+        if (retries >= _kMaxTtsScrollRetries) {
+          _ttsTargetLineKeys.remove(lineId);
+          _ttsTargetParaId = null;
+          developer.log(
+            '[TTS_LINE] line=$lineId scroll retries exhausted',
+            name: 'epitaka.tts',
+          );
+          return;
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) attemptScroll();
+        });
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => attemptScroll());
   }
 
   // ── Swipe between tabs ───────────────────────────────────────────────
@@ -329,17 +682,77 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
-  // ── Bookmark ─────────────────────────────────────────────────────────
+  /// Get the current paraId from approximately 1/3 of the screen height.
+  /// This uses the item positions listener to find the first paragraph
+  /// whose leading edge is >= 0.3 (i.e., about 1/3 from the top).
+  int? _getCurrentParaId(String bookId) {
+    final listener = _itemPositionsListeners[bookId];
+    final positions = listener?.itemPositions.value;
+    if (positions == null || positions.isEmpty) return null;
+
+    final visible = positions
+        .where((p) => p.itemTrailingEdge > 0)
+        .toList()
+      ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+
+    if (visible.isEmpty) return null;
+
+    // Find the first paragraph with leading edge >= 0.3
+    int? targetIndex;
+    for (final pos in visible) {
+      if (pos.itemLeadingEdge >= 0.3) {
+        targetIndex = pos.index;
+        break;
+      }
+    }
+    // Fallback to the topmost visible paragraph
+    targetIndex ??= visible.first.index;
+
+    final readerState = ref.read(readerDataProvider(bookId));
+    if (targetIndex >= 0 && targetIndex < readerState.paragraphs.length) {
+      return readerState.paragraphs[targetIndex].paraId;
+    }
+    return null;
+  }
+
+  // ── Jump to connected book / page ─────────────────────────────────────
+  Future<void> _onJumpTap(ReaderTabInfo activeTab, ReaderDataState readerState) async {
+    final currentParaId = _getCurrentParaId(activeTab.bookId);
+    if (currentParaId == null) return;
+
+    if (!context.mounted) return;
+    await showJumpSheet(
+      context,
+      bookId: activeTab.bookId,
+      bookName: readerState.bookName ?? activeTab.bookId,
+      currentParaId: currentParaId,
+    );
+  }
+
+  // ── Bookmark (Issue 1: suggest nearby heading) ──────────────────────
   void _onBookmarkTap(ReaderTabInfo activeTab, ReaderDataState readerState) {
     final pageNumber = readerState.paragraphs.isNotEmpty &&
             readerState.paragraphs.first.pageNumber != null
         ? readerState.paragraphs.first.pageNumber
         : null;
+
+    // Issue 1: Find nearby heading to suggest as bookmark name
+    final currentParaId = activeTab.currentParaId;
+    String? suggestedHeading;
+    if (currentParaId != null) {
+      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
+      final nearby = notifier.findNearbyHeading(currentParaId);
+      if (nearby != null) {
+        suggestedHeading = nearby.title;
+      }
+    }
+
     showBookmarkDialog(
       context,
       bookId: activeTab.bookId,
       bookName: readerState.bookName ?? activeTab.bookId,
       pageNumber: pageNumber,
+      suggestedHeading: suggestedHeading,
     );
   }
 
@@ -360,16 +773,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         paraId: explicitParaId ?? tab.currentParaId,
         lineId: explicitLineId ?? tab.currentLineId,
       );
-      // Invalidate the history provider so the library screen refreshes
       ref.invalidate(historyProvider);
     } catch (_) {
       // Silently fail — history is non-critical
     }
   }
 
-  /// Debounced history save triggered by scrolling. Only saves when
-  /// [paraId] changes for this book, then waits 3s of inactivity
-  /// before writing to the database.
   void _scheduleSaveHistory(String bookId, String? bookName, int paraId) {
     if (_lastSavedParaIdPerBook[bookId] == paraId) return;
     _lastSavedParaIdPerBook[bookId] = paraId;
@@ -388,11 +797,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _handleSelectionChanged(SelectedContent? selection) {
-    // debugPrint(
-    //   '[CopyDebug] onSelectionChanged fired: null=${selection == null}, '
-    //   'plainText.length=${selection?.plainText.length}, '
-    //   'plainText="${selection?.plainText}"',
-    // );
     _lastSelectedContent = selection;
     if (_awaitingSelection &&
         selection != null &&
@@ -425,33 +829,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         .trim();
   }
 
-/// Characters unique to Pali romanization (diacritics). Kept in sync
-  /// with the set used in _cleanPali, plus ṁ (alt. niggahita).
-  static const String _paliDiacritics =
-      r'āīūōṅñṭḍṇḷṃṁĀĪŪŌṄÑṬḌṆḶṀ';
-
-  /// Strip HTML for TTS:
-  /// - <i>...</i> is removed ENTIRELY (tag + inner text), since it wraps
-  ///   retained Pali terms that shouldn't be spoken by the translation voice.
-  /// - Any (...) whose contents include a Pali diacritic is removed
-  ///   ENTIRELY (parens + inner text) for the same reason.
-  /// - Any other HTML tags are stripped, keeping their inner text.
-  /// - Leftover whitespace is collapsed.
-  String _stripHtmlForTts(String text) {
-    return text
-        .replaceAll(RegExp(r'<i>.*?</i>', caseSensitive: false, dotAll: true), '')
-        .replaceAll(
-            RegExp(r'\([^()]*[' + _paliDiacritics + r'][^()]*\)'), '')
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
   // ── Copy with style ──────────────────────────────────────────────────
-  //
-  // Builds a custom context menu that replaces the default "Copy" with
-  // a rich-text (HTML) clipboard write via super_clipboard, plus scope
-  // options (Pāli only, Translation only) and quote/citation support.
 
   Widget _buildCopyContextMenu(
     BuildContext context,
@@ -462,43 +840,44 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     return AdaptiveTextSelectionToolbar(
       anchors: anchors,
-      children: [          _ContextMenuButton(
-            icon: Icons.copy_all,
-            label: 'Copy with Style',
-            onTap: () {
-              _copySelectedContent(CopyScope.both, addQuote: false);
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
-          _ContextMenuButton(
-            icon: Icons.text_fields,
-            label: 'Pāli Only',
-            onTap: () {
-              _copySelectedContent(CopyScope.pali, addQuote: false);
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
-          _ContextMenuButton(
-            icon: Icons.translate,
-            label: 'Translation Only',
-            onTap: () {
-              _copySelectedContent(CopyScope.translation, addQuote: false);
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
-          _ContextMenuButton(
-            icon: Icons.format_quote,
-            label: 'Copy with Quote',
-            onTap: () {
-              _copySelectedContent(CopyScope.both, addQuote: true);
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
-        _ContextMenuButton(
+      children: [
+        ContextMenuButton(
+          icon: Icons.copy_all,
+          label: 'Copy with Style',
+          onTap: () {
+            _copySelectedContent(CopyScope.both, addQuote: false);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        ),
+        ContextMenuButton(
+          icon: Icons.text_fields,
+          label: 'Pāli Only',
+          onTap: () {
+            _copySelectedContent(CopyScope.pali, addQuote: false);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        ),
+        ContextMenuButton(
+          icon: Icons.translate,
+          label: 'Translation Only',
+          onTap: () {
+            _copySelectedContent(CopyScope.translation, addQuote: false);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        ),
+        ContextMenuButton(
+          icon: Icons.format_quote,
+          label: 'Copy with Quote',
+          onTap: () {
+            _copySelectedContent(CopyScope.both, addQuote: true);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        ),
+        ContextMenuButton(
           icon: Icons.select_all,
           label: 'Select All',
           onTap: () => selectableRegionState.selectAll(),
@@ -508,15 +887,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  /// Intercept Ctrl+C / Cmd+C and write rich HTML alongside the default
-  /// plain-text copy.
   void _onCopyShortcut() {
     _copySelectedContent(CopyScope.both, addQuote: false);
   }
 
-  /// Copy the **selected** content as rich HTML (uses cached selection from
-  /// [onSelectionChanged]). Falls back to visible paragraphs when no text
-  /// is selected.
   Future<void> _copySelectedContent(
     CopyScope scope, {
     required bool addQuote,
@@ -527,55 +901,34 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final readerState = ref.read(readerDataProvider(activeTab.bookId));
     if (readerState.paragraphs.isEmpty) return;
 
-    // Use the cached selection from onSelectionChanged
     final selectedContent = _lastSelectedContent;
-    // debugPrint(
-    //   '[CopyDebug] _lastSelectedContent == null: ${selectedContent == null}, '
-    //   'plainText.length: ${selectedContent?.plainText.length}, '
-    //   'plainText: "${selectedContent?.plainText}"',
-    // );
     if (selectedContent == null || selectedContent.plainText.trim().isEmpty) {
-      // Fallback: copy visible paragraphs
-      // debugPrint('[CopyDebug] No selection -> falling back to _copyVisibleContent');
       await _copyVisibleContent(scope, addQuote: addQuote);
       return;
     }
 
-    // Map the selected text to paragraphs
     final selectedParagraphs = _findSelectedParagraphs(
       selectedContent.plainText,
       readerState.paragraphs,
       enabledLangCodes: scope == CopyScope.translation
-          ? null // Use all langs when copying translation only
+          ? null
           : ref.read(settingsProvider).enabledTranslations.isNotEmpty
-              ? ref.read(settingsProvider).enabledTranslations
+              ? ref.read(settingsProvider).enabledTranslations.toSet()
               : (ref.read(settingsProvider).showTranslation
                   ? {ref.read(settingsProvider).primaryTranslationLang}
                   : null as Set<String>?),
     );
 
-    // debugPrint(
-    //   '[CopyDebug] _findSelectedParagraphs returned ${selectedParagraphs.length} paragraph(s), '
-    //   'total lines: ${selectedParagraphs.fold<int>(0, (sum, p) => sum + p.lines.length)}',
-    // );
-
     if (selectedParagraphs.isEmpty) {
-      // Fallback: copy visible content
-      // debugPrint('[CopyDebug] selectedParagraphs empty -> falling back to _copyVisibleContent');
       await _copyVisibleContent(scope, addQuote: addQuote);
       return;
     }
 
-    // Copy the selected paragraphs as rich HTML
     final settings = ref.read(settingsProvider);
     final quoteFormat = addQuote ? settings.copyQuoteFormat : CopyQuoteFormat.none;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final paliColor = isDark
-        ? settings.paliColor.withValues(alpha: 0.9)
-        : settings.paliColor;
-    final transColor = isDark
-        ? settings.translationColor.withValues(alpha: 0.85)
-        : settings.translationColor;
+    final brightness = Theme.of(context).brightness;
+    final paliColor = settings.paliColorPair.resolve(brightness);
+    final transColor = settings.translationColorPair.resolve(brightness);
     final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
     final enabledLangs = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.toList()
@@ -596,11 +949,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  /// Find which *lines* fall inside the selected text by matching the plain
-  /// text of each line (not each whole paragraph) against the selection,
-  /// then rebuilds only those matching lines into minimal ParagraphData
-  /// objects — so an in-paragraph selection doesn't pull in sibling lines
-  /// (other translations, other verses) that weren't actually highlighted.
   List<ParagraphData> _findSelectedParagraphs(
     String selectedText,
     List<ParagraphData> allParagraphs, {
@@ -611,8 +959,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final normSelected = _stripTags(selectedText).toLowerCase().trim();
     if (normSelected.isEmpty) return [];
 
-    // Build concatenated plain text with one offset range per LINE (not
-    // per paragraph), so overlap can be resolved at line granularity.
     final buffer = StringBuffer();
     final lineParaIndex = <int>[];
     final lineIndexInPara = <int>[];
@@ -622,10 +968,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     for (int pi = 0; pi < allParagraphs.length; pi++) {
       final para = allParagraphs[pi];
 
-      // Mirror ReadingParagraph's render order (heading, then page badge,
-      // then lines) so the buffer matches what the user actually selected
-      // on screen. This text is NOT added to lineStart/lineEnd, so it can
-      // never itself be "matched" as a line — it just keeps offsets correct.
       if (para.heading != null) {
         buffer.writeln(_stripTags(para.heading!.title));
       }
@@ -655,79 +997,43 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final fullText = buffer.toString().toLowerCase();
 
-    // Match on a WHITESPACE-STRIPPED version of both strings. Flutter's
-    // SelectedContent.plainText joins lines/spans with whatever separator
-    // (or none) the render objects happen to produce, which will never
-    // reliably match the \n we insert via writeln() above. Stripping all
-    // whitespace from both sides before matching makes this robust to any
-    // such separator differences, while collapsedToOrig lets us translate
-    // the match position back to real offsets in fullText for the line
-    // overlap check below.
     final collapsedBuffer = StringBuffer();
     final collapsedToOrig = <int>[];
     for (int idx = 0; idx < fullText.length; idx++) {
       final ch = fullText[idx];
-      if (ch.trim().isEmpty) continue; // skip whitespace (space, \n, etc.)
+      if (ch.trim().isEmpty) continue;
       collapsedBuffer.write(ch);
       collapsedToOrig.add(idx);
     }
     final collapsedFullText = collapsedBuffer.toString();
     final collapsedSelected = normSelected.replaceAll(RegExp(r'\s+'), '');
 
-    // debugPrint(
-    //   '[CopyDebug] collapsedFullText.length: ${collapsedFullText.length}, '
-    //   'collapsedSelected.length: ${collapsedSelected.length}',
-    // );
-
     if (collapsedSelected.isEmpty) return [];
 
     int cStart = collapsedFullText.indexOf(collapsedSelected);
     int cMatchLen = collapsedSelected.length;
     if (cStart < 0) {
-      // Exact match failed even whitespace-stripped (e.g. selection spans
-      // a disabled/hidden language, or tag-stripping differs slightly) —
-      // fall back to a prefix match within the SAME collapsed space so we
-      // still narrow to the right neighbourhood instead of grabbing
-      // everything.
       final prefixLen = collapsedSelected.length.clamp(0, 100);
       final prefix = collapsedSelected.substring(0, prefixLen);
       cStart = collapsedFullText.indexOf(prefix);
-      // debugPrint(
-      //   '[CopyDebug] Collapsed exact match FAILED. Falling back to prefix match. '
-      //   'prefixLen: $prefixLen, prefix found at: $cStart',
-      // );
-      if (cStart < 0) {
-        // debugPrint('[CopyDebug] Prefix match also failed -> returning empty');
-        return [];
-      }
+      if (cStart < 0) return [];
       cMatchLen = prefixLen;
     }
     final cEnd = (cStart + cMatchLen).clamp(0, collapsedToOrig.length);
     if (cEnd <= cStart || collapsedToOrig.isEmpty) return [];
 
-    // Translate collapsed-space [cStart, cEnd) back into real offsets in
-    // fullText so we can reuse the line boundaries computed above.
     final selStart = collapsedToOrig[cStart];
     final selEnd = collapsedToOrig[(cEnd - 1).clamp(0, collapsedToOrig.length - 1)] + 1;
-    // debugPrint('[CopyDebug] selStart: $selStart, selEnd: $selEnd (fullText.length: ${fullText.length})');
 
-    // Which lines overlap the selection range.
-    final matches = <int>[]; // indices into the line* arrays, in order
+    final matches = <int>[];
     for (int i = 0; i < lineStart.length; i++) {
       if (selStart < lineEnd[i] && selEnd > lineStart[i]) {
         matches.add(i);
       }
     }
-    // debugPrint(
-    //   '[CopyDebug] matched line count: ${matches.length} '
-    //   '(paragraphs touched: ${matches.map((i) => lineParaIndex[i]).toSet().length})',
-    // );
     if (matches.isEmpty) return [];
 
-    // Re-group matched lines back into paragraphs, keeping only the
-    // matched lines within each paragraph (not the whole paragraph).
     final result = <ParagraphData>[];
-    final resultParaIndices = <int>[];
     int i = 0;
     while (i < matches.length) {
       final pi = lineParaIndex[matches[i]];
@@ -740,26 +1046,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final trimmedLines = keptLineIndices.map((li) => original.lines[li]).toList();
       result.add(original.copyWith(
         lines: trimmedLines,
-        isPageStart: false, // don't render a page badge in copied/pasted content
+        isPageStart: false,
       ));
-      resultParaIndices.add(pi);
     }
-
-    // debugPrint(
-    //   '[CopyDebug] Final result: ${result.length} paragraph(s), '
-    //   'source paragraph indices: $resultParaIndices',
-    // );
 
     return result;
   }
 
-  /// Strips HTML tags from a string (for text matching).
   String _stripTags(String s) =>
       s.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
 
-  /// Copy the currently visible paragraphs (plus context) to clipboard as
-  /// rich HTML via [ReadingClipboard.copy]. Used as a fallback when no
-  /// selection exists.
   Future<void> _copyVisibleContent(CopyScope scope, {required bool addQuote}) async {
     final activeTab = ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
@@ -768,8 +1064,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (readerState.paragraphs.isEmpty) return;
 
     final settings = ref.read(settingsProvider);
-
-    // Determine paragraph range: visible area + 5 above + 5 below
     final bufferBefore = 5;
     final bufferAfter = 5;
     final start = (_visibleStartIndex - bufferBefore).clamp(0, readerState.paragraphs.length - 1);
@@ -777,15 +1071,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final paragraphs = readerState.paragraphs.sublist(start, end + 1);
 
     final quoteFormat = addQuote ? settings.copyQuoteFormat : CopyQuoteFormat.none;
-    final effectiveScope = scope;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final paliColor = isDark
-        ? settings.paliColor.withValues(alpha: 0.9)
-        : settings.paliColor;
-    final transColor = isDark
-        ? settings.translationColor.withValues(alpha: 0.85)
-        : settings.translationColor;
+    final brightness = Theme.of(context).brightness;
+    final paliColor = settings.paliColorPair.resolve(brightness);
+    final transColor = settings.translationColorPair.resolve(brightness);
 
     final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
 
@@ -797,7 +1086,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     await ReadingClipboard.copy(
       paragraphs,
-      scope: effectiveScope,
+      scope: scope,
       quoteFormat: quoteFormat,
       bookId: activeTab.bookId,
       bookName: readerState.bookName,
@@ -823,11 +1112,130 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
+  // ── TTS Floating Controls ────────────────────────────────────────────
+
+  bool _isTtsLineVisible(String bookId, int? ttsParaId) {
+    if (ttsParaId == null) return false;
+    final listener = _itemPositionsListeners[bookId];
+    final positions = listener?.itemPositions.value;
+    if (positions == null || positions.isEmpty) return false;
+
+    final visibleIndices = positions
+        .where((p) => p.itemTrailingEdge > 0)
+        .map((p) => p.index)
+        .toSet();
+    if (visibleIndices.isEmpty) return false;
+
+    final readerState = ref.read(readerDataProvider(bookId));
+    for (final idx in visibleIndices) {
+      if (idx >= 0 && idx < readerState.paragraphs.length) {
+        if (readerState.paragraphs[idx].paraId == ttsParaId) return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _showTtsControlsPopup(
+    BuildContext context,
+    String bookId,
+  ) async {
+    final colors = Theme.of(context).colorScheme;
+    final settings = ref.read(settingsProvider);
+    final ttsReadingState = ref.read(ttsReadingProvider);
+    final isTtsLineVisible =
+        _isTtsLineVisible(bookId, ttsReadingState.currentParaId);
+
+    if (_cachedSystemVoices == null && !_voicesLoading) {
+      _voicesLoading = true;
+      try {
+        final voices = await ref.read(ttsProvider.notifier).getVoices();
+        _cachedSystemVoices = voices;
+      } catch (_) {}
+      _voicesLoading = false;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Consumer(
+            builder: (ctx, watchRef, _) {
+              final s = watchRef.watch(settingsProvider);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Spacer(),
+                  TtsControlsCard(
+                    colors: colors,
+                    settings: s,
+                    isTtsLineVisible: isTtsLineVisible,
+                    onFollowTap: () {
+                      Navigator.of(dialogContext).pop();
+                      _followTts(bookId);
+                    },
+                    onSpeedChanged: (v) {
+                      ref.read(settingsProvider.notifier).setTtsSpeed(v);
+                    },
+                    onPitchChanged: (v) {
+                      ref.read(settingsProvider.notifier).setTtsPitch(v);
+                    },
+                    onVoiceChanged: (voice) {
+                      ref.read(settingsProvider.notifier).setTtsVoice(voice);
+                    },
+                    onSystemConfigTap: () {
+                      Navigator.of(dialogContext).pop();
+                      context.push('/settings/tts');
+                    },
+                    onClose: () => Navigator.of(dialogContext).pop(),
+                    voices: _cachedSystemVoices ?? [],
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _followTts(String bookId) {
+    _ttsAutoScroll = true;
+    // Bug fix: Must set the jump-in-progress flag so the scroll
+    // triggered by _jumpToParagraph doesn't immediately re-disable
+    // auto-scroll in _onPositionsChanged.
+    _setTtsJumpInProgress();
+    final ttsState = ref.read(ttsReadingProvider);
+    if (ttsState.currentParaId != null) {
+      _jumpToParagraph(
+        bookId,
+        ttsState.currentParaId!,
+        lineId: ttsState.currentLineId,
+      );
+    }
+  }
+
+  /// Set _ttsJumpInProgress true for a duration to prevent the position
+  /// listener from disabling auto-scroll during TTS-initiated jumps and
+  /// the subsequent layout changes from highlighting.
+  void _setTtsJumpInProgress() {
+    _ttsJumpInProgress = true;
+    _ttsJumpTimer?.cancel();
+    _ttsJumpTimer = Timer(const Duration(milliseconds: 200), () {
+      _ttsJumpInProgress = false;
+    });
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _fallbackTimer?.cancel();
     _saveHistoryTimer?.cancel();
+    _ttsJumpTimer?.cancel();
+    _inBookSearchTimer?.cancel();
+    _inBookSearchController.dispose();
+    _inBookSearchFocusNode.dispose();
     for (final entry in _itemPositionsListeners.entries) {
       final listener = _positionsListenerRefs[entry.key];
       if (listener != null) {
@@ -855,38 +1263,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final readerState = ref.watch(readerDataProvider(activeTab.bookId));
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Resolve Pali color
-    final resolvedPaliColor = isDark
-        ? settings.paliColor.withValues(alpha: 0.9)
-        : settings.paliColor;
-    final resolvedTransColor = isDark
-        ? settings.translationColor.withValues(alpha: 0.85)
-        : settings.translationColor;
+    final brightness = Theme.of(context).brightness;
+    final resolvedPaliColor = settings.paliColorPair.resolve(brightness);
+    final resolvedTransColor = settings.translationColorPair.resolve(brightness);
 
-    // Determine which translations to show.
     final enabledLangs = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.toList()
         : (settings.showTranslation
             ? [settings.primaryTranslationLang]
             : <String>[]);
 
-    // Build per-language typography map
     final langTypographies = <String, LanguageTypography>{};
     for (final langCode in enabledLangs) {
       langTypographies[langCode] =
           settings.typography.typographyFor(langCode);
     }
 
-    // ── Resolve which paragraph (if any) we should jump to this build ──
-    //
-    // Priority: an explicit TOC/search/bookmark jump (initialParaId, changed
-    // since last time) > a tab-restore target (currentParaId) the first time
-    // this book becomes active. Both go through the same precise
-    // _jumpToParagraph path — no pixel estimation, no GlobalKey retries.
-    // If a matching initialLineId is set, the method will also scroll to the
-    // specific line within the paragraph.
+    // ── Resolve which paragraph to jump to ───────────────────────────
     final isNewInitialParaId = activeTab.initialParaId != null &&
         _lastJumpedParaId[activeTab.bookId] != activeTab.initialParaId;
     final isTabRestore = !isNewInitialParaId &&
@@ -928,8 +1322,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ? globalTtsState
         : TtsPlaybackState.stopped;
 
-    // Don't pass highlight ID when in background to reduce UI churn
-    // Also, only highlight if the TTS reading state is for the active tab's book!
     final ttsCurrentLineId = _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
         ? ttsReadingState.currentLineId
         : null;
@@ -937,8 +1329,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ? ttsReadingState.currentParaId
         : null;
 
-    // Save reading history when a new book tab becomes active
-    // (fires both on first open and when switching between tabs)
+    // Save reading history when switching tabs
     ref.listen(readerTabsProvider, (ReaderTabsState? prev, ReaderTabsState next) {
       if (next.activeTab?.bookId != prev?.activeTab?.bookId) {
         final tab = next.activeTab;
@@ -952,56 +1343,78 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
     });
 
-    // Auto-scroll when TTS moves to a new paragraph — same precise
-    // paraId-based jump used everywhere else.
+    // ── TTS auto-scroll listener ───────────────────────────────────────
+    // Issue 3: Use timer-based _ttsJumpInProgress to cover highlighting
+    //          layout changes.
+    // Issue 4: Also scroll when lineId changes within the same paragraph,
+    //          not just when paraId changes.
     ref.listen(ttsReadingProvider, (TtsReadingState? prev, TtsReadingState next) {
       final prevParaId = prev?.currentParaId;
       final nextParaId = next.currentParaId;
-      if (!mounted || nextParaId == null || prevParaId == nextParaId) return;
+      final prevLineId = prev?.currentLineId;
+      final nextLineId = next.currentLineId;
+      if (!mounted || nextParaId == null) return;
       if (_appLifecycleState != AppLifecycleState.resumed) return;
       final currentBookId = ref.read(readerTabsProvider).activeTab?.bookId;
       if (currentBookId == null || next.bookId != currentBookId) return;
-      // Save reading history immediately when TTS moves to a new paragraph
-      final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
-      _saveReadingHistory(currentBookId, bookName,
-          explicitParaId: nextParaId, explicitLineId: next.currentLineId);
 
+      // Issue 4: Also handle intra-paragraph line changes
+      final paraChanged = prevParaId != nextParaId;
+      final lineChanged = prevLineId != nextLineId;
+      if (!paraChanged && !lineChanged) return;
+
+      // Save reading history
+      final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
+      developer.log(
+        '[TTS_UI] listener: prevParaId=$prevParaId nextParaId=$nextParaId '
+        'prevLineId=$prevLineId nextLineId=$nextLineId '
+        'ttsAutoScroll=$_ttsAutoScroll',
+        name: 'epitaka.tts',
+      );
+      _saveReadingHistory(currentBookId, bookName,
+          explicitParaId: nextParaId, explicitLineId: nextLineId);
+
+      if (!_ttsAutoScroll) {
+        developer.log('[TTS_UI] auto-scroll off, skipping jump', name: 'epitaka.tts');
+        if (mounted) setState(() {});
+        return;
+      }
+
+      _setTtsJumpInProgress();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        // Keep the TTS-highlighted paragraph a little below the top edge
-        // rather than jammed against it.
-        _jumpToParagraph(currentBookId, nextParaId, alignment: 0.1);
+        developer.log('[TTS_UI] post-frame jump to $nextParaId line=$nextLineId',
+            name: 'epitaka.tts');
+        _jumpToParagraph(
+          currentBookId,
+          nextParaId,
+          animate: false,
+          lineId: nextLineId,
+        );
       });
     });
 
-    // Read topPadding BEFORE the Scaffold because Scaffold removes
-    // MediaQuery.padding.top from the body context when appBar is non-null.
-    // When the appBar is collapsed (preferredSize.height == 0), the Scaffold
-    // still removes that inset from the body MediaQuery but positions the body
-    // at y=0 — so we must push the body down manually.
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final isPhone = Mobile.isPhone(context);
     final showCollapsed = isPhone && _appBarCollapsed;
 
     return Scaffold(
-      appBar: _ReaderAppBar(
-        bookId: activeTab.bookId,
-        bookName: readerState.bookName ?? activeTab.bookId,
-        colors: colors,
-        showCollapsed: showCollapsed,
-        onSettingsTap: () => context.push('/settings'),
-      ),
       body: Padding(
         padding: EdgeInsets.only(
-          // When collapsed, appBar height == 0 but body is positioned at y=0
-          // (behind the status bar).  Push it down manually so TabStrip is
-          // always below the clock bar.
-          top: showCollapsed ? topPadding : 0,
+          top: topPadding,
           bottom: bottomPadding,
         ),
         child: Column(
           children: [
+            // ── Animated app bar ─────────────────────────────────
+            ReaderAppBar(
+              bookId: activeTab.bookId,
+              bookName: readerState.bookName ?? activeTab.bookId,
+              colors: colors,
+              showCollapsed: showCollapsed,
+              onSettingsTap: () => context.push('/settings'),
+            ),
             const TabStrip(),
             Expanded(
               child: GestureDetector(
@@ -1039,14 +1452,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         ),
                       ),
                     ),
-                    // Draggable scroll thumb on the right edge
+                    // Draggable scroll thumb
                     Positioned(
                       right: 2,
                       top: 0,
                       bottom: 0,
                       width: 28,
                       child: readerState.isLoaded && readerState.paragraphs.isNotEmpty
-                          ? _ReaderDragThumb(
+                          ? ReaderDragThumb(
                               readerState: readerState,
                               itemScrollController:
                                   _itemScrollControllers[activeTab.bookId],
@@ -1055,117 +1468,173 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             )
                           : const SizedBox.shrink(),
                     ),
-                    // Floating bottom toolbar
-                    Positioned(
-                      bottom: 24,
+                    // In-book search bar overlay
+                    if (_showInBookSearch)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: Material(
+                          elevation: 4,
+                          color: colors.surface,
+                          child: SafeArea(
+                            top: true,
+                            child: _buildInBookSearchBar(colors),
+                          ),
+                        ),
+                      ),
+
+                    // TTS floating controls chip
+                    if (isCurrentBookTts &&
+                        (globalTtsState == TtsPlaybackState.playing ||
+                            globalTtsState == TtsPlaybackState.paused))
+                      Positioned(
+                        right: 16,
+                        bottom: 84,
+                        child: TtsFloatingChip(
+                          colors: colors,
+                          isAutoScroll: _ttsAutoScroll,
+                          isJumpPending: _ttsJumpInProgress,
+                          isTtsLineVisible: _isTtsLineVisible(
+                              activeTab.bookId, ttsReadingState.currentParaId),
+                          onTap: () =>
+                              _showTtsControlsPopup(context, activeTab.bookId),
+                          onFollowTap: () =>
+                              _followTts(activeTab.bookId),
+                        ),
+                      ),
+
+                    // Floating bottom toolbar (animated)
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      bottom: showCollapsed ? -80.0 : 24.0,
                       left: 0,
                       right: 0,
                       child: Center(
-                        child: _ReaderBottomToolbar(
-                          colors: colors,
-                          displayMode: settings.translationDisplayMode,
-                          showTranslation: settings.showTranslation,
-                          ttsPlayback: ttsPlaybackStateForTab,
-                          onToggleTranslation: () {
-                            if (!settings.showTranslation) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setShowTranslation(true);
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setTranslationDisplayMode(
-                                      TranslationDisplayMode.lineByLine);
-                            } else {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setShowTranslation(false);
-                            }
-                          },
-                          onCycleDisplayMode: () {
-                            final newMode = settings.translationDisplayMode ==
-                                    TranslationDisplayMode.lineByLine
-                                ? TranslationDisplayMode.sideBySide
-                                : TranslationDisplayMode.lineByLine;
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setTranslationDisplayMode(newMode);
-                          },
-                          onContentsTap: () {
-                            final currentParaId = activeTab.currentParaId;
-                            var url = '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
-                            if (currentParaId != null) {
-                              url += '&currentParaId=$currentParaId';
-                            }
-                            context.push(url);
-                          },
-                          onDictionaryTap: () {
-                            showDictionarySheet(context, '');
-                          },
-                          onListenTap: () {
-                            // Find the first visible paragraph precisely
-                            // via the positions listener instead of
-                            // guessing from a pixel offset.
-                            final positions = _itemPositionsListeners[
-                                    activeTab.bookId]
-                                ?.itemPositions
-                                .value;
-                            int startParaIndex = 0;
-                            if (positions != null && positions.isNotEmpty) {
-                              final visible = positions
-                                  .where((p) => p.itemTrailingEdge > 0)
-                                  .toList()
-                                ..sort((a, b) => a.itemLeadingEdge
-                                    .compareTo(b.itemLeadingEdge));
-                              if (visible.isNotEmpty) {
-                                startParaIndex = visible.first.index.clamp(
-                                    0,
-                                    readerState.paragraphs.isEmpty
-                                        ? 0
-                                        : readerState.paragraphs.length - 1) as int;
-                              }
-                            }
-
-                            // Build line items from visible position onwards.
-                            // Include ALL lines (not just translated ones)
-                            // so lineId indices match the rendered list.
-                            // Empty-text lines are skipped during speaking.
-                            final lines = <TtsLineItem>[];
-                            final lang =
-                                enabledLangs.isNotEmpty ? enabledLangs.first : null;
-                            if (lang == null) return;
-                            
-                            for (int i = startParaIndex;
-                                i < readerState.paragraphs.length &&
-                                    lines.length < 200;
-                                i++) {
-                              final para = readerState.paragraphs[i];
-                              for (final line in para.lines) {
-                                final rawText = line.translations[lang] ?? '';
-                                final text = _stripHtmlForTts(rawText);
-                                if (lines.length < 200) {
-                                  lines.add(TtsLineItem(
-                                    paraId: para.paraId,
-                                    lineId: line.lineId,
-                                    text: text,
-                                  ));
+                            child: ReaderBottomToolbar(
+                              colors: colors,
+                              displayMode: settings.translationDisplayMode,
+                              showTranslation: settings.showTranslation,
+                              ttsPlayback: ttsPlaybackStateForTab,
+                              onJumpTap: () => _onJumpTap(activeTab, readerState),
+                              onToggleTranslation: () {
+                                if (!settings.showTranslation) {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .setShowTranslation(true);
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .setTranslationDisplayMode(
+                                          TranslationDisplayMode.lineByLine);
+                                } else {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .setShowTranslation(false);
                                 }
-                              }
-                            }
+                              },
+                              onCycleDisplayMode: () {
+                                final newMode = settings.translationDisplayMode ==
+                                        TranslationDisplayMode.lineByLine
+                                    ? TranslationDisplayMode.sideBySide
+                                    : TranslationDisplayMode.lineByLine;
+                                ref
+                                    .read(settingsProvider.notifier)
+                                    .setTranslationDisplayMode(newMode);
+                              },
+                              onContentsTap: () {
+                                final currentParaId = activeTab.currentParaId;
+                                var url = '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
+                                if (currentParaId != null) {
+                                  url += '&currentParaId=$currentParaId';
+                                }
+                                context.push(url);
+                              },
+                              onDictionaryTap: () {
+                                showDictionarySheet(context, '');
+                              },
+                              onSearchTap: _toggleInBookSearch,
+                              onListenTap: () async {
+                                final positions = _itemPositionsListeners[
+                                        activeTab.bookId]
+                                    ?.itemPositions
+                                    .value;
+                                int startParaIndex = 0;
+                                if (positions != null && positions.isNotEmpty) {
+                                  final visible = positions
+                                      .where((p) => p.itemTrailingEdge > 0)
+                                      .toList()
+                                    ..sort((a, b) => a.itemLeadingEdge
+                                        .compareTo(b.itemLeadingEdge));
+                                  if (visible.isNotEmpty) {
+                                    startParaIndex = visible.first.index.clamp(
+                                        0,
+                                        readerState.paragraphs.isEmpty
+                                            ? 0
+                                            : readerState.paragraphs.length - 1);
+                                  }
+                                }
 
-                            if (lines.isNotEmpty) {
-                              ref
-                                  .read(ttsReadingProvider.notifier)
-                                  .startReading(activeTab.bookId, lines);
-                            }
-                          },
-                          onStopTap: () {
-                            // stopReading already calls ttsProvider.notifier.stop()
-                            ref.read(ttsReadingProvider.notifier).stopReading();
-                          },
-                          onBookmarkTap: () => _onBookmarkTap(activeTab, readerState),
+                                final lines = <TtsLineItem>[];
+                                final lang =
+                                    enabledLangs.isNotEmpty ? enabledLangs.first : null;
+                                if (lang == null) return;
+
+                                // Load TTS replacements
+                                final replaceAsyncState =
+                                    ref.read(ttsReplacementsNotifierProvider);
+                                if (replaceAsyncState is AsyncLoading ||
+                                    replaceAsyncState is AsyncError) {
+                                  await ref
+                                      .read(ttsReplacementsNotifierProvider.notifier)
+                                      .load();
+                                }
+                                final activeReplacements =
+                                    ref.read(activeTtsReplacementsProvider);
+
+                                for (int i = startParaIndex;
+                                    i < readerState.paragraphs.length &&
+                                        lines.length < 200;
+                                    i++) {
+                                  final para = readerState.paragraphs[i];
+                                  for (final line in para.lines) {
+                                    final rawText = line.translations[lang] ?? '';
+                                    final stripped = stripHtmlForTts(rawText);
+                                    var text = stripped;
+                                    for (final rule in activeReplacements) {
+                                      try {
+                                        if (rule.isRegex) {
+                                          text = text.replaceAll(
+                                              RegExp(rule.pattern), rule.replacement);
+                                        } else {
+                                          text = text.replaceAll(
+                                              rule.pattern, rule.replacement);
+                                        }
+                                      } catch (_) {}
+                                    }
+                                    if (lines.length < 200) {
+                                      lines.add(TtsLineItem(
+                                        paraId: para.paraId,
+                                        lineId: line.lineId,
+                                        text: text,
+                                      ));
+                                    }
+                                  }
+                                }
+
+                                if (lines.isNotEmpty) {
+                                  ref
+                                      .read(ttsReadingProvider.notifier)
+                                      .startReading(activeTab.bookId, lines);
+                                }
+                              },
+                              onStopTap: () {
+                                ref.read(ttsReadingProvider.notifier).stopReading();
+                              },
+                              onBookmarkTap: () => _onBookmarkTap(activeTab, readerState),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1200,8 +1669,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return const Center(child: Text('No content found.'));
     }
 
-    // All paragraphs loaded at once — no loading spinner at the bottom
-
     final displayMode = _toParagraphDisplayMode(
         settings.translationDisplayMode, settings.showTranslation);
 
@@ -1220,6 +1687,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       itemBuilder: (context, index) {
         final paragraph = data.paragraphs[index];
 
+        // Issue 4: Pass line keys for the TTS target paragraph so
+        // Scrollable.ensureVisible can precisely scroll to the line.
+        Map<int, GlobalKey>? lineKeys;
+        if (_ttsTargetParaId != null &&
+            paragraph.paraId == _ttsTargetParaId &&
+            _ttsTargetLineKeys.isNotEmpty) {
+          lineKeys = Map.from(_ttsTargetLineKeys);
+        }
+
         return ReadingParagraph(
           key: ValueKey('para-${activeTab.bookId}-${paragraph.paraId}'),
           paragraph: paragraph,
@@ -1234,10 +1710,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           paliTypography: settings.typography.pali,
           langTypographies: langTypographies,
           enabledLangCodes: enabledLangs,
-          searchQuery: activeTab.searchQuery,
+          bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
+          searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
           ttsHighlightLineId: ttsHighlightLineId,
           ttsHighlightParaId: ttsHighlightParaId,
-          // Legacy fallbacks
+          lineKeys: lineKeys,
           paliFontSize: settings.typography.pali.fontSize,
           paliLineHeight: settings.typography.pali.lineHeight,
           translationFontSize:
@@ -1246,6 +1723,155 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               settings.typography.lineHeightFor(settings.primaryTranslationLang),
         );
       },
+    );
+  }
+
+  /// Build the in-book search bar shown as an overlay at the top of the reader.
+  Widget _buildInBookSearchBar(ColorScheme colors) {
+    final matchCount = _inBookMatchParaIds.length;
+    final currentMatch = _inBookMatchIndex + 1; // 1-based display
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        children: [
+          // Close button
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            color: colors.onSurfaceVariant,
+            onPressed: _toggleInBookSearch,
+            tooltip: 'Close search',
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(width: 4),
+          // Search field
+          Expanded(
+            child: SizedBox(
+              height: 36,
+              child: TextField(
+                controller: _inBookSearchController,
+                focusNode: _inBookSearchFocusNode,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Find in book…',
+                  hintStyle: TextStyle(
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: colors.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 0,
+                  ),
+                  isDense: true,
+                  suffixIcon: _inBookSearchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          color: colors.onSurfaceVariant,
+                          onPressed: () {
+                            _inBookSearchController.clear();
+                            _runInBookSearch('');
+                          },
+                        )
+                      : null,
+                ),
+                style: TextStyle(fontSize: 14, color: colors.onSurface),
+                onChanged: (v) {
+                  _inBookSearchTimer?.cancel();
+                  _inBookSearchTimer = Timer(
+                    const Duration(milliseconds: 200),
+                    () => _runInBookSearch(v),
+                  );
+                },
+                onSubmitted: (v) {
+                  _inBookSearchTimer?.cancel();
+                  _runInBookSearch(v);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Match counter
+          if (matchCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '$currentMatch/$matchCount',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            )
+          else if (_inBookQuery.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                'No results',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colors.error.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          // Previous match
+          IconButton(
+            icon: const Icon(Icons.chevron_left, size: 22),
+            color: matchCount > 0
+                ? colors.onSurfaceVariant
+                : colors.onSurfaceVariant.withValues(alpha: 0.3),
+            onPressed: matchCount > 0
+                ? () {
+                    final newIdx = (_inBookMatchIndex - 1)
+                        .clamp(0, matchCount - 1);
+                    _jumpToInBookMatch(newIdx);
+                  }
+                : null,
+            tooltip: 'Previous match',
+            visualDensity: VisualDensity.compact,
+          ),
+          // Next match
+          IconButton(
+            icon: const Icon(Icons.chevron_right, size: 22),
+            color: matchCount > 0
+                ? colors.onSurfaceVariant
+                : colors.onSurfaceVariant.withValues(alpha: 0.3),
+            onPressed: matchCount > 0
+                ? () {
+                    final newIdx = (_inBookMatchIndex + 1)
+                        .clamp(0, matchCount - 1);
+                    _jumpToInBookMatch(newIdx);
+                  }
+                : null,
+            tooltip: 'Next match',
+            visualDensity: VisualDensity.compact,
+          ),
+          // Separator
+          Container(
+            width: 1,
+            height: 20,
+            color: colors.outlineVariant.withValues(alpha: 0.3),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+          // Search entire Tipiṭaka
+          IconButton(
+            icon: const Icon(Icons.open_in_full, size: 18),
+            color: colors.primary,
+            onPressed: () {
+              _toggleInBookSearch();
+              context.push('/search');
+            },
+            tooltip: 'Search entire Tipiṭaka',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1262,482 +1888,5 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       case TranslationDisplayMode.hideJoinLines:
         return ParagraphDisplayMode.hideJoinLines;
     }
-  }
-}
-
-// ── Draggable Scroll Thumb ──────────────────────────────────────────────
-
-/// A thin draggable handle on the right edge of the reader that the user can
-/// grab and drag to scroll through the book quickly. No scrollbar track is
-/// rendered — just the thumb (a small rounded pill).
-///
-/// Position tracking: the thumb's vertical position follows the first visible
-/// item's index as a fraction of the total item count. When dragged, it
-/// jumps (or scrolls via [ItemScrollController]) to the corresponding index.
-class _ReaderDragThumb extends StatefulWidget {
-  final ReaderDataState readerState;
-  final ItemScrollController? itemScrollController;
-  final ItemPositionsListener? itemPositionsListener;
-
-  const _ReaderDragThumb({
-    required this.readerState,
-    this.itemScrollController,
-    this.itemPositionsListener,
-  });
-
-  @override
-  State<_ReaderDragThumb> createState() => _ReaderDragThumbState();
-}
-
-class _ReaderDragThumbState extends State<_ReaderDragThumb> {
-  static const double _thumbHeight = 48.0;
-  static const double _thumbWidth = 20.0;
-
-  /// Scroll position ratio 0.0–1.0 computed from ItemPositionsListener.
-  double _scrollRatio = 0.0;
-
-  /// Thumb's vertical offset (px from top) during a drag (overrides ratio).
-  double? _dragOffset;
-
-  /// Available height for thumb movement (parent height - thumb height).
-  double _availableDragHeight = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.itemPositionsListener?.itemPositions.addListener(_onPositionsChanged);
-  }
-
-  @override
-  void didUpdateWidget(_ReaderDragThumb oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.itemPositionsListener != widget.itemPositionsListener) {
-      oldWidget.itemPositionsListener?.itemPositions
-          .removeListener(_onPositionsChanged);
-      widget.itemPositionsListener?.itemPositions
-          .addListener(_onPositionsChanged);
-    }
-    if (oldWidget.readerState.paragraphs.length !=
-        widget.readerState.paragraphs.length) {
-      // Total count changed — recalculate ratio from current position
-      final positions = widget.itemPositionsListener?.itemPositions.value;
-      if (positions != null) {
-        _updateScrollRatio(positions);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.itemPositionsListener?.itemPositions
-        .removeListener(_onPositionsChanged);
-    super.dispose();
-  }
-
-  void _onPositionsChanged() {
-    final positions = widget.itemPositionsListener?.itemPositions.value;
-    if (positions == null) return;
-    _updateScrollRatio(positions);
-  }
-
-  void _updateScrollRatio(Iterable<ItemPosition>? positions) {
-    if (positions == null || positions.isEmpty) return;
-
-    final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
-      ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-    if (visible.isEmpty) return;
-
-    final topIndex = visible.first.index;
-    final total = widget.readerState.paragraphs.length;
-    if (total <= 1) return;
-
-    // Avoid setState if the thumb is being dragged by the user
-    if (_dragOffset != null) return;
-
-    setState(() {
-      _scrollRatio = topIndex / (total - 1);
-    });
-  }
-
-  void _onDragStart(DragStartDetails details) {
-    setState(() {
-      _dragOffset = details.localPosition.dy - _thumbHeight / 2;
-    });
-  }
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    if (_dragOffset == null) return;
-    final newOffset = _dragOffset! + details.delta.dy;
-    setState(() {
-      _dragOffset = newOffset.clamp(0.0, _availableDragHeight);
-    });
-
-    // Scroll in real-time while dragging
-    final total = widget.readerState.paragraphs.length;
-    if (total <= 1) return;
-    final ratio = (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
-    final targetIndex = (ratio * (total - 1)).round();
-
-    widget.itemScrollController?.jumpTo(
-      index: targetIndex.clamp(0, total - 1),
-      alignment: 0.0,
-    );
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    setState(() {
-      _dragOffset = null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        _availableDragHeight =
-            (constraints.maxHeight - _thumbHeight).clamp(0.0, double.infinity);
-
-        final total = widget.readerState.paragraphs.length;
-        if (total <= 1) return const SizedBox.shrink();
-
-        // Compute thumb position
-        final effectiveRatio = _dragOffset != null
-            ? (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0)
-            : _scrollRatio;
-        final top = effectiveRatio * _availableDragHeight;
-
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onVerticalDragStart: _onDragStart,
-          onVerticalDragUpdate: _onDragUpdate,
-          onVerticalDragEnd: _onDragEnd,
-          child: Stack(
-            children: [
-              // Hit area extension (invisible) for easier grabbing
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Container(
-                    color: Colors.transparent,
-                  ),
-                ),
-              ),
-              // The visible thumb
-              Positioned(
-                top: top,
-                left: 0,
-                right: 0,
-                height: _thumbHeight,
-                child: Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: _thumbWidth,
-                    height: _thumbHeight * 0.6,
-                    decoration: BoxDecoration(
-                      color: colors.primary.withValues(
-                        alpha: _dragOffset != null ? 0.5 : 0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(9999),
-                      boxShadow: _dragOffset != null
-                          ? [
-                              BoxShadow(
-                                color: colors.primary.withValues(alpha: 0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ── App Bar ──────────────────────────────────────────────────────────────
-
-/// Reader app bar built on Flutter's [AppBar] for correct safe-area handling.
-///
-/// On phones the bar animates to zero height when [showCollapsed] is true,
-/// keeping it completely out of the clock bar at all times.  On tablets and
-/// desktops [showCollapsed] is always false.
-class _ReaderAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String bookId;
-  final String bookName;
-  final ColorScheme colors;
-  final bool showCollapsed;
-  final VoidCallback onSettingsTap;
-
-  const _ReaderAppBar({
-    required this.bookId,
-    required this.bookName,
-    required this.colors,
-    required this.showCollapsed,
-    required this.onSettingsTap,
-  });
-
-  static const double _toolbarHeight = AppDimensions.appBarHeight;
-
-  @override
-  // When collapsed the AppBar still exists (so Scaffold consumes the top
-  // inset for the body) but has 0 visible height.  Flutter's AppBar adds
-  // the status-bar height automatically on top of toolbarHeight.
-  Size get preferredSize => showCollapsed
-      ? const Size.fromHeight(0)
-      : const Size.fromHeight(_toolbarHeight);
-
-  @override
-  Widget build(BuildContext context) {
-    if (showCollapsed) {
-      // Zero-height transparent bar — keeps Scaffold's body below the
-      // status bar (Scaffold removes the top inset from the body whenever
-      // appBar is non-null, even at height 0).
-      return const SizedBox.shrink();
-    }
-
-    return AppBar(
-      toolbarHeight: _toolbarHeight,
-      backgroundColor: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
-        child: Divider(height: 1, thickness: 1, color: colors.outlineVariant),
-      ),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        color: colors.onSurfaceVariant,
-        onPressed: () => context.pop(),
-      ),
-      titleSpacing: AppDimensions.sm,
-      title: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            bookName,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.primary,
-            ),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-          Text(
-            'Reading',
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.settings),
-          color: colors.onSurfaceVariant,
-          onPressed: onSettingsTap,
-        ),                        // Bookmark removed from appbar — use toolbar button instead
-      ],
-    );
-  }
-}
-
-// ── Bottom Toolbar ───────────────────────────────────────────────────────
-
-class _ReaderBottomToolbar extends StatelessWidget {
-  final ColorScheme colors;
-  final TranslationDisplayMode displayMode;
-  final bool showTranslation;
-  final TtsPlaybackState ttsPlayback;
-  final VoidCallback onToggleTranslation;
-  final VoidCallback onCycleDisplayMode;
-  final VoidCallback onContentsTap;
-  final VoidCallback onDictionaryTap;
-  final VoidCallback onListenTap;
-  final VoidCallback onStopTap;
-  final VoidCallback onBookmarkTap;
-
-  const _ReaderBottomToolbar({
-    required this.colors,
-    required this.displayMode,
-    required this.showTranslation,
-    required this.ttsPlayback,
-    required this.onToggleTranslation,
-    required this.onCycleDisplayMode,
-    required this.onContentsTap,
-    required this.onDictionaryTap,
-    required this.onListenTap,
-    required this.onStopTap,
-    required this.onBookmarkTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    IconData displayIcon;
-    String displayLabel;
-    if (!showTranslation) {
-      displayIcon = Icons.translate;
-      displayLabel = 'No Trans';
-    } else {
-      switch (displayMode) {
-        case TranslationDisplayMode.lineByLine:
-          displayIcon = Icons.view_headline;
-          displayLabel = 'Line/L';
-        case TranslationDisplayMode.sideBySide:
-          displayIcon = Icons.view_column;
-          displayLabel = 'Side/S';
-        case TranslationDisplayMode.hideJoinLines:
-          displayIcon = Icons.translate;
-          displayLabel = 'No Trans';
-      }
-    }
-
-    final isPlaying = ttsPlayback == TtsPlaybackState.playing;
-    final isLoading = ttsPlayback == TtsPlaybackState.loading;
-
-    return Container(
-      height: 56,
-      constraints: const BoxConstraints(maxWidth: 500),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(9999),
-        border: Border.all(
-          color: colors.outlineVariant.withValues(alpha: 0.3),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ToolbarButton(
-            icon: Icons.format_list_bulleted,
-            label: 'Contents',
-            onTap: onContentsTap,
-          ),
-          const SizedBox(width: 8),
-          _ToolbarButton(
-            icon: Icons.search,
-            label: 'Search',
-            onTap: () => showSearchSheet(context),
-          ),
-          const SizedBox(width: 8),
-          _ToolbarButton(
-            icon: Icons.menu_book,
-            label: 'Dictionary',
-            onTap: onDictionaryTap,
-          ),
-          const SizedBox(width: 8),
-          _ToolbarButton(
-            icon: displayIcon,
-            label: displayLabel,
-            onTap: showTranslation ? onCycleDisplayMode : onToggleTranslation,
-          ),
-          const SizedBox(width: 8),
-          _ToolbarButton(
-            icon: isPlaying ? Icons.volume_up : (isLoading ? Icons.hourglass_top : Icons.volume_up),
-            label: isPlaying ? 'Playing…' : (isLoading ? 'Loading…' : 'Listen'),
-            onTap: onListenTap,
-          ),
-          if (isPlaying) ...[const SizedBox(width: 4),
-          _ToolbarButton(
-            icon: Icons.stop,
-            label: 'Stop',
-            onTap: onStopTap,
-          ),],
-          const SizedBox(width: 2),
-          _ToolbarButton(
-            icon: Icons.bookmark,
-            label: 'Save',
-            onTap: onBookmarkTap,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolbarButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ToolbarButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(9999),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, color: colors.onSurfaceVariant, size: 22),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Context Menu Button ──────────────────────────────────────────────────
-
-/// Button used inside the custom copy context menu.
-class _ContextMenuButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final ColorScheme colors;
-
-  const _ContextMenuButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        onTap();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: colors.onSurface),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: colors.onSurface,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

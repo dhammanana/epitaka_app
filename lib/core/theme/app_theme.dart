@@ -7,13 +7,37 @@ import 'app_typography.dart';
 class AppTheme {
   AppTheme._();
 
-  static ThemeData light() {
-    final colorScheme = AppColors.lightColorScheme();
+  /// Build the light theme, optionally seeded from [accentColor].
+  ///
+  /// When a custom accent is provided, Material 3 generates a complete
+  /// harmonious [ColorScheme] from that seed via [ColorScheme.fromSeed],
+  /// and the [primary] is explicitly set to [accentColor] so the chosen
+  /// accent is always visibly reflected in the UI.
+  ///
+  /// When `null`, the default Digital Manuscript palette is used.
+  static ThemeData light({Color? accentColor}) {
+    final colorScheme = accentColor != null
+        ? ColorScheme.fromSeed(
+            seedColor: accentColor,
+            brightness: Brightness.light,
+          ).copyWith(primary: accentColor)
+        : AppColors.lightColorScheme();
     return _buildTheme(colorScheme);
   }
 
-  static ThemeData dark() {
-    final colorScheme = AppColors.darkColorScheme();
+  /// Build the dark theme, optionally seeded from [accentColor].
+  ///
+  /// Unlike light mode, the dark-mode [ColorScheme.fromSeed] already
+  /// generates a saturated primary that is recognisable as the chosen
+  /// accent while remaining readable on the dark background, so no
+  /// manual override is applied.
+  static ThemeData dark({Color? accentColor}) {
+    final colorScheme = accentColor != null
+        ? ColorScheme.fromSeed(
+            seedColor: accentColor,
+            brightness: Brightness.dark,
+          )
+        : AppColors.darkColorScheme();
     return _buildTheme(colorScheme);
   }
 

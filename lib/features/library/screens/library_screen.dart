@@ -11,6 +11,7 @@ import '../../../core/utils/pali_text_utils.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../widgets/library_browser.dart';
+import '../providers/heading_title_provider.dart';
 
 /// Library screen with Browse / Reading / Bookmarks tabs.
 ///
@@ -117,7 +118,7 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
         IconButton(
           icon: const Icon(Icons.search),
           color: colors.onSurfaceVariant,
-          onPressed: () {},
+          onPressed: () => context.push('/search'),
         ),
         IconButton(
           icon: const Icon(Icons.settings),
@@ -335,6 +336,21 @@ class _OpenTabCard extends ConsumerWidget {
     final script = ref.watch(settingsProvider).paliScript;
     final displayBookName = convertPaliToScript(tab.bookName, script);
 
+    // Look up nearest heading title
+    final headingAsync = tab.currentParaId != null
+        ? ref.watch(headingTitleProvider(HeadingQuery(
+            bookId: tab.bookId,
+            paraId: tab.currentParaId!,
+          )))
+        : null;
+    final headingTitle = headingAsync?.when(
+      data: (t) => t,
+      loading: () => null,
+      error: (_, __) => null,
+    );
+    final mainTitle = headingTitle ??
+        (tab.currentParaId != null ? 'Para ${tab.currentParaId}' : null);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
@@ -371,18 +387,17 @@ class _OpenTabCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (tab.currentParaId != null)
-                      Text(
-                        'Para ${tab.currentParaId}',
-                        style: AppTypography.bodyTranslation.copyWith(
-                          fontFamily: scriptFontFamily(script),
-                          color: colors.onSurface,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    if (mainTitle != null) Text(
+                      convertPaliToScript(mainTitle, script),
+                      style: AppTypography.bodyTranslation.copyWith(
+                        fontFamily: scriptFontFamily(script),
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
@@ -663,6 +678,19 @@ class _BookmarkCard extends ConsumerWidget {
     final displayBookName = convertPaliToScript(
         bookmark.bookName ?? bookmark.bookId, script);
 
+    // Look up nearest heading title
+    final headingAsync = bookmark.paraId != null
+        ? ref.watch(headingTitleProvider(HeadingQuery(
+            bookId: bookmark.bookId,
+            paraId: bookmark.paraId!,
+          )))
+        : null;
+    final headingTitle = headingAsync?.when(
+      data: (t) => t,
+      loading: () => null,
+      error: (_, __) => null,
+    );
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
@@ -700,15 +728,34 @@ class _BookmarkCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      displayName,
-                      style: AppTypography.bodyTranslation.copyWith(
-                        fontFamily: scriptFontFamily(script),
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
+                    // Main title: heading title from DB
+                    if (headingTitle != null)
+                      Text(
+                        convertPaliToScript(headingTitle, script),
+                        style: AppTypography.bodyTranslation.copyWith(
+                          fontFamily: scriptFontFamily(script),
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    // Secondary: bookmark name + para location
+                    Padding(
+                      padding: EdgeInsets.only(top: headingTitle != null ? 2 : 0),
+                      child: Text(
+                        headingTitle != null
+                            ? '$displayName — Para ${bookmark.paraId}'
+                            : displayName,
+                        style: AppTypography.labelSmall.copyWith(
+                          fontFamily: scriptFontFamily(script),
+                          color: colors.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     if (bookmark.pageNumber != null && bookmark.pageNumber!.isNotEmpty)
                       Padding(
@@ -890,6 +937,21 @@ class _HistoryCard extends ConsumerWidget {
     final displayBookName = convertPaliToScript(
         entry.bookName ?? entry.bookId, script);
 
+    // Look up nearest heading title
+    final headingAsync = entry.paraId != null
+        ? ref.watch(headingTitleProvider(HeadingQuery(
+            bookId: entry.bookId,
+            paraId: entry.paraId!,
+          )))
+        : null;
+    final headingTitle = headingAsync?.when(
+      data: (t) => t,
+      loading: () => null,
+      error: (_, __) => null,
+    );
+    final mainTitle = headingTitle ??
+        (entry.paraId != null ? 'Para ${entry.paraId}' : null);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       elevation: 0,
@@ -926,20 +988,19 @@ class _HistoryCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Main title: paragraph location
-                    if (entry.paraId != null)
-                      Text(
-                        'Para ${entry.paraId}',
-                        style: AppTypography.bodyTranslation.copyWith(
-                          fontFamily: scriptFontFamily(script),
-                          color: colors.onSurface,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    // Main title: heading title from DB
+                    if (mainTitle != null) Text(
+                      convertPaliToScript(mainTitle, script),
+                      style: AppTypography.bodyTranslation.copyWith(
+                        fontFamily: scriptFontFamily(script),
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
                       ),
-                    // Secondary: book name
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // Secondary: book name + para location
                     Text(
                       displayBookName,
                       style: AppTypography.labelSmall.copyWith(

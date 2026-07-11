@@ -8,6 +8,7 @@ import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
 import '../features/settings/screens/tts_settings_screen.dart';
+import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
 
 /// The route paths for the app.
@@ -22,6 +23,7 @@ class AppRoutes {
   static const readingOptions = '/settings/reading';
   static const translationSettings = '/settings/translation';
   static const ttsSettings = '/settings/tts';
+  static const ttsReplacements = '/settings/tts/replacements';
   static const contents = '/contents/:bookId';
 }
 
@@ -72,6 +74,13 @@ GoRouter buildRouter() {
             path: 'tts',
             name: 'ttsSettings',
             builder: (context, state) => const TtsSettingsScreen(),
+            routes: [
+              GoRoute(
+                path: 'replacements',
+                name: 'ttsReplacements',
+                builder: (context, state) => const TtsReplacementsScreen(),
+              ),
+            ],
           ),
         ],
       ),

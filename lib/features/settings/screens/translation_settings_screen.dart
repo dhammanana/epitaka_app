@@ -120,66 +120,136 @@ class TranslationSettingsScreen extends ConsumerWidget {
                     style: AppTypography.labelSmall.copyWith(color: colors.error),
                   ),
                 ),
-                data: (translations) => Column(
-                  children: translations.map((t) {
-                    final langCode = t.languageCode;
-                    final dlState = downloadStates[langCode] ??
-                        const TranslationDownloadState();
-                    final isEnabled =
-                        settings.enabledTranslations.contains(langCode);
-                    final typo = settings.typography.typographyFor(langCode);
+                data: (translations) {
+                  // Sort: enabled translations first (in user's order),
+                  // then disabled/not-installed translations.
+                  final enabledCodes = settings.enabledTranslations;
+                  final sorted = List<AvailableTranslation>.from(translations);
+                  sorted.sort((a, b) {
+                    final aEnabled = enabledCodes.contains(a.languageCode);
+                    final bEnabled = enabledCodes.contains(b.languageCode);
+                    if (aEnabled && bEnabled) {
+                      return enabledCodes.indexOf(a.languageCode)
+                          .compareTo(enabledCodes.indexOf(b.languageCode));
+                    }
+                    if (aEnabled) return -1;
+                    if (bEnabled) return 1;
+                    return 0;
+                  });
 
-                    return Column(
-                      children: [
-                        // Download status + typography card
-                        if (!t.isAvailable)
-                          _TranslationDownloadTile(
-                            translation: t,
-                            downloadState: dlState,
-                            colors: colors,
-                            onDownload: () {
-                              ref
-                                  .read(translationDownloadProvider.notifier)
-                                  .downloadTranslation(t.language, ref);
-                            },
-                            onCancel: dlState.status == DownloadStatus.downloading ||
-                                    dlState.status == DownloadStatus.extracting
-                                ? () => ref
-                                    .read(translationDownloadProvider.notifier)
-                                    .cancelDownload(t.languageCode)
-                                : null,
-                          )
-                        else
-                          _LanguageTypographyCard(
-                            isEnabled: isEnabled,
-                            title: t.englishName,
-                            subtitle: t.nativeName,
-                            typography: typo,
-                            defaultColor: AppSettings.defaultTranslationColor,
-                            onEnabledChanged: (v) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setTranslationEnabled(langCode, v);
-                            },
-                            onTypographyChanged: (newTypo) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setLanguageTypography(langCode, newTypo);
-                            },
-                            colors: colors,
-                          ),
-                        if (t != translations.last)
-                          Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: colors.outlineVariant.withValues(alpha: 0.3),
-                            indent: AppDimensions.md,
-                            endIndent: AppDimensions.md,
-                          ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                  return ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    children: sorted.map((t) {
+                      final langCode = t.languageCode;
+                      final dlState = downloadStates[langCode] ??
+                          const TranslationDownloadState();
+                      final isEnabled =
+                          enabledCodes.contains(langCode);
+                      final typo = settings.typography.typographyFor(langCode);
+
+                      // Wrap enabled items with drag listener so the
+                      // drag handle icon (shown inside the card) can
+                      // initiate the reorder. The listener must be a
+                      // direct child of ReorderableListView.
+                      Widget itemContainer = Container(
+                        key: ValueKey('translation-$langCode'),
+                        child: Column(
+                          children: [
+                            if (!t.isAvailable)
+                              _TranslationDownloadTile(
+                                translation: t,
+                                downloadState: dlState,
+                                colors: colors,
+                                onDownload: () {
+                                  ref
+                                      .read(translationDownloadProvider.notifier)
+                                      .downloadTranslation(t.language, ref);
+                                },
+                                onCancel: dlState.status == DownloadStatus.downloading ||
+                                        dlState.status == DownloadStatus.extracting
+                                    ? () => ref
+                                        .read(translationDownloadProvider.notifier)
+                                        .cancelDownload(t.languageCode)
+                                    : null,
+                              )
+                            else
+                              _LanguageTypographyCard(
+                                isEnabled: isEnabled,
+                                title: t.englishName,
+                                subtitle: t.nativeName,
+                                typography: typo,
+                                defaultColor: AppSettings.defaultTranslationColor,
+                                showDragHandle: isEnabled,
+                                onEnabledChanged: (v) {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .setTranslationEnabled(langCode, v);
+                                },
+                                onTypographyChanged: (newTypo) {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .setLanguageTypography(langCode, newTypo);
+                                },
+                                colors: colors,
+                              ),
+                            if (t != sorted.last)
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: colors.outlineVariant.withValues(alpha: 0.3),
+                                indent: AppDimensions.md,
+                                endIndent: AppDimensions.md,
+                              ),
+                          ],
+                        ),
+                      );
+
+                      if (isEnabled) {
+                        final itemIndex = sorted.indexOf(t);
+                        itemContainer = ReorderableDragStartListener(
+                          index: itemIndex,
+                          key: ValueKey('drag-$langCode'),
+                          child: itemContainer,
+                        );
+                      }
+
+                      return itemContainer;
+                    }).toList(),
+                    onReorder: (int oldIndex, int newIndex) {
+                      // Adjust newIndex when moving forward
+                      if (oldIndex < newIndex) newIndex -= 1;
+
+                      // Get current ordered list of enabled lang codes
+                      final currentOrder =
+                          List<String>.from(settings.enabledTranslations);
+
+                      // Find which translation was moved
+                      final movedCode = sorted[oldIndex].languageCode;
+
+                      // Only reorder enabled items
+                      if (!currentOrder.contains(movedCode)) return;
+
+                      // Remove from current position in enabled list
+                      currentOrder.remove(movedCode);
+
+                      // Count enabled items before newIndex in sorted list
+                      int enabledCount = 0;
+                      for (int i = 0; i < sorted.length; i++) {
+                        if (i == newIndex) break;
+                        if (currentOrder.contains(sorted[i].languageCode)) {
+                          enabledCount++;
+                        }
+                      }
+
+                      currentOrder.insert(enabledCount, movedCode);
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setTranslationsOrder(currentOrder);
+                    },
+                  );
+                },
               ),
             ],
           ),
@@ -197,12 +267,15 @@ class TranslationSettingsScreen extends ConsumerWidget {
 ///   - Font size slider
 ///   - Bold / Italic / Underline toggles
 ///   - Color swatches
+///
+/// When [showDragHandle] is true, a drag handle is shown for reordering.
 class _LanguageTypographyCard extends StatefulWidget {
   final bool isEnabled;
   final String title;
   final String subtitle;
   final LanguageTypography typography;
   final Color defaultColor;
+  final bool showDragHandle;
   final ValueChanged<bool> onEnabledChanged;
   final ValueChanged<LanguageTypography> onTypographyChanged;
   final ColorScheme colors;
@@ -213,6 +286,7 @@ class _LanguageTypographyCard extends StatefulWidget {
     required this.subtitle,
     required this.typography,
     required this.defaultColor,
+    this.showDragHandle = false,
     required this.onEnabledChanged,
     required this.onTypographyChanged,
     required this.colors,
@@ -235,7 +309,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header row: checkbox + name + expand toggle
+        // Header row: drag handle + checkbox + name + expand toggle
         InkWell(
           onTap: () => setState(() => _expanded = !_expanded),
           child: Padding(
@@ -245,6 +319,19 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
             ),
             child: Row(
               children: [
+                // Drag handle for reordering (only on enabled translations).
+                // The actual drag listener is in the parent ReorderableListView
+                // wrapping the entire card; this icon is purely a visual cue.
+                if (widget.showDragHandle) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(
+                      Icons.drag_handle,
+                      size: 20,
+                      color: widget.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 // Enable/disable checkbox
                 GestureDetector(
                   onTap: () => widget.onEnabledChanged(!widget.isEnabled),

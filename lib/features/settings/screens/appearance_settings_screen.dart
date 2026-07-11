@@ -5,6 +5,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/theme/color_pair.dart';
 import '../widgets/color_swatch.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
@@ -18,14 +19,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Build preview colors based on current settings
-    final previewPaliColor = isDark
-        ? settings.accentColor.withValues(alpha: 0.9)
-        : settings.paliColor;
-    final previewTransColor = isDark
-        ? settings.translationColor.withValues(alpha: 0.85)
-        : settings.translationColor;
+    final darkAccent = ColorPair.deriveDark(settings.accentColor);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
@@ -45,10 +39,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppDimensions.lg),
 
-          // Live Preview Card
-          _LivePreviewCard(
-            paliColor: previewPaliColor,
-            transColor: previewTransColor,
+          // Accent Colour Pair Preview — shows the accent in both
+          // light and dark variants side by side.
+          _AccentPairCard(
+            lightAccent: settings.accentColor,
+            darkAccent: darkAccent,
+            isDarkMode: isDark,
             colors: colors,
           ),
           const SizedBox(height: AppDimensions.lg),
@@ -101,14 +97,19 @@ class AppearanceSettingsScreen extends ConsumerWidget {
   }
 }
 
-class _LivePreviewCard extends StatelessWidget {
-  final Color paliColor;
-  final Color transColor;
+/// Shows a live preview of the chosen accent colour applied to a small
+/// card — buttons, switches, highlights, showing both light and dark
+/// variants side by side so the user sees the "pair" at a glance.
+class _AccentPairCard extends StatelessWidget {
+  final Color lightAccent;
+  final Color darkAccent;
+  final bool isDarkMode;
   final ColorScheme colors;
 
-  const _LivePreviewCard({
-    required this.paliColor,
-    required this.transColor,
+  const _AccentPairCard({
+    required this.lightAccent,
+    required this.darkAccent,
+    required this.isDarkMode,
     required this.colors,
   });
 
@@ -126,25 +127,130 @@ class _LivePreviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Preview',
+            'Accent Pair Preview',
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: AppDimensions.sm),
-          Text(
-            'Evam me sutam…',
-            style: AppTypography.bodyPali.copyWith(color: paliColor),
+          const SizedBox(height: AppDimensions.md),
+
+          // ── Light-mode row ──────────────────────────────────────────
+          _AccentRow(
+            label: 'Light mode',
+            color: lightAccent,
+            isActive: !isDarkMode,
+            colors: colors,
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Thus have I heard…',
-            style: AppTypography.bodyTranslation.copyWith(color: transColor),
+          const SizedBox(height: AppDimensions.sm),
+          const Divider(height: 1),
+          const SizedBox(height: AppDimensions.sm),
+
+          // ── Dark-mode row ───────────────────────────────────────────
+          _AccentRow(
+            label: 'Dark mode',
+            color: darkAccent,
+            isActive: isDarkMode,
+            colors: colors,
           ),
         ],
       ),
     );
   }
+}
+
+/// One row inside the accent pair card: colour circle, label, hex, and
+/// sample button.
+class _AccentRow extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool isActive;
+  final ColorScheme colors;
+
+  const _AccentRow({
+    required this.label,
+    required this.color,
+    required this.isActive,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: isActive ? 1.0 : 0.5,
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isActive
+                    ? color
+                    : colors.outlineVariant,
+                width: 2,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppDimensions.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+              Text(
+                _hex(color),
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          // Sample button
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(9999),
+            ),
+            child: Text(
+              'Button',
+              style: AppTypography.labelSmall.copyWith(
+                color: _onColor(color),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.favorite, color: color, size: 18),
+          const SizedBox(width: 8),
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _hex(Color c) =>
+      '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+  /// Simple black/white contrast chooser.
+  Color _onColor(Color bg) =>
+      bg.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
 }
 
 class _ThemeSelector extends StatelessWidget {

@@ -7,6 +7,9 @@ import '../../features/reader/providers/reader_provider.dart';
 import '../../core/utils/pali_search_utils.dart';
 import '../../core/utils/pali_text_utils.dart';
 import '../../core/utils/pali_script_converter.dart';
+import '../../features/reader/data/book_link_data.dart';
+import '../../features/reader/widgets/book_link_chip.dart';
+import '../../features/reader/widgets/book_link_section_sheet.dart';
 
 /// Display mode for translation in the reader.
 enum ParagraphDisplayMode {
@@ -51,6 +54,10 @@ class ReadingParagraph extends ConsumerWidget {
   /// not individual lines within them.
   final Map<int, GlobalKey>? lineKeys;
 
+  /// Book links for this paragraph, keyed by lineId.
+  /// When non-empty, chips are rendered below the linked lines.
+  final ParaBookLinks bookLinks;
+
   // Legacy params
   final double paliFontSize;
   final double paliLineHeight;
@@ -71,6 +78,7 @@ class ReadingParagraph extends ConsumerWidget {
     this.paliTypography = const LanguageTypography(fontSize: 19),
     this.langTypographies = const {},
     this.enabledLangCodes = const [],
+    this.bookLinks = const {},
     this.searchQuery,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
@@ -101,7 +109,7 @@ class ReadingParagraph extends ConsumerWidget {
           _buildPageBadge(paragraph.pageNumber!, colors),
 
         // Content with vertical line flush to left
-        _buildContentWithVerticalLine(colors, script),
+        _buildContentWithVerticalLine(context, colors, script),
       ],
     );
   }
@@ -175,6 +183,10 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   Widget _buildPageBadge(String pageNumber, ColorScheme colors) {
+    // Get the page numbering system label from settings
+    final settings = ref.read(settingsProvider);
+    final systemLabel = _pageSystemLabel(settings.pageNumberingSystem);
+
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 12),
       child: Column(
@@ -208,7 +220,7 @@ class ReadingParagraph extends ConsumerWidget {
                   ),
                 ),
                 child: Text(
-                  'p. $pageNumber',
+                  '$systemLabel p. $pageNumber',
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     fontSize: 11,
@@ -224,7 +236,7 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   /// Vertical line at the very left, with content spaced minimally.
-  Widget _buildContentWithVerticalLine(ColorScheme colors, Script script) {
+  Widget _buildContentWithVerticalLine(BuildContext context, ColorScheme colors, Script script) {
     return Padding(
       padding: const EdgeInsets.only(left: 5, top: 4, bottom: 4),
       child: IntrinsicHeight(
@@ -249,7 +261,7 @@ class ReadingParagraph extends ConsumerWidget {
                   ? _buildSideBySide(colors, script)
                   : displayMode == ParagraphDisplayMode.hideJoinLines
                       ? _buildJoinedPali(colors, script)
-                      : _buildLinesStacked(colors, script),
+                      : _buildLinesStacked(context, colors, script),
             ),
           ],
         ),
@@ -284,7 +296,7 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   /// Stacked layout: line by line with Pāli then translation below.
-  Widget _buildLinesStacked(ColorScheme colors, Script script) {
+  Widget _buildLinesStacked(BuildContext context, ColorScheme colors, Script script) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraph.lines.map((line) {
@@ -292,6 +304,9 @@ class ReadingParagraph extends ConsumerWidget {
             ttsHighlightParaId != null &&
             paragraph.paraId == ttsHighlightParaId &&
             line.lineId == ttsHighlightLineId;
+
+        // Check if this line has book links
+        final lineLinks = bookLinks[line.lineId];
 
         return Padding(
           key: lineKeys?[line.lineId],
@@ -321,6 +336,34 @@ class ReadingParagraph extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: _buildTranslationLines(line.translations, colors),
+                  ),
+                ),
+              // ── Book link chips below the line ────────────────
+              if (lineLinks != null && lineLinks.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 2,
+                    children: lineLinks.map((link) {
+                      // Use a different color depending on the link
+                      // direction:
+                      //   isSource=true  → this book is the mūla
+                      //                     (link points TO commentary)
+                      //   isSource=false → this book is a commentary
+                      //                     (link comes FROM mūla)
+                      final chipColor = link.isSource
+                          ? colors.primary
+                          : colors.tertiary;
+                      return BookLinkChip(
+                        word: link.word,
+                        color: chipColor,
+                        onTap: () => showBookLinkSectionSheet(
+                          context,
+                          link: link,
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ),
             ],
@@ -472,7 +515,84 @@ class ReadingParagraph extends ConsumerWidget {
     return Text.rich(TextSpan(style: baseStyle, children: result));
   }
 
+  /// Find search-term matches in [text] at positions relative to the
+  /// *original* text.  Uses character-level diacritic normalisation so
+  /// that, e.g., "nana" matches "ñāṇa" without the position shift that
+  /// `normalizePaliFuzzy` would cause by stripping punctuation.
+  ///
+  /// Each [term] is a *normalised* string (already lowercased, diacritics
+  /// replaced, whitespace-collapsed).  Comparison is done by normalising
+  /// one character of the text at a time, so the resulting intervals are
+  /// always valid indices into [text].
+  List<_HighlightInterval> _findTermIntervals(String text, List<String> terms) {
+    final intervals = <_HighlightInterval>[];
+    if (terms.isEmpty) return intervals;
+
+    final lowerText = text.toLowerCase();
+    final textLen = lowerText.length;
+
+    for (final term in terms) {
+      if (term.isEmpty) continue;
+      final termLen = term.length;
+      // Maximum start position where a term of this length could fit
+      final maxStart = textLen - termLen;
+      if (maxStart < 0) continue;
+
+      int pos = 0;
+      while (pos <= maxStart) {
+        // Check if term matches at position `pos` using normalised comparison
+        bool match = true;
+        for (int i = 0; i < termLen; i++) {
+          if (_normChar(lowerText.codeUnitAt(pos + i)) != term.codeUnitAt(i)) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          intervals.add(_HighlightInterval(pos, pos + termLen));
+          pos += termLen; // skip past the match
+        } else {
+          pos++;
+        }
+      }
+    }
+    return intervals;
+  }
+
+  /// Normalise a single lowercased Unicode code unit for comparison.
+  /// Pāli diacritics (ā,ī,ū,ō,ṅ,ñ,ṭ,ḍ,ṇ,ḷ,ṃ,ṁ) are mapped to their
+  /// plain-ASCII equivalents.  Everything else passes through unchanged
+  /// (including punctuation — this is intentional so positions stay in
+  /// sync with the original text).
+  static int _normChar(int c) {
+    // Pāli diacritics; all are single code units in the Basic Latin / Latin-1
+    // Supplement / Latin Extended-A ranges.
+    // Source: https://en.wikipedia.org/wiki/International_Alphabet_of_Sanskrit_Transliteration
+    switch (c) {
+      case 0x0101: return 0x61; // ā → a
+      case 0x012B: return 0x69; // ī → i
+      case 0x016B: return 0x75; // ū → u
+      case 0x014D: return 0x6F; // ō → o
+      case 0x1E45: return 0x6E; // ṅ → n
+      case 0x00F1: return 0x6E; // ñ → n
+      case 0x1E6D: return 0x74; // ṭ → t
+      case 0x1E0D: return 0x64; // ḍ → d
+      case 0x1E47: return 0x6E; // ṇ → n
+      case 0x1E37: return 0x6C; // ḷ → l
+      case 0x1E3B: return 0x6C; // ḻ → l
+      case 0x1E43: return 0x6D; // ṃ → m
+      case 0x1E41: return 0x6D; // ṁ → m
+      case 0x1E25: return 0x68; // ḥ → h
+      default:     return c;
+    }
+  }
+
   /// Split a plain text and highlight occurrences of [query].
+  ///
+  /// Uses [_findTermIntervals] so that highlight positions are always
+  /// correct relative to the original [text] (unlike the old approach
+  /// that called `normalizePaliFuzzy` on the whole string, which shifts
+  /// indices when punctuation is removed).
   List<InlineSpan> _highlightInText(
     String text,
     String query,
@@ -481,29 +601,16 @@ class ReadingParagraph extends ConsumerWidget {
   ) {
     if (query.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
-    final normalizedText = normalizePaliFuzzy(text).toLowerCase();
-    
-    // Get normalized terms
+    // Normalise query to match what _findTermIntervals compares against
     final terms = normalizePaliFuzzy(query)
         .toLowerCase()
         .split(RegExp(r'\s+'))
         .where((t) => t.isNotEmpty)
         .toList();
-
     if (terms.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
-    // Find all match intervals: [start, end] (exclusive end)
-    final intervals = <_HighlightInterval>[];
-    for (final term in terms) {
-      int pos = 0;
-      while (true) {
-        final idx = normalizedText.indexOf(term, pos);
-        if (idx == -1) break;
-        intervals.add(_HighlightInterval(idx, idx + term.length));
-        pos = idx + 1; // Slide forward to find other matches
-      }
-    }
-
+    // Find intervals directly in the original text's position space
+    final intervals = _findTermIntervals(text, terms);
     if (intervals.isEmpty) {
       return [TextSpan(text: text, style: baseStyle)];
     }
@@ -521,7 +628,6 @@ class ReadingParagraph extends ConsumerWidget {
     for (int i = 1; i < intervals.length; i++) {
       final next = intervals[i];
       if (next.start <= current.end) {
-        // Overlap or touch
         if (next.end > current.end) {
           current = _HighlightInterval(current.start, next.end);
         }
@@ -532,7 +638,7 @@ class ReadingParagraph extends ConsumerWidget {
     }
     merged.add(current);
 
-    // Build spans using merged intervals
+    // Build spans (positions are always correct for the original [text])
     final spans = <InlineSpan>[];
     int lastIdx = 0;
     for (final interval in merged) {
@@ -599,6 +705,21 @@ class ReadingParagraph extends ConsumerWidget {
     }
 
     return spans;
+  }
+}
+
+String _pageSystemLabel(String code) {
+  switch (code) {
+    case 'vri':
+      return 'VRI';
+    case 'pts':
+      return 'PTS';
+    case 'thai':
+      return 'Thai';
+    case 'my':
+      return 'Myanmar';
+    default:
+      return 'VRI';
   }
 }
 

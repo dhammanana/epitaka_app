@@ -46,6 +46,18 @@ class Bookmarks extends Table {
 }
 
 // ---------------------------------------------------------------------------
+// Table: tts_replacements
+// ---------------------------------------------------------------------------
+class TtsReplacements extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get pattern => text()();
+  TextColumn get replacement => text()();
+  BoolColumn get isRegex => boolean().withDefault(const Constant(false))();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+// ---------------------------------------------------------------------------
 // Table: reading_history
 // ---------------------------------------------------------------------------
 class ReadingHistory extends Table {
@@ -63,18 +75,23 @@ class ReadingHistory extends Table {
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
-@DriftDatabase(tables: [Bookmarks, ReadingHistory])
+@DriftDatabase(tables: [Bookmarks, ReadingHistory, TtsReplacements])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
         await m.createAll();
+      },
+      onUpgrade: (Migrator m, int from, int to) async {
+        if (from < 2) {
+          await m.createTable(ttsReplacements);
+        }
       },
       beforeOpen: (details) async {
         try {
@@ -316,6 +333,82 @@ class AppDatabase extends _$AppDatabase {
     await (delete(readingHistory)..where((h) => h.id.equals(id))).go();
   }
 
+  // ── TTS Replacements ────────────────────────────────────────────────────
+
+  /// Get all TTS replacement rules, ordered by creation date.
+  Future<List<TtsReplacement>> getAllTtsReplacements() async {
+    return (select(ttsReplacements)
+          ..orderBy([(r) => OrderingTerm(expression: r.createdAt, mode: OrderingMode.desc)]))
+        .get();
+  }
+
+  /// Add a new TTS replacement rule.
+  Future<int> addTtsReplacement({
+    required String pattern,
+    required String replacement,
+    bool isRegex = false,
+    bool enabled = true,
+  }) async {
+    return into(ttsReplacements).insert(TtsReplacementsCompanion(
+      pattern: Value(pattern),
+      replacement: Value(replacement),
+      isRegex: Value(isRegex),
+      enabled: Value(enabled),
+      createdAt: Value(DateTime.now()),
+    ));
+  }
+
+  /// Update an existing TTS replacement rule.
+  Future<void> updateTtsReplacement(
+    int id, {
+    required String pattern,
+    required String replacement,
+    required bool isRegex,
+    required bool enabled,
+  }) async {
+    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(TtsReplacementsCompanion(
+      pattern: Value(pattern),
+      replacement: Value(replacement),
+      isRegex: Value(isRegex),
+      enabled: Value(enabled),
+    ));
+  }
+
+  /// Toggle a TTS replacement rule's enabled state.
+  Future<void> toggleTtsReplacement(int id, bool enabled) async {
+    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(TtsReplacementsCompanion(
+      enabled: Value(enabled),
+    ));
+  }
+
+  /// Delete a TTS replacement rule by ID.
+  Future<void> deleteTtsReplacement(int id) async {
+    await (delete(ttsReplacements)..where((r) => r.id.equals(id))).go();
+  }
+
+  /// Apply all enabled TTS replacement rules to [text]. Returns the
+  /// transformed text.
+  Future<String> applyTtsReplacements(String text) async {
+    final rules = await (select(ttsReplacements)
+          ..where((r) => r.enabled.equals(true)))
+        .get();
+    if (rules.isEmpty) return text;
+
+    var result = text;
+    for (final rule in rules) {
+      try {
+        if (rule.isRegex) {
+          result = result.replaceAll(RegExp(rule.pattern), rule.replacement);
+        } else {
+          result = result.replaceAll(rule.pattern, rule.replacement);
+        }
+      } catch (_) {
+        // Skip invalid regex patterns silently
+      }
+    }
+    return result;
+  }
+
   // ── Search Index ───────────────────────────────────────────────────────
 
   /// Check whether the search index has been built.
@@ -385,7 +478,7 @@ class AppDatabase extends _$AppDatabase {
         '  book_id UNINDEXED,'
         '  para_id UNINDEXED,'
         '  pali_text,'
-        "  tokenize='unicode61'"
+        "  tokenize='unicode61 remove_diacritics 0'"
         ')',
       );
       await customStatement(
@@ -503,7 +596,7 @@ class AppDatabase extends _$AppDatabase {
         '  book_id UNINDEXED,'
         '  para_id UNINDEXED,'
         '  translation_text,'
-        "  tokenize='unicode61'"
+        "  tokenize='unicode61 remove_diacritics 0'"
         ')',
       );
       // Word suggestions for THIS language. Kept per-language (rather than
@@ -534,6 +627,7 @@ class AppDatabase extends _$AppDatabase {
         // "citta" collapse into one suggestion entry.
         translationText = translationText
             .toLowerCase()
+            .replaceAll(RegExp(r'<[^>]*>'), '')
             .replaceAll(RegExp(r'[\[\](){}⟨⟩:;.,!?…—–\-"«»“”' "'"
                 r']'), '')
             .replaceAll(RegExp(r'\s+'), ' ')
@@ -619,12 +713,15 @@ class AppDatabase extends _$AppDatabase {
       // since translations are in modern languages (not Pali).
       return _translationFuzzySearch(tableName, normalized);
     } else if (distance > 0) {
+      // FTS5 has no `term1 NEAR/N term2` operator — that's FTS3/4 syntax
+      // and FTS5's parser doesn't accept it. FTS5's NEAR is a function
+      // call: NEAR(term1 term2 ..., N).
       final terms = normalized
           .split(RegExp(r'\s+'))
           .where((w) => w.isNotEmpty)
           .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' NEAR/$distance ');
-      ftsQuery = terms;
+          .join(' ');
+      ftsQuery = 'NEAR($terms, $distance)';
     } else {
       final terms = normalized
           .split(RegExp(r'\s+'))
@@ -686,6 +783,300 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Build an FTS5 query string from the user's raw [query].
+  /// Handles prefix matching, fuzzy expansion via search_words, and
+  /// NEAR/phrase queries. Returns the FTS5-safe query string.
+  Future<String> _buildFtsQuery(
+    String query, {
+    bool fuzzy = false,
+    int distance = 0,
+  }) async {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) return '';
+
+    if (fuzzy) {
+      final rawWords = normalized
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      if (rawWords.isEmpty) return '';
+
+      final fuzzyNormalized = _normalizeFuzzy(normalized);
+      final fuzzyWords = fuzzyNormalized
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+
+      // For each word, find all diacritic variants from search_words.
+      // Group per-word so we can apply NEAR/AND between groups.
+      final wordGroups = <List<String>>[];
+      for (int i = 0; i < fuzzyWords.length; i++) {
+        final likePattern = '${fuzzyWords[i]}%';
+        final variants = <String>{};
+        try {
+          final matches = await customSelect(
+            'SELECT DISTINCT pali FROM search_words WHERE fuzzy LIKE ? '
+            'ORDER BY count DESC LIMIT 30',
+            variables: [Variable.withString(likePattern)],
+          ).get();
+          for (final row in matches) {
+            variants.add(row.data['pali'] as String);
+          }
+        } catch (_) {}
+
+        // Fallback: use the original word form
+        if (variants.isEmpty) {
+          variants.add(rawWords[i]);
+        }
+        wordGroups.add(variants.toList());
+      }
+
+      if (wordGroups.isEmpty) return '';
+
+      // Build group queries: each group is (var1* OR var2* OR …)
+      // meaning ANY diacritic variant of that word is accepted.
+      final groupQueries = wordGroups.map((vars) {
+        final escaped =
+            vars.map((v) => '${v.replaceAll('"', '""')}*').join(' OR ');
+        return '($escaped)';
+      }).toList();
+
+      // Combine groups: ALL original words must appear (AND).
+      //
+      // FTS5 has no `group1 NEAR/N group2` operator — that's FTS3/4
+      // syntax. FTS5's NEAR is a function call, NEAR(phrase1 phrase2 ...,
+      // N), and each phrase argument must be a plain token/phrase, not a
+      // parenthesized OR sub-expression like the `(var1* OR var2*)`
+      // groups above. So when distance>0 we can't feed the full
+      // variant-OR groups into NEAR(); instead take each word's
+      // highest-frequency variant (wordGroups entries are already
+      // ordered by count DESC) to build a valid NEAR() phrase list.
+      if (distance > 0 && wordGroups.length > 1) {
+        final nearTerms = wordGroups
+            .map((vars) => '${vars.first.replaceAll('"', '""')}*')
+            .join(' ');
+        return 'NEAR($nearTerms, $distance)';
+      }
+      return groupQueries.join(' AND ');
+    }
+
+    if (distance > 0) {
+      // Same FTS5 NEAR() fix as above: NEAR is a function call, not a
+      // `term1 NEAR/N term2` infix operator.
+      final terms = normalized
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .map((w) => '${_escapeFtsTerm(w)}*')
+          .join(' ');
+      return 'NEAR($terms, $distance)';
+    }
+
+    final terms = normalized
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${_escapeFtsTerm(w)}*')
+        .join(' AND ');
+    return terms;
+  }
+
+  /// Count search results grouped by book_id from the Pali FTS index.
+  /// Returns a map of book_id -> count.
+  Future<Map<String, int>> countPaliResultsByBook(
+    String query, {
+    bool fuzzy = false,
+    int distance = 0,
+  }) async {
+    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    if (ftsQuery.isEmpty) return {};
+
+    try {
+      final rows = await customSelect(
+        'SELECT book_id, COUNT(*) as cnt '
+        'FROM search_fts '
+        'WHERE pali_text MATCH ? '
+        'GROUP BY book_id '
+        'ORDER BY book_id',
+        variables: [Variable.withString(ftsQuery)],
+      ).get();
+
+      return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Count search results grouped by book_id from a translation FTS index.
+  Future<Map<String, int>> countTranslationResultsByBook(
+    String langCode,
+    String query, {
+    bool fuzzy = false,
+    int distance = 0,
+  }) async {
+    final tableName = 'search_fts_$langCode';
+    final exists = await isTranslationIndexBuilt(langCode);
+    if (!exists) return {};
+
+    // For translations, we use LIKE-based fuzzy for non-Pali languages
+    if (fuzzy) {
+      try {
+        final normalized = query.trim().toLowerCase();
+        final rows = await customSelect(
+          'SELECT book_id, COUNT(*) as cnt '
+          'FROM $tableName '
+          "WHERE translation_text LIKE '%' || ? || '%' "
+          'GROUP BY book_id '
+          'ORDER BY book_id',
+          variables: [Variable.withString(normalized)],
+        ).get();
+        return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    final ftsQuery = await _buildFtsQuery(query, fuzzy: false, distance: distance);
+    if (ftsQuery.isEmpty) return {};
+
+    try {
+      final rows = await customSelect(
+        'SELECT book_id, COUNT(*) as cnt '
+        'FROM $tableName '
+        'WHERE translation_text MATCH ? '
+        'GROUP BY book_id '
+        'ORDER BY book_id',
+        variables: [Variable.withString(ftsQuery)],
+      ).get();
+      return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Fetch paginated Pali FTS results for a specific [bookId].
+  /// Returns the matching para_ids with highlighted snippets and full text.
+  Future<List<SearchResultRow>> searchPaliFtsByBook(
+    String bookId,
+    String query, {
+    bool fuzzy = false,
+    int distance = 0,
+    int limit = 30,
+    int offset = 0,
+  }) async {
+    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    if (ftsQuery.isEmpty) return [];
+
+    try {
+      final rows = await customSelect(
+        "SELECT book_id, para_id, "
+        "snippet(search_fts, 2, '<mark>', '</mark>', '…', 20) as snippet_text, "
+        'pali_text '
+        'FROM search_fts '
+        'WHERE pali_text MATCH ? AND book_id = ? '
+        'ORDER BY rank '
+        'LIMIT ? OFFSET ?',
+        variables: [
+          Variable.withString(ftsQuery),
+          Variable.withString(bookId),
+          Variable.withInt(limit),
+          Variable.withInt(offset),
+        ],
+      ).get();
+
+      return rows
+          .map((r) => SearchResultRow(
+                bookId: r.data['book_id'] as String,
+                vripage: '',
+                firstParaId: r.data['para_id'] as int?,
+                snippet: r.data['snippet_text'] as String? ?? '',
+                paliText: r.data['pali_text'] as String? ?? '',
+              ))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Fetch paginated translation FTS results for a specific [bookId].
+  Future<List<SearchResultRow>> searchTranslationFtsByBook(
+    String langCode,
+    String bookId,
+    String query, {
+    bool fuzzy = false,
+    int distance = 0,
+    int limit = 30,
+    int offset = 0,
+  }) async {
+    final tableName = 'search_fts_$langCode';
+    final exists = await isTranslationIndexBuilt(langCode);
+    if (!exists) return [];
+
+    if (fuzzy) {
+      try {
+        final normalized = query.trim().toLowerCase();
+        final rows = await customSelect(
+          "SELECT book_id, para_id, "
+          "'…<mark>' || ? || '</mark>…' as snippet_text, "
+          'translation_text '
+          'FROM $tableName '
+          "WHERE translation_text LIKE '%' || ? || '%' AND book_id = ? "
+          'ORDER BY book_id, para_id '
+          'LIMIT ? OFFSET ?',
+          variables: [
+            Variable.withString(normalized),
+            Variable.withString(normalized),
+            Variable.withString(bookId),
+            Variable.withInt(limit),
+            Variable.withInt(offset),
+          ],
+        ).get();
+        return rows
+            .map((r) => SearchResultRow(
+                  bookId: r.data['book_id'] as String,
+                  vripage: '',
+                  firstParaId: r.data['para_id'] as int?,
+                  snippet: r.data['snippet_text'] as String? ?? '',
+                  translation: r.data['translation_text'] as String? ?? '',
+                ))
+            .toList();
+      } catch (_) {
+        return [];
+      }
+    }
+
+    final ftsQuery = await _buildFtsQuery(query, fuzzy: false, distance: distance);
+    if (ftsQuery.isEmpty) return [];
+
+    try {
+      final rows = await customSelect(
+        "SELECT book_id, para_id, "
+        "snippet($tableName, 2, '<mark>', '</mark>', '…', 30) as snippet_text, "
+        'translation_text '
+        'FROM $tableName '
+        'WHERE translation_text MATCH ? AND book_id = ? '
+        'ORDER BY rank '
+        'LIMIT ? OFFSET ?',
+        variables: [
+          Variable.withString(ftsQuery),
+          Variable.withString(bookId),
+          Variable.withInt(limit),
+          Variable.withInt(offset),
+        ],
+      ).get();
+
+      return rows
+          .map((r) => SearchResultRow(
+                bookId: r.data['book_id'] as String,
+                vripage: '',
+                firstParaId: r.data['para_id'] as int?,
+                snippet: r.data['snippet_text'] as String? ?? '',
+                translation: r.data['translation_text'] as String? ?? '',
+              ))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Search the Pali FTS index for [query]. Returns matching pages with
   /// the highlighted snippet plus the full `pali_text` (so the provider can
   /// render richer results and look up translations).
@@ -697,50 +1088,8 @@ class AppDatabase extends _$AppDatabase {
     bool fuzzy = false,
     int distance = 0,
   }) async {
-    final normalized = query.trim().toLowerCase();
-    if (normalized.isEmpty) return [];
-
-    String ftsQuery;
-
-    if (fuzzy) {
-      final fuzzyNormalized = _normalizeFuzzy(normalized);
-      final words = fuzzyNormalized.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-      if (words.isEmpty) return [];
-
-      final paliEquivalents = <String>[];
-      for (final w in words) {
-        final likePattern = '$w%';
-        final matches = await customSelect(
-          'SELECT DISTINCT pali FROM search_words WHERE fuzzy LIKE ? ORDER BY count DESC LIMIT 30',
-          variables: [Variable.withString(likePattern)],
-        ).get();
-        for (final row in matches) {
-          paliEquivalents.add(row.data['pali'] as String);
-        }
-      }
-
-      if (paliEquivalents.isEmpty) return [];
-
-      // Prefix-match each fuzzy-resolved term too
-      final escaped = paliEquivalents
-          .map((p) => '${p.replaceAll('"', '""')}*')
-          .join(' OR ');
-      ftsQuery = escaped;
-    } else if (distance > 0) {
-      final terms = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' NEAR/$distance ');
-      ftsQuery = terms;
-    } else {
-      final terms = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' AND ');
-      ftsQuery = terms;
-    }
+    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
 import '../theme/app_colors.dart';
+import '../theme/color_pair.dart';
 import '../utils/pali_script_converter.dart';
 
 /// UI language for the app interface.
@@ -273,19 +274,33 @@ class AppSettings {
   final bool showPali;
   final bool showTranslation;
 
-  /// Set of language codes whose translations are enabled for display.
-  /// An empty set means no translations are explicitly enabled (show none).
-  final Set<String> enabledTranslations;
+  /// Ordered list of language codes whose translations are enabled for display.
+  /// The order determines which translation is spoken by TTS (first one wins)
+  /// and the display priority in the reader.
+  final List<String> enabledTranslations;
 
   final TranslationDisplayMode translationDisplayMode;
   final TypographySettings typography;
   final Color accentColor;
 
-  /// Default Pali color (used when no color override in typography).
-  final Color paliColor;
+  /// Pāli text color pair (light + dark mode).
+  final ColorPair paliColorPair;
 
-  /// Default translation color (used when no color override in per-lang typography).
-  final Color translationColor;
+  /// Translation text color pair (light + dark mode).
+  final ColorPair translationColorPair;
+
+  /// Convenience: resolve Pāli color for the current brightness.
+  Color paliColorFor(Brightness brightness) => paliColorPair.resolve(brightness);
+
+  /// Convenience: resolve translation color for the current brightness.
+  Color translationColorFor(Brightness brightness) =>
+      translationColorPair.resolve(brightness);
+
+  /// The Pāli color for light mode (legacy access).
+  Color get paliColor => paliColorPair.light;
+
+  /// The translation color for light mode (legacy access).
+  Color get translationColor => translationColorPair.light;
 
   final String pageNumberingSystem;
   final bool keepScreenOn;
@@ -320,12 +335,12 @@ class AppSettings {
     this.secondaryTranslationLang = 'th',
     this.showPali = true,
     this.showTranslation = true,
-    this.enabledTranslations = const {},
+    this.enabledTranslations = const [],
     this.translationDisplayMode = TranslationDisplayMode.lineByLine,
     this.typography = const TypographySettings(),
     this.accentColor = AppColors.accentSaffron,
-    this.paliColor = defaultPaliColor,
-    this.translationColor = defaultTranslationColor,
+    this.paliColorPair = ColorPair.pali,
+    this.translationColorPair = ColorPair.translation,
     this.pageNumberingSystem = 'vri',
     this.keepScreenOn = false,
     this.autoScrollSpeed = 60.0,
@@ -349,12 +364,12 @@ class AppSettings {
     String? secondaryTranslationLang,
     bool? showPali,
     bool? showTranslation,
-    Set<String>? enabledTranslations,
+    List<String>? enabledTranslations,
     TranslationDisplayMode? translationDisplayMode,
     TypographySettings? typography,
     Color? accentColor,
-    Color? paliColor,
-    Color? translationColor,
+    ColorPair? paliColorPair,
+    ColorPair? translationColorPair,
     String? pageNumberingSystem,
     bool? keepScreenOn,
     double? autoScrollSpeed,
@@ -384,8 +399,8 @@ class AppSettings {
           translationDisplayMode ?? this.translationDisplayMode,
       typography: typography ?? this.typography,
       accentColor: accentColor ?? this.accentColor,
-      paliColor: paliColor ?? this.paliColor,
-      translationColor: translationColor ?? this.translationColor,
+      paliColorPair: paliColorPair ?? this.paliColorPair,
+      translationColorPair: translationColorPair ?? this.translationColorPair,
       pageNumberingSystem: pageNumberingSystem ?? this.pageNumberingSystem,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       autoScrollSpeed: autoScrollSpeed ?? this.autoScrollSpeed,
@@ -431,6 +446,48 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     return state.resolveDarkMode(platformBrightness);
   }
 
+  /// Load a [ColorPair] from [key].  Falls back to reading the legacy
+  /// single-color keys (`pali_color` / `translation_color`) for migration:
+  /// if the new JSON key doesn't exist but the old hex key does, we
+  /// construct a [ColorPair] and immediately persist the new format so
+  /// the old key is never read again.
+  ColorPair _loadColorPair(
+    String key,
+    ColorPair fallback, {
+    String? legacyHexKey,
+  }) {
+    final prefs = _prefs;
+    if (prefs == null) return fallback;
+
+    // Try new JSON format first
+    final raw = prefs.getString(key);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        return ColorPair.fromJson(decoded);
+      } catch (_) {
+        // Fall through to legacy
+      }
+    }
+
+    // Migrate from legacy single hex-color key
+    if (legacyHexKey != null) {
+      final hex = prefs.getString(legacyHexKey);
+      if (hex != null && hex.isNotEmpty) {
+        final val = int.tryParse(hex, radix: 16);
+        if (val != null) {
+          final pair = ColorPair.fromLight(Color(val));
+          // Persist new format and remove old key
+          prefs.setString(key, jsonEncode(pair.toJson()));
+          prefs.remove(legacyHexKey);
+          return pair;
+        }
+      }
+    }
+
+    return fallback;
+  }
+
   Map<String, LanguageTypography> _loadLanguageOverrides() {
     final prefs = _prefs;
     if (prefs == null) return const {};
@@ -472,12 +529,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  Set<String> _loadEnabledTranslations() {
+  List<String> _loadEnabledTranslations() {
     final prefs = _prefs;
-    if (prefs == null) return const {};
+    if (prefs == null) return const [];
     final raw = prefs.getStringList('enabled_translations');
-    if (raw == null) return const {};
-    return raw.toSet();
+    if (raw == null) return const [];
+    return raw;
   }
 
   void _load() {
@@ -514,9 +571,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         languageOverrides: _loadLanguageOverrides(),
       ),
       accentColor: readColor('accent_color', AppColors.accentSaffron),
-      paliColor: readColor('pali_color', AppSettings.defaultPaliColor),
-      translationColor:
-          readColor('translation_color', AppSettings.defaultTranslationColor),
+      paliColorPair: _loadColorPair(
+        'pali_color_pair',
+        ColorPair.pali,
+        legacyHexKey: 'pali_color',
+      ),
+      translationColorPair: _loadColorPair(
+        'translation_color_pair',
+        ColorPair.translation,
+        legacyHexKey: 'translation_color',
+      ),
       pageNumberingSystem: prefs.getString('page_numbering') ?? 'vri',
       keepScreenOn: prefs.getBool('keep_screen_on') ?? false,
       autoScrollSpeed: prefs.getDouble('auto_scroll_speed') ?? 60.0,
@@ -580,16 +644,24 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('translation_display_mode', mode.name);
   }
 
-  /// Toggle a translation language on/off in the enabled set.
+  /// Toggle a translation language on/off in the enabled ordered list.
   Future<void> setTranslationEnabled(String langCode, bool enabled) async {
-    final current = Set<String>.from(state.enabledTranslations);
+    final current = List<String>.from(state.enabledTranslations);
     if (enabled) {
-      current.add(langCode);
+      if (!current.contains(langCode)) {
+        current.add(langCode);
+      }
     } else {
       current.remove(langCode);
     }
     state = state.copyWith(enabledTranslations: current);
-    await _prefs?.setStringList('enabled_translations', current.toList());
+    await _prefs?.setStringList('enabled_translations', current);
+  }
+
+  /// Set the full ordered list of enabled translations (for drag-to-reorder).
+  Future<void> setTranslationsOrder(List<String> orderedCodes) async {
+    state = state.copyWith(enabledTranslations: orderedCodes);
+    await _prefs?.setStringList('enabled_translations', orderedCodes);
   }
 
   Future<void> setLanguageTypography(
@@ -624,15 +696,28 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('accent_color', color.toARGB32().toRadixString(16));
   }
 
-  Future<void> setPaliColor(Color color) async {
-    state = state.copyWith(paliColor: color);
-    await _prefs?.setString('pali_color', color.toARGB32().toRadixString(16));
+  Future<void> setPaliColor(Color lightColor) async {
+    final pair = ColorPair.fromLight(lightColor);
+    state = state.copyWith(paliColorPair: pair);
+    await _prefs?.setString('pali_color_pair', jsonEncode(pair.toJson()));
   }
 
-  Future<void> setTranslationColor(Color color) async {
-    state = state.copyWith(translationColor: color);
+  Future<void> setPaliColorPair(ColorPair pair) async {
+    state = state.copyWith(paliColorPair: pair);
+    await _prefs?.setString('pali_color_pair', jsonEncode(pair.toJson()));
+  }
+
+  Future<void> setTranslationColor(Color lightColor) async {
+    final pair = ColorPair.fromLight(lightColor);
+    state = state.copyWith(translationColorPair: pair);
     await _prefs?.setString(
-        'translation_color', color.toARGB32().toRadixString(16));
+        'translation_color_pair', jsonEncode(pair.toJson()));
+  }
+
+  Future<void> setTranslationColorPair(ColorPair pair) async {
+    state = state.copyWith(translationColorPair: pair);
+    await _prefs?.setString(
+        'translation_color_pair', jsonEncode(pair.toJson()));
   }
 
   Future<void> setPageNumberingSystem(String system) async {

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/app_models.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../data/book_link_data.dart';
+import '../services/book_link_service.dart';
 
 /// A single line within a paragraph (Pāli + translations per line).
 class LineData {
@@ -84,6 +86,9 @@ class ReaderDataState {
   final bool hasMore;
   final String? error;
 
+  /// Book links grouped by paraId then lineId.
+  final BookLinksMap bookLinks;
+
   const ReaderDataState({
     required this.bookId,
     this.bookName,
@@ -94,6 +99,7 @@ class ReaderDataState {
     this.isLoaded = false,
     this.hasMore = true,
     this.error,
+    this.bookLinks = const {},
   });
 
   ReaderDataState copyWith({
@@ -106,6 +112,7 @@ class ReaderDataState {
     bool? isLoaded,
     bool? hasMore,
     String? error,
+    BookLinksMap? bookLinks,
   }) {
     return ReaderDataState(
       bookId: bookId ?? this.bookId,
@@ -117,6 +124,7 @@ class ReaderDataState {
       isLoaded: isLoaded ?? this.isLoaded,
       hasMore: hasMore ?? this.hasMore,
       error: error,
+      bookLinks: bookLinks ?? this.bookLinks,
     );
   }
 }
@@ -225,6 +233,25 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       }
     }
     return null;
+  }
+
+  /// Find the nearest heading whose paraId <= [paraId].
+  /// Returns null if no heading exists before or at this position.
+  ParagraphHeading? findNearbyHeading(int paraId) {
+    if (_headings == null || _headings!.isEmpty) return null;
+    ParagraphHeading? best;
+    for (final h in _headings!) {
+      if (h.paraId! <= paraId) {
+        best = ParagraphHeading(
+          title: h.title ?? '',
+          level: h.level ?? 1,
+          paraId: h.paraId!,
+        );
+      } else {
+        break; // headings are ordered by paraId ascending
+      }
+    }
+    return best;
   }
 
   /// Load ALL paragraphs for this book in one shot (no pagination) and
@@ -430,9 +457,26 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       name: 'epitaka.reader',
     );
 
+    // ── Load book links ────────────────────────────────────────────
+    final linkSw = Stopwatch()..start();
+    BookLinksMap bookLinks = const {};
+    try {
+      final service = BookLinkService(db);
+      bookLinks = await service.getLinksForBook(_bookId);
+    } catch (e) {
+      developer.log('[LOAD] Book links error: $e', name: 'epitaka.reader');
+    }
+    linkSw.stop();
+    developer.log(
+      '[LOAD] Book links loaded: ${linkSw.elapsedMilliseconds}ms, '
+      'paraCount=${bookLinks.length}',
+      name: 'epitaka.reader',
+    );
+
     // ── Emit final state ─────────────────────────────────────────────
     state = state.copyWith(
       paragraphs: paragraphs,
+      bookLinks: bookLinks,
       isLoading: false,
       isLoaded: true,
       hasMore: false, // no more pages — everything loaded

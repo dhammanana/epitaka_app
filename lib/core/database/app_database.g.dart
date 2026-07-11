@@ -1049,11 +1049,421 @@ class ReadingHistoryCompanion extends UpdateCompanion<ReadingHistoryData> {
   }
 }
 
+class $TtsReplacementsTable extends TtsReplacements
+    with TableInfo<$TtsReplacementsTable, TtsReplacement> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TtsReplacementsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _patternMeta = const VerificationMeta(
+    'pattern',
+  );
+  @override
+  late final GeneratedColumn<String> pattern = GeneratedColumn<String>(
+    'pattern',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _replacementMeta = const VerificationMeta(
+    'replacement',
+  );
+  @override
+  late final GeneratedColumn<String> replacement = GeneratedColumn<String>(
+    'replacement',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isRegexMeta = const VerificationMeta(
+    'isRegex',
+  );
+  @override
+  late final GeneratedColumn<bool> isRegex = GeneratedColumn<bool>(
+    'is_regex',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_regex" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _enabledMeta = const VerificationMeta(
+    'enabled',
+  );
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+    'enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    pattern,
+    replacement,
+    isRegex,
+    enabled,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tts_replacements';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TtsReplacement> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('pattern')) {
+      context.handle(
+        _patternMeta,
+        pattern.isAcceptableOrUnknown(data['pattern']!, _patternMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_patternMeta);
+    }
+    if (data.containsKey('replacement')) {
+      context.handle(
+        _replacementMeta,
+        replacement.isAcceptableOrUnknown(
+          data['replacement']!,
+          _replacementMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_replacementMeta);
+    }
+    if (data.containsKey('is_regex')) {
+      context.handle(
+        _isRegexMeta,
+        isRegex.isAcceptableOrUnknown(data['is_regex']!, _isRegexMeta),
+      );
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(
+        _enabledMeta,
+        enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TtsReplacement map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TtsReplacement(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      pattern: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}pattern'],
+      )!,
+      replacement: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}replacement'],
+      )!,
+      isRegex: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_regex'],
+      )!,
+      enabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}enabled'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $TtsReplacementsTable createAlias(String alias) {
+    return $TtsReplacementsTable(attachedDatabase, alias);
+  }
+}
+
+class TtsReplacement extends DataClass implements Insertable<TtsReplacement> {
+  final int id;
+  final String pattern;
+  final String replacement;
+  final bool isRegex;
+  final bool enabled;
+  final DateTime createdAt;
+  const TtsReplacement({
+    required this.id,
+    required this.pattern,
+    required this.replacement,
+    required this.isRegex,
+    required this.enabled,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['pattern'] = Variable<String>(pattern);
+    map['replacement'] = Variable<String>(replacement);
+    map['is_regex'] = Variable<bool>(isRegex);
+    map['enabled'] = Variable<bool>(enabled);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  TtsReplacementsCompanion toCompanion(bool nullToAbsent) {
+    return TtsReplacementsCompanion(
+      id: Value(id),
+      pattern: Value(pattern),
+      replacement: Value(replacement),
+      isRegex: Value(isRegex),
+      enabled: Value(enabled),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory TtsReplacement.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TtsReplacement(
+      id: serializer.fromJson<int>(json['id']),
+      pattern: serializer.fromJson<String>(json['pattern']),
+      replacement: serializer.fromJson<String>(json['replacement']),
+      isRegex: serializer.fromJson<bool>(json['isRegex']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'pattern': serializer.toJson<String>(pattern),
+      'replacement': serializer.toJson<String>(replacement),
+      'isRegex': serializer.toJson<bool>(isRegex),
+      'enabled': serializer.toJson<bool>(enabled),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  TtsReplacement copyWith({
+    int? id,
+    String? pattern,
+    String? replacement,
+    bool? isRegex,
+    bool? enabled,
+    DateTime? createdAt,
+  }) => TtsReplacement(
+    id: id ?? this.id,
+    pattern: pattern ?? this.pattern,
+    replacement: replacement ?? this.replacement,
+    isRegex: isRegex ?? this.isRegex,
+    enabled: enabled ?? this.enabled,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  TtsReplacement copyWithCompanion(TtsReplacementsCompanion data) {
+    return TtsReplacement(
+      id: data.id.present ? data.id.value : this.id,
+      pattern: data.pattern.present ? data.pattern.value : this.pattern,
+      replacement: data.replacement.present
+          ? data.replacement.value
+          : this.replacement,
+      isRegex: data.isRegex.present ? data.isRegex.value : this.isRegex,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TtsReplacement(')
+          ..write('id: $id, ')
+          ..write('pattern: $pattern, ')
+          ..write('replacement: $replacement, ')
+          ..write('isRegex: $isRegex, ')
+          ..write('enabled: $enabled, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, pattern, replacement, isRegex, enabled, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TtsReplacement &&
+          other.id == this.id &&
+          other.pattern == this.pattern &&
+          other.replacement == this.replacement &&
+          other.isRegex == this.isRegex &&
+          other.enabled == this.enabled &&
+          other.createdAt == this.createdAt);
+}
+
+class TtsReplacementsCompanion extends UpdateCompanion<TtsReplacement> {
+  final Value<int> id;
+  final Value<String> pattern;
+  final Value<String> replacement;
+  final Value<bool> isRegex;
+  final Value<bool> enabled;
+  final Value<DateTime> createdAt;
+  const TtsReplacementsCompanion({
+    this.id = const Value.absent(),
+    this.pattern = const Value.absent(),
+    this.replacement = const Value.absent(),
+    this.isRegex = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  TtsReplacementsCompanion.insert({
+    this.id = const Value.absent(),
+    required String pattern,
+    required String replacement,
+    this.isRegex = const Value.absent(),
+    this.enabled = const Value.absent(),
+    required DateTime createdAt,
+  }) : pattern = Value(pattern),
+       replacement = Value(replacement),
+       createdAt = Value(createdAt);
+  static Insertable<TtsReplacement> custom({
+    Expression<int>? id,
+    Expression<String>? pattern,
+    Expression<String>? replacement,
+    Expression<bool>? isRegex,
+    Expression<bool>? enabled,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (pattern != null) 'pattern': pattern,
+      if (replacement != null) 'replacement': replacement,
+      if (isRegex != null) 'is_regex': isRegex,
+      if (enabled != null) 'enabled': enabled,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  TtsReplacementsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? pattern,
+    Value<String>? replacement,
+    Value<bool>? isRegex,
+    Value<bool>? enabled,
+    Value<DateTime>? createdAt,
+  }) {
+    return TtsReplacementsCompanion(
+      id: id ?? this.id,
+      pattern: pattern ?? this.pattern,
+      replacement: replacement ?? this.replacement,
+      isRegex: isRegex ?? this.isRegex,
+      enabled: enabled ?? this.enabled,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (pattern.present) {
+      map['pattern'] = Variable<String>(pattern.value);
+    }
+    if (replacement.present) {
+      map['replacement'] = Variable<String>(replacement.value);
+    }
+    if (isRegex.present) {
+      map['is_regex'] = Variable<bool>(isRegex.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TtsReplacementsCompanion(')
+          ..write('id: $id, ')
+          ..write('pattern: $pattern, ')
+          ..write('replacement: $replacement, ')
+          ..write('isRegex: $isRegex, ')
+          ..write('enabled: $enabled, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $BookmarksTable bookmarks = $BookmarksTable(this);
   late final $ReadingHistoryTable readingHistory = $ReadingHistoryTable(this);
+  late final $TtsReplacementsTable ttsReplacements = $TtsReplacementsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1061,6 +1471,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     bookmarks,
     readingHistory,
+    ttsReplacements,
   ];
 }
 
@@ -1587,6 +1998,227 @@ typedef $$ReadingHistoryTableProcessedTableManager =
       ReadingHistoryData,
       PrefetchHooks Function()
     >;
+typedef $$TtsReplacementsTableCreateCompanionBuilder =
+    TtsReplacementsCompanion Function({
+      Value<int> id,
+      required String pattern,
+      required String replacement,
+      Value<bool> isRegex,
+      Value<bool> enabled,
+      required DateTime createdAt,
+    });
+typedef $$TtsReplacementsTableUpdateCompanionBuilder =
+    TtsReplacementsCompanion Function({
+      Value<int> id,
+      Value<String> pattern,
+      Value<String> replacement,
+      Value<bool> isRegex,
+      Value<bool> enabled,
+      Value<DateTime> createdAt,
+    });
+
+class $$TtsReplacementsTableFilterComposer
+    extends Composer<_$AppDatabase, $TtsReplacementsTable> {
+  $$TtsReplacementsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pattern => $composableBuilder(
+    column: $table.pattern,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replacement => $composableBuilder(
+    column: $table.replacement,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isRegex => $composableBuilder(
+    column: $table.isRegex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TtsReplacementsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TtsReplacementsTable> {
+  $$TtsReplacementsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pattern => $composableBuilder(
+    column: $table.pattern,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get replacement => $composableBuilder(
+    column: $table.replacement,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isRegex => $composableBuilder(
+    column: $table.isRegex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TtsReplacementsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TtsReplacementsTable> {
+  $$TtsReplacementsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get pattern =>
+      $composableBuilder(column: $table.pattern, builder: (column) => column);
+
+  GeneratedColumn<String> get replacement => $composableBuilder(
+    column: $table.replacement,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isRegex =>
+      $composableBuilder(column: $table.isRegex, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$TtsReplacementsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TtsReplacementsTable,
+          TtsReplacement,
+          $$TtsReplacementsTableFilterComposer,
+          $$TtsReplacementsTableOrderingComposer,
+          $$TtsReplacementsTableAnnotationComposer,
+          $$TtsReplacementsTableCreateCompanionBuilder,
+          $$TtsReplacementsTableUpdateCompanionBuilder,
+          (
+            TtsReplacement,
+            BaseReferences<
+              _$AppDatabase,
+              $TtsReplacementsTable,
+              TtsReplacement
+            >,
+          ),
+          TtsReplacement,
+          PrefetchHooks Function()
+        > {
+  $$TtsReplacementsTableTableManager(
+    _$AppDatabase db,
+    $TtsReplacementsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TtsReplacementsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TtsReplacementsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TtsReplacementsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> pattern = const Value.absent(),
+                Value<String> replacement = const Value.absent(),
+                Value<bool> isRegex = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => TtsReplacementsCompanion(
+                id: id,
+                pattern: pattern,
+                replacement: replacement,
+                isRegex: isRegex,
+                enabled: enabled,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String pattern,
+                required String replacement,
+                Value<bool> isRegex = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                required DateTime createdAt,
+              }) => TtsReplacementsCompanion.insert(
+                id: id,
+                pattern: pattern,
+                replacement: replacement,
+                isRegex: isRegex,
+                enabled: enabled,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TtsReplacementsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TtsReplacementsTable,
+      TtsReplacement,
+      $$TtsReplacementsTableFilterComposer,
+      $$TtsReplacementsTableOrderingComposer,
+      $$TtsReplacementsTableAnnotationComposer,
+      $$TtsReplacementsTableCreateCompanionBuilder,
+      $$TtsReplacementsTableUpdateCompanionBuilder,
+      (
+        TtsReplacement,
+        BaseReferences<_$AppDatabase, $TtsReplacementsTable, TtsReplacement>,
+      ),
+      TtsReplacement,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1595,4 +2227,6 @@ class $AppDatabaseManager {
       $$BookmarksTableTableManager(_db, _db.bookmarks);
   $$ReadingHistoryTableTableManager get readingHistory =>
       $$ReadingHistoryTableTableManager(_db, _db.readingHistory);
+  $$TtsReplacementsTableTableManager get ttsReplacements =>
+      $$TtsReplacementsTableTableManager(_db, _db.ttsReplacements);
 }

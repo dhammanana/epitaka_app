@@ -71,7 +71,7 @@ class SearchResultItemTile extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                   ),
                   child: Text(
-                    '§${result.firstParaId}',
+                    '§${result.paraId}',
                     style: AppTypography.labelSmall.copyWith(
                       fontSize: 10,
                       color: colors.onSurfaceVariant,

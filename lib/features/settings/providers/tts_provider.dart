@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -33,6 +34,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   // Speech completion tracking
   Completer<void>? _speechCompleter;
   String? _currentText;
+
+  /// Cached flutter_tts platform channel values to avoid redundant
+  /// MethodChannel calls on every line. Only updated when the user
+  /// changes speed/pitch/language via settings.
+  double _cachedRate = -1.0;  // sentinel — never a valid rate
+  double _cachedPitch = -1.0;
+  String _cachedLanguage = '';
 
   TtsNotifier(this._ref) : super(TtsPlaybackState.stopped);
 
@@ -74,6 +82,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     // Set up completion and error handlers
     tts.setCompletionHandler(() {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      developer.log('[TTS] Completion handler fired at $now', name: 'epitaka.tts');
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
         _completeSpeech();
@@ -81,6 +91,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     });
 
     tts.setErrorHandler((msg) {
+      developer.log('[TTS] Error handler fired: $msg', name: 'epitaka.tts');
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
         _completeSpeech();
@@ -120,10 +131,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
     _currentText = text;
+    developer.log('[TTS] speak() called: text.length=${text.length} text="${text.length > 40 ? '${text.substring(0, 40)}...' : text}"', name: 'epitaka.tts');
 
     // Stop any current playback
     await stop();
 
+    final start = DateTime.now();
     try {
       switch (_engineType) {
         case TtsEngineType.system:
@@ -132,6 +145,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
           await _speakSupertonic(text);
       }
       await _waitForCompletion();
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      developer.log('[TTS] speak() completed in ${elapsed}ms', name: 'epitaka.tts');
     } catch (e) {
       state = TtsPlaybackState.stopped;
       _completeSpeech();
@@ -140,20 +155,46 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Speak using system TTS (flutter_tts).
+  ///
+  /// Caches the last set rate/pitch/language and only makes platform
+  /// channel calls when the values actually change. Since MethodChannel
+  /// calls on Android/iOS have significant overhead (~5–15 ms each),
+  /// skipping them on every line after the first dramatically reduces
+  /// the gap between spoken sentences.
   Future<void> _speakSystem(String text) async {
     final tts = await _getFlutterTts();
     final settings = _ref.read(settingsProvider);
 
-    // Map user speed (0.5-4.0) to flutter_tts rate (0.0-1.0)
-    final rate = _mapSpeedToSystemRate(settings.ttsSpeed);
-    await tts.setSpeechRate(rate);
-    await tts.setPitch(settings.ttsPitch);
+    final start = DateTime.now();
 
-    // Set language
-    await tts.setLanguage('en-US');
+    // Rate — only call platform if changed
+    final rate = _mapSpeedToSystemRate(settings.ttsSpeed);
+    if (rate != _cachedRate) {
+      await tts.setSpeechRate(rate);
+      _cachedRate = rate;
+    }
+
+    // Pitch — only call platform if changed
+    if (settings.ttsPitch != _cachedPitch) {
+      await tts.setPitch(settings.ttsPitch);
+      _cachedPitch = settings.ttsPitch;
+    }
+
+    // TTS language — derive from the first enabled translation.
+    // Follows the user's translation order in settings.
+    final ttsLangCode = _ttsLanguageFromSettings(settings);
+    final ttsLocale = _ttsLocaleForLanguage(ttsLangCode);
+    if (ttsLocale != _cachedLanguage) {
+      developer.log('[TTS] Setting language to $ttsLocale (from $ttsLangCode)',
+          name: 'epitaka.tts');
+      await tts.setLanguage(ttsLocale);
+      _cachedLanguage = ttsLocale;
+    }
 
     state = TtsPlaybackState.playing;
     await tts.speak(text);
+    final elapsed = DateTime.now().difference(start).inMilliseconds;
+    developer.log('[TTS] _speakSystem() took ${elapsed}ms', name: 'epitaka.tts');
   }
 
 /// Whether the current engine supports look-ahead synthesis.
@@ -211,6 +252,24 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     state = TtsPlaybackState.playing;
     await _player!.play(result);
+  }
+
+  /// Get available system voices reusing the existing flutter_tts instance.
+  ///
+  /// IMPORTANT: Do NOT create a second FlutterTts() just for getVoices —
+  /// on Android this creates a second native TTS engine connection that
+  /// corrupts the main engine's state. After that, every platform channel
+  /// call (setLanguage, setSpeechRate, setPitch) balloons from 1-4ms to
+  /// 500+ms, introducing multi-second gaps between spoken lines.
+  Future<List<Map<String, String>>> getVoices() async {
+    final tts = await _getFlutterTts();
+    final result = await tts.getVoices;
+    if (result is List) {
+      return result
+          .map((v) => Map<String, String>.from(v as Map))
+          .toList();
+    }
+    return [];
   }
 
   /// Stop current TTS playback.
@@ -301,6 +360,48 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     // Map: 0.5→0.25, 1.0→0.35, 2.0→0.5, 4.0→1.0
     final ratio = (clamped - 0.5) / (4.0 - 0.5);
     return 0.25 + ratio * 0.75;
+  }
+
+  /// Map app two-letter language codes to flutter_tts locale codes.
+  static String _ttsLocaleForLanguage(String langCode) {
+    const map = <String, String>{
+      'en': 'en-US',
+      'th': 'th-TH',
+      'my': 'my-MM',
+      'si': 'si-LK',
+      'vi': 'vi-VN',
+      'de': 'de-DE',
+      'es': 'es-ES',
+      'fr': 'fr-FR',
+      'hi': 'hi-IN',
+      'id': 'id-ID',
+      'ja': 'ja-JP',
+      'km': 'km-KH',
+      'ko': 'ko-KR',
+      'lo': 'lo-LA',
+      'ml': 'ml-IN',
+      'mn': 'mn-MN',
+      'ms': 'ms-MY',
+      'ne': 'ne-NP',
+      'nl': 'nl-NL',
+      'pt': 'pt-PT',
+      'ru': 'ru-RU',
+      'ta': 'ta-IN',
+      'te': 'te-IN',
+      'tr': 'tr-TR',
+      'ur': 'ur-PK',
+      'zh': 'zh-CN',
+    };
+    return map[langCode] ?? 'en-US';
+  }
+
+  /// Determine which language the TTS should speak based on the first
+  /// enabled translation in the user's settings order.
+  String _ttsLanguageFromSettings(AppSettings settings) {
+    if (settings.enabledTranslations.isNotEmpty) {
+      return settings.enabledTranslations.first;
+    }
+    return settings.primaryTranslationLang;
   }
 }
 

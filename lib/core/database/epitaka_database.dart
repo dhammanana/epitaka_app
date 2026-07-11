@@ -83,9 +83,18 @@ class EpitakaDatabase extends _$EpitakaDatabase {
   }
 
   /// Get the nearest heading title at or before [paraId] for a [bookId].
-  Future<String?> getHeadingTitleAtPara(String bookId, int paraId) async {
+  ///
+  /// When [includeLevel10] is true, headings with level=10 are included in
+  /// the search (useful for commentary annotations).  The default is `false`
+  /// for backward-compatibility with the reader's table-of-contents display.
+  Future<String?> getHeadingTitleAtPara(
+    String bookId,
+    int paraId, {
+    bool includeLevel10 = false,
+  }) async {
+    final levelClause = includeLevel10 ? '' : 'and level<10';
     final rows = await customSelect(
-      'SELECT title FROM headings WHERE book_id = ? AND para_id <= ? ORDER BY para_id DESC LIMIT 1',
+      'SELECT title FROM headings WHERE book_id = ? AND para_id <= ? $levelClause ORDER BY para_id DESC LIMIT 1',
       variables: [Variable.withString(bookId), Variable.withInt(paraId)],
     ).get();
     if (rows.isEmpty) return null;

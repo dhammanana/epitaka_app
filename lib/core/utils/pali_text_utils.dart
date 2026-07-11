@@ -17,7 +17,10 @@ String scriptFontFamily(Script script) {
     case Script.myanmar:
       return 'Pyidaungsu';
     case Script.laos:
-      return 'NotoSansLao';
+      // Use LaoPaliRegular (not NotoSansLao) because NotoSansLao lacks
+      // the Pali-specific Lao characters (e.g. ຆ LAO LETTER PALI GH,
+      // ຉ LAO LETTER PALI CH, etc.) which are needed for Pali text.
+      return 'LaoPaliRegular';
     case Script.brahmi:
       return 'NotoSansBrahmi';
     case Script.cyrillic:

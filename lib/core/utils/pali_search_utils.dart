@@ -1,6 +1,22 @@
-/// Clean Pali text for FTS5 indexing by removing punctuation and normalizing whitespace.
+/// Clean Pali text for FTS5 indexing by stripping annotations, removing
+/// punctuation, and normalizing whitespace.
 String cleanPaliForIndexing(String text) {
-  // Remove punctuation marks common in Pali texts
+  // 1. Strip [...] and all content inside (variant annotations like
+  //    "[variant text]" should not contribute any words to the index).
+  text = text.replaceAll(RegExp(r'\[[^\]]*\]'), '');
+
+  // 2. Strip (...) that contain at least one digit (page/location
+  //    references like "(page 12.3)") but preserve parentheses that
+  //    wrap actual text like "(and)" — those will be handled below.
+  text = text.replaceAll(RegExp(r'\([^)]*\d+[^)]*\)'), '');
+
+  // 3. Strip HTML tags (e.g. "<b>", "<mark>") that should never become
+  //    part of the index or the word-frequency table.
+  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+
+  // 4. Remove any remaining individual bracket characters that survived
+  //    the content-stripping regexes (e.g. `(text)` without numbers, or
+  //    unmatched brackets).
   final cleaned = text
       .replaceAll('[', '')
       .replaceAll(']', '')

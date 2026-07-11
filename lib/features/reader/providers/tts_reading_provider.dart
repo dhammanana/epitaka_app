@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -148,11 +149,19 @@ Future<void> startReading(
     final line = state.lines[index];
     final ttsNotifier = _ref.read(ttsProvider.notifier);
 
+    developer.log(
+      '[TTS_PIPE] _speakCurrent line=$index/${state.lines.length} '
+      'paraId=${line.paraId} lineId=${line.lineId} isResume=$isResume',
+      name: 'epitaka.tts',
+    );
+
     if (line.text.trim().isEmpty) {
+      developer.log('[TTS_PIPE] line $index is empty, skipping', name: 'epitaka.tts');
       _advanceToNext(sessionId);
       return;
     }
 
+    final speakStart = DateTime.now();
     // Speak or resume the current line and await completion
     try {
       if (isResume) {
@@ -179,6 +188,11 @@ Future<void> startReading(
     } catch (_) {
       // Error speaking — continue to next line
     }
+    final speakElapsed = DateTime.now().difference(speakStart).inMilliseconds;
+    developer.log(
+      '[TTS_PIPE] _speakCurrent line=$index completed in ${speakElapsed}ms',
+      name: 'epitaka.tts',
+    );
 
     if (sessionId == _currentSessionId) {
       _advanceToNext(sessionId);
@@ -204,8 +218,18 @@ Future<void> startReading(
   }
 
   void _advanceToNext(int sessionId) {
-    if (sessionId != _currentSessionId) return;
+    if (sessionId != _currentSessionId) {
+      developer.log(
+        '[TTS_PIPE] _advanceToNext SKIP: sessionId=$sessionId != currentSessionId=$_currentSessionId',
+        name: 'epitaka.tts',
+      );
+      return;
+    }
     final nextIndex = state.currentIndex + 1;
+    developer.log(
+      '[TTS_PIPE] _advanceToNext: $nextIndex/${state.lines.length} (finished=$nextIndex >= ${state.lines.length}) sessionId=$sessionId',
+      name: 'epitaka.tts',
+    );
     if (nextIndex >= state.lines.length) {
       _finishReading();
     } else {

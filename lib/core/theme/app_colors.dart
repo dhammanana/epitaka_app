@@ -82,6 +82,14 @@ class AppColors {
   static const Color accentRose = Color(0xff8E3A59);
   static const Color accentTeal = Color(0xff2A6B6B);
   static const Color accentGold = Color(0xff9A7B2E);
+  static const Color accentCrimson = Color(0xffC62828);
+  static const Color accentDeepPurple = Color(0xff5E35B1);
+  static const Color accentAmber = Color(0xffFF8F00);
+  static const Color accentCyan = Color(0xff00838F);
+  static const Color accentLime = Color(0xff558B2F);
+  static const Color accentDeepOrange = Color(0xffBF360C);
+  static const Color accentBrown = Color(0xff5D4037);
+  static const Color accentBlueGrey = Color(0xff455A64);
 
   static const Color successGreen = Color(0xff2E7D32);
   static const Color warningAmber = Color(0xffF9A825);
@@ -95,6 +103,14 @@ class AppColors {
     accentRose,
     accentTeal,
     accentGold,
+    accentCrimson,
+    accentDeepPurple,
+    accentAmber,
+    accentCyan,
+    accentLime,
+    accentDeepOrange,
+    accentBrown,
+    accentBlueGrey,
   ];
 
   // ── ColorScheme builders ────────────────────────────────────────────

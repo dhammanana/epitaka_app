@@ -30,9 +30,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   @override
   void initState() {
     super.initState();
-    // Clear previous search results when sheet opens
     ref.read(searchProvider.notifier).clear();
-    // Auto-focus the search field when the sheet opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -54,18 +52,16 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   }
 
   void _onResultTap(SearchResultItem result) {
-    // Get the current search query from the state for highlighting
     final query = switch (ref.read(searchProvider)) {
       SearchResults(:final query) => query,
       _ => null,
     };
 
-    // Open a new tab (or switch to existing) for the book/para
     ref.read(readerTabsProvider.notifier).openTab(
           ReaderTabInfo(
             bookId: result.bookId,
             bookName: result.bookId,
-            initialParaId: result.firstParaId,
+            initialParaId: result.paraId,
             searchQuery: query,
           ),
         );
@@ -173,9 +169,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
           const SizedBox(height: AppDimensions.sm),
 
           // Results area
-          Expanded(
-            child: _buildResults(searchState, colors),
-          ),
+          Expanded(child: _buildResults(searchState, colors)),
         ],
       ),
     );
@@ -195,7 +189,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
               ),
               const SizedBox(height: AppDimensions.sm),
               Text(
-                'Type a word or phrase to search\nacross all Pāli texts',
+                'Type a word or phrase to search\\nacross all Pāli texts',
                 textAlign: TextAlign.center,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
@@ -206,55 +200,16 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
         );
       case SearchLoading():
         return const Center(child: CircularProgressIndicator());
-      case SearchResults(:final groups, :final query, :final totalResults):
-        if (totalResults == 0 || groups.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.search_off,
-                  size: 48,
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.3),
-                ),
-                const SizedBox(height: AppDimensions.sm),
-                Text(
-                  'No results for "$query"',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        // Flatten all items from all groups
-        final allItems = groups.expand((g) => g.items).toList();
-        return ListView.separated(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.marginMobile,
-          ),
-          itemCount: allItems.length,
-          separatorBuilder: (_, _) => Divider(
-            height: 1,
-            color: colors.outlineVariant.withValues(alpha: 0.5),
-          ),
-          itemBuilder: (context, index) {
-            final result = allItems[index];
-            return _SearchResultTile(
-              result: result,
-              onTap: () => _onResultTap(result),
-              colors: colors,
-            );
-          },
-        );
+      case SearchResults(:final bookSummaries, :final query, :final totalResults):
+        return _buildResultsList(
+            colors, bookSummaries, query, totalResults);
       case SearchIndexing(:final progress, :final status):
         return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(value: progress > 0 ? progress : null),
+              CircularProgressIndicator(
+                  value: progress > 0 ? progress : null),
               const SizedBox(height: 8),
               Text(
                 status,
@@ -281,7 +236,153 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
         );
     }
   }
+
+  Widget _buildResultsList(
+    ColorScheme colors,
+    List<BookResultSummary> summaries,
+    String query,
+    int totalResults,
+  ) {
+    if (summaries.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: AppDimensions.sm),
+            Text(
+              'No results for "$query"',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Check if any books are expanded with loaded items
+    final hasLoadedItems = summaries.any(
+        (s) => s.isExpanded && s.loadedPages.isNotEmpty);
+
+    if (!hasLoadedItems) {
+      // Only show summary counts (collapsed)
+      return ListView.separated(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimensions.marginMobile,
+        ),
+        itemCount: summaries.length,
+        separatorBuilder: (_, _) => Divider(
+          height: 1,
+          color: colors.outlineVariant.withValues(alpha: 0.5),
+        ),
+        itemBuilder: (context, index) {
+          final summary = summaries[index];
+          return _BookSummaryTile(
+            summary: summary,
+            colors: colors,
+            onTap: () {
+              ref
+                  .read(searchProvider.notifier)
+                  .expandBook(index);
+            },
+          );
+        },
+      );
+    }
+
+    // Show expanded results
+    final allItems = summaries
+        .where((s) => s.isExpanded)
+        .expand((s) => s.loadedPages.expand((p) => p))
+        .toList();
+
+    return ListView.separated(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.marginMobile,
+      ),
+      itemCount: allItems.length,
+      separatorBuilder: (_, _) => Divider(
+        height: 1,
+        color: colors.outlineVariant.withValues(alpha: 0.5),
+      ),
+      itemBuilder: (context, index) {
+        final result = allItems[index];
+        return _SearchResultTile(
+          result: result,
+          onTap: () => _onResultTap(result),
+          colors: colors,
+        );
+      },
+    );
+  }
 }
+
+// ── Book Summary Tile (for collapsed state) ─────────────────────────────
+
+class _BookSummaryTile extends StatelessWidget {
+  final BookResultSummary summary;
+  final ColorScheme colors;
+  final VoidCallback onTap;
+
+  const _BookSummaryTile({
+    required this.summary,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = summary.book.bookName ?? summary.book.bookId;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: AppDimensions.sm),
+        child: Row(
+          children: [
+            Icon(Icons.import_contacts, size: 14, color: colors.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                name,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: colors.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${summary.totalCount}',
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.primary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 16, color: colors.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Search Result Tile ──────────────────────────────────────────────────
 
 class _SearchResultTile extends ConsumerWidget {
   final SearchResultItem result;
@@ -315,32 +416,37 @@ class _SearchResultTile extends ConsumerWidget {
             // Book info line
             Row(
               children: [
-                Icon(
-                  Icons.import_contacts,
-                  size: 14,
-                  color: colors.primary,
-                ),
+                Icon(Icons.import_contacts, size: 14, color: colors.primary),
                 const SizedBox(width: 6),
-                Text(
-                  result.bookId,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    result.bookId,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '§${result.firstParaId}',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                  ),
+                  child: Text(
+                    '§${result.paraId}',
+                    style: AppTypography.labelSmall.copyWith(
+                      fontSize: 10,
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 14,
-                  color: colors.onSurfaceVariant,
-                ),
+                Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant),
               ],
             ),
             const SizedBox(height: 4),

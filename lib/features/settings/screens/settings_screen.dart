@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/providers/app_db_provider.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../search/providers/search_provider.dart';
 
+import '../widgets/index_progress_screen.dart';
+import '../widgets/tiles/reset_data_tile.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -115,6 +114,12 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: 'Voice & speed',
                 onTap: () => context.push('/settings/tts'),
               ),
+              _SettingsTile(
+                icon: Icons.find_replace,
+                title: 'TTS Replacements',
+                subtitle: 'Regex text replacements',
+                onTap: () => context.push('/settings/tts/replacements'),
+              ),
             ],
           ),
 
@@ -169,6 +174,7 @@ class SettingsScreen extends ConsumerWidget {
             colors: colors,
             showDividers: true,
             children: [
+              ResetDataTile(),
               _SettingsTile(
                 icon: Icons.info,
                 title: 'About ePitaka',
@@ -640,42 +646,7 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
 
   Future<void> _triggerRebuild() async {
     setState(() => _isRebuilding = true);
-    try {
-      final appDb = await ref.read(appDbProvider.future);
-      final epitakaDb = await ref.read(epitakaDbProvider.future);
-      await appDb.rebuildSearchIndex(epitakaDb);
-
-      // Also rebuild translation indexes for any available translations
-      try {
-        final available = await ref.read(translationRegistryProvider.future);
-        for (final trans in available) {
-          if (!trans.isAvailable) continue;
-          final translationDb =
-              await ref.read(translationDbProvider(trans.language).future);
-          if (translationDb != null) {
-            await appDb.buildTranslationSearchIndex(
-                trans.languageCode, translationDb);
-          }
-        }
-      } catch (_) {}
-
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Search index rebuilt successfully'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Rebuild failed'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isRebuilding = false);
-    }
+    await IndexProgressScreen.show(context, resetFirst: false);
+    if (mounted) setState(() => _isRebuilding = false);
   }
 }

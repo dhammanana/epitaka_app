@@ -38,8 +38,8 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     return MaterialApp.router(
       title: 'ePitaka',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(accentColor: settings.accentColor),
+      darkTheme: AppTheme.dark(accentColor: settings.accentColor),
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       routerConfig: _router,
       builder: (context, child) => IndexGate(child: child!),

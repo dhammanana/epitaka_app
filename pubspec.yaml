@@ -1,4 +1,4 @@
-name: epitaka_app
+name: epitaka
 
 escription: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
@@ -60,7 +60,6 @@ flutter:
     - assets/db/
     - assets/fonts/
     - assets/models/
-    - assets/config/
 
   fonts:
     - family: NotoSansSinhala
