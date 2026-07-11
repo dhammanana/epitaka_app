@@ -9,12 +9,30 @@ class ConnectedBookJump {
   final int paraId;
   final String title;
 
+  /// The type of connection: 'mula', 'attha', or 'tika'.
+  final String type;
+
   const ConnectedBookJump({
     required this.bookId,
     required this.bookName,
     required this.paraId,
     required this.title,
+    required this.type,
   });
+
+  /// Human-readable label for the connection type.
+  String get typeLabel {
+    switch (type) {
+      case 'mula':
+        return 'Mūla';
+      case 'attha':
+        return 'Aṭṭhakathā';
+      case 'tika':
+        return 'Ṭīkā';
+      default:
+        return type;
+    }
+  }
 }
 
 /// A linked book reference parsed from `mula_ref`, `attha_ref`, `tika_ref`.
@@ -63,7 +81,7 @@ class JumpService {
 
   /// Find the heading with `level = 10` at or before [paraId] in [bookId].
   /// Returns the heading title parsed as a number (section/chapter number).
-  int? getSectionNumber(String bookId, int paraId) async {
+  Future<int?> getSectionNumber(String bookId, int paraId) async {
     final rows = await _db.customSelect(
       'SELECT title FROM headings '
       'WHERE book_id = ? AND para_id <= ? AND level = 10 '
@@ -84,8 +102,9 @@ class JumpService {
   /// Tries exact match first, then the nearest less-than match.
   Future<ConnectedBookJump?> findHeadingInBook(
     String linkedBookId,
-    int sectionNumber,
-  ) async {
+    int sectionNumber, {
+    String type = 'other',
+  }) async {
     // First try exact match: heading whose title == sectionNumber
     final exactRows = await _db.customSelect(
       'SELECT h.para_id, h.title, b.book_name '
@@ -106,6 +125,7 @@ class JumpService {
         bookName: r['book_name'] as String? ?? linkedBookId,
         paraId: r['para_id'] as int,
         title: r['title'] as String? ?? '',
+        type: type,
       );
     }
 
@@ -135,6 +155,7 @@ class JumpService {
           bookName: r['book_name'] as String? ?? linkedBookId,
           paraId: r['para_id'] as int,
           title: title,
+          type: type,
         );
       } else {
         break; // Titles are ordered ascending
@@ -157,7 +178,11 @@ class JumpService {
 
     final results = <ConnectedBookJump>[];
     for (final link in linkedBooks) {
-      final match = await findHeadingInBook(link.bookId, sectionNumber);
+      final match = await findHeadingInBook(
+        link.bookId,
+        sectionNumber,
+        type: link.type,
+      );
       if (match != null) {
         results.add(match);
       }

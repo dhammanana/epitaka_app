@@ -7,6 +7,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
 
@@ -272,7 +273,6 @@ class _NikayaSectionState extends ConsumerState<_NikayaSection> {
     final nikaya = widget.nikaya;
     final colors = widget.colors;
     final script = ref.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(nikaya.name, script);
 
     // A sub-nikaya is "redundant" when it adds no information beyond the
     // nikaya itself — either it has no name of its own (an empty
@@ -307,10 +307,10 @@ class _NikayaSectionState extends ConsumerState<_NikayaSection> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    displayName,
+                  child: PaliTextStatic(
+                    nikaya.name,
+                    script,
                     style: AppTypography.bodyTranslation.copyWith(
-                      fontFamily: scriptFontFamily(script),
                       color: _expanded ? colors.primary : colors.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
@@ -391,7 +391,6 @@ class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
     final sub = widget.subNikaya;
     final colors = widget.colors;
     final script = ref.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(sub.name, script);
 
     return Column(
       children: [
@@ -419,13 +418,12 @@ class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    displayName,
+                  child: PaliTextStatic(
+                    sub.name,
+                    script,
                     style: AppTypography.bodyTranslation.copyWith(
-                      fontFamily: scriptFontFamily(script),
                       color: _expanded ? colors.primary : colors.onSurfaceVariant,
                       fontWeight: _expanded ? FontWeight.w600 : FontWeight.w400,
-                      fontSize: 14,
                     ),
                   ),
                 ),
@@ -473,8 +471,6 @@ class _BookRowState extends ConsumerState<_BookRow> {
     final colors = widget.colors;
     final hasRelated = book.relatedBooks.isNotEmpty;
     final script = ref.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(book.book.displayName, script);
-    final paliFont = scriptFontFamily(script);
 
     return Column(
       children: [
@@ -498,10 +494,10 @@ class _BookRowState extends ConsumerState<_BookRow> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    displayName,
+                  child: PaliTextStatic(
+                    book.book.displayName,
+                    script,
                     style: AppTypography.bodyTranslation.copyWith(
-                      fontFamily: paliFont,
                       color: colors.onSurface,
                     ),
                   ),
@@ -566,8 +562,6 @@ class _RelatedBookRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef widgetRef) {
     final script = widgetRef.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(ref.bookName, script);
-    final paliFont = scriptFontFamily(script);
 
     return InkWell(
       onTap: () {
@@ -609,12 +603,11 @@ class _RelatedBookRow extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                displayName,
+              child: PaliTextStatic(
+                ref.bookName,
+                script,
                 style: AppTypography.bodyTranslation.copyWith(
-                  fontFamily: paliFont,
                   color: colors.onSurfaceVariant,
-                  fontSize: 14,
                 ),
               ),
             ),

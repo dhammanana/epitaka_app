@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/epitaka_database.dart';
 import '../../../core/providers/database_provider.dart';
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../services/jump_service.dart';
 
@@ -108,7 +107,6 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final settings = ref.watch(settingsProvider);
     final pageSystemLabel = _pageSystemLabel(_selectedPageSystem);
 
     return Container(
@@ -170,7 +168,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
               controller: _tabController,
               children: [
                 _buildConnectedBooksTab(colors),
-                _buildPageJumpTab(colors, settings, pageSystemLabel),
+                _buildPageJumpTab(colors, pageSystemLabel),
               ],
             ),
           ),
@@ -260,7 +258,6 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
 
   Widget _buildPageJumpTab(
     ColorScheme colors,
-    AppSettings settings,
     String pageSystemLabel,
   ) {
     return Padding(
@@ -450,7 +447,9 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
 }
 
 /// Tile for a single connected book result.
-class _ConnectedBookTile extends StatelessWidget {
+/// Uses a [ConsumerWidget] so it can access the Pāli script setting
+/// to convert the book name automatically.
+class _ConnectedBookTile extends ConsumerWidget {
   final ConnectedBookJump jump;
   final ColorScheme colors;
   final VoidCallback onTap;
@@ -462,7 +461,7 @@ class _ConnectedBookTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -490,7 +489,7 @@ class _ConnectedBookTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  PaliText(
                     jump.bookName,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
@@ -500,11 +499,34 @@ class _ConnectedBookTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    'Section ${jump.title}',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Section ${jump.title}',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          jump.typeLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: colors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

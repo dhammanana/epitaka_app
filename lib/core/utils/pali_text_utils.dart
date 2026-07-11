@@ -65,6 +65,62 @@ String convertPaliToScript(String text, Script? targetScript) {
   return TextProcessor.convert(sinhalaText, targetScript);
 }
 
+/// Like [convertPaliToScript] but preserves HTML tags.
+///
+/// Extracts HTML tags (e.g. `<b>`, `</b>`, `<i>...</i>`) before conversion
+/// and re-inserts them after, so only the Pāli text between tags is
+/// converted. This prevents corruption of HTML markup during script
+/// conversion.
+String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
+  if (text.isEmpty) return text;
+  if (targetScript == null || targetScript == Script.roman) {
+    // Apply standard beautification for Roman (same as convertPaliToScript)
+    return convertPaliToScript(text, targetScript);
+  }
+
+  // Split into segments alternating between: text, <tag ...>, text, </tag>, ...
+  // We preserve all tag content (including attributes) as-is.
+  final segments = <String>[];
+  int lastEnd = 0;
+  final tagPattern = RegExp(r'<[^>]*>');
+
+  for (final match in tagPattern.allMatches(text)) {
+    // Add text before this tag
+    if (match.start > lastEnd) {
+      final segment = text.substring(lastEnd, match.start);
+      if (segment.isNotEmpty) {
+        segments.add(segment);
+      }
+    }
+    // Add the tag itself (preserved as-is)
+    segments.add(match.group(0)!);
+    lastEnd = match.end;
+  }
+
+  // Add remaining text after the last tag
+  if (lastEnd < text.length) {
+    final remaining = text.substring(lastEnd);
+    if (remaining.isNotEmpty) {
+      segments.add(remaining);
+    }
+  }
+
+  // If no HTML tags, fall through to standard conversion
+  if (segments.length == 1 && !segments[0].startsWith('<')) {
+    return convertPaliToScript(text, targetScript);
+  }
+
+  // Convert only non-tag segments (even-indexed segments are tags)
+  final result = segments.map((segment) {
+    if (segment.startsWith('<') && segment.endsWith('>')) {
+      return segment; // preserve HTML tag as-is
+    }
+    return convertPaliToScript(segment, targetScript);
+  }).join('');
+
+  return result;
+}
+
 /// Converts a search [query] (in Roman Pali) to [script] so that the
 /// converted terms can be matched against Pāli text that was also converted
 /// to the same [script].

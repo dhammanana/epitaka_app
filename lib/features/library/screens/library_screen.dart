@@ -7,9 +7,9 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/utils/pali_text_utils.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../../shared/widgets/app_shell.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../widgets/library_browser.dart';
 import '../providers/heading_title_provider.dart';
 
@@ -334,7 +334,6 @@ class _OpenTabCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final script = ref.watch(settingsProvider).paliScript;
-    final displayBookName = convertPaliToScript(tab.bookName, script);
 
     // Look up nearest heading title
     final headingAsync = tab.currentParaId != null
@@ -387,25 +386,23 @@ class _OpenTabCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (mainTitle != null) Text(
-                      convertPaliToScript(mainTitle, script),
+                    if (mainTitle != null) PaliTextStatic(
+                      mainTitle,
+                      script,
                       style: AppTypography.bodyTranslation.copyWith(
-                        fontFamily: scriptFontFamily(script),
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        displayBookName,
+                      child: PaliTextStatic(
+                        tab.bookName,
+                        script,
                         style: AppTypography.labelSmall.copyWith(
-                          fontFamily: scriptFontFamily(script),
                           color: colors.onSurfaceVariant,
-                          fontSize: 11,
                         ),
                       ),
                     ),
@@ -674,9 +671,7 @@ class _BookmarkCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final script = ref.watch(settingsProvider).paliScript;
-    final displayName = convertPaliToScript(bookmark.name, script);
-    final displayBookName = convertPaliToScript(
-        bookmark.bookName ?? bookmark.bookId, script);
+    final displayName = bookmark.name;
 
     // Look up nearest heading title
     final headingAsync = bookmark.paraId != null
@@ -730,13 +725,12 @@ class _BookmarkCard extends ConsumerWidget {
                   children: [
                     // Main title: heading title from DB
                     if (headingTitle != null)
-                      Text(
-                        convertPaliToScript(headingTitle, script),
+                      PaliTextStatic(
+                        headingTitle,
+                        script,
                         style: AppTypography.bodyTranslation.copyWith(
-                          fontFamily: scriptFontFamily(script),
                           color: colors.onSurface,
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -744,14 +738,13 @@ class _BookmarkCard extends ConsumerWidget {
                     // Secondary: bookmark name + para location
                     Padding(
                       padding: EdgeInsets.only(top: headingTitle != null ? 2 : 0),
-                      child: Text(
+                      child: PaliTextStatic(
                         headingTitle != null
                             ? '$displayName — Para ${bookmark.paraId}'
                             : displayName,
+                        script,
                         style: AppTypography.labelSmall.copyWith(
-                          fontFamily: scriptFontFamily(script),
                           color: colors.onSurfaceVariant,
-                          fontSize: 11,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -770,12 +763,11 @@ class _BookmarkCard extends ConsumerWidget {
                       ),
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        displayBookName,
+                      child: PaliTextStatic(
+                        bookmark.bookName ?? bookmark.bookId,
+                        script,
                         style: AppTypography.labelSmall.copyWith(
-                          fontFamily: scriptFontFamily(script),
                           color: colors.primary.withValues(alpha: 0.7),
-                          fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -934,8 +926,6 @@ class _HistoryCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final timeAgo = _formatTimeAgo(entry.updatedAt);
     final script = ref.watch(settingsProvider).paliScript;
-    final displayBookName = convertPaliToScript(
-        entry.bookName ?? entry.bookId, script);
 
     // Look up nearest heading title
     final headingAsync = entry.paraId != null
@@ -989,24 +979,22 @@ class _HistoryCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Main title: heading title from DB
-                    if (mainTitle != null) Text(
-                      convertPaliToScript(mainTitle, script),
+                    if (mainTitle != null) PaliTextStatic(
+                      mainTitle,
+                      script,
                       style: AppTypography.bodyTranslation.copyWith(
-                        fontFamily: scriptFontFamily(script),
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     // Secondary: book name + para location
-                    Text(
-                      displayBookName,
+                    PaliTextStatic(
+                      entry.bookName ?? entry.bookId,
+                      script,
                       style: AppTypography.labelSmall.copyWith(
-                        fontFamily: scriptFontFamily(script),
                         color: colors.onSurfaceVariant,
-                        fontSize: 11,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

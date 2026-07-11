@@ -48,7 +48,18 @@ class HtmlTextParser {
   }
 
   /// Convenience: build a [Text.rich] widget from an HTML string.
-  static Widget richText(String html, TextStyle style) {
-    return Text.rich(TextSpan(style: style, children: parse(html, style)));
+  static Widget richText(
+    String html,
+    TextStyle style, {
+    int? maxLines,
+    TextOverflow? overflow,
+    TextAlign? textAlign,
+  }) {
+    return Text.rich(
+      TextSpan(style: style, children: parse(html, style)),
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
+      textAlign: textAlign ?? TextAlign.start,
+    );
   }
 }

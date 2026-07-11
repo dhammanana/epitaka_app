@@ -7,8 +7,8 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_search_utils.dart';
-import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/platform_info.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/contents_provider.dart';
 
@@ -438,8 +438,6 @@ class _ContentsRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final script = ref.watch(settingsProvider).paliScript;
-    final title = convertPaliToScript(heading.title ?? 'Untitled', script);
-    final paliFont = scriptFontFamily(script);
 
     return Padding(
       padding: EdgeInsets.only(left: indent * indentUnit),
@@ -478,11 +476,10 @@ class _ContentsRow extends ConsumerWidget {
                 else
                   const SizedBox(width: 24),
                 Expanded(
-                  child: Text(
-                    title,
+                  child: PaliTextStatic(
+                    heading.title ?? 'Untitled',
+                    script,
                     style: AppTypography.headlineSmall.copyWith(
-                      fontFamily: paliFont,
-                      fontSize: 18,
                       color: isCurrent ? colors.primary : colors.onSurface,
                       fontWeight:
                           isCurrent ? FontWeight.w700 : FontWeight.w400,

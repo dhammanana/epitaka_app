@@ -3,10 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 
@@ -368,7 +367,7 @@ class _BookSummaryTile extends StatelessWidget {
                 '${summary.totalCount}',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary,
-                  fontSize: 11,
+
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -397,9 +396,7 @@ class _SearchResultTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
-    final paliText = convertPaliToScript(result.paliText, script);
-    final paliFont = scriptFontFamily(script);
+    final paliText = result.paliText;
     final translation = result.translation;
 
     return InkWell(
@@ -428,35 +425,15 @@ class _SearchResultTile extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                  ),
-                  child: Text(
-                    '§${result.paraId}',
-                    style: AppTypography.labelSmall.copyWith(
-                      fontSize: 10,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant),
               ],
             ),
-            const SizedBox(height: 4),
-            // Pāli snippet
+            const SizedBox(height: 4),              // Pāli snippet
             if (paliText.isNotEmpty)
-              Text(
+              PaliText(
                 paliText,
                 style: AppTypography.bodyPali.copyWith(
-                  fontFamily: paliFont,
-                  fontSize: 15,
                   color: colors.onSurface,
                 ),
                 maxLines: 2,
@@ -469,7 +446,6 @@ class _SearchResultTile extends ConsumerWidget {
                 child: Text(
                   translation,
                   style: AppTypography.bodyTranslation.copyWith(
-                    fontSize: 13,
                     color: colors.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
                   ),

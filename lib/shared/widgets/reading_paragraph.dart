@@ -10,6 +10,7 @@ import '../../core/utils/pali_script_converter.dart';
 import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
+import '../../shared/widgets/pali_text.dart';
 
 /// Display mode for translation in the reader.
 enum ParagraphDisplayMode {
@@ -93,6 +94,9 @@ class ReadingParagraph extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final script = ref.watch(settingsProvider).paliScript;
+    final pageSystemLabel = _pageSystemLabel(
+      ref.watch(settingsProvider).pageNumberingSystem,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +110,7 @@ class ReadingParagraph extends ConsumerWidget {
 
         // Page number badge at page start
         if (paragraph.isPageStart && paragraph.pageNumber != null)
-          _buildPageBadge(paragraph.pageNumber!, colors),
+          _buildPageBadge(paragraph.pageNumber!, colors, pageSystemLabel),
 
         // Content with vertical line flush to left
         _buildContentWithVerticalLine(context, colors, script),
@@ -115,16 +119,14 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   Widget _buildBookTitle(ColorScheme colors, Script script) {
-    final convertedTitle = convertPaliToScript(bookName ?? '', script);
-    final scriptFont = scriptFontFamily(script);
     return Padding(
       padding: const EdgeInsets.only(bottom: 32, left: 12),
       child: Column(
         children: [
-          Text(
-            convertedTitle,
+          PaliTextStatic(
+            bookName ?? '',
+            script,
             style: AppTypography.displayPali.copyWith(
-              fontFamily: scriptFont,
               color: colors.primary,
             ),
             textAlign: TextAlign.center,
@@ -147,7 +149,6 @@ class ReadingParagraph extends ConsumerWidget {
 
   /// Render a heading with style matching its level (h1=largest, h6=smallest).
   Widget _buildHeading(ParagraphHeading heading, ColorScheme colors, Script script) {
-    final convertedTitle = convertPaliToScript(heading.title, script);
     final level = heading.level.clamp(1, 6);
     final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
@@ -167,12 +168,12 @@ class ReadingParagraph extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            convertedTitle,
+          PaliTextStatic(
+            heading.title,
+            script,
             style: TextStyle(
               fontSize: fontSize,
               fontWeight: weight,
-              fontFamily: scriptFontFamily(script),
               color: colors.primary,
               height: 1.3,
             ),
@@ -182,11 +183,7 @@ class ReadingParagraph extends ConsumerWidget {
     );
   }
 
-  Widget _buildPageBadge(String pageNumber, ColorScheme colors) {
-    // Get the page numbering system label from settings
-    final settings = ref.read(settingsProvider);
-    final systemLabel = _pageSystemLabel(settings.pageNumberingSystem);
-
+  Widget _buildPageBadge(String pageNumber, ColorScheme colors, String systemLabel) {
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 12),
       child: Column(
@@ -358,6 +355,7 @@ class ReadingParagraph extends ConsumerWidget {
                       return BookLinkChip(
                         word: link.word,
                         color: chipColor,
+                        script: script,
                         onTap: () => showBookLinkSectionSheet(
                           context,
                           link: link,
@@ -441,11 +439,8 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   Widget _buildPaliLine(String text, ColorScheme colors, Script script) {
-    final convertedText = convertPaliToScript(text, script);
     final effectiveColor = paliTypography.effectiveColor(paliColor);
-    final scriptFont = scriptFontFamily(script);
     final baseStyle = TextStyle(
-      fontFamily: scriptFont,
       fontSize: paliTypography.fontSize,
       fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: paliTypography.italic ? FontStyle.italic : FontStyle.normal,
@@ -456,12 +451,16 @@ class ReadingParagraph extends ConsumerWidget {
     );
 
     if (searchQuery != null && searchQuery!.isNotEmpty) {
+      final convertedText = convertPaliToScriptPreservingHtml(text, script);
       final convertedQuery = convertSearchQueryForScript(searchQuery!, script);
       return _buildHighlightedText(convertedText, convertedQuery, baseStyle, colors);
     }
 
-    final spans = _parseHtml(convertedText, baseStyle);
-    return Text.rich(TextSpan(style: baseStyle, children: spans));
+    // Use PaliHtmlText for normal display (auto-converts script + handles HTML)
+    return PaliHtmlText(
+      text,
+      style: baseStyle,
+    );
   }
 
   /// Build translation text with HTML tag support and search highlighting.

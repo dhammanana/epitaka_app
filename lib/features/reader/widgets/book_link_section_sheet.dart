@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/models/app_models.dart';
 import '../../../core/database/translation_database.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/utils/html_text_parser.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../data/book_link_data.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../services/book_link_service.dart';
@@ -110,6 +112,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
     final brightness = Theme.of(context).brightness;
     final paliColor = settings.paliColorPair.resolve(brightness);
     final transColor = settings.translationColorPair.resolve(brightness);
+    final script = settings.paliScript;
 
     return Container(
       height: MediaQuery.sizeOf(context).height * 0.78,
@@ -143,8 +146,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 4,
                 AppDimensions.marginMobile,
                 0,
-              ),
-              child: _buildHeader(colors, link),
+              ),                  child: _buildHeader(colors, link),
             ),
 
             SizedBox(height: 4),
@@ -157,6 +159,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 link,
                 paliColor: paliColor,
                 transColor: transColor,
+                script: script,
               ),
             ),
           ],
@@ -185,7 +188,6 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary,
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -194,7 +196,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 'Linked from “${link.word}”',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
-                  fontSize: 11,
+
                 ),
               ),
             ],
@@ -234,6 +236,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
     BookLinkData link, {
     required Color paliColor,
     required Color transColor,
+    Script? script,
   }) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -293,15 +296,14 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
             SizedBox(height: 6),
             Text(
               content.headingTitle!,
-              style: TextStyle(
-                fontSize: content.headingLevel != null && content.headingLevel! <= 2
-                    ? 18
-                    : 16,
-                fontWeight: FontWeight.w600,
-                fontFamily: AppTypography.paliFont,
-                color: colors.primary,
-                height: 1.3,
-              ),
+              style: content.headingLevel != null && content.headingLevel! <= 2
+                  ? AppTypography.headlineSmall.copyWith(
+                      color: colors.primary,
+                    )
+                  : AppTypography.bodyPali.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.primary,
+                    ),
             ),
             SizedBox(height: 16),
           ],
@@ -333,14 +335,11 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Pali text (with HTML support) ──────────
-                  HtmlTextParser.richText(
+                  // ── Pali text (with HTML support & script conversion) ─
+                  PaliHtmlText(
                     line.paliText,
-                    AppTypography.bodyPali.copyWith(
+                    style: AppTypography.bodyPali.copyWith(
                       color: paliColor,
-                      fontSize: 15,
-                      height: 1.7,
-                      fontFamily: AppTypography.paliFont,
                     ),
                   ),
 
@@ -352,8 +351,6 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                         entry.value,
                         AppTypography.bodyTranslation.copyWith(
                           color: transColor,
-                          fontSize: 13.5,
-                          height: 1.5,
                         ),
                       );
                     }),
@@ -380,7 +377,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 'para ${content.paraId} · line ${link.linkedLineId}',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
-                  fontSize: 11,
+
                 ),
               ),
             ),

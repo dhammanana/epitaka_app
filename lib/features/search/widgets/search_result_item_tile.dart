@@ -25,8 +25,7 @@ class SearchResultItemTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final script = ref.watch(settingsProvider).paliScript;
-    final paliText = convertPaliToScript(result.paliText, script);
-    final paliFont = scriptFontFamily(script);
+    final paliText = convertPaliToScriptPreservingHtml(result.paliText, script);
     final translation = result.translation;
     final convertedQuery =
         searchQuery != null ? convertSearchQueryForScript(searchQuery!, script) : null;
@@ -61,23 +60,7 @@ class SearchResultItemTile extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                  ),
-                  child: Text(
-                    '§${result.paraId}',
-                    style: AppTypography.labelSmall.copyWith(
-                      fontSize: 10,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
+
               ],
             ),
             const SizedBox(height: 4),
@@ -87,8 +70,6 @@ class SearchResultItemTile extends ConsumerWidget {
                 text: paliText,
                 query: convertedQuery,
                 style: AppTypography.bodyPali.copyWith(
-                  fontFamily: paliFont,
-                  fontSize: 15,
                   color: colors.onSurface,
                 ),
                 maxLines: 2,
@@ -101,7 +82,6 @@ class SearchResultItemTile extends ConsumerWidget {
                   text: translation,
                   query: searchQuery,
                   style: AppTypography.bodyTranslation.copyWith(
-                    fontSize: 13,
                     color: colors.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
                   ),
