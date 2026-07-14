@@ -10,16 +10,69 @@ import '../providers/reader_tabs_provider.dart';
 /// Renders as a scrollable row of rounded-top chips below the app bar.
 /// Active tab uses a white surface with a primary-colour bottom border;
 /// inactive tabs use a slightly darker surface.
-class TabStrip extends ConsumerWidget {
-  const TabStrip({super.key});
+///
+/// Supports:
+/// - Tap to switch tabs
+/// - Long-press + drag to reorder tabs
+///
+/// Uses local state for the tabs list to work correctly with
+/// [ReorderableListView], which requires immediate [setState] in its
+/// [onReorder] callback to prevent snap-back on release.
+///
+/// [onSwitchTab] is called when a tab is tapped, so the parent can
+/// animate the PageView directly (avoids conflicts with swipe).
+class TabStrip extends ConsumerStatefulWidget {
+  /// Called when a tab chip is tapped. Receives the tab index.
+  /// When provided, used instead of directly calling switchTo on the
+  /// provider — the parent should animate PageView and the
+  /// onPageChanged handler will sync the provider.
+  final void Function(int index)? onSwitchTab;
+
+  const TabStrip({super.key, this.onSwitchTab});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tabsState = ref.watch(readerTabsProvider);
+  ConsumerState<TabStrip> createState() => _TabStripState();
+}
+
+class _TabStripState extends ConsumerState<TabStrip> {
+  /// Local copy of the tabs list, kept in sync with the provider.
+  /// We use this instead of watching the provider directly in the
+  /// ReorderableListView builder so that onReorder can update it
+  /// via immediate [setState] (preventing the item from snapping
+  /// back after the drag ends).
+  List<ReaderTabInfo> _localTabs = [];
+  int _localActiveIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final state = ref.read(readerTabsProvider);
+    _localTabs = List.from(state.tabs);
+    _localActiveIndex = state.activeIndex;
+  }
+
+  /// Called when the provider state changes externally (tab opened/closed
+  /// from search results, contents sheet, etc.). Syncs the local list.
+  void _onTabsChanged(ReaderTabsState? _, ReaderTabsState next) {
+    if (!mounted) return;
+    setState(() {
+      _localTabs = List.from(next.tabs);
+      _localActiveIndex = next.activeIndex;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep local state in sync with the provider.
+    // This fires synchronously when the provider state changes
+    // (e.g. tab opened/closed from search results or other places).
+    // Stable method reference avoids re-registering the listener on each build.
+    ref.listen(readerTabsProvider, _onTabsChanged);
+
     final colors = Theme.of(context).colorScheme;
     final isDesktop = MediaQuery.sizeOf(context).width > 768;
 
-    if (tabsState.isEmpty) return const SizedBox.shrink();
+    if (_localTabs.isEmpty) return const SizedBox.shrink();
 
     return Container(
       decoration: BoxDecoration(
@@ -33,23 +86,54 @@ class TabStrip extends ConsumerWidget {
         children: [
           SizedBox(
             height: 44,
-            child: ListView.builder(
+            child: ReorderableListView.builder(
               scrollDirection: Axis.horizontal,
+              buildDefaultDragHandles: true,
               padding: EdgeInsets.symmetric(
                 horizontal:
                     isDesktop ? AppDimensions.marginDesktop : AppDimensions.marginMobile,
               ),
-              itemCount: tabsState.tabs.length,
+              itemCount: _localTabs.length,
+              onReorder: (oldIndex, newIndex) {
+                // ── 1. Update local state immediately (same frame) ──
+                // This prevents ReorderableListView from snapping the
+                // item back to its original position after release.
+                setState(() {
+                  if (oldIndex < newIndex) newIndex--;
+                  final tab = _localTabs.removeAt(oldIndex);
+                  _localTabs.insert(newIndex, tab);
+
+                  // Update local active index after the move
+                  if (_localActiveIndex == oldIndex) {
+                    _localActiveIndex = newIndex;
+                  } else if (oldIndex < _localActiveIndex &&
+                      newIndex >= _localActiveIndex) {
+                    _localActiveIndex--;
+                  } else if (oldIndex > _localActiveIndex &&
+                      newIndex <= _localActiveIndex) {
+                    _localActiveIndex++;
+                  }
+                });
+
+                // ── 2. Update provider for persistence ──────────────
+                // ref.listen above will sync _localTabs back, which is
+                // a no-op since they already match.
+                ref.read(readerTabsProvider.notifier).reorderTab(
+                    oldIndex, newIndex);
+              },
               itemBuilder: (context, index) {
-                final tab = tabsState.tabs[index];
-                final isActive = index == tabsState.activeIndex;
+                final tab = _localTabs[index];
+                final isActive = index == _localActiveIndex;
                 return _TabChip(
+                  key: ValueKey('tab-${tab.bookId}'),
                   tab: tab,
                   isActive: isActive,
-                  onTap: () =>
-                      ref.read(readerTabsProvider.notifier).switchTo(index),
-                  onClose: () =>
-                      ref.read(readerTabsProvider.notifier).closeTab(index),
+                  onTap: () => ref
+                      .read(readerTabsProvider.notifier)
+                      .switchTo(index),
+                  onClose: () => ref
+                      .read(readerTabsProvider.notifier)
+                      .closeTab(index),
                 );
               },
             ),
@@ -67,6 +151,7 @@ class _TabChip extends StatelessWidget {
   final VoidCallback onClose;
 
   const _TabChip({
+    super.key,
     required this.tab,
     required this.isActive,
     required this.onTap,

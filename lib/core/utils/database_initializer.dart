@@ -55,7 +55,7 @@ Future<void> ensureBundledDatabases() async {
   const bundledDbs = [
     'assets/db/epitaka.db',
     'assets/db/epitaka_en.db',
-    'assets/db/dpd-mobile.db',
+    'assets/db/dpd-dictionary.db',
   ];
 
   for (final assetPath in bundledDbs) {

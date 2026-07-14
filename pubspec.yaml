@@ -49,7 +49,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   super_clipboard: ^0.9.1
   audio_service: ^0.18.19
+  audio_session: ^0.1.25
   permission_handler: ^11.3.1
+
+  # HTML rendering
+  flutter_widget_from_html_core: ^0.14.12
 
   # AI inferer
   flutter_onnxruntime: ^1.8.0

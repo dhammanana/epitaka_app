@@ -168,6 +168,45 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     );
   }
 
+  /// Reorder tabs — move the tab at [oldIndex] to [newIndex].
+  /// Uses ReorderableListView conventions:
+  /// - When moving DOWN (oldIndex < newIndex), newIndex is already
+  ///   adjusted by ReorderableListView and must be decremented here.
+  void reorderTab(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= state.tabs.length) return;
+    if (oldIndex == newIndex) return;
+
+    // Adjust newIndex when moving down (after removal, indices shift).
+    // ReorderableListView passes newIndex before the item is removed,
+    // so when dragging DOWN, newIndex can equal state.tabs.length
+    // (dropping at the very end). We must adjust BEFORE validating.
+    if (oldIndex < newIndex) newIndex--;
+
+    if (newIndex < 0 || newIndex >= state.tabs.length) return;
+
+    final newTabs = [...state.tabs];
+    final tab = newTabs.removeAt(oldIndex);
+    newTabs.insert(newIndex, tab);
+
+    // Update active index after the move
+    int newActiveIndex = state.activeIndex;
+    if (state.activeIndex == oldIndex) {
+      // The active tab was the one that was moved
+      newActiveIndex = newIndex;
+    } else if (oldIndex < state.activeIndex && newIndex >= state.activeIndex) {
+      // Moved item from below the active tab to above/at it → active shifts down
+      newActiveIndex--;
+    } else if (oldIndex > state.activeIndex && newIndex <= state.activeIndex) {
+      // Moved item from above the active tab to below/at it → active shifts up
+      newActiveIndex++;
+    }
+
+    state = ReaderTabsState(
+      tabs: newTabs,
+      activeIndex: newActiveIndex,
+    );
+  }
+
   /// Close all tabs.
   void closeAll() {
     state = const ReaderTabsState(tabs: []);

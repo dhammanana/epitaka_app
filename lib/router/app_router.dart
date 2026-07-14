@@ -4,6 +4,7 @@ import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
 import '../features/search/widgets/search_screen.dart';
 import '../features/settings/screens/appearance_settings_screen.dart';
+import '../features/settings/screens/dictionary_settings_screen.dart';
 import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
@@ -24,6 +25,7 @@ class AppRoutes {
   static const translationSettings = '/settings/translation';
   static const ttsSettings = '/settings/tts';
   static const ttsReplacements = '/settings/tts/replacements';
+  static const dictionarySettings = '/settings/dictionary';
   static const contents = '/contents/:bookId';
 }
 
@@ -81,6 +83,11 @@ GoRouter buildRouter() {
                 builder: (context, state) => const TtsReplacementsScreen(),
               ),
             ],
+          ),
+          GoRoute(
+            path: 'dictionary',
+            name: 'dictionarySettings',
+            builder: (context, state) => const DictionarySettingsScreen(),
           ),
         ],
       ),

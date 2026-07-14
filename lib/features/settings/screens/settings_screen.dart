@@ -146,8 +146,8 @@ class SettingsScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.menu_book,
                 title: 'Dictionary Settings',
-                subtitle: 'Configure dictionaries',
-                onTap: () {},
+                subtitle: 'Enable, disable & reorder',
+                onTap: () => context.push('/settings/dictionary'),
               ),
             ],
           ),

@@ -3,29 +3,30 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/database/dpd_database.dart';
-import '../../../core/providers/dpd_provider.dart';
-import '../../../core/utils/velthuis.dart';
+import '../../../core/database/dpd_dictionary_database.dart';
+import '../../../core/providers/dictionary_books_provider.dart';
+import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/velthuis.dart';
+import '../../../core/providers/database_provider.dart';
+import 'package:drift/drift.dart' hide Column;
 
 void showDictionarySheet(BuildContext context, String word) {
   showModalBottomSheet(
     context: context,
-    isScrollControlled: true, // This allows the 85% height to work
+    isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => DictionarySheet(initialWord: word),
   );
 }
 
-// ── Sheet State ────────────────────────────────────────────────────────────
+// ── Enums ──────────────────────────────────────────────────────────────────
 
-/// What the sheet is currently showing.
-enum _SheetView { search, results, entry }
+enum _SheetView { search, results }
 
 // ── Main Sheet Widget ──────────────────────────────────────────────────────
 
-/// A modal bottom sheet for looking up words in the DPD dictionary.
 class DictionarySheet extends ConsumerStatefulWidget {
   final String initialWord;
 
@@ -43,10 +44,25 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   bool _isConverting = false;
 
   _SheetView _view = _SheetView.search;
-  String _query = '';
-  DpdEntryData? _selectedEntry;
 
-  // Search History State
+  /// Whether to show the word detail instead of search results.
+  bool _showDetail = false;
+
+  // The currently looked up word
+  String _query = '';
+  // Deconstructor card navigation
+  int _activeDeconCardIndex = 0;
+  int _activeDeconTabIndex = 0;
+
+  /// Cached sub-lookup results for deconstructor tokens.
+  /// key: token word, value: list of headword rows
+  final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
+
+  /// Cached epitaka dictionary results (from epitaka.db dictionary table).
+  /// key: dictionary book_id, value: list of definition texts
+  final Map<int, List<String>> _epitakaDictCache = {};
+
+  // Search history
   final List<String> _searchHistory = [];
 
   @override
@@ -106,7 +122,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       setState(() {
         _query = '';
         _view = _SheetView.search;
-        _selectedEntry = null;
       });
       return;
     }
@@ -115,7 +130,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       setState(() {
         _query = trimmed;
         _view = _SheetView.results;
-        _selectedEntry = null;
+        _showDetail = false;
       });
     });
   }
@@ -126,39 +141,17 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     setState(() {
       _query = converted;
       _view = _SheetView.results;
-      _selectedEntry = null;
+      _showDetail = false;
     });
     _focusNode.unfocus();
   }
 
-  void _openEntry(DpdEntryData entry) {
-    _addToHistory(entry.headword.lemma1);
-    setState(() {
-      _selectedEntry = entry;
-      _view = _SheetView.entry;
-    });
-  }
-
-  void _goBack() {
-    setState(() {
-      _selectedEntry = null;
-      if (_query.isNotEmpty) {
-        _view = _SheetView.results;
-      } else {
-        _view = _SheetView.search;
-      }
-    });
-  }
-
-  void _lookupWord(String word) {
+  void _selectWord(String word) {
     final converted = velthuis(word);
     _searchController.text = converted;
     _addToHistory(converted);
-    setState(() {
-      _query = converted;
-      _selectedEntry = null;
-      _view = _SheetView.results;
-    });
+    _query = converted;
+    _view = _SheetView.results;
   }
 
   @override
@@ -166,17 +159,16 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     final colors = Theme.of(context).colorScheme;
 
     return Container(
-      // 1. Use sizeOf to prevent 60fps layout thrashing
-      height: MediaQuery.sizeOf(context).height * 0.88, 
+      height: MediaQuery.sizeOf(context).height * 0.88,
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppDimensions.radiusSheet)),
+          top: Radius.circular(AppDimensions.radiusSheet),
+        ),
       ),
-      // 2. Use a transparent Scaffold to handle the keyboard smoothly
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        resizeToAvoidBottomInset: true, // This does the magic!
+        resizeToAvoidBottomInset: true,
         body: Column(
           children: [
             // Drag handle
@@ -200,12 +192,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               ),
               child: Row(
                 children: [
-                  if (_view == _SheetView.entry)
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      color: colors.onSurfaceVariant,
-                      onPressed: _goBack,
-                    ),
                   Expanded(
                     child: TextField(
                       controller: _searchController,
@@ -213,8 +199,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
                         hintText: 'Search Pāḷi…',
-                        prefixIcon:
-                            Icon(Icons.search, color: colors.onSurfaceVariant),
+                        prefixIcon: Icon(Icons.search, color: colors.onSurfaceVariant),
                         suffixIcon: _searchController.text.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear),
@@ -228,8 +213,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                         filled: true,
                         fillColor: colors.surfaceContainerHighest,
                         border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppDimensions.radiusXl),
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
                           borderSide: BorderSide.none,
                         ),
                         contentPadding: const EdgeInsets.symmetric(
@@ -249,16 +233,15 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               ),
             ),
 
-            // Search History Row
-            if (_searchHistory.isNotEmpty && _view != _SheetView.entry)
+            // Search history row
+            if (_searchHistory.isNotEmpty)
               Container(
                 height: 40,
                 margin: const EdgeInsets.only(top: 8, left: 16, right: 16),
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _searchHistory.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
+                  separatorBuilder: (context, index) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
                     return ActionChip(
                       label: Text(_searchHistory[index]),
@@ -298,13 +281,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         return _buildIdleState(colors);
       case _SheetView.results:
         return _buildResults(colors);
-      case _SheetView.entry:
-        if (_selectedEntry == null) return const SizedBox.shrink();
-        return _EntryDetailView(
-          entry: _selectedEntry!,
-          colors: colors,
-          onWordTap: _lookupWord,
-        );
     }
   }
 
@@ -320,14 +296,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           ),
           const SizedBox(height: AppDimensions.md),
           Text(
-            'Digital Pāli Dictionary',
+            'Dictionary',
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            'Search for a Pāḷi word to see\ndefinitions, grammar, and more',
+            'Search for a Pāḷi word to see\ndefinitions across multiple dictionaries',
             textAlign: TextAlign.center,
             style: AppTypography.bodyTranslation.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
@@ -340,132 +316,94 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildResults(ColorScheme colors) {
-    return ref.watch(dpdSearchProvider(_query)).when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'Error: $e',
-                style: AppTypography.bodyTranslation.copyWith(
-                  color: colors.error,
+    return ref.watch(dpdDictionarySearchProvider(_query)).when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Error: $e',
+            style: AppTypography.bodyTranslation.copyWith(
+              color: colors.error,
+            ),
+          ),
+        ),
+      ),
+      data: (results) {
+        // When a result card was tapped, show detail directly
+        if (_showDetail) {
+          return _buildWordDetail(colors);
+        }
+        if (results.isEmpty && _query.length >= 2) {
+          // Try showing the word directly (not just search prefix)
+          return _buildWordDetail(colors);
+        }
+        if (results.isEmpty) {
+          return _buildEmptyState(colors);
+        }
+
+        // Show search results
+        return CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.marginMobile,
+                  AppDimensions.sm,
+                  AppDimensions.marginMobile,
+                  0,
+                ),
+                child: Text(
+                  'Search results for "$_query"',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
-          ),
-          data: (results) {
-            return CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: ref.watch(dpdDeconstructionProvider(_query)).when(
-                        data: (decon) {
-                          if (decon == null || decon.candidates.isEmpty) {
-                            return const SizedBox.shrink();
-                          }
-                          return _buildDeconstructionInline(decon, colors);
-                        },
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
-                      ),
-                ),
-                if (results.isEmpty)
-                  SliverToBoxAdapter(
-                    child: _buildEmptyState(colors),
-                  ),
-                if (results.isNotEmpty)
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimensions.marginMobile,
-                      AppDimensions.sm,
-                      AppDimensions.marginMobile,
-                      32,
-                    ),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final result = results[index];
-                          return _SearchResultCard(
-                            result: result,
-                            onTap: () => _openEntryFromSearch(result),
-                            colors: colors,
-                          );
-                        },
-                        childCount: results.length,
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        );
-  }
-
-  Widget _buildDeconstructionInline(
-      DpdDeconstructionData decon, ColorScheme colors) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.call_split, size: 16, color: colors.onSurfaceVariant),
-              const SizedBox(width: 6),
-              Text(
-                'Possible deconstruction',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimensions.marginMobile,
+                AppDimensions.sm,
+                AppDimensions.marginMobile,
+                32,
+              ),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final result = results[index];
+                    return _SearchResultCard(
+                      lemma1: result.lemma1,
+                      meaningHtmlPreview: result.meaningHtml,
+                      onTap: () {
+                        _selectWordFromResult(result);
+                      },
+                      colors: colors,
+                    );
+                  },
+                  childCount: results.length,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...decon.candidates.map((candidate) {
-            return Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: candidate.tokens.map((token) {
-                return ActionChip(
-                  label: Text(token),
-                  labelStyle: AppTypography.bodyTranslation.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  backgroundColor: colors.primary.withValues(alpha: 0.1),
-                  side: BorderSide(
-                    color: colors.primary.withValues(alpha: 0.3),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  onPressed: () => _lookupWord(token),
-                );
-              }).toList(),
-            );
-          }),
-        ],
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Future<void> _openEntryFromSearch(DpdSearchResult result) async {
-    try {
-      final entry = await ref.read(dpdEntryProvider(result.id).future);
-      if (entry != null && mounted) {
-        _openEntry(entry);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not load entry: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
+  void _selectWordFromResult(DpdHeadwordRow hw) {
+    _searchController.text = hw.cleanLemma1;
+    _query = hw.cleanLemma1;
+    _addToHistory(hw.cleanLemma1);
+    _subLookupCache.clear();
+    _epitakaDictCache.clear();
+    _activeDeconCardIndex = 0;
+    _activeDeconTabIndex = 0;
+    _showDetail = true;
+    _view = _SheetView.results;
+    // Trigger state rebuild so _buildResults shows detail
+    setState(() {});
   }
 
   Widget _buildEmptyState(ColorScheme colors) {
@@ -488,490 +426,402 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               ),
               textAlign: TextAlign.center,
             ),
+            // Show detail view directly
+            const SizedBox(height: 16),
+            TextButton.icon(
+              icon: const Icon(Icons.search, size: 18),
+              label: const Text('Show full details'),
+              onPressed: () {
+                setState(() => _showDetail = true);
+              },
+            ),
           ],
         ),
       ),
     );
   }
-}
 
-// ── Entry Detail View ──────────────────────────────────────────────────────
-
-class _EntryDetailView extends StatefulWidget {
-  final DpdEntryData entry;
-  final ColorScheme colors;
-  final ValueChanged<String> onWordTap;
-
-  const _EntryDetailView({
-    required this.entry,
-    required this.colors,
-    required this.onWordTap,
-  });
-
-  @override
-  State<_EntryDetailView> createState() => _EntryDetailViewState();
-}
-
-class _EntryDetailViewState extends State<_EntryDetailView> {
-  String? _activeTab;
-
-  /// Custom utility to parse bold and italic HTML tags (<b>, <i>) safely into a RichText widget
-  Widget _buildHtmlText(String htmlText, TextStyle baseStyle) {
-    final spans = <TextSpan>[];
-    final regex = RegExp(r'(</?[bi]>)', caseSensitive: false);
-    final matches = regex.allMatches(htmlText);
-
-    int lastMatchEnd = 0;
-    bool isBold = false;
-    bool isItalic = false;
-
-    void addSpan(String text) {
-      if (text.isEmpty) return;
-      spans.add(TextSpan(
-        text: text,
-        style: TextStyle(
-          fontWeight: isBold ? FontWeight.bold : null,
-          fontStyle: isItalic ? FontStyle.italic : null,
-        ),
-      ));
-    }
-
-    for (final match in matches) {
-      final preText = htmlText.substring(lastMatchEnd, match.start);
-      addSpan(preText);
-
-      final tag = match.group(0)!.toLowerCase();
-      if (tag == '<b>') {
-        isBold = true;
-      } else if (tag == '</b>') {
-        isBold = false;
-      } else if (tag == '<i>') {
-        isItalic = true;
-      } else if (tag == '</i>') {
-        isItalic = false;
-      }
-
-      lastMatchEnd = match.end;
-    }
-
-    if (lastMatchEnd < htmlText.length) {
-      addSpan(htmlText.substring(lastMatchEnd));
-    }
-
-    return RichText(
-      text: TextSpan(style: baseStyle, children: spans),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hw = widget.entry.headword;
-    final colors = widget.colors;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        AppDimensions.md,
-        AppDimensions.marginMobile,
-        40,
-      ),
-      children: [
-        // ── Headword ─────────────────────────────────────────────────
-        Text(
-          hw.lemma1,
-          style: AppTypography.displayPali.copyWith(
-            color: colors.onSurface,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        if (hw.lemma2 != null && hw.lemma2!.isNotEmpty) ...[
-          const SizedBox(height: 2),
-          Text(
-            hw.lemma2!,
+  /// Build the full word detail view (DPD + other dictionaries).
+  Widget _buildWordDetail(ColorScheme colors) {
+    return ref.watch(dpdDictionaryLookupProvider(_query)).when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Error: $e',
             style: AppTypography.bodyTranslation.copyWith(
-              color: colors.onSurfaceVariant,
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
+              color: colors.error,
             ),
-          ),
-        ],
-
-        // ── Definition Box (Cyan outline style) ───────────────────────
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(vertical: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: colors.primary,
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Line 1: pos + meaning
-              RichText(
-                text: TextSpan(
-                  style: AppTypography.bodyTranslation.copyWith(
-                    color: colors.onSurface,
-                    fontSize: 16,
-                  ),
-                  children: [
-                    if (hw.pos != null && hw.pos!.isNotEmpty)
-                      TextSpan(
-                        text: '${hw.pos}. ',
-                        style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    if (hw.meaning1 != null && hw.meaning1!.isNotEmpty)
-                      TextSpan(
-                        text: '${hw.meaning1} ',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    if (hw.meaning2 != null && hw.meaning2!.isNotEmpty)
-                      TextSpan(
-                        text: '; ${hw.meaning2}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                  ],
-                ),
-              ),
-
-              // Line 2: lit. meaning + construction
-              if ((hw.meaningLit != null && hw.meaningLit!.isNotEmpty) ||
-                  (hw.construction != null && hw.construction!.isNotEmpty)) ...[
-                const SizedBox(height: 8),
-                RichText(
-                  text: TextSpan(
-                    style: AppTypography.bodyTranslation.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 15,
-                    ),
-                    children: [
-                      if (hw.meaningLit != null && hw.meaningLit!.isNotEmpty)
-                        TextSpan(
-                          text: 'lit. ${hw.meaningLit} ',
-                        ),
-                      if (hw.construction != null &&
-                          hw.construction!.isNotEmpty)
-                        TextSpan(
-                          text: '[${hw.construction}] ✓',
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Line 3: Root and Root meaning
-              if (widget.entry.root != null &&
-                  widget.entry.root!.rootMeaning!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                RichText(
-                  text: TextSpan(
-                    style: AppTypography.bodyTranslation.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                    children: [
-                      const TextSpan(
-                          text: 'root: ',
-                          style: TextStyle(fontStyle: FontStyle.italic)),
-                      TextSpan(
-                        text: '${hw.rootKey ?? ''} ',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextSpan(text: '(${widget.entry.root!.rootMeaning})'),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        // ── Action Tabs Row ──────────────────────────────────────────
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            if (widget.entry.hasGrammarDetails) _buildTab('grammar'),
-            if (hw.example1 != null && hw.example1!.isNotEmpty)
-              _buildTab('example'),
-            if (widget.entry.rootFamilyKeys.isNotEmpty)
-              _buildTab('root family'),
-            if (widget.entry.compoundFamilyItems.isNotEmpty)
-              _buildTab('compound family'),
-            _buildTab('declension'),
-            if (hw.commentary != null && hw.commentary!.isNotEmpty)
-              _buildTab('commentary'),
-          ],
-        ),
-
-        // ── Active Tab Content Area ──────────────────────────────────
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _activeTab == null
-              ? const SizedBox.shrink()
-              : Container(
-                  key: ValueKey(_activeTab),
-                  margin: const EdgeInsets.only(top: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest
-                        .withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colors.outlineVariant.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: _buildActiveTabContent(),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTab(String label) {
-    final isActive = _activeTab == label;
-    final colors = widget.colors;
-
-    return InkWell(
-      onTap: () => setState(() => _activeTab = isActive ? null : label),
-      borderRadius: BorderRadius.circular(4), // Square styling
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive
-              ? colors.primary.withValues(alpha: 0.8)
-              : colors.primary,
-          borderRadius: BorderRadius.circular(4), // Square styling
-        ),
-        child: Text(
-          label,
-          style: AppTypography.labelSmall.copyWith(
-            color: colors.onPrimary,
-            fontWeight: FontWeight.w600,
           ),
         ),
       ),
+      data: (lookup) {
+        if (!lookup.hasHeadwords && !lookup.hasDeconstructor) {
+          return _buildEmptyState(colors);
+        }
+        return _buildDictionaryResults(colors, lookup);
+      },
     );
   }
 
-  Widget _buildActiveTabContent() {
-    final colors = widget.colors;
-    final hw = widget.entry.headword;
-    final entry = widget.entry;
-
-    switch (_activeTab) {
-      case 'grammar':
-        return _buildGrammarTable(hw, entry.root, colors);
-      case 'example':
-        return _buildExamples(hw, colors);
-      case 'root family':
-        return _buildFamilySection(entry.rootFamilyKeys, colors);
-      case 'compound family':
-        return _buildFamilySection(entry.compoundFamilyItems, colors);
-      case 'declension':
-        return Text(
-          "Declension features using Pattern: ${hw.pattern ?? '-'}, Stem: ${hw.stem ?? '-'}\nDetailed declension tables mapping coming soon.",
-          style: AppTypography.bodyTranslation.copyWith(
-            color: colors.onSurfaceVariant,
-            fontStyle: FontStyle.italic,
-          ),
-        );
-      case 'commentary':
-        return _buildHtmlText(
-          hw.commentary!,
-          AppTypography.bodyTranslation.copyWith(
-            color: colors.onSurface,
-            fontSize: 15,
-            height: 1.6,
-          ),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  // ── Tab Builders ─────────────────────────────────────────────────────
-
-  Widget _buildGrammarTable(DpdHeadword hw, DpdRoot? root, ColorScheme colors) {
-    final rows = <_LabelValue>[];
-
-    void add(String label, String? value) {
-      if (value != null && value.isNotEmpty) {
-        rows.add(_LabelValue(label, value));
-      }
+  /// Show combined results from DPD and other dictionaries.
+  Widget _buildDictionaryResults(ColorScheme colors, DpdFullLookup lookup) {
+    // Get the cleaned lemma_1 for cross-dictionary search
+    String searchWord = _query;
+    if (lookup.headwords.isNotEmpty) {
+      searchWord = lookup.headwords.first.cleanLemma1;
     }
 
-    add('Part of speech', hw.pos);
-    add('Grammar', hw.grammar);
-    add('Derived from', hw.derivedFrom);
-    add('Negation', hw.neg);
-    add('Verb type', hw.verb);
-    add('Transitivity', hw.trans);
-    add('Plus case', hw.plusCase);
-    add('Stem', hw.stem);
-    add('Pattern', hw.pattern);
-    add('Suffix', hw.suffix);
-    add('Compound type', hw.compoundType);
-    add('Root key', hw.rootKey);
-    add('Root sign', hw.rootSign);
-    add('Root base', hw.rootBase);
+    return FutureBuilder<List<DictionaryBook>>(
+      future: ref.read(dictionaryBooksProvider.future),
+      builder: (context, booksSnapshot) {
+        final enabledBooks = booksSnapshot.data
+                ?.where((b) => b.userChoice)
+                .toList() ??
+            [];
 
-    if (root != null) {
-      add('Root group', root.rootGroup);
-      add('Root meaning', root.rootMeaning);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: rows.map((r) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 110,
-                child: Text(
-                  r.label,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
+        return CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            // ── DPD Dictionary Section ──────────────────────────────
+            if (lookup.hasHeadwords || lookup.hasDeconstructor)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimensions.marginMobile,
+                    AppDimensions.sm,
+                    AppDimensions.marginMobile,
+                    0,
                   ),
+                  child: _buildDpdSection(colors, lookup),
                 ),
               ),
-              Expanded(
-                child: Text(
-                  r.value,
-                  style: AppTypography.bodyTranslation.copyWith(
-                    color: colors.onSurface,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
+
+            // ── Other Dictionaries ──────────────────────────────────
+            ..._buildOtherDictionarySections(colors, searchWord, enabledBooks),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          ],
         );
-      }).toList(),
+      },
     );
   }
 
-  Widget _buildExamples(DpdHeadword hw, ColorScheme colors) {
-    final children = <Widget>[];
+  // ── DPD Section ──────────────────────────────────────────────────────────
 
-    if (hw.example1 != null && hw.example1!.isNotEmpty) {
-      children.add(_buildExampleBlock(
-        example: hw.example1!,
-        source: hw.source1,
-        sutta: hw.sutta1,
-        colors: colors,
-      ));
-    }
-
-    if (hw.example2 != null && hw.example2!.isNotEmpty) {
-      if (children.isNotEmpty) children.add(const SizedBox(height: 12));
-      children.add(_buildExampleBlock(
-        example: hw.example2!,
-        source: hw.source2,
-        sutta: hw.sutta2,
-        colors: colors,
-      ));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
-    );
-  }
-
-  Widget _buildExampleBlock({
-    required String example,
-    String? source,
-    String? sutta,
-    required ColorScheme colors,
-  }) {
+  Widget _buildDpdSection(ColorScheme colors, DpdFullLookup lookup) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Using our html builder instead of Text
-        _buildHtmlText(
-          example,
-          AppTypography.bodyPali.copyWith(
+        // Section label
+        Row(
+          children: [
+            Icon(Icons.auto_stories, size: 18, color: colors.primary),
+            const SizedBox(width: 6),
+            Text(
+              'dpd dictionary',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Searched word
+        Text(
+          lookup.searchedKey,
+          style: AppTypography.displayPali.copyWith(
             color: colors.onSurface,
-            fontSize: 15,
-            height: 1.6,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        if (source != null || sutta != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            [source, sutta].whereType<String>().join(' · '),
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
+        const SizedBox(height: 12),
+
+        // Deconstructor cards (if available)
+        if (lookup.hasDeconstructor) ...[
+          _buildDeconstructorSection(colors, lookup),
+          const SizedBox(height: 16),
         ],
+
+        // Headwords HTML
+        if (lookup.hasHeadwords)
+          ...lookup.headwords.map((hw) {
+            return _HeadwordHtmlCard(
+              headword: hw,
+              colors: colors,
+              onWordTap: _selectWord,
+            );
+          }),
+        const SizedBox(height: AppDimensions.md),
+
+        const Divider(height: 1),
+        const SizedBox(height: AppDimensions.md),
       ],
     );
   }
 
-  Widget _buildFamilySection(List<String> items, ColorScheme colors) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: items.map((item) {
-        return ActionChip(
-          label: Text(
-            item,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.primary,
+  Widget _buildDeconstructorSection(ColorScheme colors, DpdFullLookup lookup) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.call_split, size: 16, color: colors.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              'Compound breakdown',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          onPressed: () => widget.onWordTap(item),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          visualDensity: VisualDensity.compact,
-          backgroundColor: colors.primary.withValues(alpha: 0.1),
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(4), // Match square styling
-          ),
-        );
-      }).toList(),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Deconstructor candidate cards
+        ...lookup.deconstructionCandidates.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final candidate = entry.value;
+          final isActive = idx == _activeDeconCardIndex;
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _activeDeconCardIndex = idx;
+                _activeDeconTabIndex = 0;
+              });
+              _lookupDeconTokens(candidate);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? colors.primaryContainer.withValues(alpha: 0.3)
+                    : colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isActive ? colors.primary : colors.outlineVariant.withValues(alpha: 0.3),
+                  width: isActive ? 1.5 : 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Candidate header with word chips
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: candidate.tokens.map((token) {
+                        return ActionChip(
+                          label: Text(token),
+                          labelStyle: AppTypography.bodyTranslation.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                          backgroundColor: colors.primary.withValues(alpha: 0.08),
+                          side: BorderSide(
+                            color: colors.primary.withValues(alpha: 0.2),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          onPressed: () => _selectWord(token),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+
+                  // Expanded detail tabs for active card
+                  if (isActive) ...[
+                    _buildDeconTabs(colors, candidate, lookup),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
     );
+  }
+
+  Widget _buildDeconTabs(
+    ColorScheme colors,
+    DeconstructionCandidate candidate,
+    DpdFullLookup lookup,
+  ) {
+    if (candidate.tokens.length <= 1) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Tab bar for tokens
+        const Divider(height: 1),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            children: candidate.tokens.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final token = entry.value;
+              final isActive = idx == _activeDeconTabIndex;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() => _activeDeconTabIndex = idx);
+                    _lookupDeconToken(token);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? colors.primary.withValues(alpha: 0.15)
+                          : colors.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      token,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isActive ? colors.primary : colors.onSurfaceVariant,
+                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        // Tab content: sub-lookup results for the active token
+        if (candidate.tokens.isNotEmpty &&
+            _activeDeconTabIndex < candidate.tokens.length)
+          _buildTokenContent(colors, candidate.tokens[_activeDeconTabIndex]),
+      ],
+    );
+  }
+
+  Widget _buildTokenContent(ColorScheme colors, String token) {
+    final cached = _subLookupCache[token];
+    if (cached != null) {
+      return Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: cached.map((hw) {
+            return _HeadwordHtmlCard(
+              headword: hw,
+              colors: colors,
+              onWordTap: _selectWord,
+              compact: true,
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    // Trigger async lookup
+    _lookupDeconToken(token);
+    return const Padding(
+      padding: EdgeInsets.all(12),
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+
+  Future<void> _lookupDeconToken(String token) async {
+    if (_subLookupCache.containsKey(token)) return;
+    try {
+      final headwords = await ref.read(dpdSubLookupProvider(token).future);
+      if (mounted) {
+        setState(() {
+          _subLookupCache[token] = headwords;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _lookupDeconTokens(DeconstructionCandidate candidate) async {
+    for (final token in candidate.tokens) {
+      await _lookupDeconToken(token);
+    }
+  }
+
+  // ── Other Dictionaries Section ───────────────────────────────────────────
+
+  List<Widget> _buildOtherDictionarySections(
+    ColorScheme colors,
+    String searchWord,
+    List<DictionaryBook> enabledBooks,
+  ) {
+    // Filter out DPD (book_id=11) since it's shown separately from dpd-dictionary.db
+    final otherBooks = enabledBooks.where((b) => b.id != 11).toList();
+    if (otherBooks.isEmpty) return [];
+
+    // Start fetching results for all other dictionaries
+    return otherBooks.map((book) {
+      return SliverToBoxAdapter(
+        child: _OtherDictionarySection(
+          book: book,
+          searchWord: searchWord,
+          colors: colors,
+          onWordTap: _selectWord,
+        ),
+      );
+    }).toList();
   }
 }
 
-// ── Supporting Widgets ─────────────────────────────────────────────────────
+// ── Search Result Card ──────────────────────────────────────────────────────
 
-/// Search result card showing summary info.
 class _SearchResultCard extends StatelessWidget {
-  final DpdSearchResult result;
+  final String lemma1;
+  final String? meaningHtmlPreview;
   final VoidCallback onTap;
   final ColorScheme colors;
 
   const _SearchResultCard({
-    required this.result,
+    required this.lemma1,
+    this.meaningHtmlPreview,
     required this.onTap,
     required this.colors,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Extract a plain-text preview from HTML
+    final plainPreview = meaningHtmlPreview != null
+        ? _stripHtml(meaningHtmlPreview!)
+        : '';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: colors.surfaceContainerLow,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        side: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.4)),
+        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: InkWell(
         onTap: onTap,
@@ -985,17 +835,17 @@ class _SearchResultCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      result.lemma1,
+                      lemma1,
                       style: AppTypography.headlineSmall.copyWith(
                         color: colors.primary,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (result.summaryLine.isNotEmpty) ...[
+                    if (plainPreview.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        result.summaryLine,
+                        plainPreview,
                         style: AppTypography.bodyTranslation.copyWith(
                           color: colors.onSurfaceVariant,
                           fontSize: 13,
@@ -1018,11 +868,448 @@ class _SearchResultCard extends StatelessWidget {
       ),
     );
   }
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
 }
 
-/// Simple label-value pair for grammar table.
-class _LabelValue {
-  final String label;
-  final String value;
-  const _LabelValue(this.label, this.value);
+// ── Headword HTML Card ──────────────────────────────────────────────────────
+
+class _HeadwordHtmlCard extends StatelessWidget {
+  final DpdHeadwordRow headword;
+  final ColorScheme colors;
+  final ValueChanged<String> onWordTap;
+  final bool compact;
+
+  const _HeadwordHtmlCard({
+    required this.headword,
+    required this.colors,
+    required this.onWordTap,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final html = headword.meaningHtml;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.all(compact ? 8 : 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Lemma with secondary number
+          Text(
+            headword.lemma1,
+            style: TextStyle(
+              fontSize: compact ? 14 : 16,
+              fontWeight: FontWeight.w600,
+              color: colors.primary,
+              fontFamily: 'Georgia',
+            ),
+          ),
+          const SizedBox(height: 6),
+          // HTML content rendered as plain text with HTML-like formatting
+          if (html != null && html.isNotEmpty)
+            _HtmlRichText(
+              html: html,
+              baseStyle: TextStyle(
+                fontSize: compact ? 13 : 14,
+                height: 1.5,
+                color: colors.onSurface,
+                fontFamily: 'Georgia',
+              ),
+              linkColor: colors.primary,
+              onWordTap: onWordTap,
+            )
+          else
+            Text(
+              'No definition available',
+              style: TextStyle(
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── HTML Rich Text Widget ──────────────────────────────────────────────────
+
+/// Renders simple HTML content (details/summary, b, i, divs) as rich text
+/// with tappable word links.
+class _HtmlRichText extends StatelessWidget {
+  final String html;
+  final TextStyle baseStyle;
+  final Color linkColor;
+  final ValueChanged<String> onWordTap;
+
+  const _HtmlRichText({
+    required this.html,
+    required this.baseStyle,
+    required this.linkColor,
+    required this.onWordTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Parse the HTML into segments
+    final segments = _parseHtml(html);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: segments.map((segment) {
+        if (segment is _HtmlText) {
+          return _buildTextSegment(segment);
+        } else if (segment is _HtmlLinkList) {
+          return _buildLinkList(segment);
+        }
+        return const SizedBox.shrink();
+      }).toList(),
+    );
+  }
+
+  Widget _buildTextSegment(_HtmlText seg) {
+    final spans = <TextSpan>[];
+
+    // Split by words to find Pāli words (which should be tappable)
+    final words = seg.text.split(RegExp(r'(\s+)'));
+    for (final word in words) {
+      if (word.trim().isEmpty) {
+        spans.add(TextSpan(text: word));
+      } else if (seg.boldWords.any((bw) => word.contains(bw))) {
+        spans.add(TextSpan(
+          text: word,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ));
+      } else {
+        spans.add(TextSpan(text: word));
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: RichText(
+        text: TextSpan(
+          style: _mergeStyles(seg.style, baseStyle),
+          children: spans,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLinkList(_HtmlLinkList seg) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: seg.words.map((word) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: GestureDetector(
+              onTap: () => onWordTap(word),
+              child: Text(
+                word,
+                style: baseStyle.copyWith(
+                  color: linkColor,
+                  decoration: TextDecoration.underline,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  TextStyle _mergeStyles(TextStyle? override, TextStyle base) {
+    if (override == null) return base;
+    return base.merge(override);
+  }
+
+  List<dynamic> _parseHtml(String html) {
+    final segments = <dynamic>[];
+    // Remove the outer <details> wrapper if present
+    String content = html;
+
+    // Extract text from <summary> tags
+    final summaryMatch = RegExp(r'<summary>(.*?)</summary>', dotAll: true).firstMatch(content);
+    if (summaryMatch != null) {
+      final summaryText = _stripAllTags(summaryMatch.group(1)!);
+      segments.add(_HtmlText(summaryText, const TextStyle(fontWeight: FontWeight.bold), []));
+      content = content.substring(summaryMatch.end);
+    }
+
+    // Extract detail div content
+    final detailMatch = RegExp(r'<div class="dpd-meaning-detail">(.*?)</div>', dotAll: true).firstMatch(content);
+    if (detailMatch != null) {
+      final detail = detailMatch.group(1)!;
+      // Parse grammar lines
+      final grammarMatch = RegExp(r'<b>Grammar:</b>\s*(.*?)(?:</div>|<br)').firstMatch(detail);
+      if (grammarMatch != null) {
+        segments.add(_HtmlText(
+          'Grammar: ${_stripAllTags(grammarMatch.group(1)!)}',
+          TextStyle(color: baseStyle.color?.withValues(alpha: 0.7), fontSize: baseStyle.fontSize! - 1),
+          [],
+        ));
+      }
+
+      // Parse Sanskrit
+      final sanskritMatch = RegExp(r'<b>Sanskrit:</b>\s*(.*?)(?:</div>|<br)').firstMatch(detail);
+      if (sanskritMatch != null) {
+        segments.add(_HtmlText(
+          'Skt: ${_stripAllTags(sanskritMatch.group(1)!)}',
+          TextStyle(color: baseStyle.color?.withValues(alpha: 0.7), fontSize: baseStyle.fontSize! - 1),
+          [],
+        ));
+      }
+
+      // Parse example
+      final exampleMatch = RegExp(r'<b>Example:</b>\s*(.*?)(?:</div>|$)').firstMatch(detail);
+      if (exampleMatch != null) {
+        final exampleText = _stripAllTags(exampleMatch.group(1)!);
+        segments.add(const SizedBox(height: 4));
+        segments.add(_HtmlText(
+          exampleText,
+          TextStyle(fontStyle: FontStyle.italic, fontSize: baseStyle.fontSize! - 1),
+          [],
+        ));
+      }
+
+      // Extract remaining plain text
+      final remaining = detail
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      if (remaining.isNotEmpty && segments.length <= 3) {
+        segments.add(_HtmlText(
+          remaining,
+          baseStyle,
+          [],
+        ));
+      }
+    }
+
+    return segments;
+  }
+
+  String _stripAllTags(String html) {
+    return html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+  }
+}
+
+class _HtmlText {
+  final String text;
+  final TextStyle? style;
+  final List<String> boldWords;
+
+  const _HtmlText(this.text, this.style, this.boldWords);
+}
+
+class _HtmlLinkList {
+  final List<String> words;
+
+  const _HtmlLinkList(this.words);
+}
+
+// ── Cached dictionary definitions provider ───────────────────────────────────
+
+/// Cache key for dictionary definitions.
+class _DictLookupKey {
+  final int bookId;
+  final String word;
+  const _DictLookupKey(this.bookId, this.word);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _DictLookupKey && bookId == other.bookId && word == other.word;
+
+  @override
+  int get hashCode => Object.hash(bookId, word);
+}
+
+/// Provider that caches dictionary definitions from epitaka.dictionary.
+final _dictionaryDefinitionProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, _DictLookupKey>((ref, key) async {
+  try {
+    final db = await ref.read(epitakaDbProvider.future);
+    final rows = await db.customSelect(
+      'SELECT definition FROM dictionary WHERE word = ? AND book_id = ? LIMIT 5',
+      variables: [
+        Variable.withString(key.word.toLowerCase()),
+        Variable.withInt(key.bookId),
+      ],
+    ).get();
+    return rows.map((r) => r.data).toList();
+  } catch (_) {
+    return [];
+  }
+});
+
+// ── Other Dictionary Section ───────────────────────────────────────────────
+
+/// A section showing results from a single dictionary book in epitaka.dictionary.
+class _OtherDictionarySection extends ConsumerWidget {
+  final DictionaryBook book;
+  final String searchWord;
+  final ColorScheme colors;
+  final ValueChanged<String> onWordTap;
+
+  const _OtherDictionarySection({
+    required this.book,
+    required this.searchWord,
+    required this.colors,
+    required this.onWordTap,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = _DictLookupKey(book.id, searchWord);
+    final defsAsync = ref.watch(_dictionaryDefinitionProvider(key));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        0,
+        AppDimensions.marginMobile,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Book name header
+          Row(
+            children: [
+              Icon(Icons.book, size: 18, color: colors.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                book.name,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          defsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(8),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                'No entry found',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+            data: (definitions) {
+              if (definitions.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    'No entry found',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...definitions.map((def) {
+                    final definition = def['definition'] as String? ?? '';
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colors.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: _DictionaryHtmlContent(
+                        html: definition,
+                        baseStyle: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              );
+            },
+          ),
+
+          const SizedBox(height: AppDimensions.md),
+          const Divider(height: 1),
+          const SizedBox(height: AppDimensions.md),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Dictionary HTML Content ─────────────────────────────────────────────────
+
+/// Renders HTML content from epitaka.dictionary definitions.
+class _DictionaryHtmlContent extends StatelessWidget {
+  final String html;
+  final TextStyle baseStyle;
+
+  const _DictionaryHtmlContent({
+    required this.html,
+    required this.baseStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Strip HTML tags and render as plain text with basic formatting
+    final text = _stripHtml(html);
+    return Text(
+      text,
+      style: baseStyle,
+    );
+  }
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
 }

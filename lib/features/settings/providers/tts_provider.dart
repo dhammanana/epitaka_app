@@ -7,6 +7,7 @@ import 'package:supertonic_flutter/supertonic_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../services/tts_audio_handler.dart';
 
 /// TTS playback state.
 enum TtsPlaybackState { stopped, playing, paused, loading }
@@ -35,6 +36,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   Completer<void>? _speechCompleter;
   String? _currentText;
 
+  /// Monotonically increasing speech session ID. Incremented before
+  /// each [speak()]/[stop()]/[pause()] call so that stale completion
+  /// handlers (from lines that timed out or were stopped) can be
+  /// detected and ignored. Without this guard, a delayed completion
+  /// handler from a previous line can resolve the *next* line's
+  /// completer prematurely, cutting it off.
+  int _currentSpeechId = 0;
+
   /// Cached flutter_tts platform channel values to avoid redundant
   /// MethodChannel calls on every line. Only updated when the user
   /// changes speed/pitch/language via settings.
@@ -60,41 +69,107 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _speechCompleter = null;
   }
 
-  /// Wait for the current speech to finish playing, with a timeout fallback.
-  Future<void> _waitForCompletion() async {
+  /// Wait for the current speech to finish playing, with a dynamic timeout.
+  ///
+  /// [text] is used to calculate a reasonable timeout based on length.
+  /// The old fixed 30s timeout was too short for long lines (800+ chars
+  /// take ~30s at normal speed, and can exceed 30s at slow speed).
+  /// When the timeout fires and we continue to the next line, the old
+  /// line's native TTS may still be speaking. Its completion handler
+  /// can later resolve the *next* line's completer (see Bug 2 below).
+  ///
+  /// Bug 1 — Premature timeout:
+  ///   A long line takes >30s → timeout fires → completer resolved.
+  ///   `speak()` catches the TimeoutException, `stop()` is called,
+  ///    the engine moves to the next line. But the completion handler
+  ///    from the original line is still registered.
+  ///
+  /// Bug 2 — Stale completion resolves wrong completer:
+  ///   The old line's completion handler fires after `stop()` on the
+  ///   new line has already started a new `_speakSystem()`. The handler
+  ///   calls `_completeSpeech()` which completes the *new* line's
+  ///   completer, cutting the new line short. Over minutes this cascade
+  ///   drops more and more spoken text.
+  ///
+  /// Both bugs are fixed by:
+  ///   a) Dynamic timeout based on text length (Bug 1)
+  ///   b) Speech ID guard in completion/error handlers (Bug 2)
+  Future<void> _waitForCompletion([String? text]) async {
     _completeSpeech();
     _speechCompleter = Completer<void>();
+
+    // Dynamic timeout: at 0.5x speed (slowest) ~6 chars/sec → 167ms/char.
+    // Use 200ms/char + 15s buffer, clamped to [15s, 5min].
+    final speechId = _currentSpeechId;
+    Duration timeout;
+    if (text != null && text.isNotEmpty) {
+      final ms = (text.length * 200) + 15000;
+      timeout = Duration(milliseconds: ms.clamp(15000, 300000));
+    } else {
+      timeout = const Duration(seconds: 30);
+    }
+
     try {
-      await _speechCompleter!.future.timeout(
-        const Duration(seconds: 30),
-      );
+      await _speechCompleter!.future.timeout(timeout);
     } on TimeoutException {
-      _completeSpeech();
+      developer.log(
+        '[TTS] _waitForCompletion TIMEOUT speechId=$speechId '
+        'text.length=${text?.length ?? 0} timeout=${timeout.inMilliseconds}ms '
+        'currentId=$_currentSpeechId',
+        name: 'epitaka.tts',
+      );
+      // Only complete if this speech is still the active one
+      // (guard against stale completer races, Bug 2).
+      if (_currentSpeechId == speechId) {
+        _completeSpeech();
+      } else {
+        developer.log(
+          '[TTS] _waitForCompletion timeout SUPPRESSED: speech is stale',
+          name: 'epitaka.tts',
+        );
+      }
     }
   }
 
+  /// Notify the Android MediaSession notification of the current TTS state.
+  /// Called internally after every state change.
+  void _broadcastToAudioService({bool hasPrev = false, bool hasNext = false}) {
+    ttsAudioHandler.setPlaybackState(
+      playing: state == TtsPlaybackState.playing,
+      paused: state == TtsPlaybackState.paused,
+      hasPrev: hasPrev,
+      hasNext: hasNext,
+    );
+  }
+
   /// Lazily initialize the system TTS engine.
+  ///
+  /// Note: completion/error handlers are set per-speech in
+  /// [_speakSystem] with a speech-ID guard, not here, because
+  /// [_getFlutterTts] is called only once (lazy init) and the
+  /// handlers set here would persist for the lifetime of the
+  /// engine, making them vulnerable to stale completions (Bug 2).
   Future<FlutterTts> _getFlutterTts() async {
     if (_flutterTts != null) return _flutterTts!;
 
     final tts = FlutterTts();
     _flutterTts = tts;
 
-    // Set up completion and error handlers
+    // Initial completion/error handlers are set in _speakSystem
+    // with speech-ID guards. These are temporary placeholders.
     tts.setCompletionHandler(() {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      developer.log('[TTS] Completion handler fired at $now', name: 'epitaka.tts');
+      developer.log('[TTS] Stale completion handler fired (no speech ID)', name: 'epitaka.tts');
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
-        _completeSpeech();
+        _broadcastToAudioService();
       }
     });
 
     tts.setErrorHandler((msg) {
-      developer.log('[TTS] Error handler fired: $msg', name: 'epitaka.tts');
+      developer.log('[TTS] Stale error handler fired: $msg', name: 'epitaka.tts');
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
-        _completeSpeech();
+        _broadcastToAudioService();
       }
     });
 
@@ -133,7 +208,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _currentText = text;
     developer.log('[TTS] speak() called: text.length=${text.length} text="${text.length > 40 ? '${text.substring(0, 40)}...' : text}"', name: 'epitaka.tts');
 
-    // Stop any current playback
+    // Increment speech ID BEFORE stop() so the completion handler
+    // that fires from stop() won't match the new speech (Bug 2 fix).
+    _currentSpeechId++;
     await stop();
 
     final start = DateTime.now();
@@ -144,13 +221,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         case TtsEngineType.supertonic:
           await _speakSupertonic(text);
       }
-      await _waitForCompletion();
+      await _waitForCompletion(text);
       final elapsed = DateTime.now().difference(start).inMilliseconds;
-      developer.log('[TTS] speak() completed in ${elapsed}ms', name: 'epitaka.tts');
+      developer.log('[TTS] speak() completed in ${elapsed}ms speechId=$_currentSpeechId', name: 'epitaka.tts');
     } catch (e) {
+      developer.log('[TTS] speak() error: $e speechId=$_currentSpeechId', name: 'epitaka.tts');
       state = TtsPlaybackState.stopped;
       _completeSpeech();
-      rethrow;
     }
   }
 
@@ -161,9 +238,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// calls on Android/iOS have significant overhead (~5–15 ms each),
   /// skipping them on every line after the first dramatically reduces
   /// the gap between spoken sentences.
+  ///
+  /// Sets completion/error handlers with the current [_currentSpeechId]
+  /// captured in a closure. When [_currentSpeechId] advances (next line,
+  /// stop, pause), stale handler invocations are detected and ignored
+  /// (Bug 2 fix).
   Future<void> _speakSystem(String text) async {
     final tts = await _getFlutterTts();
     final settings = _ref.read(settingsProvider);
+    final speechId = _currentSpeechId; // captured for handler guard
 
     final start = DateTime.now();
 
@@ -191,10 +274,50 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       _cachedLanguage = ttsLocale;
     }
 
+    // Set completion handler with speech-ID guard to prevent stale
+    // completions from resolving the wrong line's completer.
+    tts.setCompletionHandler(() {
+      if (!_disposed && speechId == _currentSpeechId) {
+        developer.log(
+          '[TTS] Completion handler: speechId=$speechId (current)',
+          name: 'epitaka.tts',
+        );
+        state = TtsPlaybackState.stopped;
+        _broadcastToAudioService();
+        _completeSpeech();
+      } else {
+        developer.log(
+          '[TTS] Completion handler STALE: speechId=$speechId '
+          'currentId=$_currentSpeechId (ignored)',
+          name: 'epitaka.tts',
+        );
+      }
+    });
+
+    // Error handler with same speech-ID guard
+    tts.setErrorHandler((msg) {
+      if (!_disposed && speechId == _currentSpeechId) {
+        developer.log(
+          '[TTS] Error handler: $msg speechId=$speechId (current)',
+          name: 'epitaka.tts',
+        );
+        state = TtsPlaybackState.stopped;
+        _broadcastToAudioService();
+        _completeSpeech();
+      } else {
+        developer.log(
+          '[TTS] Error handler STALE: $msg speechId=$speechId '
+          'currentId=$_currentSpeechId (ignored)',
+          name: 'epitaka.tts',
+        );
+      }
+    });
+
     state = TtsPlaybackState.playing;
+    _broadcastToAudioService();
     await tts.speak(text);
     final elapsed = DateTime.now().difference(start).inMilliseconds;
-    developer.log('[TTS] _speakSystem() took ${elapsed}ms', name: 'epitaka.tts');
+    developer.log('[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId', name: 'epitaka.tts');
   }
 
 /// Whether the current engine supports look-ahead synthesis.
@@ -224,6 +347,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       throw Exception('Supertonic TTS not initialized');
     }
     _currentText = null;
+    _currentSpeechId++;
     state = TtsPlaybackState.playing;
     await _player!.play(result);
     await _waitForCompletion();
@@ -237,6 +361,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
 
     final settings = _ref.read(settingsProvider);
+    final speechId = _currentSpeechId;
 
     state = TtsPlaybackState.loading;
 
@@ -251,7 +376,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     );
 
     state = TtsPlaybackState.playing;
+    _broadcastToAudioService();
     await _player!.play(result);
+    developer.log('[TTS] _speakSupertonic() speechId=$speechId', name: 'epitaka.tts');
   }
 
   /// Get available system voices reusing the existing flutter_tts instance.
@@ -274,6 +401,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
   /// Stop current TTS playback.
   Future<void> stop() async {
+    _currentSpeechId++; // Invalidate stale completion handlers
     try {
       if (_flutterTts != null) {
         await _flutterTts!.stop();
@@ -285,11 +413,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       // Ignore errors when stopping
     }
     state = TtsPlaybackState.stopped;
+    _broadcastToAudioService();
     _completeSpeech();
   }
 
   /// Pause current TTS playback.
   Future<void> pause() async {
+    _currentSpeechId++; // Invalidate stale completion handlers
     try {
       switch (_engineType) {
         case TtsEngineType.system:
@@ -305,6 +435,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       // Ignore errors when pausing
     }
     state = TtsPlaybackState.paused;
+    _broadcastToAudioService();
     _completeSpeech();
   }
 
