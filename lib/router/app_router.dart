@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../features/gavesana/screens/gavesana_screen.dart';
 import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
 import '../features/search/widgets/search_screen.dart';
@@ -27,6 +28,7 @@ class AppRoutes {
   static const ttsReplacements = '/settings/tts/replacements';
   static const dictionarySettings = '/settings/dictionary';
   static const contents = '/contents/:bookId';
+  static const gavesana = '/gavesana';
 }
 
 /// The `_buildRouter()` function is called from `app.dart`.
@@ -90,6 +92,11 @@ GoRouter buildRouter() {
             builder: (context, state) => const DictionarySettingsScreen(),
           ),
         ],
+      ),
+      GoRoute(
+        path: AppRoutes.gavesana,
+        name: 'gavesana',
+        builder: (context, state) => const GavesanaScreen(),
       ),
       GoRoute(
         path: '/contents/:bookId',

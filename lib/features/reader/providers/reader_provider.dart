@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/app_models.dart';
+import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../data/book_link_data.dart';
@@ -363,36 +364,66 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     final transSw = Stopwatch()..start();
     final transByLang = <String, Map<int, Map<int, String>>>{};
     await Future.wait(enabledLangs.map((langCode) async {
-      final lang = TranslationLanguage.fromCode(langCode);
-      final translationDb =
-          await _ref.read(translationDbProvider(lang).future);
-      if (translationDb == null) return;
+      final settings = _ref.read(settingsProvider);
+      final versionSuffix = settings.translationVersionMap[langCode];
+      final isNissaya = versionSuffix != null &&
+          TranslationFilenameParser.isNissaya(versionSuffix);
 
-      final tSw = Stopwatch()..start();
-      final transSentences = await (translationDb
-              .select(translationDb.translationSentences)
-            ..where((t) =>
-                t.bookId.equals(_bookId) & t.paraId.isIn(paraIds)))
-          .get();
-      tSw.stop();
+      if (isNissaya) {
+        // ── Load from nissaya database ────────────────────────────
+        final filename = TranslationFilenameParser.build(
+          langCode,
+          suffix: versionSuffix,
+        );
+        final nissayaDb =
+            await _ref.read(nissayaDbByFilenameProvider(filename).future);
+        if (nissayaDb == null) return;
 
-      final langMap = <int, Map<int, String>>{};
-      for (final t in transSentences) {
-        if (t.translation == null) continue;
-        langMap.putIfAbsent(t.paraId, () => {});
-        langMap[t.paraId]!.update(
-          t.lineId,
-          (existing) => '$existing ${t.translation}',
-          ifAbsent: () => t.translation!,
+        try {
+          final nissayaData =
+              await nissayaDb.getBookSentencesFormatted(_bookId);
+          if (nissayaData.isNotEmpty) {
+            transByLang[langCode] = nissayaData;
+          }
+        } catch (e) {
+          developer.log(
+            '[LOAD] Nissaya error ($langCode): $e',
+            name: 'epitaka.reader',
+          );
+        }
+      } else {
+        // ── Load from standard translation database ───────────────
+        final lang = TranslationLanguage.fromCode(langCode);
+        final translationDb =
+            await _ref.read(translationDbProvider(lang).future);
+        if (translationDb == null) return;
+
+        final tSw = Stopwatch()..start();
+        final transSentences = await (translationDb
+                .select(translationDb.translationSentences)
+              ..where((t) =>
+                  t.bookId.equals(_bookId) & t.paraId.isIn(paraIds)))
+            .get();
+        tSw.stop();
+
+        final langMap = <int, Map<int, String>>{};
+        for (final t in transSentences) {
+          if (t.translation == null) continue;
+          langMap.putIfAbsent(t.paraId, () => {});
+          langMap[t.paraId]!.update(
+            t.lineId,
+            (existing) => '$existing ${t.translation}',
+            ifAbsent: () => t.translation!,
+          );
+        }
+        transByLang[langCode] = langMap;
+
+        developer.log(
+          '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
+          'sentences=${transSentences.length}',
+          name: 'epitaka.reader',
         );
       }
-      transByLang[langCode] = langMap;
-
-      developer.log(
-        '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
-        'sentences=${transSentences.length}',
-        name: 'epitaka.reader',
-      );
     }));
     transSw.stop();
     developer.log(

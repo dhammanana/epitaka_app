@@ -325,6 +325,9 @@ class AppSettings {
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
 
+  /// Per-language selected translation version suffix (null/empty = default).
+  final Map<String, String> translationVersionMap;
+
   static const Color defaultPaliColor = Color(0xFF7A2E1D);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
@@ -355,6 +358,7 @@ class AppSettings {
     this.copyDefaultScope = CopyScope.both,
     this.paliScript = Script.roman,
     this.libraryExpandLevel = LibraryExpandLevel.category,
+    this.translationVersionMap = const {},
   });
 
   AppSettings copyWith({
@@ -384,6 +388,7 @@ class AppSettings {
     CopyScope? copyDefaultScope,
     Script? paliScript,
     LibraryExpandLevel? libraryExpandLevel,
+    Map<String, String>? translationVersionMap,
   }) {
     return AppSettings(
       appLanguage: appLanguage ?? this.appLanguage,
@@ -415,6 +420,7 @@ class AppSettings {
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
       libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
+      translationVersionMap: translationVersionMap ?? this.translationVersionMap,
     );
   }
 
@@ -537,6 +543,19 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     return raw;
   }
 
+  Map<String, String> _loadTranslationVersionMap() {
+    final prefs = _prefs;
+    if (prefs == null) return const {};
+    final raw = prefs.getString('translation_version_map');
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, v as String));
+    } catch (_) {
+      return const {};
+    }
+  }
+
   void _load() {
     final prefs = _prefs;
     if (prefs == null) return;
@@ -597,6 +616,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       libraryExpandLevel: LibraryExpandLevel.values[
         prefs.getInt('library_expand_level') ?? LibraryExpandLevel.category.index
       ],
+      translationVersionMap: _loadTranslationVersionMap(),
     );
   }
 
@@ -788,6 +808,19 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
     state = state.copyWith(libraryExpandLevel: level);
     await _prefs?.setInt('library_expand_level', level.index);
+  }
+
+  /// Set the translation version (suffix) to use for a language code.
+  /// Pass `null` or empty string to use the default version.
+  Future<void> setTranslationVersion(String langCode, String? suffix) async {
+    final current = Map<String, String>.from(state.translationVersionMap);
+    if (suffix == null || suffix.isEmpty) {
+      current.remove(langCode);
+    } else {
+      current[langCode] = suffix;
+    }
+    state = state.copyWith(translationVersionMap: current);
+    await _prefs?.setString('translation_version_map', jsonEncode(current));
   }
 
   /// Returns the display name for a script in the current app language.

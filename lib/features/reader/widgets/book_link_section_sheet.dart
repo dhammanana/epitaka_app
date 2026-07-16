@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/models/app_models.dart';
 import '../../../core/database/translation_database.dart';
-import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../shared/utils/html_text_parser.dart';
+import '../../dictionary/widgets/dictionary_sheet.dart';
+import '../../../shared/widgets/preview_content.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../data/book_link_data.dart';
 import '../providers/reader_tabs_provider.dart';
@@ -17,11 +17,9 @@ import '../services/book_link_service.dart';
 
 /// Shows the bottom sheet with linked paragraph content.
 ///
-/// Called when the user taps a book link chip. The sheet displays the
-/// Pāli text of the linked paragraph (from the "other side" of the link),
-/// scrolled to the linked line, with a heading near the top and a button
-/// to open the full book in a new reader tab.  Pāli and translation text
-/// support HTML tags (`<b>`, `<i>`, `<u>`, etc.).
+/// Called when the user taps a book link chip. Uses the shared
+/// [PreviewContent] widget to render Pāli + translation lines with
+/// the same typography settings as the reader.
 Future<void> showBookLinkSectionSheet(
   BuildContext context, {
   required BookLinkData link,
@@ -108,12 +106,6 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
     final colors = Theme.of(context).colorScheme;
     final link = widget.link;
 
-    final settings = ref.watch(settingsProvider);
-    final brightness = Theme.of(context).brightness;
-    final paliColor = settings.paliColorPair.resolve(brightness);
-    final transColor = settings.translationColorPair.resolve(brightness);
-    final script = settings.paliScript;
-
     return Container(
       height: MediaQuery.sizeOf(context).height * 0.78,
       decoration: BoxDecoration(
@@ -129,7 +121,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           children: [
             // ── Drag handle ────────────────────────────────────────
             Container(
-              margin: EdgeInsets.only(top: 8),
+              margin: const EdgeInsets.only(top: 8),
               width: 32,
               height: 4,
               decoration: BoxDecoration(
@@ -137,30 +129,25 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
 
             // ── Header (linked book name) ──────────────────────────
             Padding(
-              padding: EdgeInsets.fromLTRB(
+              padding: const EdgeInsets.fromLTRB(
                 AppDimensions.marginMobile,
                 4,
                 AppDimensions.marginMobile,
                 0,
-              ),                  child: _buildHeader(colors, link),
+              ),
+              child: _buildHeader(colors, link),
             ),
 
-            SizedBox(height: 4),
-            Divider(height: 1),
+            const SizedBox(height: 4),
+            const Divider(height: 1),
 
             // ── Content area ───────────────────────────────────────
             Expanded(
-              child: _buildBody(
-                colors,
-                link,
-                paliColor: paliColor,
-                transColor: transColor,
-                script: script,
-              ),
+              child: _buildBody(colors),
             ),
           ],
         ),
@@ -196,7 +183,6 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 'Linked from “${link.word}”',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
-
                 ),
               ),
             ],
@@ -231,13 +217,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
     );
   }
 
-  Widget _buildBody(
-    ColorScheme colors,
-    BookLinkData link, {
-    required Color paliColor,
-    required Color transColor,
-    Script? script,
-  }) {
+  Widget _buildBody(ColorScheme colors) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -273,6 +253,16 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
       );
     }
 
+    // Convert linked content lines to PreviewLineData
+    final previewLines = content.lines.map((line) {
+      return PreviewLineData(
+        paraId: content.paraId,
+        lineId: line.lineId,
+        pali: line.paliText,
+        translations: line.translations,
+      );
+    }).toList();
+
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -293,9 +283,10 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 borderRadius: BorderRadius.circular(1),
               ),
             ),
-            SizedBox(height: 6),
-            Text(
+            const SizedBox(height: 6),
+            PaliTextStatic(
               content.headingTitle!,
+              null,
               style: content.headingLevel != null && content.headingLevel! <= 2
                   ? AppTypography.headlineSmall.copyWith(
                       color: colors.primary,
@@ -305,67 +296,26 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                       color: colors.primary,
                     ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
           ],
 
-          // ── Linked paragraph lines ──────────────────────────
-          ...content.lines.map((line) {
-            final isTargetLine = line.lineId == link.linkedLineId;
+          // ── Preview lines with reader typography ────────────
+          PreviewContent(
+            lines: previewLines,
+            highlightParaId: content.paraId,
+            firstSnippetIndex: 0,
+            onPaliWordTap: (word) {
+              // Import and use dictionary lookup
+              _showDictionary(context, word);
+            },
+          ),
 
-            return Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: isTargetLine ? 10 : 6,
-              ),
-              margin: EdgeInsets.only(bottom: isTargetLine ? 6 : 4),
-              decoration: BoxDecoration(
-                color: isTargetLine
-                    ? colors.primary.withValues(alpha: 0.07)
-                    : null,
-                borderRadius: BorderRadius.circular(6),
-                border: isTargetLine
-                    ? Border(
-                        left: BorderSide(
-                          color: colors.primary.withValues(alpha: 0.5),
-                          width: 3,
-                        ),
-                      )
-                    : null,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Pali text (with HTML support & script conversion) ─
-                  PaliHtmlText(
-                    line.paliText,
-                    style: AppTypography.bodyPali.copyWith(
-                      color: paliColor,
-                    ),
-                  ),
-
-                  // ── Translation text (with HTML support) ──
-                  if (line.translations.isNotEmpty) ...[
-                    SizedBox(height: 4),
-                    ...line.translations.entries.map((entry) {
-                      return HtmlTextParser.richText(
-                        entry.value,
-                        AppTypography.bodyTranslation.copyWith(
-                          color: transColor,
-                        ),
-                      );
-                    }),
-                  ],
-                ],
-              ),
-          );
-        }),
-
-          SizedBox(height: 20),
+          const SizedBox(height: 20),
 
           // ── Line ref badge ──────────────────────────────────
           Center(
             child: Container(
-              padding: EdgeInsets.symmetric(
+              padding: const EdgeInsets.symmetric(
                 horizontal: 10,
                 vertical: 4,
               ),
@@ -374,10 +324,9 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'para ${content.paraId} · line ${link.linkedLineId}',
+                'para ${content.paraId} · line ${widget.link.linkedLineId}',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
-
                 ),
               ),
             ),
@@ -385,5 +334,9 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
         ],
       ),
     );
+  }
+
+  void _showDictionary(BuildContext context, String word) {
+    showDictionarySheet(context, word.trim());
   }
 }

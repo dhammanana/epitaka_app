@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/app_models.dart';
 
-/// Metadata for an available translation.
+/// Metadata for an available translation (legacy model).
 class AvailableTranslation {
   final String languageCode;
   final String englishName;
@@ -23,8 +23,8 @@ class AvailableTranslation {
   TranslationLanguage get language => TranslationLanguage.fromCode(languageCode);
 }
 
-/// Provider that scans the database directory and returns a list of available
-/// translations (i.e. DB files like `epitaka_th.db` that exist on disk).
+/// Legacy provider that checks only default filenames for known languages.
+/// Kept for backward compatibility with existing code (index building, etc.).
 final translationRegistryProvider =
     FutureProvider<List<AvailableTranslation>>((ref) async {
   final dbDir = await _getDatabaseDirectory();
@@ -44,7 +44,6 @@ final translationRegistryProvider =
 
 /// Get the database directory path.
 Future<Directory> _getDatabaseDirectory() async {
-  // Try a configurable path first
   final envDbPath = Platform.environment['EPITAKA_DB_PATH'];
   if (envDbPath != null && envDbPath.isNotEmpty) {
     final dir = Directory(envDbPath);
@@ -53,8 +52,6 @@ Future<Directory> _getDatabaseDirectory() async {
     }
   }
 
-  // On mobile, skip the relative-path fallback (Directory.current points to
-  // root `/` on Android, making `/data/` appear to exist but inaccessible).
   if (!Platform.isAndroid && !Platform.isIOS) {
     final cwd = Directory.current;
     final dataDir = Directory(p.join(cwd.path, 'data'));
@@ -63,7 +60,6 @@ Future<Directory> _getDatabaseDirectory() async {
     }
   }
 
-  // Use the app documents directory
   final appDir = await getApplicationDocumentsDirectory();
   return appDir;
 }

@@ -22,8 +22,7 @@ dependencies:
 
   # Database
   drift: ^2.25.1
-  sqlite3: ^2.4.7
-  sqlite3_flutter_libs: ^0.5.42
+  sqlite3: ^3.0.0
   path_provider: ^2.1.5
   path: ^1.9.1
 
@@ -53,10 +52,17 @@ dependencies:
   permission_handler: ^11.3.1
 
   # HTML rendering
-  flutter_widget_from_html_core: ^0.14.12
+  flutter_html: ^3.0.0-beta.2
 
   # AI inferer
   flutter_onnxruntime: ^1.8.0
+  flutter_widget_from_html: ^0.15.0
+
+  # BPE tokenizer for HuggingFace tokenizer.json
+  dart_sentencepiece_tokenizer: ^1.3.2
+
+  # Vector search (sqlite-vec via pub — no manual .so/.dylib)
+  sqlite_vector: ^1.0.0
 
 flutter:
   uses-material-design: true
@@ -128,6 +134,11 @@ flutter:
     - family: NotoSansChakma
       fonts:
         - asset: assets/fonts/NotoSansChakma-Regular.ttf
+
+dependency_overrides:
+  # sqlite_vector requires sqlite3 ^3.0.0 but drift ^2.25.1
+  # constrains it to ^2.4.6. Override to satisfy both.
+  sqlite3: ^3.0.0
 
 dev_dependencies:
   flutter_test:

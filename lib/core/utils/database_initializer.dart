@@ -56,6 +56,7 @@ Future<void> ensureBundledDatabases() async {
     'assets/db/epitaka.db',
     'assets/db/epitaka_en.db',
     'assets/db/dpd-dictionary.db',
+    'assets/db/epitaka_my_nissaya.db',
   ];
 
   for (final assetPath in bundledDbs) {

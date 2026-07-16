@@ -7,11 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import '../../../core/models/app_models.dart';
+import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/utils/database_initializer.dart';
 
-/// Download state for a specific translation.
+/// Download state for a specific translation version.
 enum DownloadStatus { idle, downloading, extracting, completed, cancelled, error }
 
 class TranslationDownloadState {
@@ -38,8 +40,12 @@ class TranslationDownloadState {
   }
 }
 
-/// Maps language codes to their downloadable .zip URLs.
-const Map<String, String> _downloadUrls = {
+/// Maps version keys to download URLs.
+/// A version key is `langCode_suffix` (e.g. `my`, `my_nissaya`, `en`).
+///
+/// Legacy static URL map for the standard translations.
+/// New versioned translations use the manifest-based URL system.
+const Map<String, String> _legacyDownloadUrls = {
   'en':
       'https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_en.db.zip',
   'si':
@@ -50,57 +56,71 @@ const Map<String, String> _downloadUrls = {
 
 /// Provider that manages downloading translation database files.
 ///
-/// State is a map of language code → download state, so multiple downloads
-/// can be tracked independently.
+/// State is a map of version key (langCode[_suffix]) → download state,
+/// so multiple downloads can be tracked independently.
 class TranslationDownloadNotifier
     extends StateNotifier<Map<String, TranslationDownloadState>> {
   final Map<String, CancelableCompleter> _cancelTokens = {};
 
   TranslationDownloadNotifier() : super({});
 
-  /// Get the download state for a specific language code.
-  TranslationDownloadState stateFor(String languageCode) {
-    return state[languageCode] ?? const TranslationDownloadState();
+  /// Get the download state for a specific version key.
+  TranslationDownloadState stateFor(String versionKey) {
+    return state[versionKey] ?? const TranslationDownloadState();
   }
 
-  /// Returns true if a download URL is available for this language.
-  static bool hasDownloadUrl(String languageCode) =>
-      _downloadUrls.containsKey(languageCode);
+  /// Returns true if a download URL is available for this version key.
+  static bool hasDownloadUrl(String versionKey) =>
+      _legacyDownloadUrls.containsKey(versionKey);
 
-  /// Cancel an in-progress download for a language.
-  void cancelDownload(String languageCode) {
-    final token = _cancelTokens[languageCode];
+  /// Get the download URL for a translation version.
+  static String? getDownloadUrl(TranslationVersion version) {
+    // First check if the version itself has a download URL
+    if (version.hasDownloadUrl) return version.downloadUrl;
+
+    // Fall back to legacy URL map
+    final key = version.suffix != null && version.suffix!.isNotEmpty
+        ? '${version.languageCode}_${version.suffix}'
+        : version.languageCode;
+    return _legacyDownloadUrls[key];
+  }
+
+  /// Cancel an in-progress download for a version key.
+  void cancelDownload(String versionKey) {
+    final token = _cancelTokens[versionKey];
     if (token != null) {
       token.cancel();
-      _cancelTokens.remove(languageCode);
+      _cancelTokens.remove(versionKey);
     }
     state = {
       ...state,
-      languageCode: const TranslationDownloadState(
+      versionKey: const TranslationDownloadState(
         status: DownloadStatus.cancelled,
       ),
     };
   }
 
-  /// Download and install a translation database.
+  /// Download and install a translation database version.
   /// Pass [ref] to invalidate the registry after success.
-  Future<void> downloadTranslation(
-    TranslationLanguage lang,
+  Future<void> downloadVersion(
+    TranslationVersion version,
     WidgetRef ref,
   ) async {
-    final code = lang.code;
+    final versionKey = version.suffix != null && version.suffix!.isNotEmpty
+        ? '${version.languageCode}_${version.suffix}'
+        : version.languageCode;
 
     // Clean up any previous cancel token
-    _cancelTokens.remove(code);
+    _cancelTokens.remove(versionKey);
 
-    // Bail early if no URL configured.
-    final url = _downloadUrls[code];
+    // Get download URL
+    final url = getDownloadUrl(version);
     if (url == null) {
       state = {
         ...state,
-        code: TranslationDownloadState(
+        versionKey: TranslationDownloadState(
           status: DownloadStatus.error,
-          errorMessage: 'No download URL available for ${lang.englishName}',
+          errorMessage: 'No download URL available for ${version.displayName}',
         ),
       };
       return;
@@ -109,14 +129,14 @@ class TranslationDownloadNotifier
     // Mark as downloading.
     state = {
       ...state,
-      code: const TranslationDownloadState(
+      versionKey: const TranslationDownloadState(
         status: DownloadStatus.downloading,
         progress: 0.0,
       ),
     };
 
     final cancelToken = CancelableCompleter();
-    _cancelTokens[code] = cancelToken;
+    _cancelTokens[versionKey] = cancelToken;
 
     try {
       // Download the .zip file with progress tracking.
@@ -127,7 +147,7 @@ class TranslationDownloadNotifier
       if (response.statusCode != 200) {
         state = {
           ...state,
-          code: TranslationDownloadState(
+          versionKey: TranslationDownloadState(
             status: DownloadStatus.error,
             errorMessage: 'Download failed (HTTP ${response.statusCode})',
           ),
@@ -140,16 +160,15 @@ class TranslationDownloadNotifier
       int received = 0;
 
       await for (final chunk in response.stream) {
-        // Check for cancellation
         if (cancelToken.isCancelled) {
           client.close();
           state = {
             ...state,
-            code: const TranslationDownloadState(
+            versionKey: const TranslationDownloadState(
               status: DownloadStatus.cancelled,
             ),
           };
-          _cancelTokens.remove(code);
+          _cancelTokens.remove(versionKey);
           return;
         }
 
@@ -158,7 +177,7 @@ class TranslationDownloadNotifier
         if (contentLength > 0) {
           state = {
             ...state,
-            code: TranslationDownloadState(
+            versionKey: TranslationDownloadState(
               status: DownloadStatus.downloading,
               progress: received / contentLength,
             ),
@@ -167,13 +186,12 @@ class TranslationDownloadNotifier
       }
 
       client.close();
-      _cancelTokens.remove(code);
+      _cancelTokens.remove(versionKey);
 
-      // Check cancellation before extraction
       if (cancelToken.isCancelled) {
         state = {
           ...state,
-          code: const TranslationDownloadState(
+          versionKey: const TranslationDownloadState(
             status: DownloadStatus.cancelled,
           ),
         };
@@ -183,13 +201,12 @@ class TranslationDownloadNotifier
       // Extract the .db from the zip.
       state = {
         ...state,
-        code: const TranslationDownloadState(status: DownloadStatus.extracting),
+        versionKey: const TranslationDownloadState(status: DownloadStatus.extracting),
       };
 
       final dbDir = await getDatabaseDirectory();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // Find the first .db file in the archive.
       ArchiveFile? dbEntry;
       for (final entry in archive) {
         if (entry.isFile && entry.name.endsWith('.db')) {
@@ -201,7 +218,7 @@ class TranslationDownloadNotifier
       if (dbEntry == null) {
         state = {
           ...state,
-          code: const TranslationDownloadState(
+          versionKey: const TranslationDownloadState(
             status: DownloadStatus.error,
             errorMessage: 'No database file found in the archive',
           ),
@@ -209,21 +226,30 @@ class TranslationDownloadNotifier
         return;
       }
 
-      // Write the .db file to the database directory.
-      final destPath = p.join(dbDir.path, lang.filename);
+      // Write the .db file
+      final destPath = p.join(dbDir.path, version.filename);
       await File(destPath).writeAsBytes(
         dbEntry.content as List<int>,
         flush: true,
       );
 
-      // Invalidate providers so the UI and reader pick up the new DB.
+      // Invalidate providers
       ref.invalidate(translationRegistryProvider);
-      ref.invalidate(translationDbProvider(lang));
+      ref.invalidate(mergedTranslationVersionsProvider);
+      ref.invalidate(localTranslationVersionsProvider);
 
-      // Mark as completed.
+      // Also invalidate version-specific db providers if applicable
+      if (version.isNissaya) {
+        ref.invalidate(nissayaDbByFilenameProvider(version.filename));
+      } else {
+        ref.invalidate(translationDbProvider(
+          TranslationLanguage.fromCode(version.languageCode),
+        ));
+      }
+
       state = {
         ...state,
-        code: const TranslationDownloadState(
+        versionKey: const TranslationDownloadState(
           status: DownloadStatus.completed,
           progress: 1.0,
         ),
@@ -232,21 +258,48 @@ class TranslationDownloadNotifier
       if (cancelToken.isCancelled) {
         state = {
           ...state,
-          code: const TranslationDownloadState(
+          versionKey: const TranslationDownloadState(
             status: DownloadStatus.cancelled,
           ),
         };
       } else {
         state = {
           ...state,
-          code: TranslationDownloadState(
+          versionKey: TranslationDownloadState(
             status: DownloadStatus.error,
             errorMessage: e.toString(),
           ),
         };
       }
-      _cancelTokens.remove(code);
+      _cancelTokens.remove(versionKey);
     }
+  }
+
+  /// Legacy method: download a translation by language.
+  /// Delegates to downloadVersion with a default version.
+  Future<void> downloadTranslation(
+    TranslationLanguage lang,
+    WidgetRef ref,
+  ) async {
+    final version = TranslationVersion(
+      languageCode: lang.code,
+      filename: lang.filename,
+      isAvailable: false,
+      displayName: 'Default',
+    );
+    await downloadVersion(version, ref);
+  }
+
+  /// Delete a translation database file from disk.
+  Future<bool> deleteVersion(TranslationVersion version) async {
+    final dbDir = await getDatabaseDirectory();
+    final filePath = p.join(dbDir.path, version.filename);
+    final file = File(filePath);
+    if (await file.exists()) {
+      await file.delete();
+      return true;
+    }
+    return false;
   }
 }
 

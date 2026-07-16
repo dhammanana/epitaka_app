@@ -5,8 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../database/epitaka_database.dart';
+import '../database/nissaya_database.dart';
 import '../database/translation_database.dart';
 import '../models/app_models.dart';
+import '../models/translation_version.dart';
 import 'settings_provider.dart';
 
 /// Provider for the main Tipitaka database (epitaka.db).
@@ -16,7 +18,7 @@ final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
   return EpitakaDatabase.open(dbPath);
 });
 
-/// Provider for a specific translation database.
+/// Provider for a specific translation database (regular schema).
 final translationDbProvider =
     FutureProvider.family<TranslationDatabase?, TranslationLanguage>(
         (ref, lang) async {
@@ -29,9 +31,34 @@ final translationDbProvider =
   return TranslationDatabase.open(dbPath);
 });
 
+/// Provider for a translation database by version.
+/// Returns the appropriate database type (regular or nissaya) based on the
+/// version's isNissaya flag.
+final versionDbProvider =
+    FutureProvider.family<Object?, TranslationVersion>((ref, version) async {
+  final dbDir = await _getDatabaseDirectory();
+  final dbPath = p.join(dbDir.path, version.filename);
+  final file = File(dbPath);
+  if (!await file.exists()) return null;
+
+  if (version.isNissaya) {
+    return NissayaDatabase.open(dbPath);
+  }
+  return TranslationDatabase.open(dbPath);
+});
+
+/// Provider for a nissaya database by filename.
+final nissayaDbByFilenameProvider =
+    FutureProvider.family<NissayaDatabase?, String>((ref, filename) async {
+  final dbDir = await _getDatabaseDirectory();
+  final dbPath = p.join(dbDir.path, filename);
+  final file = File(dbPath);
+  if (!await file.exists()) return null;
+  return NissayaDatabase.open(dbPath);
+});
+
 /// Get the database directory.
 Future<Directory> _getDatabaseDirectory() async {
-  // Try a configurable path first
   final envDbPath = Platform.environment['EPITAKA_DB_PATH'];
   if (envDbPath != null && envDbPath.isNotEmpty) {
     final dir = Directory(envDbPath);
@@ -40,8 +67,6 @@ Future<Directory> _getDatabaseDirectory() async {
     }
   }
 
-  // On mobile, skip the relative-path fallback (Directory.current points to
-  // root `/` on Android, making `/data/` appear to exist but inaccessible).
   if (!Platform.isAndroid && !Platform.isIOS) {
     final cwd = Directory.current;
     final dataDir = Directory(p.join(cwd.path, 'data'));
@@ -50,7 +75,6 @@ Future<Directory> _getDatabaseDirectory() async {
     }
   }
 
-  // Use the app documents directory
   final appDir = await getApplicationDocumentsDirectory();
   return appDir;
 }

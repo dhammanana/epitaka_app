@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "languages": {
+    "en": {
+      "englishName": "English",
+      "nativeName": "English",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_en.db.zip",
+          "size": 267436032,
+          "updated": "2026-06-15"
+        }
+      }
+    },
+    "si": {
+      "englishName": "Sinhala",
+      "nativeName": "සිංහල",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_si.db.zip",
+          "size": 312000000,
+          "updated": "2026-06-15"
+        }
+      }
+    },
+    "th": {
+      "englishName": "Thai",
+      "nativeName": "ไทย",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_th.db.zip",
+          "size": 298000000,
+          "updated": "2026-06-15"
+        }
+      }
+    },
+    "my": {
+      "englishName": "Myanmar",
+      "nativeName": "မြန်မာ",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_my.db.zip",
+          "size": 350000000,
+          "updated": "2026-07-16"
+        },
+        "nissaya": {
+          "displayName": "Nissaya",
+          "suffix": "nissaya",
+          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_my_nissaya.db.zip",
+          "size": 649498624,
+          "updated": "2026-07-16",
+          "type": "nissaya"
+        }
+      }
+    }
+  }
+}

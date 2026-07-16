@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// Parses simple HTML tags into Flutter [InlineSpan]s for use in
 /// [Text.rich] widgets.
 ///
-/// Supports: `<b>`, `<i>`, `<u>`, `<h1-6>`, `<br>`
+/// Supports: `<b>`, `<i>`, `<u>`, `<mark>`, `<h1-6>`, `<br>`
 class HtmlTextParser {
   /// Parse [html] into a list of [InlineSpan]s using [base] as the default
   /// text style.
@@ -17,10 +17,14 @@ class HtmlTextParser {
     final boldStyle = base.copyWith(fontWeight: FontWeight.w700);
     final italicStyle = base.copyWith(fontStyle: FontStyle.italic);
     final underlineStyle = base.copyWith(decoration: TextDecoration.underline);
+    final markStyle = base.copyWith(
+      backgroundColor: Colors.yellow.withValues(alpha: 0.3),
+      fontWeight: FontWeight.w700,
+    );
 
     final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
     final pattern = RegExp(
-      r'<b>(.*?)</b>|<i>(.*?)</i>|<u>(.*?)</u>|'
+      r'<b>(.*?)</b>|<i>(.*?)</i>|<u>(.*?)</u>|<mark>(.*?)</mark>|'
       r'<h[1-6][^>]*>(.*?)</h[1-6]>|'
       r'([^<]+)',
       dotAll: true,
@@ -35,9 +39,11 @@ class HtmlTextParser {
       } else if (m.group(3) != null) {
         spans.add(TextSpan(text: m.group(3), style: underlineStyle));
       } else if (m.group(4) != null) {
-        spans.add(TextSpan(text: m.group(4), style: boldStyle));
+        spans.add(TextSpan(text: m.group(4), style: markStyle));
       } else if (m.group(5) != null) {
-        final text = m.group(5)!;
+        spans.add(TextSpan(text: m.group(5), style: boldStyle));
+      } else if (m.group(6) != null) {
+        final text = m.group(6)!;
         if (text.trim().isNotEmpty || text == '\n') {
           spans.add(TextSpan(text: text));
         }

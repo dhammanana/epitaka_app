@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/dpd_dictionary_database.dart';
@@ -36,7 +37,8 @@ class DictionarySheet extends ConsumerStatefulWidget {
   ConsumerState<DictionarySheet> createState() => _DictionarySheetState();
 }
 
-class _DictionarySheetState extends ConsumerState<DictionarySheet> {
+class _DictionarySheetState extends ConsumerState<DictionarySheet>
+    with TickerProviderStateMixin {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
@@ -52,7 +54,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   String _query = '';
   // Deconstructor card navigation
   int _activeDeconCardIndex = 0;
-  int _activeDeconTabIndex = 0;
+  TabController? _deconTabController;
 
   /// Cached sub-lookup results for deconstructor tokens.
   /// key: token word, value: list of headword rows
@@ -81,8 +83,26 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     }
   }
 
+  void _initDeconTabController(int length) {
+    if (_deconTabController != null && _deconTabController!.length == length) {
+      // Already have a matching controller, reset to index 0
+      if (_deconTabController!.index != 0) {
+        _deconTabController!.index = 0;
+      }
+      return;
+    }
+    _deconTabController?.dispose();
+    _deconTabController = TabController(length: length, vsync: this);
+    _deconTabController!.addListener(() {
+      if (mounted && _deconTabController != null && !_deconTabController!.indexIsChanging) {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _deconTabController?.dispose();
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -399,7 +419,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _subLookupCache.clear();
     _epitakaDictCache.clear();
     _activeDeconCardIndex = 0;
-    _activeDeconTabIndex = 0;
     _showDetail = true;
     _view = _SheetView.results;
     // Trigger state rebuild so _buildResults shows detail
@@ -594,7 +613,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             onTap: () {
               setState(() {
                 _activeDeconCardIndex = idx;
-                _activeDeconTabIndex = 0;
               });
               _lookupDeconTokens(candidate);
             },
@@ -613,36 +631,29 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Candidate header with word chips
+                  // Candidate header: tokens joined with " + " as a single label
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: candidate.tokens.map((token) {
-                        return ActionChip(
-                          label: Text(token),
-                          labelStyle: AppTypography.bodyTranslation.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13,
-                          ),
-                          backgroundColor: colors.primary.withValues(alpha: 0.08),
-                          side: BorderSide(
-                            color: colors.primary.withValues(alpha: 0.2),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          onPressed: () => _selectWord(token),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                        );
-                      }).toList(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        candidate.tokens.join(' + '),
+                        style: AppTypography.bodyTranslation.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                   ),
 
@@ -666,55 +677,51 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   ) {
     if (candidate.tokens.length <= 1) return const SizedBox.shrink();
 
+    _initDeconTabController(candidate.tokens.length);
+    final controller = _deconTabController!;
+    final currentIndex = controller.index;
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Tab bar for tokens
         const Divider(height: 1),
         SizedBox(
-          height: 36,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            children: candidate.tokens.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final token = entry.value;
-              final isActive = idx == _activeDeconTabIndex;
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() => _activeDeconTabIndex = idx);
-                    _lookupDeconToken(token);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? colors.primary.withValues(alpha: 0.15)
-                          : colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      token,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: isActive ? colors.primary : colors.onSurfaceVariant,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+          height: 40,
+          child: TabBar(
+            controller: controller,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            indicatorSize: TabBarIndicatorSize.label,
+            indicatorColor: colors.primary,
+            labelColor: colors.primary,
+            unselectedLabelColor: colors.onSurfaceVariant,
+            labelStyle: AppTypography.labelSmall.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+            unselectedLabelStyle: AppTypography.labelSmall.copyWith(
+              fontWeight: FontWeight.w400,
+              fontSize: 12,
+            ),
+            padding: const EdgeInsets.only(left: 8),
+            labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+            tabs: candidate.tokens
+                .map((token) => Tab(text: token))
+                .toList(),
           ),
         ),
 
-        // Tab content: sub-lookup results for the active token
-        if (candidate.tokens.isNotEmpty &&
-            _activeDeconTabIndex < candidate.tokens.length)
-          _buildTokenContent(colors, candidate.tokens[_activeDeconTabIndex]),
+        // Tab content — plain conditional rendering without any viewport/widget
+        // animation to avoid !semantics.parentDataDirty assertion errors
+        // that arise from nested viewports inside CustomScrollView.
+        SizedBox(
+          height: 300,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(10),
+            child: _buildTokenContent(colors, candidate.tokens[currentIndex]),
+          ),
+        ),
       ],
     );
   }
@@ -722,30 +729,44 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   Widget _buildTokenContent(ColorScheme colors, String token) {
     final cached = _subLookupCache[token];
     if (cached != null) {
-      return Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: cached.map((hw) {
-            return _HeadwordHtmlCard(
-              headword: hw,
-              colors: colors,
-              onWordTap: _selectWord,
-              compact: true,
-            );
-          }).toList(),
-        ),
+      if (cached.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: Text(
+              'No definition found for "$token"',
+              style: TextStyle(
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: cached.map((hw) {
+          return _HeadwordHtmlCard(
+            headword: hw,
+            colors: colors,
+            onWordTap: _selectWord,
+            compact: true,
+          );
+        }).toList(),
       );
     }
 
     // Trigger async lookup
     _lookupDeconToken(token);
     return const Padding(
-      padding: EdgeInsets.all(12),
-      child: SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
+      padding: EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
       ),
     );
   }
@@ -951,8 +972,10 @@ class _HeadwordHtmlCard extends StatelessWidget {
 
 // ── HTML Rich Text Widget ──────────────────────────────────────────────────
 
-/// Renders simple HTML content (details/summary, b, i, divs) as rich text
-/// with tappable word links.
+/// Renders DPD `meaning_html` using real HTML rendering with `flutter_html`.
+/// Supports `<details>/<summary>` expand/collapse, `<b>`, `<i>`, and proper
+/// text spacing. Pāli words in the text are wrapped in clickable anchors that
+/// trigger [onWordTap] when tapped.
 class _HtmlRichText extends StatelessWidget {
   final String html;
   final TextStyle baseStyle;
@@ -966,166 +989,163 @@ class _HtmlRichText extends StatelessWidget {
     required this.onWordTap,
   });
 
+  /// Wrap Pāli words in the HTML text content with clickable anchor tags
+  /// so tapping them triggers a dictionary lookup via [onLinkTap].
+  String _makeWordsClickable(String html) {
+    // Only process text nodes outside HTML tags
+    return html.replaceAllMapped(
+      RegExp(r'>([^<]+)<'),
+      (match) {
+        final text = match.group(1)!;
+        // Split by word boundaries, wrap Pāli words in anchors
+        final processed = text.splitMapJoin(
+          RegExp(r'[āīūṅñṭḍṇḷṃūēōĀĪŪṄÑṬḌṆḶṂŪĒŌa-zA-Z]+(?:\.[\d]+)?'),
+          onMatch: (m) {
+            final word = m.group(0)!;
+            return '<a href="lookup://$word">$word</a>';
+          },
+          onNonMatch: (s) => s,
+        );
+        return '>$processed<';
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Parse the HTML into segments
-    final segments = _parseHtml(html);
+    final processedHtml = _makeWordsClickable(html);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: segments.map((segment) {
-        if (segment is _HtmlText) {
-          return _buildTextSegment(segment);
-        } else if (segment is _HtmlLinkList) {
-          return _buildLinkList(segment);
+    return Html(
+      data: processedHtml,
+      onLinkTap: (url, attributes, element) {
+        if (url != null && url.startsWith('lookup://')) {
+          final word = url.substring(9);
+          if (word.isNotEmpty) {
+            onWordTap(word);
+          }
         }
-        return const SizedBox.shrink();
-      }).toList(),
-    );
-  }
-
-  Widget _buildTextSegment(_HtmlText seg) {
-    final spans = <TextSpan>[];
-
-    // Split by words to find Pāli words (which should be tappable)
-    final words = seg.text.split(RegExp(r'(\s+)'));
-    for (final word in words) {
-      if (word.trim().isEmpty) {
-        spans.add(TextSpan(text: word));
-      } else if (seg.boldWords.any((bw) => word.contains(bw))) {
-        spans.add(TextSpan(
-          text: word,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ));
-      } else {
-        spans.add(TextSpan(text: word));
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: RichText(
-        text: TextSpan(
-          style: _mergeStyles(seg.style, baseStyle),
-          children: spans,
+      },
+      style: {
+        'body': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+          fontSize: FontSize(baseStyle.fontSize ?? 14),
+          lineHeight: const LineHeight(1.5),
+          color: baseStyle.color,
+          fontFamily: baseStyle.fontFamily,
         ),
-      ),
+        'details': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+        ),
+        'summary': Style(
+          fontWeight: FontWeight.w600,
+          margin: Margins.only(bottom: 4),
+        ),
+        'b': Style(
+          fontWeight: FontWeight.bold,
+        ),
+        'i': Style(
+          fontStyle: FontStyle.italic,
+        ),
+        'a': Style(
+          color: linkColor,
+          fontWeight: FontWeight.w500,
+          textDecoration: TextDecoration.none,
+        ),
+        '.dpd-meaning': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+        ),
+        '.dpd-meaning-detail': Style(
+          margin: Margins.only(top: 4),
+          padding: HtmlPaddings.only(left: 8, top: 4),
+          border: const Border(
+            left: BorderSide(color: Color(0x33000000), width: 1),
+          ),
+        ),
+        '.dpd-grammar': Style(
+          margin: Margins.only(bottom: 2),
+        ),
+        '.dpd-sanskrit': Style(
+          margin: Margins.only(bottom: 2),
+        ),
+        '.dpd-example': Style(
+          fontStyle: FontStyle.italic,
+          margin: Margins.only(bottom: 2),
+        ),
+      },
     );
-  }
-
-  Widget _buildLinkList(_HtmlLinkList seg) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: seg.words.map((word) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: GestureDetector(
-              onTap: () => onWordTap(word),
-              child: Text(
-                word,
-                style: baseStyle.copyWith(
-                  color: linkColor,
-                  decoration: TextDecoration.underline,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  TextStyle _mergeStyles(TextStyle? override, TextStyle base) {
-    if (override == null) return base;
-    return base.merge(override);
-  }
-
-  List<dynamic> _parseHtml(String html) {
-    final segments = <dynamic>[];
-    // Remove the outer <details> wrapper if present
-    String content = html;
-
-    // Extract text from <summary> tags
-    final summaryMatch = RegExp(r'<summary>(.*?)</summary>', dotAll: true).firstMatch(content);
-    if (summaryMatch != null) {
-      final summaryText = _stripAllTags(summaryMatch.group(1)!);
-      segments.add(_HtmlText(summaryText, const TextStyle(fontWeight: FontWeight.bold), []));
-      content = content.substring(summaryMatch.end);
-    }
-
-    // Extract detail div content
-    final detailMatch = RegExp(r'<div class="dpd-meaning-detail">(.*?)</div>', dotAll: true).firstMatch(content);
-    if (detailMatch != null) {
-      final detail = detailMatch.group(1)!;
-      // Parse grammar lines
-      final grammarMatch = RegExp(r'<b>Grammar:</b>\s*(.*?)(?:</div>|<br)').firstMatch(detail);
-      if (grammarMatch != null) {
-        segments.add(_HtmlText(
-          'Grammar: ${_stripAllTags(grammarMatch.group(1)!)}',
-          TextStyle(color: baseStyle.color?.withValues(alpha: 0.7), fontSize: baseStyle.fontSize! - 1),
-          [],
-        ));
-      }
-
-      // Parse Sanskrit
-      final sanskritMatch = RegExp(r'<b>Sanskrit:</b>\s*(.*?)(?:</div>|<br)').firstMatch(detail);
-      if (sanskritMatch != null) {
-        segments.add(_HtmlText(
-          'Skt: ${_stripAllTags(sanskritMatch.group(1)!)}',
-          TextStyle(color: baseStyle.color?.withValues(alpha: 0.7), fontSize: baseStyle.fontSize! - 1),
-          [],
-        ));
-      }
-
-      // Parse example
-      final exampleMatch = RegExp(r'<b>Example:</b>\s*(.*?)(?:</div>|$)').firstMatch(detail);
-      if (exampleMatch != null) {
-        final exampleText = _stripAllTags(exampleMatch.group(1)!);
-        segments.add(const SizedBox(height: 4));
-        segments.add(_HtmlText(
-          exampleText,
-          TextStyle(fontStyle: FontStyle.italic, fontSize: baseStyle.fontSize! - 1),
-          [],
-        ));
-      }
-
-      // Extract remaining plain text
-      final remaining = detail
-          .replaceAll(RegExp(r'<[^>]*>'), '')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      if (remaining.isNotEmpty && segments.length <= 3) {
-        segments.add(_HtmlText(
-          remaining,
-          baseStyle,
-          [],
-        ));
-      }
-    }
-
-    return segments;
-  }
-
-  String _stripAllTags(String html) {
-    return html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
   }
 }
 
-class _HtmlText {
-  final String text;
-  final TextStyle? style;
-  final List<String> boldWords;
+// ── Dictionary HTML Content ─────────────────────────────────────────────────
 
-  const _HtmlText(this.text, this.style, this.boldWords);
-}
+/// Renders HTML content from epitaka.dictionary definitions using real HTML
+/// rendering with `flutter_html`.
+class _DictionaryHtmlContent extends StatelessWidget {
+  final String html;
+  final TextStyle baseStyle;
 
-class _HtmlLinkList {
-  final List<String> words;
+  const _DictionaryHtmlContent({
+    required this.html,
+    required this.baseStyle,
+  });
 
-  const _HtmlLinkList(this.words);
+  @override
+  Widget build(BuildContext context) {
+    if (html.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Html(
+      data: html,
+      style: {
+        'body': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+          fontSize: FontSize(baseStyle.fontSize ?? 14),
+          lineHeight: const LineHeight(1.5),
+          color: baseStyle.color,
+          fontFamily: baseStyle.fontFamily,
+        ),
+        'p': Style(
+          margin: Margins.only(bottom: 4),
+        ),
+        'b': Style(fontWeight: FontWeight.bold),
+        'i': Style(fontStyle: FontStyle.italic),
+        'u': Style(textDecoration: TextDecoration.underline),
+        'ul': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.only(left: 20),
+        ),
+        'li': Style(
+          margin: Margins.only(bottom: 2),
+        ),
+        '.word': Style(
+          fontWeight: FontWeight.bold,
+          fontSize: FontSize((baseStyle.fontSize ?? 14) + 2),
+        ),
+        '.gender': Style(
+          fontStyle: FontStyle.italic,
+          color: const Color(0xFF888888),
+        ),
+        '.viggaha': Style(
+          margin: Margins.only(bottom: 4, top: 2),
+          fontSize: FontSize((baseStyle.fontSize ?? 14) - 1),
+          fontStyle: FontStyle.italic,
+        ),
+        '.definition': Style(
+          margin: Margins.only(bottom: 4),
+        ),
+        '.reference': Style(
+          fontSize: FontSize((baseStyle.fontSize ?? 14) - 2),
+          color: const Color(0xFF888888),
+          margin: Margins.only(top: 2),
+        ),
+      },
+    );
+  }
 }
 
 // ── Cached dictionary definitions provider ───────────────────────────────────
@@ -1284,32 +1304,4 @@ class _OtherDictionarySection extends ConsumerWidget {
   }
 }
 
-// ── Dictionary HTML Content ─────────────────────────────────────────────────
 
-/// Renders HTML content from epitaka.dictionary definitions.
-class _DictionaryHtmlContent extends StatelessWidget {
-  final String html;
-  final TextStyle baseStyle;
-
-  const _DictionaryHtmlContent({
-    required this.html,
-    required this.baseStyle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Strip HTML tags and render as plain text with basic formatting
-    final text = _stripHtml(html);
-    return Text(
-      text,
-      style: baseStyle,
-    );
-  }
-
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-}

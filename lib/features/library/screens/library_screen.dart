@@ -8,6 +8,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
+import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../widgets/library_browser.dart';
@@ -28,13 +29,37 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    // Check if a tab index was passed via query parameter (from drawer)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleTabQueryParam();
+    });
+  }
+
+  void _handleTabQueryParam() {
+    final uri = Uri.tryParse(GoRouterState.of(context).uri.toString());
+    if (uri != null && uri.queryParameters.containsKey('tab')) {
+      final tabParam = uri.queryParameters['tab'];
+      final tabIndex = int.tryParse(tabParam ?? '');
+      if (tabIndex != null && tabIndex >= 0 && tabIndex < 3) {
+        setState(() => _selectedIndex = tabIndex);
+        // Clean the query parameter so it doesn't re-trigger
+        context.go('/');
+      }
+    }
+  }
+
   static const _tabs = ['Browse', 'Reading', 'Bookmarks'];
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
+    // Use GlobalKey to control the drawer from the app bar button
     return AppShell(
+      drawer: const MainDrawer(),
       appBar: _LibraryAppBar(colors: colors),
       child: Column(
         children: [
@@ -100,12 +125,13 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
         child: Divider(height: 1, thickness: 1, color: colors.outlineVariant),
-      ),
-      leading: IconButton(
-        icon: const Icon(Icons.menu),
-        color: colors.onSurfaceVariant,
-        onPressed: () {},
-      ),
+      ),        leading: Builder(builder: (context) {
+          return IconButton(
+            icon: const Icon(Icons.menu),
+            color: colors.onSurfaceVariant,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          );
+        }),
       title: Text(
         'ePitaka',
         style: AppTypography.headlineLarge.copyWith(

@@ -6,6 +6,8 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../../gavesana/providers/gavesana_download_provider.dart';
+import '../../gavesana/services/download_service.dart';
 import '../../search/providers/search_provider.dart';
 
 import '../widgets/index_progress_screen.dart';
@@ -154,6 +156,11 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: AppDimensions.md),
 
+          // ── Gavesana ───────────────────────────────────────────────
+          _buildGavesanaSection(colors, ref),
+
+          const SizedBox(height: AppDimensions.md),
+
           SettingsSection(
             title: 'Account',
             colors: colors,
@@ -186,9 +193,198 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// Gavesana AI-powered search settings section.
+  Widget _buildGavesanaSection(ColorScheme colors, WidgetRef ref) {
+    return SettingsSection(
+      title: 'Gavesana (AI Search)',
+      colors: colors,
+      children: [
+        _GavesanaDownloadTile(colors: colors),
+      ],
+    );
+  }
 }
 
+/// Tile showing Gavesana download status and action.
+class _GavesanaDownloadTile extends ConsumerStatefulWidget {
+  final ColorScheme colors;
 
+  const _GavesanaDownloadTile({required this.colors});
+
+  @override
+  ConsumerState<_GavesanaDownloadTile> createState() =>
+      _GavesanaDownloadTileState();
+}
+
+class _GavesanaDownloadTileState
+    extends ConsumerState<_GavesanaDownloadTile> {
+  bool _isDownloading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final assetsAsync = ref.watch(gavesanaAssetsReadyProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: InkWell(
+        onTap: _isDownloading ? null : _handleAction,
+        child: Row(
+          children: [
+            Icon(
+              Icons.psychology,
+              color: widget.colors.primary,
+            ),
+            const SizedBox(width: AppDimensions.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI Search Assets',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: widget.colors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  assetsAsync.when(
+                    data: (ready) => Text(
+                      ready
+                          ? 'Ready (${_sizeLabel(270 + 364 + 33)} MB)'
+                          : 'Not downloaded — tap to download',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: ready
+                            ? widget.colors.tertiary
+                            : widget.colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                    loading: () => const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    error: (_, __) => const Text('Check failed'),
+                  ),
+                ],
+              ),
+            ),
+            if (_isDownloading)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              assetsAsync.when(
+                data: (ready) => Icon(
+                  ready
+                      ? Icons.check_circle_outline
+                      : Icons.cloud_download_outlined,
+                  size: 20,
+                  color: ready
+                      ? widget.colors.tertiary
+                      : widget.colors.primary,
+                ),
+                loading: () => const SizedBox(width: 20),
+                error: (_, __) => const Icon(Icons.error_outline, size: 20),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _sizeLabel(int mb) {
+    if (mb >= 1000) return '${(mb / 1000).toStringAsFixed(1)} GB';
+    return mb.toString();
+  }
+
+  Future<void> _handleAction() async {
+    final assetsReady =
+        await ref.read(gavesanaAssetsReadyProvider.future);
+    if (assetsReady) {
+      // Show info about the assets
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Gavesana AI Assets'),
+          content: const Text(
+            'The AI search model and vector database are ready to use.\n\n'
+            'Open the sidebar in the Library screen and tap the '
+            'Gavesana icon to start searching semantically.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Start download
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Download Gavesana Assets?'),
+        content: const Text(
+          'This will download approximately 670 MB of data:\n'
+          '- AI model (270 MB)\n'
+          '- Vector database (364 MB)\n'
+          '- Tokenizer config (33 MB)\n\n'
+          'A Wi-Fi connection is recommended.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isDownloading = true);
+    try {
+      final service = ref.read(gavesanaDownloadServiceProvider);
+      final success = await service.downloadAssets();
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: ${service.error}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      if (mounted) {
+        ref.invalidate(gavesanaAssetsReadyProvider);
+        setState(() => _isDownloading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDownloading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+}
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;

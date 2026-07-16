@@ -13,6 +13,8 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../shared/widgets/paragraph_preview_sheet.dart';
+import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 
@@ -127,17 +129,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       BookResultSummary summary, SearchResultItem item) async {
     HapticFeedback.mediumImpact();
 
-    // Open the reader tab first (so "Open in Reader" works)
     final currentState = ref.read(searchProvider);
     final searchQuery = currentState is SearchResults ? currentState.query : null;
-    ref.read(readerTabsProvider.notifier).openTab(
-      ReaderTabInfo(
-        bookId: item.bookId,
-        bookName: summary.book.bookName ?? item.bookId,
-        initialParaId: item.paraId,
-        searchQuery: searchQuery,
-      ),
-    );
 
     try {
       final epitakaDb = await ref.read(epitakaDbProvider.future);
@@ -200,7 +193,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ).get();
 
       // 4. Load translations for those sentences
-      final translationMap = <String, String>{};
+      final translationMap = <String, Map<String, String>>{};
       if (activeLang != null) {
         try {
           final lang = TranslationLanguage.fromCode(activeLang);
@@ -220,37 +213,55 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               final key = '${row.data['para_id']}:${row.data['line_id']}';
               final t = row.data['translation'] as String?;
               if (t != null && t.isNotEmpty) {
-                translationMap[key] = t;
+                if (!translationMap.containsKey(key)) {
+                  translationMap[key] = {};
+                }
+                translationMap[key]![activeLang] = t;
               }
             }
           }
         } catch (_) {}
       }
 
-      // 5. Build sentence list
-      final sentences = sentenceRows.map((r) => _PreviewLine(
-            paraId: r.data['para_id'] as int,
-            lineId: r.data['line_id'] as int,
-            pali: r.data['pali'] as String? ?? '',
-            translation:
-                translationMap['${r.data['para_id']}:${r.data['line_id']}'] ??
-                    '',
-          )).toList();
+      // 5. Build preview line list
+      final previewLines = sentenceRows.map((r) {
+        final key = '${r.data['para_id']}:${r.data['line_id']}';
+        return PreviewLineData(
+          paraId: r.data['para_id'] as int,
+          lineId: r.data['line_id'] as int,
+          pali: r.data['pali'] as String? ?? '',
+          translations: translationMap[key] ?? {},
+        );
+      }).toList();
+
+      // Find the first snippet line index
+      final firstSnippetIndex = previewLines
+          .indexWhere((l) => l.paraId == item.paraId);
 
       if (!mounted) return;
 
-      await showDialog(
-        context: context,
-        useSafeArea: false,
-        builder: (ctx) => _ResultPreviewDialog(
-          bookId: item.bookId,
-          bookName: summary.book.bookName ?? item.bookId,
-          headingTitle: headingTitle,
-          sentences: sentences,
-          matchParaId: item.paraId,
-          paliSnippet: item.paliSnippet ?? item.paliText,
-          searchQuery: searchQuery,
-        ),
+      await showParagraphPreviewSheet(
+        context,
+        title: headingTitle.isNotEmpty ? headingTitle : (summary.book.bookName ?? item.bookId),
+        subtitle: headingTitle.isNotEmpty ? (summary.book.bookName ?? item.bookId) : null,
+        lines: previewLines,
+        highlightParaId: item.paraId,
+        firstSnippetIndex: firstSnippetIndex >= 0 ? firstSnippetIndex : null,
+        paliSnippet: item.paliSnippet ?? item.paliText,
+        actionLabel: 'Open in Reader',
+        onAction: () {
+          // Open the reader tab
+          ref.read(readerTabsProvider.notifier).openTab(
+            ReaderTabInfo(
+              bookId: item.bookId,
+              bookName: summary.book.bookName ?? item.bookId,
+              initialParaId: item.paraId,
+              searchQuery: searchQuery,
+            ),
+          );
+          Navigator.of(context).pop();
+          context.push('/reader');
+        },
       );
     } catch (e) {
       if (mounted) {
@@ -266,6 +277,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final colors = Theme.of(context).colorScheme;
     final searchState = ref.watch(searchProvider);
 
+    final isFromDrawer = GoRouterState.of(context)
+            .uri
+            .queryParameters['fromDrawer'] ==
+        'true';
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: AppDimensions.appBarHeight,
@@ -274,9 +290,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(isFromDrawer ? Icons.menu : Icons.arrow_back),
           color: colors.onSurfaceVariant,
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (isFromDrawer) {
+              // Go back to library
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pop();
+            }
+          },
         ),
         title: Text(
           'Search',
@@ -1341,6 +1364,14 @@ class _Interval {
 
 // ── Utility ──────────────────────────────────────────────────────────────
 
+/// Extract normalized search terms for highlighting.
+List<String> _extractSearchTerms(String query) {
+  return normalizePaliFuzzy(query)
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
+}
+
 /// Format a number (e.g. 1234 -> "1.2k").
 String formatCount(int count) {
   if (count < 1000) return count.toString();
@@ -1350,311 +1381,4 @@ String formatCount(int count) {
 
 extension _Lets<T> on T {
   R let<R>(R Function(T) fn) => fn(this);
-}
-
-// ── Result Preview Dialog ───────────────────────────────────────────────
-
-/// Data class for a single sentence line in the preview.
-class _PreviewLine {
-  final int paraId;
-  final int lineId;
-  final String pali;
-  final String translation;
-
-  const _PreviewLine({
-    required this.paraId,
-    required this.lineId,
-    required this.pali,
-    this.translation = '',
-  });
-}
-
-/// A full-screen dialog that shows all Pāli + translation lines for the
-/// heading section containing a search match, auto-scrolled to the matched
-/// paragraph.
-class _ResultPreviewDialog extends StatefulWidget {
-  final String bookId;
-  final String bookName;
-  final String headingTitle;
-  final List<_PreviewLine> sentences;
-  final int matchParaId;
-  final String paliSnippet;
-  final String? searchQuery;
-
-  const _ResultPreviewDialog({
-    required this.bookId,
-    required this.bookName,
-    required this.headingTitle,
-    required this.sentences,
-    required this.matchParaId,
-    required this.paliSnippet,
-    this.searchQuery,
-  });
-
-  @override
-  State<_ResultPreviewDialog> createState() => _ResultPreviewDialogState();
-}
-
-class _ResultPreviewDialogState extends State<_ResultPreviewDialog> {
-  final _scrollController = ScrollController();
-  int _firstMatchIndex = -1;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // First line of the matched paragraph (for showing the FTS5 snippet)
-    _firstMatchIndex = widget.sentences
-        .indexWhere((s) => s.paraId == widget.matchParaId);
-    if (_firstMatchIndex < 0) return;
-
-    // Find the exact sentence within the matched paragraph that contains
-    // the search term, so we scroll precisely to it
-    int scrollToIndex = _firstMatchIndex;
-    if (widget.searchQuery != null) {
-      final queryNorm =
-          normalizePaliFuzzy(widget.searchQuery!).toLowerCase();
-      final queryWords = queryNorm
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-      if (queryWords.isNotEmpty) {
-        for (int i = _firstMatchIndex;
-            i < widget.sentences.length &&
-                widget.sentences[i].paraId == widget.matchParaId;
-            i++) {
-          final paliNorm =
-              normalizePaliFuzzy(widget.sentences[i].pali).toLowerCase();
-          if (queryWords.any((w) => paliNorm.contains(w))) {
-            scrollToIndex = i;
-            break;
-          }
-        }
-      }
-    }
-
-    // Scroll to the exact matching sentence using a per-item height estimate
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-
-      double offset = 0;
-      for (int i = 0; i < scrollToIndex && i < widget.sentences.length; i++) {
-        final s = widget.sentences[i];
-        // Paragraph gap between different paragraphs
-        if (i > 0 && s.paraId != widget.sentences[i - 1].paraId) {
-          offset += 12;
-        }
-        // Container vertical padding (top + bottom)
-        offset += 4;
-        // Pāli text height
-        final paliLines = ((s.pali.length / 50).ceil()).clamp(1, 8);
-        offset += paliLines * 22.4; // fontSize 14 × lineHeight 1.6
-        // Translation text height (if present)
-        if (s.translation.isNotEmpty) {
-          final transLines =
-              ((s.translation.length / 50).ceil()).clamp(1, 8);
-          offset += 2 + transLines * 16.8; // top padding + text
-        }
-      }
-
-      _scrollController.animateTo(
-        (offset - 80).clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Dialog(
-      insetPadding: EdgeInsets.zero,
-      backgroundColor: colors.surface,
-      child: Scaffold(
-        backgroundColor: colors.surface,
-        appBar: AppBar(
-          backgroundColor: colors.surface,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.close, color: colors.onSurfaceVariant),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.headingTitle.isNotEmpty
-                    ? widget.headingTitle
-                    : widget.bookName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colors.onSurface,
-                      fontWeight: FontWeight.bold,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (widget.headingTitle.isNotEmpty)
-                Text(
-                  widget.bookName,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () {
-                final router = GoRouter.of(context);
-                Navigator.of(context).pop();
-                router.push('/reader');
-              },
-              icon: Icon(Icons.open_in_new, size: 16, color: colors.primary),
-              label: Text(
-                'Open in Reader',
-                style: TextStyle(color: colors.primary),
-              ),
-            ),
-          ],
-        ),
-        body: widget.sentences.isEmpty
-            ? Center(
-                child: Text(
-                  'No sentences found for this section.',
-                  style: TextStyle(color: colors.onSurfaceVariant),
-                ),
-              )
-            : ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.only(
-                  left: 4,
-                  right: 4,
-                  top: 4,
-                  bottom: 32,
-                ),
-                itemCount: widget.sentences.length,
-                itemBuilder: (context, index) {
-                  final line = widget.sentences[index];
-                  final isMatch = line.paraId == widget.matchParaId;
-                  final isNewPara = index == 0 ||
-                      line.paraId !=
-                          widget.sentences[index - 1].paraId;
-
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Paragraph gap
-                      if (isNewPara && index > 0)
-                        const SizedBox(height: 12),
-
-                      // Match-highlighted paragraph block
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isMatch
-                              ? colors.primaryContainer
-                                  .withValues(alpha: 0.25)
-                              : null,
-                          border: isMatch
-                              ? Border(
-                                  left: BorderSide(
-                                    color: colors.primary,
-                                    width: 3,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Pāli — first line of matched para uses
-                            // FTS5 snippet with <mark> tags
-                            if (isMatch &&
-                                widget.paliSnippet.isNotEmpty &&
-                                index == _firstMatchIndex)
-                              _HtmlRichText(
-                                text: widget.paliSnippet,
-                                searchTerms: const [],
-                                style: AppTypography.bodyPali.copyWith(
-                                  fontSize: 14,
-                                  color: colors.onSurface,
-                                  height: 1.6,
-                                ),
-                                highlightColor: colors.primary
-                                    .withValues(alpha: 0.2),
-                                maxLines: null,
-                              )
-                            else
-                              _HtmlRichText(
-                                text: line.pali,
-                                searchTerms:
-                                    widget.searchQuery != null && !isMatch
-                                        ? _extractSearchTerms(
-                                            widget.searchQuery!)
-                                        : const [],
-                                style: AppTypography.bodyPali.copyWith(
-                                  fontSize: 14,
-                                  color: colors.onSurface,
-                                  height: 1.6,
-                                ),
-                                highlightColor: colors.primary
-                                    .withValues(alpha: 0.2),
-                                maxLines: null,
-                              ),
-                            // Translation
-                            if (line.translation.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: _HtmlRichText(
-                                  text: line.translation,
-                                  searchTerms: widget.searchQuery != null &&
-                                          !isMatch
-                                      ? _extractSearchTerms(
-                                          widget.searchQuery!)
-                                      : const [],
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: colors.onSurfaceVariant
-                                        .withValues(alpha: 0.85),
-                                    fontStyle: FontStyle.italic,
-                                    height: 1.4,
-                                  ),
-                                  highlightColor: colors.primary
-                                      .withValues(alpha: 0.15),
-                                  maxLines: null,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-      ),
-    );
-  }
-}
-
-/// Extract normalized search terms for highlighting (local copy for the
-/// preview dialog).
-List<String> _extractSearchTerms(String query) {
-  return normalizePaliFuzzy(query)
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
 }

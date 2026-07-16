@@ -8,6 +8,7 @@ class AppShell extends StatelessWidget {
   final PreferredSizeWidget? appBar;
   final List<Widget>? bottomToolbarActions;
   final bool showBottomToolbar;
+  final Widget? drawer;
 
   const AppShell({
     super.key,
@@ -15,6 +16,7 @@ class AppShell extends StatelessWidget {
     this.appBar,
     this.bottomToolbarActions,
     this.showBottomToolbar = false,
+    this.drawer,
   });
 
   @override
@@ -23,6 +25,7 @@ class AppShell extends StatelessWidget {
 
     return Scaffold(
       appBar: appBar,
+      drawer: drawer,
       body: Stack(
         children: [
           child,
