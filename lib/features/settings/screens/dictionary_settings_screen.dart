@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
-/// Settings screen for managing dictionaries: enable/disable and reorder.
 class DictionarySettingsScreen extends ConsumerWidget {
   const DictionarySettingsScreen({super.key});
 
@@ -15,6 +15,7 @@ class DictionarySettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
+    final loc = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
@@ -27,21 +28,20 @@ class DictionarySettingsScreen extends ConsumerWidget {
         ),
         children: [
           Text(
-            'Dictionary Settings',
+            loc.dictionarySettings,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.onSurface,
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            'Enable, disable, and reorder dictionaries.\nDictionaries appear in this order in the dictionary panel.',
+            loc.dictionarySettingDesc,
             style: AppTypography.bodyTranslation.copyWith(
               color: colors.onSurfaceVariant,
               fontSize: 14,
             ),
           ),
           const SizedBox(height: AppDimensions.lg),
-
           booksAsync.when(
             loading: () => const Center(
               child: Padding(
@@ -53,7 +53,7 @@ class DictionarySettingsScreen extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Error loading dictionaries: $e',
+                  '${loc.errorLoadingDict} $e',
                   style: AppTypography.labelSmall.copyWith(color: colors.error),
                 ),
               ),
@@ -61,51 +61,56 @@ class DictionarySettingsScreen extends ConsumerWidget {
             data: (books) {
               final enabledBooks = books.where((b) => b.userChoice).toList();
               final disabledBooks = books.where((b) => !b.userChoice).toList();
-
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Enabled dictionaries (reorderable)
                   SettingsSection(
-                    title: 'Enabled Dictionaries',
+                    title: loc.enabledDictionaries,
                     colors: colors,
                     children: [
                       if (enabledBooks.isEmpty)
                         Padding(
                           padding: const EdgeInsets.all(AppDimensions.md),
                           child: Text(
-                            'No dictionaries enabled. Tap a dictionary below to enable it.',
+                            loc.noDictEnabled,
                             style: AppTypography.labelSmall.copyWith(
                               color: colors.onSurfaceVariant,
                               fontStyle: FontStyle.italic,
                             ),
                           ),
-                        ),                        ReorderableListView(
+                        ),
+                      ReorderableListView(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         buildDefaultDragHandles: false,
-                        children: enabledBooks.asMap().entries.map((entry) {
-                          final book = entry.value;
-                          return _DictionaryBookTile(
-                            key: ValueKey('enabled-${book.id}'),
-                            book: book,
-                            index: entry.key,
-                            colors: colors,
-                            isEnabled: true,
-                            showDragHandle: true,
-                            onToggle: () {
-                              ref
-                                  .read(dictionaryBooksNotifierProvider.notifier)
-                                  .toggleEnabled(book.id, false);
-                            },
-                          );
-                        }).toList(),
-                        onReorder: (int oldIndex, int newIndex) {
-                          if (oldIndex < newIndex) newIndex--;
+                        children: enabledBooks
+                            .asMap()
+                            .entries
+                            .map(
+                              (entry) => _DictionaryBookTile(
+                                key: ValueKey('enabled-${entry.value.id}'),
+                                book: entry.value,
+                                index: entry.key,
+                                colors: colors,
+                                isEnabled: true,
+                                showDragHandle: true,
+                                onToggle: () => ref
+                                    .read(
+                                      dictionaryBooksNotifierProvider.notifier,
+                                    )
+                                    .toggleEnabled(entry.value.id, false),
+                              ),
+                            )
+                            .toList(),
+                        onReorderItem: (int oldIndex, int newIndex) {
+                          // NOTE: onReorderItem already returns the FINAL index
+                          // (Flutter adjusts newIndex for the removed item). Do NOT
+                          // decrement newIndex here — doing so double-adjusts and
+                          // breaks single-step moves (e.g. drag item 1 to slot 2
+                          // would snap back). See ReorderableListView docs.
                           final ids = enabledBooks.map((b) => b.id).toList();
                           final item = ids.removeAt(oldIndex);
                           ids.insert(newIndex, item);
-                          // Add disabled book ids at the end
                           ids.addAll(disabledBooks.map((b) => b.id));
                           ref
                               .read(dictionaryBooksNotifierProvider.notifier)
@@ -114,28 +119,28 @@ class DictionarySettingsScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: AppDimensions.md),
-
-                  // Disabled dictionaries
                   if (disabledBooks.isNotEmpty) ...[
+                    const SizedBox(height: AppDimensions.md),
                     SettingsSection(
-                      title: 'Disabled Dictionaries',
+                      title: loc.disabledDictionaries,
                       colors: colors,
-                      children: disabledBooks.map((book) {
-                        return _DictionaryBookTile(
-                          key: ValueKey('disabled-${book.id}'),
-                          book: book,
-                          index: book.userOrder,
-                          colors: colors,
-                          isEnabled: false,
-                          showDragHandle: false,
-                          onToggle: () {
-                            ref
-                                .read(dictionaryBooksNotifierProvider.notifier)
-                                .toggleEnabled(book.id, true);
-                          },
-                        );
-                      }).toList(),
+                      children: disabledBooks
+                          .map(
+                            (book) => _DictionaryBookTile(
+                              key: ValueKey('disabled-${book.id}'),
+                              book: book,
+                              index: book.userOrder,
+                              colors: colors,
+                              isEnabled: false,
+                              showDragHandle: false,
+                              onToggle: () => ref
+                                  .read(
+                                    dictionaryBooksNotifierProvider.notifier,
+                                  )
+                                  .toggleEnabled(book.id, true),
+                            ),
+                          )
+                          .toList(),
                     ),
                   ],
                 ],
@@ -148,7 +153,6 @@ class DictionarySettingsScreen extends ConsumerWidget {
   }
 }
 
-/// A single dictionary book tile in the settings list.
 class _DictionaryBookTile extends StatelessWidget {
   final DictionaryBook book;
   final int index;
@@ -156,7 +160,6 @@ class _DictionaryBookTile extends StatelessWidget {
   final bool isEnabled;
   final bool showDragHandle;
   final VoidCallback onToggle;
-
   const _DictionaryBookTile({
     super.key,
     required this.book,
@@ -176,7 +179,6 @@ class _DictionaryBookTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Drag handle
           if (showDragHandle)
             ReorderableDragStartListener(
               index: index,
@@ -191,8 +193,6 @@ class _DictionaryBookTile extends StatelessWidget {
             )
           else
             const SizedBox(width: 28),
-
-          // Enable/disable checkbox
           GestureDetector(
             onTap: onToggle,
             child: AnimatedContainer(
@@ -213,8 +213,6 @@ class _DictionaryBookTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppDimensions.md),
-
-          // Book info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,8 +229,6 @@ class _DictionaryBookTile extends StatelessWidget {
               ],
             ),
           ),
-
-          // Order number
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(

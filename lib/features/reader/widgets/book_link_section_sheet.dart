@@ -46,6 +46,8 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   LinkedParagraphContent? _content;
   bool _isLoading = true;
   String? _error;
+  final GlobalKey _targetLineKey = GlobalKey();
+  bool _didScrollToTarget = false;
 
   @override
   void initState() {
@@ -62,15 +64,14 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
       final enabledLangs = settings.enabledTranslations.isNotEmpty
           ? settings.enabledTranslations.toList()
           : (settings.showTranslation
-              ? [settings.primaryTranslationLang]
-              : <String>[]);
+                ? [settings.primaryTranslationLang]
+                : <String>[]);
 
       final transDbs = <String, TranslationDatabase>{};
       for (final langCode in enabledLangs) {
         try {
           final lang = TranslationLanguage.fromCode(langCode);
-          final transDb =
-              await ref.read(translationDbProvider(lang).future);
+          final transDb = await ref.read(translationDbProvider(lang).future);
           if (transDb != null) {
             transDbs[langCode] = transDb;
           }
@@ -90,6 +91,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           _content = content;
           _isLoading = false;
         });
+        _scrollToTarget();
       }
     } catch (e) {
       if (mounted) {
@@ -99,6 +101,32 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
         });
       }
     }
+  }
+
+  void _scrollToTarget() {
+    if (_didScrollToTarget) return;
+    final content = _content;
+    if (content == null) return;
+    // Only scroll if the target paragraph is actually part of the rendered
+    // section (it always is, since the section is built around linkedParaId).
+    final hasTarget = content.lines.any(
+      (l) => l.paraId == widget.link.linkedParaId,
+    );
+    if (!hasTarget) return;
+    _didScrollToTarget = true;
+    // Wait for the frame so the target widget is laid out before scrolling.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _targetLineKey;
+      final ctx = key.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.25,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   @override
@@ -146,9 +174,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
             const Divider(height: 1),
 
             // ── Content area ───────────────────────────────────────
-            Expanded(
-              child: _buildBody(colors),
-            ),
+            Expanded(child: _buildBody(colors)),
           ],
         ),
       ),
@@ -160,11 +186,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
 
     return Row(
       children: [
-        Icon(
-          Icons.bookmark_border,
-          size: 16,
-          color: colors.primary,
-        ),
+        Icon(Icons.bookmark_border, size: 16, color: colors.primary),
         const SizedBox(width: 6),
         Expanded(
           child: Column(
@@ -192,14 +214,16 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
         TextButton.icon(
           onPressed: _content != null
               ? () {
-                  ref.read(readerTabsProvider.notifier).openTab(
-                    ReaderTabInfo(
-                      bookId: link.linkedBookId,
-                      bookName: _content!.bookName,
-                      initialParaId: link.linkedParaId,
-                      initialLineId: link.linkedLineId,
-                    ),
-                  );
+                  ref
+                      .read(readerTabsProvider.notifier)
+                      .openTab(
+                        ReaderTabInfo(
+                          bookId: link.linkedBookId,
+                          bookName: _content!.bookName,
+                          initialParaId: link.linkedParaId,
+                          initialLineId: link.linkedLineId,
+                        ),
+                      );
                   Navigator.of(context).pop();
                   context.push('/reader');
                 }
@@ -228,9 +252,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           padding: const EdgeInsets.all(24),
           child: Text(
             'Could not load linked content.\n$_error',
-            style: AppTypography.bodyTranslation.copyWith(
-              color: colors.error,
-            ),
+            style: AppTypography.bodyTranslation.copyWith(color: colors.error),
             textAlign: TextAlign.center,
           ),
         ),
@@ -253,10 +275,12 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
       );
     }
 
-    // Convert linked content lines to PreviewLineData
+    // Convert linked content lines to PreviewLineData. Use each line's own
+    // paraId so PreviewContent renders paragraph breaks and highlights the
+    // linked paragraph (content.paraId) within the full section.
     final previewLines = content.lines.map((line) {
       return PreviewLineData(
-        paraId: content.paraId,
+        paraId: line.paraId,
         lineId: line.lineId,
         pali: line.paliText,
         translations: line.translations,
@@ -288,9 +312,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
               content.headingTitle!,
               null,
               style: content.headingLevel != null && content.headingLevel! <= 2
-                  ? AppTypography.headlineSmall.copyWith(
-                      color: colors.primary,
-                    )
+                  ? AppTypography.headlineSmall.copyWith(color: colors.primary)
                   : AppTypography.bodyPali.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colors.primary,
@@ -304,6 +326,9 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
             lines: previewLines,
             highlightParaId: content.paraId,
             firstSnippetIndex: 0,
+            scrollToParaId: widget.link.linkedParaId,
+            scrollToLineId: widget.link.linkedLineId,
+            targetLineKey: _targetLineKey,
             onPaliWordTap: (word) {
               // Import and use dictionary lookup
               _showDictionary(context, word);
@@ -315,10 +340,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           // ── Line ref badge ──────────────────────────────────
           Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 4,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: colors.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),

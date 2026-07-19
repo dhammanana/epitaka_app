@@ -5,6 +5,7 @@ import '../../core/database/app_database.dart';
 import '../../core/models/app_models.dart';
 import '../../core/providers/app_db_provider.dart';
 import '../../core/providers/database_provider.dart';
+import '../../core/providers/translation_manifest_provider.dart';
 
 // ── Result types used by IndexController ───────────────────────────────
 
@@ -13,13 +14,11 @@ class IndexCheckStatus {
   final bool healthy;
   final bool isComplete;
   final bool paliBuilt;
-  final List<TranslationLanguage> missingTranslations;
 
   const IndexCheckStatus({
     required this.healthy,
     required this.isComplete,
     required this.paliBuilt,
-    this.missingTranslations = const [],
   });
 }
 
@@ -117,8 +116,8 @@ class IndexService {
     }
   }
 
-  /// Build missing FTS indexes based on the given [status]. Returns a
-  /// result indicating any languages that could not be indexed.
+  /// Build FTS indexes for Pāli + all available translation databases.
+  /// Returns a result indicating any languages that could not be indexed.
   Future<IndexBuildResult> build(
     IndexCheckStatus status, {
     void Function(double progress, String status)? onProgress,
@@ -135,25 +134,41 @@ class IndexService {
       );
     }
 
-    // Build translation indexes for any missing translations
+    // Build translation indexes for ALL available versions on disk
     final pending = <String>[];
-    for (final lang in status.missingTranslations) {
+    final merged = await _ref.read(mergedTranslationVersionsProvider.future);
+    final availableVersions = merged.where((v) => v.isAvailable).toList();
+
+    // Deduplicate by language code — only build one index per language
+    final seenLangCodes = <String>{};
+    for (final version in availableVersions) {
+      if (seenLangCodes.contains(version.languageCode)) continue;
+      seenLangCodes.add(version.languageCode);
       try {
+        final langEnum = TranslationLanguage.fromCode(version.languageCode);
         final transDb = await _ref.read(
-          translationDbProvider(lang).future,
+          translationDbProvider(langEnum).future,
         );
         if (transDb != null) {
-          await appDb.buildTranslationSearchIndex(
-            lang.code,
-            transDb,
-            onProgress: onProgress,
-          );
+          final alreadyBuilt = await appDb.isTranslationIndexBuilt(
+              version.languageCode);
+          if (!alreadyBuilt) {
+            await appDb.buildTranslationSearchIndex(
+              version.languageCode,
+              transDb,
+              onProgress: onProgress,
+            );
+          } else {
+            debugPrint(
+                '[INDEX_SVC] build: ${version.languageCode} index already built, skipping');
+          }
         } else {
-          pending.add(lang.code);
+          pending.add(version.languageCode);
         }
       } catch (e) {
-        debugPrint('[INDEX_SVC] build: failed for ${lang.code}: $e');
-        pending.add(lang.code);
+        debugPrint(
+            '[INDEX_SVC] build: failed for ${version.languageCode}: $e');
+        pending.add(version.languageCode);
       }
     }
 

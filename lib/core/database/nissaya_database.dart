@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 
+part 'nissaya_database.g.dart';
+
 /// A nissaya sentence with parsed Pāli + meaning pairs from JSON content.
 class NissayaSentenceLine {
   final String bookId;
@@ -53,28 +55,54 @@ class NissayaWordPair {
   const NissayaWordPair({required this.pali, required this.meaning});
 }
 
-/// Database for nissaya-type translations.
-///
-/// Schema:
-/// ```sql
-/// CREATE TABLE sentences (
-///   book_id TEXT NOT NULL,
-///   para_id INTEGER NOT NULL,
-///   line_id INTEGER NOT NULL,
-///   content TEXT,
-///   nissaya_id INTEGER NOT NULL,
-///   PRIMARY KEY (nissaya_id, book_id, para_id, line_id)
-/// );
-/// CREATE TABLE books (
-///   book_id INTEGER PRIMARY KEY,
-///   book_name TEXT,
-///   info TEXT
-/// );
-/// ```
-class NissayaDatabase {
-  final NativeDatabase _database;
+// ---------------------------------------------------------------------------
+// Table: sentences
+// ---------------------------------------------------------------------------
+class NissayaSentences extends Table {
+  TextColumn get bookId => text()();
+  IntColumn get paraId => integer()();
+  IntColumn get lineId => integer()();
+  TextColumn get content => text().nullable()();
+  IntColumn get nissayaId => integer()();
 
-  NissayaDatabase._(this._database);
+  @override
+  Set<Column> get primaryKey => {nissayaId, bookId, paraId, lineId};
+}
+
+// ---------------------------------------------------------------------------
+// Table: books
+// ---------------------------------------------------------------------------
+class NissayaBooks extends Table {
+  IntColumn get bookId => integer()();
+  TextColumn get bookName => text().nullable()();
+  TextColumn get info => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {bookId};
+}
+
+// ---------------------------------------------------------------------------
+// Database
+// ---------------------------------------------------------------------------
+@DriftDatabase(tables: [NissayaSentences, NissayaBooks])
+class NissayaDatabase extends _$NissayaDatabase {
+  NissayaDatabase(super.e);
+
+  @override
+  int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        // Tables already exist in the pre-bundled database
+      },
+      beforeOpen: (details) async {
+        await customStatement('PRAGMA journal_mode=WAL');
+        await customStatement('PRAGMA foreign_keys=ON');
+      },
+    );
+  }
 
   /// Open an existing nissaya database at [dbPath].
   static Future<NissayaDatabase> open(String dbPath) async {
@@ -92,7 +120,7 @@ class NissayaDatabase {
       logStatements: false,
     );
 
-    return NissayaDatabase._(database);
+    return NissayaDatabase(database);
   }
 
   /// Get all sentences for a specific book and paragraph.
@@ -100,26 +128,26 @@ class NissayaDatabase {
     String bookId,
     int paraId,
   ) async {
-    final rows = await _database.runSelect(
+    final rows = await customSelect(
       'SELECT book_id, para_id, line_id, content, nissaya_id FROM sentences '
       'WHERE book_id = ? AND para_id = ? '
       'ORDER BY line_id',
-      [Variable.withString(bookId), Variable.withInt(paraId)],
-    );
+      variables: [Variable.withString(bookId), Variable.withInt(paraId)],
+    ).get();
 
-    return rows.map((row) => _parseRow(row)).toList();
+    return rows.map((row) => _parseRow(row.data)).toList();
   }
 
   /// Get all sentences for a specific book.
   Future<List<NissayaSentenceLine>> getBookSentences(String bookId) async {
-    final rows = await _database.runSelect(
+    final rows = await customSelect(
       'SELECT book_id, para_id, line_id, content, nissaya_id FROM sentences '
       'WHERE book_id = ? '
       'ORDER BY para_id, line_id',
-      [Variable.withString(bookId)],
-    );
+      variables: [Variable.withString(bookId)],
+    ).get();
 
-    return rows.map((row) => _parseRow(row)).toList();
+    return rows.map((row) => _parseRow(row.data)).toList();
   }
 
   /// Get a single sentence by its primary key.
@@ -128,25 +156,26 @@ class NissayaDatabase {
     int paraId,
     int lineId,
   ) async {
-    final rows = await _database.runSelect(
+    final rows = await customSelect(
       'SELECT book_id, para_id, line_id, content, nissaya_id FROM sentences '
       'WHERE book_id = ? AND para_id = ? AND line_id = ? '
       'LIMIT 1',
-      [
+      variables: [
         Variable.withString(bookId),
         Variable.withInt(paraId),
         Variable.withInt(lineId),
       ],
-    );
+    ).get();
 
     if (rows.isEmpty) return null;
-    return _parseRow(rows.first);
+    return _parseRow(rows.first.data);
   }
 
   /// Get all sentences for a book, formatted for reader display.
-  /// Returns Map<paraId, Map<lineId, transcript>> where transcript is the
+  /// Returns `Map<paraId, Map<lineId, transcript>>` where transcript is the
   /// formatted text (e.g. "pali: meaning | pali: meaning") for nissaya content.
-  Future<Map<int, Map<int, String>>> getBookSentencesFormatted(String bookId) async {
+  Future<Map<int, Map<int, String>>> getBookSentencesFormatted(
+      String bookId) async {
     final sentences = await getBookSentences(bookId);
     final result = <int, Map<int, String>>{};
     for (final s in sentences) {
@@ -158,12 +187,12 @@ class NissayaDatabase {
 
   /// Get book info.
   Future<Map<String, Object?>?> getBookInfo(int bookId) async {
-    final rows = await _database.runSelect(
+    final rows = await customSelect(
       'SELECT book_id, book_name, info FROM books WHERE book_id = ? LIMIT 1',
-      [Variable.withInt(bookId)],
-    );
+      variables: [Variable.withInt(bookId)],
+    ).get();
     if (rows.isEmpty) return null;
-    return rows.first;
+    return rows.first.data;
   }
 
   /// Parse a row from the sentences table.
@@ -209,10 +238,5 @@ class NissayaDatabase {
     } catch (_) {
       return false;
     }
-  }
-
-  /// Close the database.
-  Future<void> close() async {
-    await _database.close();
   }
 }

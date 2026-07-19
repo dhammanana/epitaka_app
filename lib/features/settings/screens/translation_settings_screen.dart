@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide ColorSwatch;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/translation_version.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
@@ -14,13 +15,6 @@ import '../widgets/settings_section.dart';
 
 /// Translation & Downloads screen: version management, download, delete, and
 /// typography settings for each translation language.
-///
-/// Features:
-/// - Groups translations by language, showing all available versions
-///   (default + nissaya variants)
-/// - Each version tile shows download/delete/update buttons
-/// - Manifest-based update checking
-/// - Expandable typography controls per language (Pāli + translations)
 class TranslationSettingsScreen extends ConsumerStatefulWidget {
   const TranslationSettingsScreen({super.key});
 
@@ -38,7 +32,19 @@ class _TranslationSettingsScreenState
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
     final mergedVersionsAsync = ref.watch(mergedTranslationVersionsProvider);
+    final localVersionsAsync = ref.watch(localTranslationVersionsProvider);
     final downloadStates = ref.watch(translationDownloadProvider);
+
+    // Only translations that are actually downloaded (DB present locally)
+    // can be reordered — a language merely offered by the manifest but not
+    // yet downloaded should not appear in the order list.
+    final downloadedCodes = localVersionsAsync.maybeWhen(
+      data: (versions) => versions.map((v) => v.languageCode).toSet(),
+      orElse: () => <String>{},
+    );
+    final reorderableCodes = settings.enabledTranslations
+        .where((code) => downloadedCodes.contains(code))
+        .toList();
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
@@ -64,13 +70,8 @@ class _TranslationSettingsScreenState
             ),
           ),
           const SizedBox(height: AppDimensions.md),
-
-          // ── Check for Updates button ──────────────────────────────
           _buildUpdateBanner(colors),
-
           const SizedBox(height: AppDimensions.md),
-
-          // ── Display Mode ──────────────────────────────────────────
           SettingsSection(
             title: 'Display Mode',
             colors: colors,
@@ -91,17 +92,13 @@ class _TranslationSettingsScreenState
                   }
                 },
                 onToggleTranslation: (show) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setShowTranslation(show);
+                  ref.read(settingsProvider.notifier).setShowTranslation(show);
                 },
                 colors: colors,
               ),
             ],
           ),
           const SizedBox(height: AppDimensions.md),
-
-          // ── Pāli Typography ────────────────────────────────────────
           SettingsSection(
             title: 'Pāli Text',
             colors: colors,
@@ -123,8 +120,84 @@ class _TranslationSettingsScreenState
             ],
           ),
           const SizedBox(height: AppDimensions.md),
+          SettingsSection(
+            title: 'Translation Order',
+            colors: colors,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.md,
+                  AppDimensions.sm,
+                  AppDimensions.md,
+                  0,
+                ),
+                child: Text(
+                  'Drag to reorder enabled translations. '
+                  'The first one is shown when multiple are enabled.',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (reorderableCodes.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(AppDimensions.md),
+                  child: Text(
+                    'No translations downloaded yet. Download a translation '
+                    'above to reorder it.',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                )
+              else
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  children: reorderableCodes.asMap().entries.map((entry) {
+                    final code = entry.value;
+                    final index = entry.key;
+                    final langName = TranslationLanguageRegistry.englishName(
+                      code,
+                    );
+                    final nativeName = TranslationLanguageRegistry.nativeName(
+                      code,
+                    );
+                    return _ReorderableTranslationTile(
+                      key: ValueKey(code),
+                      index: index,
+                      code: code,
+                      langName: langName,
+                      nativeName: nativeName,
+                      colors: colors,
+                    );
+                  }).toList(),
+                  onReorderItem: (oldIndex, newIndex) {
+                    // onReorderItem returns the FINAL index (Flutter already
+                    // adjusts for the removed item) — do NOT decrement.
+                    final reordered = List<String>.from(reorderableCodes);
+                    final moved = reordered.removeAt(oldIndex);
+                    reordered.insert(newIndex, moved);
 
-          // ── Translation Versions ──────────────────────────────────
+                    // Rebuild the FULL enabled list, keeping non-downloaded
+                    // (e.g. not-yet-downloaded) languages in place and only
+                    // applying the new order to the downloaded subset.
+                    final reorderedQueue = List<String>.from(reordered);
+                    final full = settings.enabledTranslations.map((code) {
+                      if (!downloadedCodes.contains(code)) return code;
+                      return reorderedQueue.removeAt(0);
+                    }).toList();
+
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setTranslationsOrder(full);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppDimensions.md),
           SettingsSection(
             title: 'Translation Databases',
             colors: colors,
@@ -132,8 +205,9 @@ class _TranslationSettingsScreenState
               mergedVersionsAsync.when(
                 loading: () => const Padding(
                   padding: EdgeInsets.all(AppDimensions.md),
-                  child:
-                      Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
                 error: (e, _) => Padding(
                   padding: const EdgeInsets.all(AppDimensions.md),
@@ -157,21 +231,15 @@ class _TranslationSettingsScreenState
                       ),
                     );
                   }
-
-                  // Group by language
                   final grouped = <String, List<TranslationVersion>>{};
                   for (final v in versions) {
                     grouped.putIfAbsent(v.languageCode, () => []);
                     grouped[v.languageCode]!.add(v);
                   }
-
                   final langCodes = grouped.keys.toList();
-                  // Sort: enabled languages first
                   langCodes.sort((a, b) {
-                    final aEnabled =
-                        settings.enabledTranslations.contains(a);
-                    final bEnabled =
-                        settings.enabledTranslations.contains(b);
+                    final aEnabled = settings.enabledTranslations.contains(a);
+                    final bEnabled = settings.enabledTranslations.contains(b);
                     if (aEnabled && bEnabled) {
                       return settings.enabledTranslations
                           .indexOf(a)
@@ -181,60 +249,96 @@ class _TranslationSettingsScreenState
                     if (bEnabled) return 1;
                     return a.compareTo(b);
                   });
-
                   return Column(
                     children: langCodes.expand((code) {
                       final langVersions = grouped[code]!;
-                      final langName =
-                          TranslationLanguageRegistry.englishName(code);
-                      final nativeName =
-                          TranslationLanguageRegistry.nativeName(code);
-                      final isAnyEnabled =
-                          settings.enabledTranslations.contains(code);
-
+                      final langName = TranslationLanguageRegistry.englishName(
+                        code,
+                      );
+                      final nativeName = TranslationLanguageRegistry.nativeName(
+                        code,
+                      );
+                      final isAnyEnabled = settings.enabledTranslations
+                          .contains(code);
                       return [
-                        // Language header
                         _LanguageHeader(
                           code: code,
                           englishName: langName,
                           nativeName: nativeName,
-                          isAnyVersionInstalled:
-                              langVersions.any((v) => v.isAvailable),
+                          isAnyEnabled: isAnyEnabled,
+                          isAnyVersionInstalled: langVersions.any(
+                            (v) => v.isAvailable,
+                          ),
                           colors: colors,
+                          onEnableChanged: (enabled) {
+                            final notifier = ref.read(
+                              settingsProvider.notifier,
+                            );
+                            notifier.setTranslationEnabled(code, enabled);
+                            // Auto-select the first available version when
+                            // enabling, if none is selected yet.  This way
+                            // the user doesn't have to also tap "Select this
+                            // version" separately — the nissaya (or default)
+                            // version just works after enabling the language.
+                            if (enabled) {
+                              final currentSuffix =
+                                  settings.translationVersionMap[code];
+                              if (currentSuffix == null ||
+                                  currentSuffix.isEmpty) {
+                                final available = langVersions
+                                    .where((v) => v.isAvailable)
+                                    .toList();
+                                if (available.isNotEmpty) {
+                                  // Prefer nissaya versions when auto-
+                                  // selecting — users who have installed a
+                                  // nissaya DB are most likely trying to
+                                  // use that specific version.
+                                  final best = available.firstWhere(
+                                    (v) => v.isNissaya,
+                                    orElse: () => available.first,
+                                  );
+                                  notifier.setTranslationVersion(
+                                    code,
+                                    best.suffix,
+                                  );
+                                }
+                              }
+                            }
+                          },
                         ),
-                        // Version tiles
                         ...langVersions.map((v) {
-                          final versionKey = v.suffix != null &&
-                                  v.suffix!.isNotEmpty
+                          final versionKey =
+                              v.suffix != null && v.suffix!.isNotEmpty
                               ? '${v.languageCode}_${v.suffix}'
                               : v.languageCode;
-                          final dlState = downloadStates[versionKey] ??
+                          final dlState =
+                              downloadStates[versionKey] ??
                               const TranslationDownloadState();
-                          final typo =
-                              settings.typography.typographyFor(code);
+                          final typo = settings.typography.typographyFor(code);
+                          final selectedSuffix =
+                              settings.translationVersionMap[code];
 
                           return _TranslationVersionTile(
                             version: v,
                             downloadState: dlState,
                             typography: typo,
                             isEnabled: isAnyEnabled,
+                            selectedSuffix: selectedSuffix,
                             colors: colors,
                             onDownload: () {
                               ref
-                                  .read(
-                                      translationDownloadProvider.notifier)
+                                  .read(translationDownloadProvider.notifier)
                                   .downloadVersion(v, ref);
                             },
-                            onDelete: () =>
-                                _confirmDeleteVersion(v),
-                            onCancel: dlState.status ==
-                                        DownloadStatus.downloading ||
-                                    dlState.status ==
-                                        DownloadStatus.extracting
+                            onDelete: () => _confirmDeleteVersion(v),
+                            onCancel:
+                                dlState.status == DownloadStatus.downloading ||
+                                    dlState.status == DownloadStatus.extracting
                                 ? () => ref
-                                    .read(translationDownloadProvider
-                                        .notifier)
-                                    .cancelDownload(versionKey)
+                                      .read(
+                                        translationDownloadProvider.notifier,
+                                      )
+                                      .cancelDownload(versionKey)
                                 : null,
                             onEnableChanged: (enabled) {
                               ref
@@ -244,8 +348,12 @@ class _TranslationSettingsScreenState
                             onTypographyChanged: (newTypo) {
                               ref
                                   .read(settingsProvider.notifier)
-                                  .setLanguageTypography(
-                                      code, newTypo);
+                                  .setLanguageTypography(code, newTypo);
+                            },
+                            onVersionChanged: (String? suffix) {
+                              ref
+                                  .read(settingsProvider.notifier)
+                                  .setTranslationVersion(code, suffix);
                             },
                           );
                         }),
@@ -253,8 +361,7 @@ class _TranslationSettingsScreenState
                           Divider(
                             height: 24,
                             thickness: 1,
-                            color: colors.outlineVariant
-                                .withValues(alpha: 0.3),
+                            color: colors.outlineVariant.withValues(alpha: 0.3),
                           ),
                       ];
                     }).toList(),
@@ -277,9 +384,7 @@ class _TranslationSettingsScreenState
       decoration: BoxDecoration(
         color: colors.primaryContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.primary.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -294,9 +399,7 @@ class _TranslationSettingsScreenState
               _manifestLoading
                   ? 'Checking for updates…'
                   : 'Check for translation updates from GitHub.',
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurface,
-              ),
+              style: AppTypography.labelSmall.copyWith(color: colors.onSurface),
             ),
           ),
           TextButton.icon(
@@ -311,11 +414,9 @@ class _TranslationSettingsScreenState
                       setState(() => _manifestLoading = false);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text(
-                              'Update check complete.'),
+                          content: const Text('Update check complete.'),
                           behavior: SnackBarBehavior.floating,
-                          duration:
-                              const Duration(seconds: 2),
+                          duration: const Duration(seconds: 2),
                         ),
                       );
                     }
@@ -324,10 +425,7 @@ class _TranslationSettingsScreenState
             label: const Text('Check'),
             style: TextButton.styleFrom(
               foregroundColor: colors.primary,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
@@ -343,7 +441,7 @@ class _TranslationSettingsScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Translation?'),
         content: Text(
-          'Delete "${version.displayName}" (${version.englishName})?\n'
+          'Delete "${version.displayName}" (${version.englishName})?\\n'
           'This will remove the database file from your device.',
         ),
         actions: [
@@ -370,11 +468,15 @@ class _TranslationSettingsScreenState
         ref.invalidate(mergedTranslationVersionsProvider);
         ref.invalidate(localTranslationVersionsProvider);
         ref.invalidate(translationRegistryProvider);
+        if (version.isNissaya) {
+          ref.invalidate(nissayaDbByFilenameProvider(version.filename));
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                  'Deleted ${version.englishName} (${version.displayName})'),
+                'Deleted ${version.englishName} (${version.displayName})',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -390,15 +492,19 @@ class _LanguageHeader extends StatelessWidget {
   final String code;
   final String englishName;
   final String nativeName;
+  final bool isAnyEnabled;
   final bool isAnyVersionInstalled;
   final ColorScheme colors;
+  final ValueChanged<bool>? onEnableChanged;
 
   const _LanguageHeader({
     required this.code,
     required this.englishName,
     required this.nativeName,
+    required this.isAnyEnabled,
     required this.isAnyVersionInstalled,
     required this.colors,
+    this.onEnableChanged,
   });
 
   @override
@@ -420,25 +526,74 @@ class _LanguageHeader extends StatelessWidget {
             color: colors.primary,
           ),
           const SizedBox(width: AppDimensions.sm),
-          Text(
-            code.toUpperCase(),
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      code.toUpperCase(),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '$englishName · $nativeName',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                if (isAnyVersionInstalled && onEnableChanged != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          isAnyEnabled ? 'Enabled' : 'Disabled',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isAnyEnabled
+                                ? Colors.green.shade700
+                                : colors.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          height: 28,
+                          child: Switch(
+                            value: isAnyEnabled,
+                            onChanged: (v) => onEnableChanged!(v),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '$englishName · $nativeName',
-              style: AppTypography.labelSmall.copyWith(
+          if (isAnyVersionInstalled && !isAnyEnabled)
+            Text(
+              'Off',
+              style: TextStyle(
+                fontSize: 10,
                 color: colors.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
+                fontStyle: FontStyle.italic,
               ),
             ),
-          ),
-          if (isAnyVersionInstalled)
+          if (isAnyVersionInstalled && isAnyEnabled)
             Icon(Icons.check_circle, size: 14, color: Colors.green),
         ],
       ),
@@ -448,30 +603,33 @@ class _LanguageHeader extends StatelessWidget {
 
 // ── Translation Version Tile ─────────────────────────────────────────────────
 
-/// A tile showing a specific translation version with download/delete/typography controls.
 class _TranslationVersionTile extends StatefulWidget {
   final TranslationVersion version;
   final TranslationDownloadState downloadState;
   final LanguageTypography typography;
   final bool isEnabled;
+  final String? selectedSuffix;
   final ColorScheme colors;
   final VoidCallback onDownload;
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
   final ValueChanged<bool> onEnableChanged;
   final ValueChanged<LanguageTypography> onTypographyChanged;
+  final ValueChanged<String?> onVersionChanged;
 
   const _TranslationVersionTile({
     required this.version,
     required this.downloadState,
     required this.typography,
     required this.isEnabled,
+    this.selectedSuffix,
     required this.colors,
     required this.onDownload,
     required this.onDelete,
     this.onCancel,
     required this.onEnableChanged,
     required this.onTypographyChanged,
+    required this.onVersionChanged,
   });
 
   @override
@@ -505,16 +663,13 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row
             _buildHeaderRow(context, colors, v, dlState, isInstalled),
-            // Progress / error
             if (dlState.status == DownloadStatus.downloading ||
                 dlState.status == DownloadStatus.extracting)
               _buildProgress(dlState, colors),
             if (dlState.status == DownloadStatus.error &&
                 dlState.errorMessage != null)
               _buildError(dlState.errorMessage!, colors),
-            // Expanded typography controls
             if (_expanded) _buildExpandedContent(colors),
           ],
         ),
@@ -529,6 +684,11 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
     TranslationDownloadState dlState,
     bool isInstalled,
   ) {
+    final isSelected =
+        widget.selectedSuffix == v.suffix ||
+        (widget.selectedSuffix == null &&
+            (v.suffix == null || v.suffix!.isEmpty));
+
     return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
       borderRadius: BorderRadius.circular(8),
@@ -539,11 +699,8 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
         ),
         child: Row(
           children: [
-            // Version type icon
             _VersionBadge(version: v, colors: colors),
-
             const SizedBox(width: AppDimensions.sm),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,7 +724,14 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 ],
               ),
             ),
-
+            // Active version indicator
+            if (isSelected && isInstalled)
+              _StatusChip(
+                label: 'Active',
+                color: colors.primary,
+                colors: colors,
+              ),
+            const SizedBox(width: 4),
             // Status / action buttons
             if (dlState.status == DownloadStatus.downloading ||
                 dlState.status == DownloadStatus.extracting)
@@ -593,11 +757,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                           shape: BoxShape.circle,
                           color: colors.error.withValues(alpha: 0.1),
                         ),
-                        child: Icon(
-                          Icons.stop,
-                          size: 14,
-                          color: colors.error,
-                        ),
+                        child: Icon(Icons.stop, size: 14, color: colors.error),
                       ),
                     ),
                   ],
@@ -606,12 +766,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             else if (dlState.status == DownloadStatus.completed)
               Icon(Icons.check_circle, size: 18, color: Colors.green)
             else if (isInstalled && v.isNissaya)
-              // Show nissaya badge
-              _StatusChip(
-                label: 'Nissaya',
-                color: Colors.teal,
-                colors: colors,
-              )
+              _StatusChip(label: 'Nissaya', color: Colors.teal, colors: colors)
             else if (isInstalled)
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -643,10 +798,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 onTap: widget.onDownload,
                 colors: colors,
               ),
-
             const SizedBox(width: 4),
-
-            // Expand toggle
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
               size: 18,
@@ -660,7 +812,12 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
 
   Widget _buildProgress(TranslationDownloadState dlState, ColorScheme colors) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppDimensions.sm, 0, AppDimensions.sm, 6),
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.sm,
+        0,
+        AppDimensions.sm,
+        6,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -689,7 +846,12 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
 
   Widget _buildError(String error, ColorScheme colors) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppDimensions.sm, 0, AppDimensions.sm, 6),
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.sm,
+        0,
+        AppDimensions.sm,
+        6,
+      ),
       child: Text(
         error,
         style: AppTypography.labelSmall.copyWith(
@@ -716,10 +878,11 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
+          Divider(
+            height: 1,
+            color: colors.outlineVariant.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: AppDimensions.sm),
-
-          // Typography controls
           _SectionLabel('Font Family', colors),
           const SizedBox(height: 6),
           _FontFamilySelector(
@@ -730,7 +893,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             },
           ),
           const SizedBox(height: AppDimensions.sm),
-
           _SectionLabel('Font Size', colors),
           const SizedBox(height: 6),
           _FontSizeControl(
@@ -741,7 +903,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             },
           ),
           const SizedBox(height: AppDimensions.sm),
-
           _SectionLabel('Style', colors),
           const SizedBox(height: 6),
           _StyleToggles(
@@ -757,7 +918,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 widget.onTypographyChanged(typo.copyWith(underline: v)),
           ),
           const SizedBox(height: AppDimensions.sm),
-
           _SectionLabel('Color', colors),
           const SizedBox(height: 6),
           _ColorPicker(
@@ -768,7 +928,17 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               widget.onTypographyChanged(typo.copyWith(color: c));
             },
           ),
+          const SizedBox(height: AppDimensions.sm),
 
+          // Version selector
+          _SectionLabel('Use for Reading', colors),
+          const SizedBox(height: 6),
+          _VersionSelector(
+            version: widget.version,
+            currentSuffix: widget.selectedSuffix,
+            colors: colors,
+            onChanged: widget.onVersionChanged,
+          ),
           const SizedBox(height: AppDimensions.sm),
 
           // Version info
@@ -776,13 +946,10 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
           const SizedBox(height: 6),
           _VersionInfo(version: widget.version, colors: colors),
 
-          // Nissaya-specific info
           if (widget.version.isNissaya) ...[
             const SizedBox(height: AppDimensions.sm),
             _NissayaInfoCard(colors: colors),
           ],
-
-          // Delete button (only for installed versions)
           if (widget.version.isAvailable) ...[
             const SizedBox(height: AppDimensions.sm),
             SizedBox(
@@ -901,6 +1068,104 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+// ── Version Selector ─────────────────────────────────────────────────────────
+
+class _VersionSelector extends StatelessWidget {
+  final TranslationVersion version;
+  final String? currentSuffix;
+  final ColorScheme colors;
+  final ValueChanged<String?> onChanged;
+
+  const _VersionSelector({
+    required this.version,
+    required this.currentSuffix,
+    required this.colors,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrentlySelected =
+        currentSuffix == version.suffix ||
+        (currentSuffix == null &&
+            (version.suffix == null || version.suffix!.isEmpty));
+    final canBeSelected = version.isAvailable;
+
+    return InkWell(
+      onTap: canBeSelected && !isCurrentlySelected
+          ? () => onChanged(version.suffix)
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: isCurrentlySelected
+              ? colors.primary.withValues(alpha: 0.1)
+              : colors.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isCurrentlySelected
+                ? colors.primary
+                : colors.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isCurrentlySelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off,
+              size: 16,
+              color: isCurrentlySelected
+                  ? colors.primary
+                  : canBeSelected
+                  ? colors.onSurfaceVariant
+                  : colors.outlineVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isCurrentlySelected
+                        ? 'Active Version'
+                        : 'Select this version',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isCurrentlySelected
+                          ? colors.primary
+                          : colors.onSurface,
+                    ),
+                  ),
+                  Text(
+                    version.isNissaya
+                        ? 'Nissaya (word-by-word)'
+                        : 'Standard translation',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!canBeSelected)
+              Text(
+                'Install first',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: colors.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Small Button ────────────────────────────────────────────────────────────
 
 class _SmallButton extends StatelessWidget {
@@ -959,7 +1224,9 @@ class _VersionInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <String, String>{
       'Filename': version.filename,
-      'Type': version.isNissaya ? 'Nissaya (word-by-word)' : 'Standard translation',
+      'Type': version.isNissaya
+          ? 'Nissaya (word-by-word)'
+          : 'Standard translation',
       'Language': version.englishName,
       'Suffix': version.suffix ?? 'Default',
       if (version.fileSize != null)
@@ -994,10 +1261,7 @@ class _VersionInfo extends StatelessWidget {
                 Expanded(
                   child: Text(
                     entry.value,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: colors.onSurface,
-                    ),
+                    style: TextStyle(fontSize: 10, color: colors.onSurface),
                   ),
                 ),
               ],
@@ -1055,7 +1319,6 @@ class _LanguageTypographyCard extends StatefulWidget {
   final String subtitle;
   final LanguageTypography typography;
   final Color defaultColor;
-  final bool showDragHandle;
   final ValueChanged<bool> onEnabledChanged;
   final ValueChanged<LanguageTypography> onTypographyChanged;
   final ColorScheme colors;
@@ -1066,7 +1329,6 @@ class _LanguageTypographyCard extends StatefulWidget {
     required this.subtitle,
     required this.typography,
     required this.defaultColor,
-    this.showDragHandle = false,
     required this.onEnabledChanged,
     required this.onTypographyChanged,
     required this.colors,
@@ -1098,16 +1360,6 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
             ),
             child: Row(
               children: [
-                if (widget.showDragHandle) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Icon(
-                      Icons.drag_handle,
-                      size: 20,
-                      color: widget.colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
                 GestureDetector(
                   onTap: () => widget.onEnabledChanged(!widget.isEnabled),
                   child: AnimatedContainer(
@@ -1201,7 +1453,8 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   colors: colors,
                   onChanged: (family) {
                     widget.onTypographyChanged(
-                        typo.copyWith(fontFamily: family));
+                      typo.copyWith(fontFamily: family),
+                    );
                   },
                 ),
                 const SizedBox(height: AppDimensions.md),
@@ -1244,7 +1497,9 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                 _SectionLabel('Preview', colors),
                 const SizedBox(height: 6),
                 _TextPreview(
-                    typography: typo, fallbackColor: widget.defaultColor),
+                  typography: typo,
+                  fallbackColor: widget.defaultColor,
+                ),
               ],
             ),
           ),
@@ -1560,10 +1815,7 @@ class _TextPreview extends StatelessWidget {
   final LanguageTypography typography;
   final Color fallbackColor;
 
-  const _TextPreview({
-    required this.typography,
-    required this.fallbackColor,
-  });
+  const _TextPreview({required this.typography, required this.fallbackColor});
 
   @override
   Widget build(BuildContext context) {
@@ -1574,8 +1826,7 @@ class _TextPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-            color: colors.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Text(
         'Evaṃ me sutaṃ… Thus have I heard…',
@@ -1617,16 +1868,16 @@ class _ModeSelector extends StatelessWidget {
         icon: Icons.view_headline,
         title: 'Line by Line',
         subtitle: 'Show Pāli followed by its translation',
-        isSelected: showTranslation &&
-            currentMode == TranslationDisplayMode.lineByLine,
+        isSelected:
+            showTranslation && currentMode == TranslationDisplayMode.lineByLine,
       ),
       _ModeOption(
         mode: TranslationDisplayMode.sideBySide,
         icon: Icons.view_column,
         title: 'Side by Side',
         subtitle: 'Show Pāli and translation in two columns',
-        isSelected: showTranslation &&
-            currentMode == TranslationDisplayMode.sideBySide,
+        isSelected:
+            showTranslation && currentMode == TranslationDisplayMode.sideBySide,
       ),
     ];
 
@@ -1688,6 +1939,83 @@ class _ModeSelector extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+/// A draggable row representing an enabled translation in the order list.
+class _ReorderableTranslationTile extends StatelessWidget {
+  final int index;
+  final String code;
+  final String langName;
+  final String nativeName;
+  final ColorScheme colors;
+
+  const _ReorderableTranslationTile({
+    super.key,
+    required this.index,
+    required this.code,
+    required this.langName,
+    required this.nativeName,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.sm,
+      ),
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.drag_handle,
+                size: 20,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  langName,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  nativeName,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              '#${index + 1}',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

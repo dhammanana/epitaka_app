@@ -3,15 +3,18 @@ import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/utils/app_localizations.dart';
 import 'core/providers/settings_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/indexing/index_gate.dart';
 import 'features/settings/services/tts_audio_handler.dart';
 import 'router/app_router.dart';
+import 'shared/utils/app_shortcuts.dart';
 
 /// Initializes the Android audio service for lock-screen TTS controls.
 ///
@@ -92,6 +95,16 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     });
   }
 
+  /// Map [AppLanguage] to a Flutter [Locale].
+  Locale _resolveLocale(AppLanguage lang) {
+    switch (lang) {
+      case AppLanguage.vietnamese:
+        return const Locale('vi', 'VN');
+      default:
+        return const Locale('en', 'US');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
@@ -99,14 +112,27 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     final isDark = settings.resolveDarkMode(platformBrightness);
 
     return AudioServiceInitializer(
-      child: MaterialApp.router(
-        title: 'ePitaka',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(accentColor: settings.accentColor),
-        darkTheme: AppTheme.dark(accentColor: settings.accentColor),
-        themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-        routerConfig: _router,
-        builder: (context, child) => IndexGate(child: child!),
+      child: Consumer(
+        builder: (context, ref, _) => CallbackShortcuts(
+          bindings: AppShortcuts.bindings(context, ref),
+          child: MaterialApp.router(
+            title: 'ePitaka',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(accentColor: settings.accentColor),
+            darkTheme: AppTheme.dark(accentColor: settings.accentColor),
+            themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+            routerConfig: _router,
+            locale: _resolveLocale(settings.appLanguage),
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: [
+              const AppLocalizationsDelegate(),
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            builder: (context, child) => IndexGate(child: child!),
+          ),
+        ),
       ),
     );
   }

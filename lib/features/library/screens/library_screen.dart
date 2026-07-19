@@ -7,8 +7,10 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
+import '../../settings/widgets/settings_dialog.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../widgets/library_browser.dart';
@@ -20,7 +22,11 @@ import '../providers/heading_title_provider.dart';
 /// - Reading: shows currently open reader tabs at the top.
 /// - Bookmarks: shows saved bookmarks at the top, reading history below.
 class LibraryScreen extends ConsumerStatefulWidget {
-  const LibraryScreen({super.key});
+  /// When false, the screen hides its own app bar (e.g. when embedded in
+  /// the desktop library dialog, which supplies its own chrome).
+  final bool showAppBar;
+
+  const LibraryScreen({super.key, this.showAppBar = true});
 
   @override
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
@@ -60,7 +66,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     // Use GlobalKey to control the drawer from the app bar button
     return AppShell(
       drawer: const MainDrawer(),
-      appBar: _LibraryAppBar(colors: colors),
+      appBar: widget.showAppBar ? _LibraryAppBar(colors: colors) : null,
       child: Column(
         children: [
           Padding(
@@ -81,7 +87,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           Expanded(
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: _selectedIndex == 0 ? 0 : AppDimensions.marginMobile,
+                horizontal: _selectedIndex == 0
+                    ? 0
+                    : AppDimensions.marginMobile,
               ),
               child: _buildTabContent(colors),
             ),
@@ -125,13 +133,16 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
         child: Divider(height: 1, thickness: 1, color: colors.outlineVariant),
-      ),        leading: Builder(builder: (context) {
+      ),
+      leading: Builder(
+        builder: (context) {
           return IconButton(
             icon: const Icon(Icons.menu),
             color: colors.onSurfaceVariant,
             onPressed: () => Scaffold.of(context).openDrawer(),
           );
-        }),
+        },
+      ),
       title: Text(
         'ePitaka',
         style: AppTypography.headlineLarge.copyWith(
@@ -149,7 +160,13 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
         IconButton(
           icon: const Icon(Icons.settings),
           color: colors.onSurfaceVariant,
-          onPressed: () => context.push('/settings'),
+          onPressed: () {
+            if (ResponsiveBreakpoint.isDesktop(context)) {
+              showSettingsDialog(context);
+            } else {
+              context.push('/settings');
+            }
+          },
         ),
       ],
     );
@@ -240,8 +257,8 @@ class _Segment extends StatelessWidget {
                 label == 'Browse'
                     ? Icons.menu_book
                     : label == 'Reading'
-                        ? Icons.tab
-                        : Icons.bookmark,
+                    ? Icons.tab
+                    : Icons.bookmark,
                 size: 14,
                 color: colors.primary,
               ),
@@ -321,29 +338,33 @@ class _ReadingTab extends ConsumerWidget {
           ),
         ),
         // Tab cards
-        ...tabsState.tabs.map((tab) => _OpenTabCard(
-              tab: tab,
-              colors: colors,
-              onTap: () {
-                ref.read(readerTabsProvider.notifier).switchTo(
-                      tabsState.tabs.indexOf(tab),
-                    );
-                context.push('/reader');
-              },
-              onClose: () {
-                final index = tabsState.tabs.indexOf(tab);
-                if (index >= 0) {
-                  ref.read(readerTabsProvider.notifier).closeTab(index);
-                }
-              },
-            )),
+        ...tabsState.tabs.map(
+          (tab) => _OpenTabCard(
+            tab: tab,
+            colors: colors,
+            onTap: () {
+              ref
+                  .read(readerTabsProvider.notifier)
+                  .switchTo(tabsState.tabs.indexOf(tab));
+              context.push('/reader');
+            },
+            onClose: () {
+              final index = tabsState.tabs.indexOf(tab);
+              if (index >= 0) {
+                ref.read(readerTabsProvider.notifier).closeTab(index);
+              }
+            },
+          ),
+        ),
         // History section at the bottom
         const SizedBox(height: 24),
         _HistorySection(colors: colors),
       ],
     );
   }
-}/// Card for an open tab in the Reading tab.
+}
+
+/// Card for an open tab in the Reading tab.
 class _OpenTabCard extends ConsumerWidget {
   final ReaderTabInfo tab;
   final ColorScheme colors;
@@ -363,17 +384,19 @@ class _OpenTabCard extends ConsumerWidget {
 
     // Look up nearest heading title
     final headingAsync = tab.currentParaId != null
-        ? ref.watch(headingTitleProvider(HeadingQuery(
-            bookId: tab.bookId,
-            paraId: tab.currentParaId!,
-          )))
+        ? ref.watch(
+            headingTitleProvider(
+              HeadingQuery(bookId: tab.bookId, paraId: tab.currentParaId!),
+            ),
+          )
         : null;
     final headingTitle = headingAsync?.when(
       data: (t) => t,
       loading: () => null,
       error: (_, __) => null,
     );
-    final mainTitle = headingTitle ??
+    final mainTitle =
+        headingTitle ??
         (tab.currentParaId != null ? 'Para ${tab.currentParaId}' : null);
 
     return Card(
@@ -388,10 +411,7 @@ class _OpenTabCard extends ConsumerWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
@@ -401,27 +421,24 @@ class _OpenTabCard extends ConsumerWidget {
                   color: colors.primaryContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  Icons.menu_book,
-                  size: 18,
-                  color: colors.primary,
-                ),
+                child: Icon(Icons.menu_book, size: 18, color: colors.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (mainTitle != null) PaliTextStatic(
-                      mainTitle,
-                      script,
-                      style: AppTypography.bodyTranslation.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
+                    if (mainTitle != null)
+                      PaliTextStatic(
+                        mainTitle,
+                        script,
+                        style: AppTypography.bodyTranslation.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: PaliTextStatic(
@@ -439,10 +456,7 @@ class _OpenTabCard extends ConsumerWidget {
                 onPressed: onClose,
                 icon: Icon(Icons.close, size: 18, color: colors.outline),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
-                ),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
             ],
           ),
@@ -499,7 +513,11 @@ class _BookmarksTab extends ConsumerWidget {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.bookmark_border, size: 36, color: colors.outlineVariant),
+                      Icon(
+                        Icons.bookmark_border,
+                        size: 36,
+                        color: colors.outlineVariant,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'No bookmarks yet.\nSave your reading position from the reader.',
@@ -515,12 +533,24 @@ class _BookmarksTab extends ConsumerWidget {
               );
             }
             return Column(
-              children: bookmarks.map((bm) => _BookmarkCard(
-                bookmark: bm,
-                colors: colors,
-                onTap: () => _openBook(context, ref, bm.bookId, bm.bookName, bm.paraId, bm.lineId),
-                onDelete: () => _confirmDeleteBookmark(context, ref, bm.id, bm.name),
-              )).toList(),
+              children: bookmarks
+                  .map(
+                    (bm) => _BookmarkCard(
+                      bookmark: bm,
+                      colors: colors,
+                      onTap: () => _openBook(
+                        context,
+                        ref,
+                        bm.bookId,
+                        bm.bookName,
+                        bm.paraId,
+                        bm.lineId,
+                      ),
+                      onDelete: () =>
+                          _confirmDeleteBookmark(context, ref, bm.id, bm.name),
+                    ),
+                  )
+                  .toList(),
             );
           },
         ),
@@ -557,7 +587,11 @@ class _BookmarksTab extends ConsumerWidget {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.history, size: 36, color: colors.outlineVariant),
+                      Icon(
+                        Icons.history,
+                        size: 36,
+                        color: colors.outlineVariant,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'No reading history yet.',
@@ -573,12 +607,28 @@ class _BookmarksTab extends ConsumerWidget {
               );
             }
             return Column(
-              children: history.map((entry) => _HistoryCard(
-                entry: entry,
-                colors: colors,
-                onTap: () => _openBook(context, ref, entry.bookId, entry.bookName, entry.paraId, entry.lineId),
-                onDelete: () => _confirmDeleteHistory(context, ref, entry.id, entry.bookName ?? entry.bookId),
-              )).toList(),
+              children: history
+                  .map(
+                    (entry) => _HistoryCard(
+                      entry: entry,
+                      colors: colors,
+                      onTap: () => _openBook(
+                        context,
+                        ref,
+                        entry.bookId,
+                        entry.bookName,
+                        entry.paraId,
+                        entry.lineId,
+                      ),
+                      onDelete: () => _confirmDeleteHistory(
+                        context,
+                        ref,
+                        entry.id,
+                        entry.bookName ?? entry.bookId,
+                      ),
+                    ),
+                  )
+                  .toList(),
             );
           },
         ),
@@ -586,19 +636,33 @@ class _BookmarksTab extends ConsumerWidget {
     );
   }
 
-  void _openBook(BuildContext context, WidgetRef ref, String bookId, String? bookName, int? paraId, [int? lineId]) {
-    ref.read(readerTabsProvider.notifier).openTab(
-      ReaderTabInfo(
-        bookId: bookId,
-        bookName: bookName ?? bookId,
-        initialParaId: paraId,
-        initialLineId: lineId,
-      ),
-    );
+  void _openBook(
+    BuildContext context,
+    WidgetRef ref,
+    String bookId,
+    String? bookName,
+    int? paraId, [
+    int? lineId,
+  ]) {
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
+          ReaderTabInfo(
+            bookId: bookId,
+            bookName: bookName ?? bookId,
+            initialParaId: paraId,
+            initialLineId: lineId,
+          ),
+        );
     context.push('/reader');
   }
 
-  void _confirmDeleteBookmark(BuildContext context, WidgetRef ref, int id, String name) {
+  void _confirmDeleteBookmark(
+    BuildContext context,
+    WidgetRef ref,
+    int id,
+    String name,
+  ) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -642,7 +706,12 @@ class _BookmarksTab extends ConsumerWidget {
     }
   }
 
-  void _confirmDeleteHistory(BuildContext context, WidgetRef ref, int id, String label) {
+  void _confirmDeleteHistory(
+    BuildContext context,
+    WidgetRef ref,
+    int id,
+    String label,
+  ) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -678,7 +747,6 @@ class _BookmarksTab extends ConsumerWidget {
   }
 }
 
-
 // ── Bookmark Card ────────────────────────────────────────────────────────
 
 class _BookmarkCard extends ConsumerWidget {
@@ -701,10 +769,11 @@ class _BookmarkCard extends ConsumerWidget {
 
     // Look up nearest heading title
     final headingAsync = bookmark.paraId != null
-        ? ref.watch(headingTitleProvider(HeadingQuery(
-            bookId: bookmark.bookId,
-            paraId: bookmark.paraId!,
-          )))
+        ? ref.watch(
+            headingTitleProvider(
+              HeadingQuery(bookId: bookmark.bookId, paraId: bookmark.paraId!),
+            ),
+          )
         : null;
     final headingTitle = headingAsync?.when(
       data: (t) => t,
@@ -724,10 +793,7 @@ class _BookmarkCard extends ConsumerWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -738,11 +804,7 @@ class _BookmarkCard extends ConsumerWidget {
                   color: colors.primaryContainer.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  Icons.bookmark,
-                  size: 18,
-                  color: colors.primary,
-                ),
+                child: Icon(Icons.bookmark, size: 18, color: colors.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -763,7 +825,9 @@ class _BookmarkCard extends ConsumerWidget {
                       ),
                     // Secondary: bookmark name + para location
                     Padding(
-                      padding: EdgeInsets.only(top: headingTitle != null ? 2 : 0),
+                      padding: EdgeInsets.only(
+                        top: headingTitle != null ? 2 : 0,
+                      ),
                       child: PaliTextStatic(
                         headingTitle != null
                             ? '$displayName — Para ${bookmark.paraId}'
@@ -776,7 +840,8 @@ class _BookmarkCard extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (bookmark.pageNumber != null && bookmark.pageNumber!.isNotEmpty)
+                    if (bookmark.pageNumber != null &&
+                        bookmark.pageNumber!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -803,12 +868,13 @@ class _BookmarkCard extends ConsumerWidget {
               ),
               IconButton(
                 onPressed: onDelete,
-                icon: Icon(Icons.delete_outline, size: 18, color: colors.error.withValues(alpha: 0.6)),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: colors.error.withValues(alpha: 0.6),
                 ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
             ],
           ),
@@ -825,7 +891,12 @@ class _HistorySection extends ConsumerWidget {
 
   const _HistorySection({required this.colors});
 
-  void _confirmDeleteHistory(BuildContext context, WidgetRef ref, int id, String label) {
+  void _confirmDeleteHistory(
+    BuildContext context,
+    WidgetRef ref,
+    int id,
+    String label,
+  ) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -893,7 +964,11 @@ class _HistorySection extends ConsumerWidget {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.history, size: 36, color: colors.outlineVariant),
+                      Icon(
+                        Icons.history,
+                        size: 36,
+                        color: colors.outlineVariant,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'No reading history yet.',
@@ -909,22 +984,33 @@ class _HistorySection extends ConsumerWidget {
               );
             }
             return Column(
-              children: history.map((entry) => _HistoryCard(
-                entry: entry,
-                colors: colors,
-                onTap: () {
-                  ref.read(readerTabsProvider.notifier).openTab(
-                    ReaderTabInfo(
-                      bookId: entry.bookId,
-                      bookName: entry.bookName ?? entry.bookId,
-                      initialParaId: entry.paraId,
-                      initialLineId: entry.lineId,
+              children: history
+                  .map(
+                    (entry) => _HistoryCard(
+                      entry: entry,
+                      colors: colors,
+                      onTap: () {
+                        ref
+                            .read(readerTabsProvider.notifier)
+                            .openTab(
+                              ReaderTabInfo(
+                                bookId: entry.bookId,
+                                bookName: entry.bookName ?? entry.bookId,
+                                initialParaId: entry.paraId,
+                                initialLineId: entry.lineId,
+                              ),
+                            );
+                        context.push('/reader');
+                      },
+                      onDelete: () => _confirmDeleteHistory(
+                        context,
+                        ref,
+                        entry.id,
+                        entry.bookName ?? entry.bookId,
+                      ),
                     ),
-                  );
-                  context.push('/reader');
-                },
-                onDelete: () => _confirmDeleteHistory(context, ref, entry.id, entry.bookName ?? entry.bookId),
-              )).toList(),
+                  )
+                  .toList(),
             );
           },
         ),
@@ -955,18 +1041,19 @@ class _HistoryCard extends ConsumerWidget {
 
     // Look up nearest heading title
     final headingAsync = entry.paraId != null
-        ? ref.watch(headingTitleProvider(HeadingQuery(
-            bookId: entry.bookId,
-            paraId: entry.paraId!,
-          )))
+        ? ref.watch(
+            headingTitleProvider(
+              HeadingQuery(bookId: entry.bookId, paraId: entry.paraId!),
+            ),
+          )
         : null;
     final headingTitle = headingAsync?.when(
       data: (t) => t,
       loading: () => null,
       error: (_, __) => null,
     );
-    final mainTitle = headingTitle ??
-        (entry.paraId != null ? 'Para ${entry.paraId}' : null);
+    final mainTitle =
+        headingTitle ?? (entry.paraId != null ? 'Para ${entry.paraId}' : null);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -980,10 +1067,7 @@ class _HistoryCard extends ConsumerWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Container(
@@ -993,11 +1077,7 @@ class _HistoryCard extends ConsumerWidget {
                   color: colors.tertiaryContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.history,
-                  size: 16,
-                  color: colors.tertiary,
-                ),
+                child: Icon(Icons.history, size: 16, color: colors.tertiary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1005,16 +1085,17 @@ class _HistoryCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Main title: heading title from DB
-                    if (mainTitle != null) PaliTextStatic(
-                      mainTitle,
-                      script,
-                      style: AppTypography.bodyTranslation.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
+                    if (mainTitle != null)
+                      PaliTextStatic(
+                        mainTitle,
+                        script,
+                        style: AppTypography.bodyTranslation.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     // Secondary: book name + para location
                     PaliTextStatic(
                       entry.bookName ?? entry.bookId,
@@ -1039,7 +1120,11 @@ class _HistoryCard extends ConsumerWidget {
                           ),
                           if (entry.readCount > 1) ...[
                             const SizedBox(width: 8),
-                            Icon(Icons.touch_app, size: 10, color: colors.outline),
+                            Icon(
+                              Icons.touch_app,
+                              size: 10,
+                              color: colors.outline,
+                            ),
                             const SizedBox(width: 2),
                             Text(
                               '${entry.readCount}',
@@ -1057,12 +1142,13 @@ class _HistoryCard extends ConsumerWidget {
               ),
               IconButton(
                 onPressed: onDelete,
-                icon: Icon(Icons.delete_outline, size: 16, color: colors.error.withValues(alpha: 0.6)),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 28,
-                  minHeight: 28,
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 16,
+                  color: colors.error.withValues(alpha: 0.6),
                 ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ],
           ),

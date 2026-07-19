@@ -33,8 +33,9 @@ class DictionaryBook {
 }
 
 /// Provider that reads dictionary_books from epitaka.db.
-final dictionaryBooksProvider =
-    FutureProvider<List<DictionaryBook>>((ref) async {
+final dictionaryBooksProvider = FutureProvider<List<DictionaryBook>>((
+  ref,
+) async {
   final db = await ref.watch(epitakaDbProvider.future);
   return _loadDictionaryBooks(db);
 });
@@ -42,14 +43,18 @@ final dictionaryBooksProvider =
 /// Provider that watches dictionary books and re-fetches when invalidated.
 /// This allows the settings screen to update the list after changes.
 final dictionaryBooksNotifierProvider =
-    StateNotifierProvider<DictionaryBooksNotifier, AsyncValue<List<DictionaryBook>>>(
-  (ref) => DictionaryBooksNotifier(ref),
-);
+    StateNotifierProvider<
+      DictionaryBooksNotifier,
+      AsyncValue<List<DictionaryBook>>
+    >((ref) => DictionaryBooksNotifier(ref));
 
-class DictionaryBooksNotifier extends StateNotifier<AsyncValue<List<DictionaryBook>>> {
+class DictionaryBooksNotifier
+    extends StateNotifier<AsyncValue<List<DictionaryBook>>> {
   final Ref _ref;
 
-  DictionaryBooksNotifier(this._ref) : super(const AsyncLoading());
+  DictionaryBooksNotifier(this._ref) : super(const AsyncLoading()) {
+    load();
+  }
 
   /// Load dictionary books from the database.
   Future<void> load() async {
@@ -77,7 +82,29 @@ class DictionaryBooksNotifier extends StateNotifier<AsyncValue<List<DictionaryBo
   }
 
   /// Reorder dictionaries by setting user_order values.
+  ///
+  /// Applies an optimistic synchronous state update first so the
+  /// ReorderableListView reflects the new order on the next rebuild
+  /// (it needs an immediate update to avoid snapping the item back on
+  /// release). The DB write then persists the change in the background;
+  /// we intentionally do NOT call [load] afterwards, since that would
+  /// flip state to AsyncLoading and cause a visible flicker, and the
+  /// optimistic state already matches what a reload would produce.
   Future<void> reorder(List<int> orderedIds) async {
+    final previous = state;
+    if (previous is AsyncData<List<DictionaryBook>>) {
+      final byId = {for (final b in previous.value) b.id: b};
+      final reordered = <DictionaryBook>[
+        for (final id in orderedIds)
+          if (byId.containsKey(id)) byId[id]!,
+      ];
+      // Safety net: append any books not present in orderedIds.
+      for (final b in previous.value) {
+        if (!orderedIds.contains(b.id)) reordered.add(b);
+      }
+      state = AsyncData(reordered);
+    }
+
     try {
       final db = await _ref.read(epitakaDbProvider.future);
       for (int i = 0; i < orderedIds.length; i++) {
@@ -85,17 +112,19 @@ class DictionaryBooksNotifier extends StateNotifier<AsyncValue<List<DictionaryBo
           'UPDATE dictionary_books SET user_order = $i WHERE id = ${orderedIds[i]}',
         );
       }
-      await load();
-    } catch (e, st) {
-      state = AsyncError(e, st);
+    } catch (e) {
+      // Revert to the previous state on failure.
+      state = previous;
     }
   }
 }
 
 Future<List<DictionaryBook>> _loadDictionaryBooks(EpitakaDatabase db) async {
-  final rows = await db.customSelect(
-    'SELECT id, name, user_order, user_choice FROM dictionary_books ORDER BY user_order',
-  ).get();
+  final rows = await db
+      .customSelect(
+        'SELECT id, name, user_order, user_choice FROM dictionary_books ORDER BY user_order',
+      )
+      .get();
 
   return rows.map((row) {
     return DictionaryBook(

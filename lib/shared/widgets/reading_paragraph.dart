@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:developer' as developer;
 
 import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_typography.dart';
@@ -11,13 +12,10 @@ import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
 import '../../shared/widgets/pali_text.dart';
+import '../../shared/widgets/nissaya_text.dart';
 
 /// Display mode for translation in the reader.
-enum ParagraphDisplayMode {
-  hideJoinLines,
-  lineByLine,
-  sideBySide,
-}
+enum ParagraphDisplayMode { hideJoinLines, lineByLine, sideBySide }
 
 /// Displays a paragraph block with line-by-line Pāli and translations,
 /// a vertical line flush with the left edge to group lines in the same paragraph,
@@ -59,6 +57,10 @@ class ReadingParagraph extends ConsumerWidget {
   /// When non-empty, chips are rendered below the linked lines.
   final ParaBookLinks bookLinks;
 
+  /// Per-language version badge labels (e.g. "EN", "MY-N", "TH-V2").
+  /// When non-empty, small chips are shown next to each translation block.
+  final Map<String, String> translationVersionLabels;
+
   // Legacy params
   final double paliFontSize;
   final double paliLineHeight;
@@ -80,6 +82,7 @@ class ReadingParagraph extends ConsumerWidget {
     this.langTypographies = const {},
     this.enabledLangCodes = const [],
     this.bookLinks = const {},
+    this.translationVersionLabels = const {},
     this.searchQuery,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
@@ -92,13 +95,14 @@ class ReadingParagraph extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final sw = Stopwatch()..start();
     final colors = Theme.of(context).colorScheme;
     final script = ref.watch(settingsProvider).paliScript;
     final pageSystemLabel = _pageSystemLabel(
       ref.watch(settingsProvider).pageNumberingSystem,
     );
 
-    return Column(
+    final child = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Book title at the very top
@@ -116,6 +120,16 @@ class ReadingParagraph extends ConsumerWidget {
         _buildContentWithVerticalLine(context, colors, script),
       ],
     );
+    sw.stop();
+    if (sw.elapsedMicroseconds > 2000) {
+      developer.log(
+        '[PARA] build paraId=${paragraph.paraId} '
+        '${sw.elapsedMicroseconds}µs lines=${paragraph.lines.length} '
+        'isFirst=$isFirst',
+        name: 'epitaka.perf',
+      );
+    }
+    return child;
   }
 
   Widget _buildBookTitle(ColorScheme colors, Script script) {
@@ -126,9 +140,7 @@ class ReadingParagraph extends ConsumerWidget {
           PaliTextStatic(
             bookName ?? '',
             script,
-            style: AppTypography.displayPali.copyWith(
-              color: colors.primary,
-            ),
+            style: AppTypography.displayPali.copyWith(color: colors.primary),
             textAlign: TextAlign.center,
           ),
           if (bookDescription != null && bookDescription!.isNotEmpty)
@@ -148,7 +160,11 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   /// Render a heading with style matching its level (h1=largest, h6=smallest).
-  Widget _buildHeading(ParagraphHeading heading, ColorScheme colors, Script script) {
+  Widget _buildHeading(
+    ParagraphHeading heading,
+    ColorScheme colors,
+    Script script,
+  ) {
     final level = heading.level.clamp(1, 6);
     final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
@@ -183,7 +199,11 @@ class ReadingParagraph extends ConsumerWidget {
     );
   }
 
-  Widget _buildPageBadge(String pageNumber, ColorScheme colors, String systemLabel) {
+  Widget _buildPageBadge(
+    String pageNumber,
+    ColorScheme colors,
+    String systemLabel,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 12),
       child: Column(
@@ -233,7 +253,11 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   /// Vertical line at the very left, with content spaced minimally.
-  Widget _buildContentWithVerticalLine(BuildContext context, ColorScheme colors, Script script) {
+  Widget _buildContentWithVerticalLine(
+    BuildContext context,
+    ColorScheme colors,
+    Script script,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(left: 5, top: 4, bottom: 4),
       child: IntrinsicHeight(
@@ -257,8 +281,8 @@ class ReadingParagraph extends ConsumerWidget {
               child: displayMode == ParagraphDisplayMode.sideBySide
                   ? _buildSideBySide(colors, script)
                   : displayMode == ParagraphDisplayMode.hideJoinLines
-                      ? _buildJoinedPali(colors, script)
-                      : _buildLinesStacked(context, colors, script),
+                  ? _buildJoinedPali(colors, script)
+                  : _buildLinesStacked(context, colors, script),
             ),
           ],
         ),
@@ -293,11 +317,16 @@ class ReadingParagraph extends ConsumerWidget {
   }
 
   /// Stacked layout: line by line with Pāli then translation below.
-  Widget _buildLinesStacked(BuildContext context, ColorScheme colors, Script script) {
+  Widget _buildLinesStacked(
+    BuildContext context,
+    ColorScheme colors,
+    Script script,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraph.lines.map((line) {
-        final isHighlighted = ttsHighlightLineId != null &&
+        final isHighlighted =
+            ttsHighlightLineId != null &&
             ttsHighlightParaId != null &&
             paragraph.paraId == ttsHighlightParaId &&
             line.lineId == ttsHighlightLineId;
@@ -312,14 +341,19 @@ class ReadingParagraph extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Pali line — never highlighted for TTS (Issue 4)
-              if (showPali && line.paliText != null && line.paliText!.isNotEmpty)
+              if (showPali &&
+                  line.paliText != null &&
+                  line.paliText!.isNotEmpty)
                 _buildPaliLine(line.paliText!, colors, script),
               // Translation lines — highlighted wrapper ONLY here
+              // Note: using Container (not AnimatedContainer) because
+              // animated widgets inside ScrollablePositionedList can
+              // trigger !semantics.parentDataDirty assertion errors
+              // when the semantics system updates during layout
+              // (e.g. when a modal bottom sheet opens for dictionary).
               if (displayMode == ParagraphDisplayMode.lineByLine &&
                   showTranslation)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
+                Container(
                   decoration: BoxDecoration(
                     color: isHighlighted
                         ? colors.primary.withValues(alpha: 0.1)
@@ -356,10 +390,8 @@ class ReadingParagraph extends ConsumerWidget {
                         word: link.word,
                         color: chipColor,
                         script: script,
-                        onTap: () => showBookLinkSectionSheet(
-                          context,
-                          link: link,
-                        ),
+                        onTap: () =>
+                            showBookLinkSectionSheet(context, link: link),
                       );
                     }).toList(),
                   ),
@@ -401,14 +433,12 @@ class ReadingParagraph extends ConsumerWidget {
         if (texts.isEmpty) continue;
 
         final typo = langTypographies[langCode];
-        widgets.add(_buildTranslationText(texts, typo, colors));
+        widgets.add(_buildTranslationWithBadge(langCode, texts, typo, colors));
       }
       if (widgets.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: widgets
-            .expand((w) => [w, const SizedBox(height: 4)])
-            .toList()
+        children: widgets.expand((w) => [w, const SizedBox(height: 4)]).toList()
           ..removeLast(),
       );
     }
@@ -431,11 +461,62 @@ class ReadingParagraph extends ConsumerWidget {
       widgets.add(
         Padding(
           padding: const EdgeInsets.only(left: 8, top: 2),
-          child: _buildTranslationText(text, typo, colors),
+          child: _buildTranslationWithBadge(langCode, text, typo, colors),
         ),
       );
     }
     return widgets;
+  }
+
+  /// Build translation text with an optional version badge chip.
+  Widget _buildTranslationWithBadge(
+    String langCode,
+    String text,
+    LanguageTypography? typo,
+    ColorScheme colors,
+  ) {
+    final versionLabel = translationVersionLabels[langCode];
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Version badge
+        if (versionLabel != null && versionLabel.isNotEmpty) ...[
+          _buildVersionBadge(versionLabel, langCode, colors),
+          const SizedBox(width: 6),
+        ],
+        // Translation text (takes remaining space)
+        Expanded(child: _buildTranslationText(text, typo, colors)),
+      ],
+    );
+  }
+
+  /// Build a small version badge chip (e.g. "EN", "MY-N", "TH-V2").
+  Widget _buildVersionBadge(String label, String langCode, ColorScheme colors) {
+    final isNissaya = label.contains('-N');
+    final badgeColor = isNissaya ? Colors.teal : colors.primary;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: badgeColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(
+          color: badgeColor.withValues(alpha: 0.3),
+          width: 0.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: badgeColor,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
   }
 
   Widget _buildPaliLine(String text, ColorScheme colors, Script script) {
@@ -444,8 +525,9 @@ class ReadingParagraph extends ConsumerWidget {
       fontSize: paliTypography.fontSize,
       fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: paliTypography.italic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          paliTypography.underline ? TextDecoration.underline : TextDecoration.none,
+      decoration: paliTypography.underline
+          ? TextDecoration.underline
+          : TextDecoration.none,
       height: paliTypography.lineHeight,
       color: effectiveColor,
     );
@@ -453,17 +535,19 @@ class ReadingParagraph extends ConsumerWidget {
     if (searchQuery != null && searchQuery!.isNotEmpty) {
       final convertedText = convertPaliToScriptPreservingHtml(text, script);
       final convertedQuery = convertSearchQueryForScript(searchQuery!, script);
-      return _buildHighlightedText(convertedText, convertedQuery, baseStyle, colors);
+      return _buildHighlightedText(
+        convertedText,
+        convertedQuery,
+        baseStyle,
+        colors,
+      );
     }
 
     // Use PaliHtmlText for normal display (auto-converts script + handles HTML)
-    return PaliHtmlText(
-      text,
-      style: baseStyle,
-    );
+    return PaliHtmlText(text, style: baseStyle);
   }
 
-  /// Build translation text with HTML tag support and search highlighting.
+  /// Build translation text with HTML tag and nissaya format support.
   Widget _buildTranslationText(
     String text,
     LanguageTypography? typo,
@@ -479,6 +563,11 @@ class ReadingParagraph extends ConsumerWidget {
             height: translationLineHeight,
             color: effectiveFallback.withValues(alpha: 0.8),
           );
+
+    // Check for nissaya-formatted text ("pali: meaning | pali: meaning")
+    if (NissayaTextParser.isNissayaFormat(text)) {
+      return NissayaText(text: text, baseStyle: style, plainStyle: style);
+    }
 
     if (searchQuery != null && searchQuery!.isNotEmpty) {
       return _buildHighlightedText(text, searchQuery!, style, colors);
@@ -505,7 +594,12 @@ class ReadingParagraph extends ConsumerWidget {
     final result = <InlineSpan>[];
     for (final span in spans) {
       if (span is TextSpan && span.text != null) {
-        final subSpans = _highlightInText(span.text!, query, span.style ?? baseStyle, colors);
+        final subSpans = _highlightInText(
+          span.text!,
+          query,
+          span.style ?? baseStyle,
+          colors,
+        );
         result.addAll(subSpans);
       } else {
         result.add(span);
@@ -568,21 +662,36 @@ class ReadingParagraph extends ConsumerWidget {
     // Supplement / Latin Extended-A ranges.
     // Source: https://en.wikipedia.org/wiki/International_Alphabet_of_Sanskrit_Transliteration
     switch (c) {
-      case 0x0101: return 0x61; // ā → a
-      case 0x012B: return 0x69; // ī → i
-      case 0x016B: return 0x75; // ū → u
-      case 0x014D: return 0x6F; // ō → o
-      case 0x1E45: return 0x6E; // ṅ → n
-      case 0x00F1: return 0x6E; // ñ → n
-      case 0x1E6D: return 0x74; // ṭ → t
-      case 0x1E0D: return 0x64; // ḍ → d
-      case 0x1E47: return 0x6E; // ṇ → n
-      case 0x1E37: return 0x6C; // ḷ → l
-      case 0x1E3B: return 0x6C; // ḻ → l
-      case 0x1E43: return 0x6D; // ṃ → m
-      case 0x1E41: return 0x6D; // ṁ → m
-      case 0x1E25: return 0x68; // ḥ → h
-      default:     return c;
+      case 0x0101:
+        return 0x61; // ā → a
+      case 0x012B:
+        return 0x69; // ī → i
+      case 0x016B:
+        return 0x75; // ū → u
+      case 0x014D:
+        return 0x6F; // ō → o
+      case 0x1E45:
+        return 0x6E; // ṅ → n
+      case 0x00F1:
+        return 0x6E; // ñ → n
+      case 0x1E6D:
+        return 0x74; // ṭ → t
+      case 0x1E0D:
+        return 0x64; // ḍ → d
+      case 0x1E47:
+        return 0x6E; // ṇ → n
+      case 0x1E37:
+        return 0x6C; // ḷ → l
+      case 0x1E3B:
+        return 0x6C; // ḻ → l
+      case 0x1E43:
+        return 0x6D; // ṃ → m
+      case 0x1E41:
+        return 0x6D; // ṁ → m
+      case 0x1E25:
+        return 0x68; // ḥ → h
+      default:
+        return c;
     }
   }
 
@@ -601,11 +710,9 @@ class ReadingParagraph extends ConsumerWidget {
     if (query.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
     // Normalise query to match what _findTermIntervals compares against
-    final terms = normalizePaliFuzzy(query)
-        .toLowerCase()
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .toList();
+    final terms = normalizePaliFuzzy(
+      query,
+    ).toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
     if (terms.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
     // Find intervals directly in the original text's position space
@@ -642,26 +749,27 @@ class ReadingParagraph extends ConsumerWidget {
     int lastIdx = 0;
     for (final interval in merged) {
       if (interval.start > lastIdx) {
-        spans.add(TextSpan(
-          text: text.substring(lastIdx, interval.start),
-          style: baseStyle,
-        ));
+        spans.add(
+          TextSpan(
+            text: text.substring(lastIdx, interval.start),
+            style: baseStyle,
+          ),
+        );
       }
-      spans.add(TextSpan(
-        text: text.substring(interval.start, interval.end),
-        style: baseStyle.copyWith(
-          backgroundColor: colors.primary.withValues(alpha: 0.2),
-          fontWeight: FontWeight.w700,
+      spans.add(
+        TextSpan(
+          text: text.substring(interval.start, interval.end),
+          style: baseStyle.copyWith(
+            backgroundColor: colors.primary.withValues(alpha: 0.2),
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ));
+      );
       lastIdx = interval.end;
     }
 
     if (lastIdx < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastIdx),
-        style: baseStyle,
-      ));
+      spans.add(TextSpan(text: text.substring(lastIdx), style: baseStyle));
     }
 
     return spans;
@@ -733,10 +841,7 @@ List<String> extractWords(String? htmlText) {
   if (htmlText == null || htmlText.isEmpty) return [];
   final clean = htmlText
       .replaceAll(RegExp(r'<[^>]*>'), ' ')
-      .replaceAll(
-        RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'),
-        ' ',
-      )
+      .replaceAll(RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
   if (clean.isEmpty) return [];

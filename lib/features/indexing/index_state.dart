@@ -6,9 +6,6 @@ enum IndexStatus {
   /// FTS index is ready (already built).
   ready,
 
-  /// User needs to choose a translation language before building.
-  needsTranslationChoice,
-
   /// Index is currently being built.
   building,
 
@@ -100,6 +97,9 @@ class IndexState {
     );
   }
 
+  /// State when the index is not built yet — the gate shows the setup wizard.
+  const IndexState.notBuilt() : this(status: IndexStatus.unknown);
+
   /// Apply a progress snapshot to produce an updated state.
   IndexState withProgress(dynamic p) {
     final phase = p.phaseIndex >= 0 &&
@@ -151,5 +151,4 @@ class IndexState {
 
   bool get isBuilt => status == IndexStatus.ready;
   bool get isBuilding => status == IndexStatus.building;
-  bool get needsChoice => status == IndexStatus.needsTranslationChoice;
 }

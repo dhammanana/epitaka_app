@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -9,9 +10,6 @@ import '../../../shared/widgets/pali_text.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../services/jump_service.dart';
 
-/// Shows a bottom sheet with two tabs:
-/// 1. Connected Books — Jump to mūla/aṭṭhakathā/ṭīkā at the current section.
-/// 2. Jump to Page — Jump to a specific page in the current book.
 Future<void> showJumpSheet(
   BuildContext context, {
   required String bookId,
@@ -34,13 +32,11 @@ class _JumpSheet extends ConsumerStatefulWidget {
   final String bookId;
   final String bookName;
   final int currentParaId;
-
   const _JumpSheet({
     required this.bookId,
     required this.bookName,
     required this.currentParaId,
   });
-
   @override
   ConsumerState<_JumpSheet> createState() => _JumpSheetState();
 }
@@ -48,13 +44,9 @@ class _JumpSheet extends ConsumerStatefulWidget {
 class _JumpSheetState extends ConsumerState<_JumpSheet>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-
-  // ── Tab 1: Connected Books ─────────────────────────────────────
   List<ConnectedBookJump>? _connectedJumps;
   bool _isLoadingConnections = true;
   String? _connectionError;
-
-  // ── Tab 2: Jump to Page ────────────────────────────────────────
   final _pageInputController = TextEditingController();
   String _selectedPageSystem = 'vri';
   bool _isJumping = false;
@@ -76,24 +68,20 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   Future<void> _loadConnectedJumps() async {
     try {
       final db = await ref.read(epitakaDbProvider.future);
-      final service = JumpService(db);
-      final jumps = await service.getConnectedJumps(
-        widget.bookId,
-        widget.currentParaId,
-      );
-      if (mounted) {
+      final jumps = await JumpService(
+        db,
+      ).getConnectedJumps(widget.bookId, widget.currentParaId);
+      if (mounted)
         setState(() {
           _connectedJumps = jumps;
           _isLoadingConnections = false;
         });
-      }
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         setState(() {
           _connectionError = e.toString();
           _isLoadingConnections = false;
         });
-      }
     }
   }
 
@@ -107,8 +95,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final pageSystemLabel = _pageSystemLabel(_selectedPageSystem);
-
+    final loc = AppLocalizations.of(context);
     return Container(
       height: MediaQuery.sizeOf(context).height * 0.65,
       decoration: BoxDecoration(
@@ -120,7 +107,6 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Drag handle ────────────────────────────────────────
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 32,
@@ -131,18 +117,16 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
             ),
           ),
           const SizedBox(height: 8),
-
-          // ── Tab bar ────────────────────────────────────────────
           TabBar(
             controller: _tabController,
-            tabs: const [
+            tabs: [
               Tab(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.link, size: 18),
-                    SizedBox(width: 6),
-                    Text('Connected Books'),
+                    const SizedBox(width: 6),
+                    Text(loc.connectedBooks),
                   ],
                 ),
               ),
@@ -151,8 +135,8 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.numbers, size: 18),
-                    SizedBox(width: 6),
-                    Text('Jump to Page'),
+                    const SizedBox(width: 6),
+                    Text(loc.jumpToPage),
                   ],
                 ),
               ),
@@ -161,14 +145,12 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
             unselectedLabelColor: colors.onSurfaceVariant,
             indicatorColor: colors.primary,
           ),
-
-          // ── Tab content ────────────────────────────────────────
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildConnectedBooksTab(colors),
-                _buildPageJumpTab(colors, pageSystemLabel),
+                _buildConnectedBooksTab(colors, loc),
+                _buildPageJumpTab(colors, loc),
               ],
             ),
           ),
@@ -177,29 +159,21 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
     );
   }
 
-  // ── Tab 1: Connected Books ────────────────────────────────────────
-
-  Widget _buildConnectedBooksTab(ColorScheme colors) {
-    if (_isLoadingConnections) {
+  Widget _buildConnectedBooksTab(ColorScheme colors, AppLocalizations loc) {
+    if (_isLoadingConnections)
       return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_connectionError != null) {
+    if (_connectionError != null)
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Error loading connected books.\n$_connectionError',
-            style: AppTypography.bodyTranslation.copyWith(
-              color: colors.error,
-            ),
+            '${loc.errorLoadingConnections}\n$_connectionError',
+            style: AppTypography.bodyTranslation.copyWith(color: colors.error),
             textAlign: TextAlign.center,
           ),
         ),
       );
-    }
-
-    if (_connectedJumps == null || _connectedJumps!.isEmpty) {
+    if (_connectedJumps == null || _connectedJumps!.isEmpty)
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -209,7 +183,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
               Icon(Icons.link_off, size: 48, color: colors.outlineVariant),
               const SizedBox(height: 16),
               Text(
-                'No connected books found for this section.',
+                loc.noConnectedBooks,
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -219,8 +193,6 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
           ),
         ),
       );
-    }
-
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -229,37 +201,32 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
         32,
       ),
       itemCount: _connectedJumps!.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: colors.outlineVariant),
-      itemBuilder: (context, index) {
-        final jump = _connectedJumps![index];
-        return _ConnectedBookTile(
-          jump: jump,
-          colors: colors,
-          onTap: () => _openBook(jump),
-        );
-      },
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, color: colors.outlineVariant),
+      itemBuilder: (context, index) => _ConnectedBookTile(
+        jump: _connectedJumps![index],
+        colors: colors,
+        onTap: () => _openBook(_connectedJumps![index]),
+      ),
     );
   }
 
   void _openBook(ConnectedBookJump jump) {
-    // Open the connected book in a new reader tab
-    ref.read(readerTabsProvider.notifier).openTab(
-      ReaderTabInfo(
-        bookId: jump.bookId,
-        bookName: jump.bookName,
-        initialParaId: jump.paraId,
-      ),
-    );
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
+          ReaderTabInfo(
+            bookId: jump.bookId,
+            bookName: jump.bookName,
+            initialParaId: jump.paraId,
+          ),
+        );
     Navigator.of(context).pop();
     context.push('/reader');
   }
 
-  // ── Tab 2: Jump to Page ──────────────────────────────────────────
-
-  Widget _buildPageJumpTab(
-    ColorScheme colors,
-    String pageSystemLabel,
-  ) {
+  Widget _buildPageJumpTab(ColorScheme colors, AppLocalizations loc) {
+    _pageSystemLabel(_selectedPageSystem, loc);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -270,17 +237,14 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Page numbering system selector ─────────────────────
           Text(
-            'Page Numbering System',
+            loc.pageNumberingSystem,
             style: AppTypography.labelMedium.copyWith(
               color: colors.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
-
-          // System dropdown
           Container(
             decoration: BoxDecoration(
               color: colors.surfaceContainerHighest,
@@ -291,26 +255,20 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
               child: DropdownButton<String>(
                 value: _selectedPageSystem,
                 isExpanded: true,
-                items: _pageSystems.map((entry) {
-                  return DropdownMenuItem(
-                    value: entry.$1,
-                    child: Text(entry.$2),
-                  );
-                }).toList(),
+                items: _pageSystems
+                    .map(
+                      (e) => DropdownMenuItem(value: e.$1, child: Text(e.$2)),
+                    )
+                    .toList(),
                 onChanged: (v) {
-                  if (v != null) {
-                    setState(() => _selectedPageSystem = v);
-                  }
+                  if (v != null) setState(() => _selectedPageSystem = v);
                 },
               ),
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // ── Page number input ─────────────────────────────────
           Text(
-            'Page Number',
+            loc.pageNumberInput,
             style: AppTypography.labelMedium.copyWith(
               color: colors.onSurfaceVariant,
               fontWeight: FontWeight.w500,
@@ -322,7 +280,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
             keyboardType: TextInputType.text,
             textInputAction: TextInputAction.go,
             decoration: InputDecoration(
-              hintText: 'e.g. 10 or 1.10',
+              hintText: loc.pageInputHint,
               hintStyle: TextStyle(
                 color: colors.onSurfaceVariant.withValues(alpha: 0.5),
               ),
@@ -351,17 +309,11 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
               ),
             ),
             onSubmitted: _isJumping ? null : (_) => _jumpToPage(),
-            style: TextStyle(
-              fontSize: 16,
-              color: colors.onSurface,
-            ),
+            style: TextStyle(fontSize: 16, color: colors.onSurface),
           ),
-
           const SizedBox(height: 16),
-
           Text(
-            'Tip: If pages are numbered like "1.3", you can type just "3" '
-            'to jump to page 1.3.',
+            loc.jumpTip,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.6),
               fontSize: 12,
@@ -375,37 +327,34 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   Future<void> _jumpToPage() async {
     final input = _pageInputController.text.trim();
     if (input.isEmpty) return;
-
     setState(() => _isJumping = true);
-
+    final loc = AppLocalizations.of(context);
     try {
       final db = await ref.read(epitakaDbProvider.future);
       final service = JumpService(db);
       final column = _pageColumnName(_selectedPageSystem);
-
       final paraId = await service.findParaIdByPage(
         widget.bookId,
         input,
         column,
       );
-
       if (!mounted) return;
-
       if (paraId != null) {
-        // Open the current book at the found paragraph
-        ref.read(readerTabsProvider.notifier).openTab(
-          ReaderTabInfo(
-            bookId: widget.bookId,
-            bookName: widget.bookName,
-            initialParaId: paraId,
-          ),
-        );
+        ref
+            .read(readerTabsProvider.notifier)
+            .openTab(
+              ReaderTabInfo(
+                bookId: widget.bookId,
+                bookName: widget.bookName,
+                initialParaId: paraId,
+              ),
+            );
         Navigator.of(context).pop();
         context.push('/reader');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Page "$input" not found in this book.'),
+            content: Text('"$input" ${loc.pageNotFound}'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -415,7 +364,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text('${loc.error}: $e'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -423,15 +372,15 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
     }
   }
 
-  String _pageSystemLabel(String code) {
-    for (final entry in _pageSystems) {
-      if (entry.$1 == code) return entry.$2;
+  String _pageSystemLabel(String code, AppLocalizations loc) {
+    for (final e in _pageSystems) {
+      if (e.$1 == code) return e.$2;
     }
     return 'VRI';
   }
 
-  String _pageColumnName(String system) {
-    switch (system) {
+  String _pageColumnName(String s) {
+    switch (s) {
       case 'vri':
         return 'vripage';
       case 'pts':
@@ -446,14 +395,10 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   }
 }
 
-/// Tile for a single connected book result.
-/// Uses a [ConsumerWidget] so it can access the Pāli script setting
-/// to convert the book name automatically.
 class _ConnectedBookTile extends ConsumerWidget {
   final ConnectedBookJump jump;
   final ColorScheme colors;
   final VoidCallback onTap;
-
   const _ConnectedBookTile({
     required this.jump,
     required this.colors,
@@ -462,6 +407,7 @@ class _ConnectedBookTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -469,7 +415,6 @@ class _ConnectedBookTile extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         child: Row(
           children: [
-            // Book type indicator
             Container(
               width: 40,
               height: 40,
@@ -477,14 +422,9 @@ class _ConnectedBookTile extends ConsumerWidget {
                 color: colors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                Icons.menu_book,
-                color: colors.primary,
-                size: 20,
-              ),
+              child: Icon(Icons.menu_book, color: colors.primary, size: 20),
             ),
             const SizedBox(width: 12),
-            // Book info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,7 +442,7 @@ class _ConnectedBookTile extends ConsumerWidget {
                   Row(
                     children: [
                       Text(
-                        'Section ${jump.title}',
+                        '${loc.section} ${jump.title}',
                         style: AppTypography.labelSmall.copyWith(
                           color: colors.onSurfaceVariant,
                         ),
@@ -531,12 +471,7 @@ class _ConnectedBookTile extends ConsumerWidget {
                 ],
               ),
             ),
-            // Arrow
-            Icon(
-              Icons.chevron_right,
-              color: colors.onSurfaceVariant,
-              size: 20,
-            ),
+            Icon(Icons.chevron_right, color: colors.onSurfaceVariant, size: 20),
           ],
         ),
       ),

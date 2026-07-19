@@ -68,9 +68,7 @@ class ReaderBottomToolbar extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(9999),
-        border: Border.all(
-          color: colors.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.08),
@@ -114,7 +112,9 @@ class ReaderBottomToolbar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           ToolbarButton(
-            icon: isPlaying ? Icons.stop : (isLoading ? Icons.hourglass_top : Icons.volume_up),
+            icon: isPlaying
+                ? Icons.stop
+                : (isLoading ? Icons.hourglass_top : Icons.volume_up),
             label: isPlaying ? 'Stop' : (isLoading ? 'Loading…' : 'Listen'),
             onTap: isPlaying ? onStopTap : onListenTap,
           ),

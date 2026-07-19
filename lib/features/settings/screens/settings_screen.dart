@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../gavesana/providers/gavesana_download_provider.dart';
-import '../../gavesana/services/download_service.dart';
 import '../../search/providers/search_provider.dart';
 
 import '../widgets/index_progress_screen.dart';
@@ -22,6 +22,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
@@ -35,7 +36,7 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           // Screen title
           Text(
-            'Settings',
+            loc.settings,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.onSurface,
             ),
@@ -44,16 +45,11 @@ class SettingsScreen extends ConsumerWidget {
 
           // Sections
           SettingsSection(
-            title: 'General',
+            title: loc.general,
             colors: colors,
             showDividers: true,
             children: [
-              _SettingsTile(
-                icon: Icons.language,
-                title: 'Language',
-                subtitle: 'English',
-                onTap: () {},
-              ),
+              _LanguagePickerTile(colors: colors),
               _ScriptPickerTile(),
               _LibraryExpandTile(colors: colors),
             ],
@@ -62,15 +58,15 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           SettingsSection(
-            title: 'Appearance',
+            title: loc.appearance,
             colors: colors,
             showDividers: true,
             children: [
               _ThemePickerTile(),
               _SettingsTile(
                 icon: Icons.palette,
-                title: 'Appearance',
-                subtitle: 'Theme & accent',
+                title: loc.appearance,
+                subtitle: loc.appearanceSubtitle,
                 onTap: () => context.push('/settings/appearance'),
               ),
             ],
@@ -79,19 +75,19 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           SettingsSection(
-            title: 'Data & Content',
+            title: loc.dataAndContent,
             colors: colors,
             showDividers: true,
             children: [
               _SettingsTile(
                 icon: Icons.download,
-                title: 'Translations & Downloads',
+                title: loc.translationsDownloads,
                 onTap: () => context.push('/settings/translation'),
               ),
               _SettingsTile(
                 icon: Icons.translate,
-                title: 'Translation Display',
-                subtitle: 'Layout, mode & typography',
+                title: loc.translationDisplay,
+                subtitle: loc.translationDisplaySubtitle,
                 onTap: () => context.push('/settings/translation'),
               ),
             ],
@@ -100,26 +96,26 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           SettingsSection(
-            title: 'Reading Preferences',
+            title: loc.readingPreferences,
             colors: colors,
             showDividers: true,
             children: [
               _SettingsTile(
                 icon: Icons.menu_book,
-                title: 'Reading Options',
-                subtitle: 'Layout, numbering & scroll',
+                title: loc.readingOptions,
+                subtitle: loc.readingOptionsSubtitle,
                 onTap: () => context.push('/settings/reading'),
               ),
               _SettingsTile(
                 icon: Icons.record_voice_over,
-                title: 'Text-to-Speech',
-                subtitle: 'Voice & speed',
+                title: loc.textToSpeech,
+                subtitle: loc.ttsSubtitle,
                 onTap: () => context.push('/settings/tts'),
               ),
               _SettingsTile(
                 icon: Icons.find_replace,
-                title: 'TTS Replacements',
-                subtitle: 'Regex text replacements',
+                title: loc.ttsReplacements,
+                subtitle: loc.ttsReplacementsSubtitle,
                 onTap: () => context.push('/settings/tts/replacements'),
               ),
             ],
@@ -129,7 +125,7 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Search ──────────────────────────────────────────────────
           SettingsSection(
-            title: 'Search',
+            title: loc.search,
             colors: colors,
             showDividers: true,
             children: [
@@ -142,13 +138,13 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Dictionaries ────────────────────────────────────────────
           SettingsSection(
-            title: 'Dictionaries',
+            title: loc.dictionaries,
             colors: colors,
             children: [
               _SettingsTile(
                 icon: Icons.menu_book,
-                title: 'Dictionary Settings',
-                subtitle: 'Enable, disable & reorder',
+                title: loc.dictionarySettings,
+                subtitle: loc.dictionarySettingsSubtitle,
                 onTap: () => context.push('/settings/dictionary'),
               ),
             ],
@@ -157,18 +153,18 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           // ── Gavesana ───────────────────────────────────────────────
-          _buildGavesanaSection(colors, ref),
+          _buildGavesanaSection(context, colors, ref),
 
           const SizedBox(height: AppDimensions.md),
 
           SettingsSection(
-            title: 'Account',
+            title: loc.account,
             colors: colors,
             showDividers: true,
             children: [
               _SettingsTile(
                 icon: Icons.account_circle,
-                title: 'Profile',
+                title: loc.profile,
                 onTap: () {},
               ),
             ],
@@ -177,16 +173,18 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           SettingsSection(
-            title: 'System',
+            title: loc.system,
             colors: colors,
             showDividers: true,
             children: [
-              ResetDataTile(),
               _SettingsTile(
-                icon: Icons.info,
-                title: 'About ePitaka',
-                onTap: () {},
+                icon: Icons.help_outline,
+                title: loc.help,
+                subtitle: loc.keyboardShortcuts,
+                onTap: () => context.push('/settings/help'),
               ),
+              ResetDataTile(),
+              _SettingsTile(icon: Icons.info, title: loc.about, onTap: () {}),
             ],
           ),
         ],
@@ -195,13 +193,81 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// Gavesana AI-powered search settings section.
-  Widget _buildGavesanaSection(ColorScheme colors, WidgetRef ref) {
+  Widget _buildGavesanaSection(
+    BuildContext context,
+    ColorScheme colors,
+    WidgetRef ref,
+  ) {
+    final loc = AppLocalizations.of(context);
     return SettingsSection(
-      title: 'Gavesana (AI Search)',
+      title: loc.aiSearch,
       colors: colors,
-      children: [
-        _GavesanaDownloadTile(colors: colors),
-      ],
+      children: [_GavesanaDownloadTile(colors: colors)],
+    );
+  }
+}
+
+/// Only English and Vietnamese for now.
+const _supportedLanguages = [AppLanguage.english, AppLanguage.vietnamese];
+
+/// ── Language Picker Tile ──────────────────────────────────────────────
+
+class _LanguagePickerTile extends ConsumerWidget {
+  final ColorScheme colors;
+
+  const _LanguagePickerTile({required this.colors});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final loc = AppLocalizations.of(context);
+    final currentLang = settings.appLanguage;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.language, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Text(
+              loc.language,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          PopupMenuButton<AppLanguage>(
+            initialValue: currentLang,
+            onSelected: (lang) {
+              ref.read(settingsProvider.notifier).setAppLanguage(lang);
+            },
+            itemBuilder: (context) => [
+              for (final lang in _supportedLanguages)
+                PopupMenuItem(
+                  value: lang,
+                  child: Text(loc.appLanguageName(lang)),
+                ),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  loc.appLanguageName(currentLang),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -217,13 +283,13 @@ class _GavesanaDownloadTile extends ConsumerStatefulWidget {
       _GavesanaDownloadTileState();
 }
 
-class _GavesanaDownloadTileState
-    extends ConsumerState<_GavesanaDownloadTile> {
+class _GavesanaDownloadTileState extends ConsumerState<_GavesanaDownloadTile> {
   bool _isDownloading = false;
 
   @override
   Widget build(BuildContext context) {
     final assetsAsync = ref.watch(gavesanaAssetsReadyProvider);
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -234,17 +300,14 @@ class _GavesanaDownloadTileState
         onTap: _isDownloading ? null : _handleAction,
         child: Row(
           children: [
-            Icon(
-              Icons.psychology,
-              color: widget.colors.primary,
-            ),
+            Icon(Icons.psychology, color: widget.colors.primary),
             const SizedBox(width: AppDimensions.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AI Search Assets',
+                    loc.aiSearchAssets,
                     style: AppTypography.labelMedium.copyWith(
                       color: widget.colors.onSurface,
                     ),
@@ -253,8 +316,8 @@ class _GavesanaDownloadTileState
                   assetsAsync.when(
                     data: (ready) => Text(
                       ready
-                          ? 'Ready (${_sizeLabel(270 + 364 + 33)} MB)'
-                          : 'Not downloaded — tap to download',
+                          ? '${loc.readyLabel} (${_sizeLabel(270 + 364 + 33)} MB)'
+                          : loc.notDownloaded,
                       style: AppTypography.labelSmall.copyWith(
                         color: ready
                             ? widget.colors.tertiary
@@ -267,7 +330,7 @@ class _GavesanaDownloadTileState
                       height: 14,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    error: (_, __) => const Text('Check failed'),
+                    error: (_, __) => Text(loc.error),
                   ),
                 ],
               ),
@@ -285,9 +348,7 @@ class _GavesanaDownloadTileState
                       ? Icons.check_circle_outline
                       : Icons.cloud_download_outlined,
                   size: 20,
-                  color: ready
-                      ? widget.colors.tertiary
-                      : widget.colors.primary,
+                  color: ready ? widget.colors.tertiary : widget.colors.primary,
                 ),
                 loading: () => const SizedBox(width: 20),
                 error: (_, __) => const Icon(Icons.error_outline, size: 20),
@@ -304,24 +365,20 @@ class _GavesanaDownloadTileState
   }
 
   Future<void> _handleAction() async {
-    final assetsReady =
-        await ref.read(gavesanaAssetsReadyProvider.future);
+    final loc = AppLocalizations.of(context);
+    final assetsReady = await ref.read(gavesanaAssetsReadyProvider.future);
     if (assetsReady) {
       // Show info about the assets
       if (!mounted) return;
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Gavesana AI Assets'),
-          content: const Text(
-            'The AI search model and vector database are ready to use.\n\n'
-            'Open the sidebar in the Library screen and tap the '
-            'Gavesana icon to start searching semantically.',
-          ),
+          title: Text(loc.gavesanaAssetsTitle),
+          content: Text(loc.gavesanaAssetsReadyDesc),
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
+              child: Text(loc.ok),
             ),
           ],
         ),
@@ -333,22 +390,16 @@ class _GavesanaDownloadTileState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Download Gavesana Assets?'),
-        content: const Text(
-          'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.',
-        ),
+        title: Text(loc.downloadGavesanaTitle),
+        content: Text(loc.downloadGavesanaDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Download'),
+            child: Text(loc.download),
           ),
         ],
       ),
@@ -363,7 +414,7 @@ class _GavesanaDownloadTileState
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Download failed: ${service.error}'),
+            content: Text('${loc.download} failed: ${service.error}'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -377,7 +428,7 @@ class _GavesanaDownloadTileState
         setState(() => _isDownloading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('${loc.error}: $e'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -432,10 +483,7 @@ class _SettingsTile extends StatelessWidget {
                   ),
                 ),
               ),
-            Icon(
-              Icons.chevron_right,
-              color: colors.onSurfaceVariant,
-            ),
+            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
           ],
         ),
       ),
@@ -450,6 +498,7 @@ class _ScriptPickerTile extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
     final currentScript = settings.paliScript;
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -462,7 +511,7 @@ class _ScriptPickerTile extends ConsumerWidget {
           const SizedBox(width: AppDimensions.md),
           Expanded(
             child: Text(
-              'Script',
+              loc.script,
               style: AppTypography.labelMedium.copyWith(
                 color: colors.onSurface,
               ),
@@ -490,10 +539,7 @@ class _ScriptPickerTile extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right,
-                  color: colors.onSurfaceVariant,
-                ),
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
               ],
             ),
           ),
@@ -524,6 +570,7 @@ class _LibraryExpandTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final current = settings.libraryExpandLevel;
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -539,14 +586,14 @@ class _LibraryExpandTile extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Library Browser',
+                  loc.libraryBrowser,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Default expand level',
+                  loc.defaultExpandLevel,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     fontSize: 11,
@@ -565,9 +612,13 @@ class _LibraryExpandTile extends ConsumerWidget {
                 value: LibraryExpandLevel.collapsed,
                 child: Row(
                   children: [
-                    Icon(Icons.unfold_less, size: 18, color: colors.onSurfaceVariant),
+                    Icon(
+                      Icons.unfold_less,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
-                    const Text('Collapsed'),
+                    Text(loc.collapsed),
                   ],
                 ),
               ),
@@ -577,7 +628,7 @@ class _LibraryExpandTile extends ConsumerWidget {
                   children: [
                     Icon(Icons.unfold_more, size: 18, color: colors.primary),
                     const SizedBox(width: 8),
-                    const Text('Category'),
+                    Text(loc.category),
                   ],
                 ),
               ),
@@ -585,9 +636,13 @@ class _LibraryExpandTile extends ConsumerWidget {
                 value: LibraryExpandLevel.expand,
                 child: Row(
                   children: [
-                    Icon(Icons.unfold_more_double, size: 18, color: colors.onSurfaceVariant),
+                    Icon(
+                      Icons.unfold_more_double,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
-                    const Text('Expand'),
+                    Text(loc.expand),
                   ],
                 ),
               ),
@@ -596,16 +651,13 @@ class _LibraryExpandTile extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _expandLabel(current),
+                  _expandLabel(current, loc),
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right,
-                  color: colors.onSurfaceVariant,
-                ),
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
               ],
             ),
           ),
@@ -614,14 +666,14 @@ class _LibraryExpandTile extends ConsumerWidget {
     );
   }
 
-  String _expandLabel(LibraryExpandLevel level) {
+  String _expandLabel(LibraryExpandLevel level, AppLocalizations loc) {
     switch (level) {
       case LibraryExpandLevel.collapsed:
-        return 'Collapsed';
+        return loc.collapsed;
       case LibraryExpandLevel.category:
-        return 'Category';
+        return loc.category;
       case LibraryExpandLevel.expand:
-        return 'Expand';
+        return loc.expand;
     }
   }
 }
@@ -632,6 +684,7 @@ class _ThemePickerTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Column(
       children: [
@@ -646,7 +699,7 @@ class _ThemePickerTile extends ConsumerWidget {
               const SizedBox(width: AppDimensions.md),
               Expanded(
                 child: Text(
-                  'Theme',
+                  loc.theme,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.onSurface,
                   ),
@@ -660,31 +713,28 @@ class _ThemePickerTile extends ConsumerWidget {
                 itemBuilder: (context) => [
                   PopupMenuItem(
                     value: ThemePreference.system,
-                    child: Text(_themeLabel(ThemePreference.system)),
+                    child: Text(_themeLabel(ThemePreference.system, loc)),
                   ),
                   PopupMenuItem(
                     value: ThemePreference.light,
-                    child: Text(_themeLabel(ThemePreference.light)),
+                    child: Text(_themeLabel(ThemePreference.light, loc)),
                   ),
                   PopupMenuItem(
                     value: ThemePreference.dark,
-                    child: Text(_themeLabel(ThemePreference.dark)),
+                    child: Text(_themeLabel(ThemePreference.dark, loc)),
                   ),
                 ],
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _themeLabel(settings.themePreference),
+                      _themeLabel(settings.themePreference, loc),
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Icon(
-                      Icons.chevron_right,
-                      color: colors.onSurfaceVariant,
-                    ),
+                    Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
                   ],
                 ),
               ),
@@ -695,14 +745,14 @@ class _ThemePickerTile extends ConsumerWidget {
     );
   }
 
-  String _themeLabel(ThemePreference pref) {
+  String _themeLabel(ThemePreference pref, AppLocalizations loc) {
     switch (pref) {
       case ThemePreference.system:
-        return 'System';
+        return loc.systemTheme;
       case ThemePreference.light:
-        return 'Paper (Light)';
+        return loc.lightTheme;
       case ThemePreference.dark:
-        return 'Dark';
+        return loc.darkTheme;
     }
   }
 }
@@ -716,6 +766,7 @@ class _SearchExpandToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final expand = ref.watch(expandSearchResultsProvider);
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -728,7 +779,7 @@ class _SearchExpandToggle extends ConsumerWidget {
           const SizedBox(width: AppDimensions.md),
           Expanded(
             child: Text(
-              'Expand results by default',
+              loc.expandResultsDefault,
               style: AppTypography.labelMedium.copyWith(
                 color: colors.onSurface,
               ),
@@ -762,6 +813,8 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.md,
@@ -778,7 +831,7 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
                 InkWell(
                   onTap: () => _confirmRebuild(context),
                   child: Text(
-                    'Rebuild search index',
+                    loc.rebuildSearchIndex,
                     style: AppTypography.labelMedium.copyWith(
                       color: widget.colors.onSurface,
                     ),
@@ -786,7 +839,7 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Re-indexes Pāli texts & translations',
+                  loc.rebuildSearchIndexSubtitle,
                   style: AppTypography.labelSmall.copyWith(
                     color: widget.colors.onSurfaceVariant,
                     fontSize: 11,
@@ -806,7 +859,7 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
               icon: const Icon(Icons.play_arrow, size: 20),
               color: widget.colors.primary,
               onPressed: () => _confirmRebuild(context),
-              tooltip: 'Rebuild',
+              tooltip: loc.rebuildSearchIndex,
             ),
         ],
       ),
@@ -814,10 +867,11 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
   }
 
   void _confirmRebuild(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Rebuild Search Index?'),
+        title: Text(loc.rebuildSearchIndex),
         content: const Text(
           'This will delete and rebuild the full-text search index from scratch. '
           'It may take a few seconds on slower devices. '
@@ -826,14 +880,14 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _triggerRebuild();
             },
-            child: const Text('Rebuild'),
+            child: Text(loc.rebuildSearchIndex),
           ),
         ],
       ),

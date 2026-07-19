@@ -1,129 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/app_dimensions.dart';
+import '../../core/utils/responsive_breakpoint.dart';
 
-/// The primary app shell wrapper with a floating bottom toolbar.
-class AppShell extends StatelessWidget {
+/// AppShell adapts between mobile and desktop layout.
+///
+/// On mobile: renders as a [Scaffold] with a bottom navigation bar.
+/// On desktop: renders as a simple [Scaffold] with app bar and drawer.
+/// Sidebar panels (TOC, Dictionary) are provided by ResponsiveScaffold
+/// which wraps only the reader route, not the library home screen.
+class AppShell extends ConsumerWidget {
   final Widget child;
   final PreferredSizeWidget? appBar;
-  final List<Widget>? bottomToolbarActions;
-  final bool showBottomToolbar;
   final Widget? drawer;
 
-  const AppShell({
-    super.key,
-    required this.child,
-    this.appBar,
-    this.bottomToolbarActions,
-    this.showBottomToolbar = false,
-    this.drawer,
-  });
+  const AppShell({super.key, required this.child, this.appBar, this.drawer});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDesktop = ResponsiveBreakpoint.isDesktop(context);
+
     final colors = Theme.of(context).colorScheme;
 
+    // Desktop: use a simple Scaffold with app bar and drawer (no bottom toolbar)
+    // Keep the Column+Expanded structure identical to mobile (minus toolbar)
+    // to avoid layout differences that could cause the macOS freeze issue.
+    if (isDesktop) {
+      debugPrint(
+        '[APP_SHELL] desktop layout (width=${MediaQuery.sizeOf(context).width})',
+      );
+      return Scaffold(
+        appBar: appBar,
+        drawer: drawer,
+        backgroundColor: colors.surface,
+        body: Column(children: [Expanded(child: child)]),
+      );
+    }
+
+    // Mobile: scaffold with no bottom bar (library is dialog-driven on desktop;
+    // on mobile it is a plain scrollable screen).
+    debugPrint(
+      '[APP_SHELL] mobile layout (width=${MediaQuery.sizeOf(context).width})',
+    );
     return Scaffold(
       appBar: appBar,
       drawer: drawer,
-      body: Stack(
-        children: [
-          child,
-          if (showBottomToolbar)
-            Positioned(
-              bottom: 24,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _FloatingBottomToolbar(
-                  actions: bottomToolbarActions,
-                  colors: colors,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Floating pill-shaped bottom toolbar matching the design spec.
-class _FloatingBottomToolbar extends StatelessWidget {
-  final List<Widget>? actions;
-  final ColorScheme colors;
-
-  const _FloatingBottomToolbar({this.actions, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: AppDimensions.bottomToolbarHeight,
-      constraints: const BoxConstraints(maxWidth: 400),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-        border: Border.all(
-          color: colors.outlineVariant.withValues(alpha: 0.3),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: actions ??
-            [
-              _ToolbarIcon(icon: Icons.format_list_bulleted, label: 'Contents'),
-              _ToolbarIcon(icon: Icons.search, label: 'Search'),
-              _ToolbarIcon(icon: Icons.menu_book, label: 'Dictionary'),
-              _ToolbarIcon(icon: Icons.volume_up, label: 'Listen'),
-              _ToolbarIcon(icon: Icons.bookmark, label: 'Save'),
-            ],
-      ),
-    );
-  }
-}
-
-class _ToolbarIcon extends StatefulWidget {
-  final IconData icon;
-  final String label;
-
-  const _ToolbarIcon({required this.icon, required this.label});
-
-  @override
-  State<_ToolbarIcon> createState() => _ToolbarIconState();
-}
-
-class _ToolbarIconState extends State<_ToolbarIcon> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Tooltip(
-        message: widget.label,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: AnimatedScale(
-            scale: _hovered ? 1.15 : 1.0,
-            duration: const Duration(milliseconds: 200),
-            child: IconButton(
-              icon: Icon(widget.icon),
-              color: _hovered ? colors.primary : colors.onSurfaceVariant,
-              onPressed: () {},
-            ),
-          ),
-        ),
+      backgroundColor: colors.surface,
+      body: SafeArea(
+        child: Column(children: [Expanded(child: child)]),
       ),
     );
   }

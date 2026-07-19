@@ -2,18 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../database/epitaka_database.dart';
 import '../database/nissaya_database.dart';
 import '../database/translation_database.dart';
 import '../models/app_models.dart';
 import '../models/translation_version.dart';
+import '../utils/database_initializer.dart';
 import 'settings_provider.dart';
 
 /// Provider for the main Tipitaka database (epitaka.db).
 final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
-  final dbDir = await _getDatabaseDirectory();
+  final dbDir = await getDatabaseDirectory();
   final dbPath = p.join(dbDir.path, 'epitaka.db');
   return EpitakaDatabase.open(dbPath);
 });
@@ -22,7 +22,7 @@ final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
 final translationDbProvider =
     FutureProvider.family<TranslationDatabase?, TranslationLanguage>(
         (ref, lang) async {
-  final dbDir = await _getDatabaseDirectory();
+  final dbDir = await getDatabaseDirectory();
   final dbPath = p.join(dbDir.path, lang.filename);
   final file = File(dbPath);
   if (!await file.exists()) {
@@ -36,7 +36,7 @@ final translationDbProvider =
 /// version's isNissaya flag.
 final versionDbProvider =
     FutureProvider.family<Object?, TranslationVersion>((ref, version) async {
-  final dbDir = await _getDatabaseDirectory();
+  final dbDir = await getDatabaseDirectory();
   final dbPath = p.join(dbDir.path, version.filename);
   final file = File(dbPath);
   if (!await file.exists()) return null;
@@ -50,34 +50,13 @@ final versionDbProvider =
 /// Provider for a nissaya database by filename.
 final nissayaDbByFilenameProvider =
     FutureProvider.family<NissayaDatabase?, String>((ref, filename) async {
-  final dbDir = await _getDatabaseDirectory();
+  final dbDir = await getDatabaseDirectory();
   final dbPath = p.join(dbDir.path, filename);
   final file = File(dbPath);
   if (!await file.exists()) return null;
   return NissayaDatabase.open(dbPath);
 });
 
-/// Get the database directory.
-Future<Directory> _getDatabaseDirectory() async {
-  final envDbPath = Platform.environment['EPITAKA_DB_PATH'];
-  if (envDbPath != null && envDbPath.isNotEmpty) {
-    final dir = Directory(envDbPath);
-    if (await dir.exists()) {
-      return dir;
-    }
-  }
-
-  if (!Platform.isAndroid && !Platform.isIOS) {
-    final cwd = Directory.current;
-    final dataDir = Directory(p.join(cwd.path, 'data'));
-    if (await dataDir.exists()) {
-      return dataDir;
-    }
-  }
-
-  final appDir = await getApplicationDocumentsDirectory();
-  return appDir;
-}
 
 /// Provider that watches the settings and returns the active translation language.
 final activeTranslationLangProvider = Provider<TranslationLanguage>((ref) {

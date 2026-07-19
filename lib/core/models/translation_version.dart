@@ -93,14 +93,14 @@ class TranslationVersion {
   }
 
   Map<String, dynamic> toJson() => {
-        'displayName': displayName,
-        if (suffix != null && suffix!.isNotEmpty) 'suffix': suffix,
-        if (downloadUrl != null) 'url': downloadUrl,
-        if (fileSize != null) 'size': fileSize,
-        if (updatedAt != null) 'updated': updatedAt,
-        if (checksum != null) 'checksum': checksum,
-        if (isNissaya) 'type': 'nissaya',
-      };
+    'displayName': displayName,
+    if (suffix != null && suffix!.isNotEmpty) 'suffix': suffix,
+    if (downloadUrl != null) 'url': downloadUrl,
+    if (fileSize != null) 'size': fileSize,
+    if (updatedAt != null) 'updated': updatedAt,
+    if (checksum != null) 'checksum': checksum,
+    if (isNissaya) 'type': 'nissaya',
+  };
 
   factory TranslationVersion.fromJson(
     String languageCode,
@@ -117,7 +117,8 @@ class TranslationVersion {
       suffix: suffix.isNotEmpty ? suffix : null,
       filename: filename,
       isNissaya: isNissaya,
-      displayName: json['displayName'] as String? ??
+      displayName:
+          json['displayName'] as String? ??
           (suffix.isNotEmpty ? suffix : 'Default'),
       downloadUrl: json['url'] as String?,
       fileSize: json['size'] as int?,
@@ -144,25 +145,29 @@ class TranslationVersion {
 
 /// Central registry of known translation languages.
 ///
-/// Mirrors the [TranslationLanguage] enum but allows dynamic lookup.
+/// This is now populated from the web manifest (the source of truth for
+/// which translations exist) rather than a hardcoded list, so adding a
+/// language server-side automatically makes its display name available.
+/// Call [registerFromManifest] once the manifest has loaded.
 class TranslationLanguageRegistry {
-  static final List<LangInfo> _languages = [
-    LangInfo('en', 'English', 'English'),
-    LangInfo('th', 'ไทย', 'Thai'),
-    LangInfo('si', 'සිංහල', 'Sinhala'),
-    LangInfo('my', 'မြန်မာ', 'Myanmar'),
-  ];
+  static final Map<String, LangInfo> _languages = {};
 
-  static LangInfo? getName(String code) {
-    try {
-      return _languages.firstWhere((l) => l.code == code);
-    } catch (_) {
-      return null;
+  /// Populate (or refresh) the registry from the web manifest. This is the
+  /// only way language names enter the registry — there is no hardcoded
+  /// fallback list, so the displayed languages always match what the server
+  /// actually offers.
+  static void registerFromManifest(TranslationManifest manifest) {
+    for (final entry in manifest.languageNames.entries) {
+      _languages[entry.key] = entry.value;
     }
   }
 
-  static String englishName(String code) => getName(code)?.englishName ?? code;
-  static String nativeName(String code) => getName(code)?.nativeName ?? code;
+  static LangInfo? getName(String code) => _languages[code];
+
+  static String englishName(String code) =>
+      getName(code)?.englishName ?? code.toUpperCase();
+  static String nativeName(String code) =>
+      getName(code)?.nativeName ?? code.toUpperCase();
 }
 
 /// Info about a translation language.
@@ -207,9 +212,15 @@ class TranslationManifest {
   final int version;
   final Map<String, List<TranslationVersion>> languages;
 
+  /// Per-language display metadata (english + native names) parsed from the
+  /// manifest. This is the source of truth for language names — there is no
+  /// separate hardcoded list.
+  final Map<String, LangInfo> languageNames;
+
   const TranslationManifest({
     this.version = 1,
     this.languages = const {},
+    this.languageNames = const {},
   });
 
   /// Get all versions across all languages.
@@ -224,11 +235,19 @@ class TranslationManifest {
     final version = json['version'] as int? ?? 1;
     final langData = json['languages'] as Map<String, dynamic>? ?? {};
     final languages = <String, List<TranslationVersion>>{};
+    final languageNames = <String, LangInfo>{};
 
     for (final entry in langData.entries) {
       final code = entry.key;
       final data = entry.value as Map<String, dynamic>;
       final versionsData = data['versions'] as Map<String, dynamic>? ?? {};
+
+      // Capture the language's display names (server-provided).
+      languageNames[code] = LangInfo(
+        code,
+        (data['nativeName'] as String?) ?? code,
+        (data['englishName'] as String?) ?? code,
+      );
 
       final versions = <TranslationVersion>[];
       for (final vEntry in versionsData.entries) {
@@ -241,7 +260,11 @@ class TranslationManifest {
       }
     }
 
-    return TranslationManifest(version: version, languages: languages);
+    return TranslationManifest(
+      version: version,
+      languages: languages,
+      languageNames: languageNames,
+    );
   }
 
   factory TranslationManifest.fromString(String raw) {
@@ -268,8 +291,7 @@ class TranslationFilenameParser {
   }
 
   /// Check if a filename matches the epitaka DB pattern.
-  static bool matches(String filename) =>
-      RegExp(_pattern).hasMatch(filename);
+  static bool matches(String filename) => RegExp(_pattern).hasMatch(filename);
 
   /// Check if a suffix indicates a nissaya database.
   static bool isNissaya(String? suffix) =>
@@ -278,8 +300,8 @@ class TranslationFilenameParser {
   /// Build filename from language code and optional suffix.
   static String build(String code, {String? suffix}) =>
       suffix != null && suffix.isNotEmpty
-          ? 'epitaka_${code}_$suffix.db'
-          : 'epitaka_$code.db';
+      ? 'epitaka_${code}_$suffix.db'
+      : 'epitaka_$code.db';
 
   /// Get the default filename for a language code.
   static String defaultFilename(String code) => 'epitaka_$code.db';
@@ -288,20 +310,23 @@ class TranslationFilenameParser {
   static List<TranslationVersion> scanDirectory(Directory dir) {
     final result = <TranslationVersion>[];
     try {
-      final files =
-          dir.listSync().whereType<File>().map((f) => f.path.split('/').last);
+      final files = dir.listSync().whereType<File>().map(
+        (f) => f.path.split('/').last,
+      );
       for (final filename in files) {
         if (!matches(filename)) continue;
         final (code, suffix) = parse(filename);
         if (code.isEmpty) continue;
-        result.add(TranslationVersion(
-          languageCode: code,
-          suffix: suffix,
-          filename: filename,
-          isNissaya: isNissaya(suffix),
-          isAvailable: true,
-          displayName: suffix ?? 'Default',
-        ));
+        result.add(
+          TranslationVersion(
+            languageCode: code,
+            suffix: suffix,
+            filename: filename,
+            isNissaya: isNissaya(suffix),
+            isAvailable: true,
+            displayName: suffix ?? 'Default',
+          ),
+        );
       }
     } catch (_) {}
     return result;

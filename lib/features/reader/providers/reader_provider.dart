@@ -144,9 +144,42 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   /// All headings for this book (loaded once).
   List<HeadingInfo>? _headings;
 
+  /// Monotonically increasing generation counter.  Incremented before
+  /// every async [_loadBook] call.  When the async load completes, the
+  /// captured generation is compared against the current counter.  If
+  /// they differ, a newer load has started and this stale result is
+  /// discarded.  This prevents race conditions when settings change
+  /// rapidly (e.g. enabling a language then immediately selecting the
+  /// nissaya version in settings).
+  int _loadGeneration = 0;
+
   ReaderDataNotifier(this._ref, this._bookId, {this._scrollToParaId})
-      : super(ReaderDataState(bookId: _bookId)) {
+    : super(ReaderDataState(bookId: _bookId)) {
     _loadBook();
+
+    // Listen for settings changes (e.g. version selection, language enable/
+    // disable) that may require re-loading translation data (including nissaya
+    // databases).  We must watch both [translationVersionMap] (which version
+    // of a translation to use) AND [enabledTranslations] (which languages are
+    // actually shown).  Without this, enabling a language for which a version
+    // was already selected will not trigger a reload, and the translation
+    // won't appear.
+    _ref.listen(settingsProvider, (AppSettings? prev, AppSettings next) {
+      if (prev != null) {
+        final prevHash = Object.hashAll([
+          Object.hashAll(prev.translationVersionMap.entries),
+          Object.hashAll(prev.enabledTranslations),
+        ]);
+        final nextHash = Object.hashAll([
+          Object.hashAll(next.translationVersionMap.entries),
+          Object.hashAll(next.enabledTranslations),
+        ]);
+        if (prevHash != nextHash) {
+          _headings = null; // Reset headings to force clean reload
+          _loadBook();
+        }
+      }
+    });
   }
 
   int? get scrollTarget => _scrollToParaId;
@@ -162,9 +195,12 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   }
 
   Future<void> _loadBook() async {
+    // Capture the generation at the start so we can discard stale results.
+    final gen = ++_loadGeneration;
+
     final sw = Stopwatch()..start();
     developer.log(
-      '[LOAD] Starting full book load for bookId=$_bookId',
+      '[LOAD] Starting full book load for bookId=$_bookId gen=$gen',
       name: 'epitaka.reader',
     );
 
@@ -179,7 +215,29 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         );
       }
 
-      await _loadAllParagraphs();
+      final result = await _loadAllParagraphs();
+
+      // ── Guard: discard if a newer load has started ────────────────
+      if (gen != _loadGeneration) {
+        developer.log(
+          '[LOAD] Stale load for bookId=$_bookId gen=$gen '
+          '(current=$_loadGeneration) — discarded',
+          name: 'epitaka.reader',
+        );
+        return;
+      }
+
+      // Apply the result only after the generation check passes.
+      if (result != null) {
+        state = state.copyWith(
+          paragraphs: result.paragraphs,
+          bookLinks: result.bookLinks,
+          isLoading: false,
+          isLoaded: true,
+          hasMore: false,
+          error: null,
+        );
+      }
 
       sw.stop();
       developer.log(
@@ -193,31 +251,40 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         '[LOAD] Error loading bookId=$_bookId elapsedMs=${sw.elapsedMilliseconds}: $e\n$stack',
         name: 'epitaka.reader',
       );
-      state = state.copyWith(
-        isLoading: false,
-        isLoaded: true,
-        error: e.toString(),
-      );
+      // Only set error state if this is still the latest generation
+      if (gen == _loadGeneration) {
+        state = state.copyWith(
+          isLoading: false,
+          isLoaded: true,
+          error: e.toString(),
+        );
+      }
     }
   }
 
   Future<void> _loadHeadings() async {
     final db = await _ref.read(epitakaDbProvider.future);
-    final rows = await (db.select(db.headings)
-          ..where((h) =>
-              h.bookId.equals(_bookId) & h.level.isSmallerThan(const Constant(10)))
-          ..orderBy([(h) => OrderingTerm(expression: h.paraId)]))
-        .get();
+    final rows =
+        await (db.select(db.headings)
+              ..where(
+                (h) =>
+                    h.bookId.equals(_bookId) &
+                    h.level.isSmallerThan(const Constant(10)),
+              )
+              ..orderBy([(h) => OrderingTerm(expression: h.paraId)]))
+            .get();
     _headings = rows
-        .map((row) => HeadingInfo(
-              bookId: row.bookId,
-              paraId: row.paraId,
-              level: row.level,
-              title: row.title,
-              chapterLen: row.chapterLen,
-              parent: row.parent,
-              scId: row.scId,
-            ))
+        .map(
+          (row) => HeadingInfo(
+            bookId: row.bookId,
+            paraId: row.paraId,
+            level: row.level,
+            title: row.title,
+            chapterLen: row.chapterLen,
+            parent: row.parent,
+            scId: row.scId,
+          ),
+        )
         .toList();
   }
 
@@ -242,11 +309,11 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     if (_headings == null || _headings!.isEmpty) return null;
     ParagraphHeading? best;
     for (final h in _headings!) {
-      if (h.paraId! <= paraId) {
+      if (h.paraId <= paraId) {
         best = ParagraphHeading(
           title: h.title ?? '',
           level: h.level ?? 1,
-          paraId: h.paraId!,
+          paraId: h.paraId,
         );
       } else {
         break; // headings are ordered by paraId ascending
@@ -257,7 +324,13 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
 
   /// Load ALL paragraphs for this book in one shot (no pagination) and
   /// build the full [ParagraphData] list with translations.
-  Future<void> _loadAllParagraphs() async {
+  ///
+  /// Returns `null` when the paragraphs were already emitted (e.g. no
+  /// content found).  Otherwise returns the loaded paragraphs and book
+  /// links.  The caller ([_loadBook]) is responsible for calling
+  /// [state.copyWith] only after the generation check passes.
+  Future<({List<ParagraphData> paragraphs, BookLinksMap bookLinks})?>
+  _loadAllParagraphs() async {
     final db = await _ref.read(epitakaDbProvider.future);
     final settings = _ref.read(settingsProvider);
 
@@ -265,14 +338,17 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
 
     final enabledLangs = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.toList()
-        : (settings.showTranslation ? [settings.primaryTranslationLang] : <String>[]);
+        : (settings.showTranslation
+              ? [settings.primaryTranslationLang]
+              : <String>[]);
 
     // ── Get book info ────────────────────────────────────────────────
     final bookSw = Stopwatch()..start();
-    final books = await (db.select(db.books)
-          ..where((b) => b.bookId.equals(_bookId))
-          ..limit(1))
-        .get();
+    final books =
+        await (db.select(db.books)
+              ..where((b) => b.bookId.equals(_bookId))
+              ..limit(1))
+            .get();
     final book = books.isNotEmpty ? books.first : null;
     bookSw.stop();
     developer.log(
@@ -290,13 +366,14 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
 
     // ── Get all distinct para_ids (no LIMIT/OFFSET) ──────────────────
     final paraSw = Stopwatch()..start();
-    final paraRows = await db.customSelect(
-      'SELECT para_id FROM sentences WHERE book_id = ? '
-      'GROUP BY para_id ORDER BY para_id',
-      variables: [Variable(_bookId)],
-    ).get();
-    final paraIds =
-        paraRows.map((r) => r.data['para_id'] as int).toList();
+    final paraRows = await db
+        .customSelect(
+          'SELECT para_id FROM sentences WHERE book_id = ? '
+          'GROUP BY para_id ORDER BY para_id',
+          variables: [Variable(_bookId)],
+        )
+        .get();
+    final paraIds = paraRows.map((r) => r.data['para_id'] as int).toList();
     paraSw.stop();
     developer.log(
       '[LOAD] para_id query: ${paraSw.elapsedMilliseconds}ms, '
@@ -305,26 +382,32 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     );
 
     if (paraIds.isEmpty) {
-      developer.log('[LOAD] No paragraphs found for bookId=$_bookId', name: 'epitaka.reader');
+      developer.log(
+        '[LOAD] No paragraphs found for bookId=$_bookId',
+        name: 'epitaka.reader',
+      );
       state = state.copyWith(
         isLoading: false,
         isLoaded: true,
         hasMore: false,
         error: null,
       );
-      return;
+      return null;
     }
 
     // ── Get sentences for all para_ids ───────────────────────────────
     final sentSw = Stopwatch()..start();
-    final sentences = await (db.select(db.sentences)
-          ..where(
-              (s) => s.bookId.equals(_bookId) & s.paraId.isIn(paraIds))
-          ..orderBy([
-            (s) => OrderingTerm(expression: s.paraId),
-            (s) => OrderingTerm(expression: s.lineId),
-          ]))
-        .get();
+    // Query by book_id only (indexed). The paraIds we computed above are
+    // exactly the distinct para_ids for this book, so an extra
+    // `para_id IN (...)` (2477 entries) clause only slows SQLite down.
+    final sentences =
+        await (db.select(db.sentences)
+              ..where((s) => s.bookId.equals(_bookId))
+              ..orderBy([
+                (s) => OrderingTerm(expression: s.paraId),
+                (s) => OrderingTerm(expression: s.lineId),
+              ]))
+            .get();
     sentSw.stop();
     developer.log(
       '[LOAD] Sentence query: ${sentSw.elapsedMilliseconds}ms, '
@@ -339,18 +422,14 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       final pageValue = _getPageValue(s, pageColumn);
       paraLines.putIfAbsent(s.paraId, () => []);
       if (s.pali != null && s.pali!.trim().isNotEmpty) {
-        paraLines[s.paraId]!.add(_RawLine(
-          lineId: s.lineId,
-          paliText: s.pali!,
-          pageNumber: pageValue,
-        ));
+        paraLines[s.paraId]!.add(
+          _RawLine(lineId: s.lineId, paliText: s.pali!, pageNumber: pageValue),
+        );
       } else if (pageValue != null && pageValue.isNotEmpty) {
         if (paraLines[s.paraId]!.isEmpty) {
-          paraLines[s.paraId]!.add(_RawLine(
-            lineId: s.lineId,
-            paliText: null,
-            pageNumber: pageValue,
-          ));
+          paraLines[s.paraId]!.add(
+            _RawLine(lineId: s.lineId, paliText: null, pageNumber: pageValue),
+          );
         }
       }
     }
@@ -363,68 +442,83 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     // ── Load all enabled translations in parallel ────────────────────
     final transSw = Stopwatch()..start();
     final transByLang = <String, Map<int, Map<int, String>>>{};
-    await Future.wait(enabledLangs.map((langCode) async {
-      final settings = _ref.read(settingsProvider);
-      final versionSuffix = settings.translationVersionMap[langCode];
-      final isNissaya = versionSuffix != null &&
-          TranslationFilenameParser.isNissaya(versionSuffix);
+    await Future.wait(
+      enabledLangs.map((langCode) async {
+        final settings = _ref.read(settingsProvider);
+        final versionSuffix = settings.translationVersionMap[langCode];
+        final isNissaya =
+            versionSuffix != null &&
+            TranslationFilenameParser.isNissaya(versionSuffix);
 
-      if (isNissaya) {
-        // ── Load from nissaya database ────────────────────────────
-        final filename = TranslationFilenameParser.build(
-          langCode,
-          suffix: versionSuffix,
-        );
-        final nissayaDb =
-            await _ref.read(nissayaDbByFilenameProvider(filename).future);
-        if (nissayaDb == null) return;
+        if (isNissaya) {
+          // ── Load from nissaya database ────────────────────────────
+          final filename = TranslationFilenameParser.build(
+            langCode,
+            suffix: versionSuffix,
+          );
+          final nissayaDb = await _ref.read(
+            nissayaDbByFilenameProvider(filename).future,
+          );
+          if (nissayaDb == null) return;
 
-        try {
-          final nissayaData =
-              await nissayaDb.getBookSentencesFormatted(_bookId);
-          if (nissayaData.isNotEmpty) {
-            transByLang[langCode] = nissayaData;
+          try {
+            final nissayaData = await nissayaDb.getBookSentencesFormatted(
+              _bookId,
+            );
+            if (nissayaData.isNotEmpty) {
+              transByLang[langCode] = nissayaData;
+            }
+          } catch (e) {
+            developer.log(
+              '[LOAD] Nissaya error ($langCode): $e',
+              name: 'epitaka.reader',
+            );
           }
-        } catch (e) {
+        } else {
+          // ── Load from standard translation database ───────────────
+          final lang = TranslationLanguage.fromCode(langCode);
+          final translationDb = await _ref.read(
+            translationDbProvider(lang).future,
+          );
+          if (translationDb == null) return;
+
+          // NOTE: We intentionally query by `book_id` ONLY (the
+          // `(book_id, para_id, line_id)` index covers it) instead of
+          // adding `para_id IN (...)` with every paragraph id. A 2477-element
+          // IN clause forces SQLite to build a huge statement and do a slow
+          // membership check — that alone accounted for ~1s of the load.
+          // We filter out any stray para_ids with an O(1) Set lookup below.
+          final paraIdSet = paraIds is Set<int>
+              ? paraIds as Set<int>
+              : paraIds.toSet();
+          final tSw = Stopwatch()..start();
+          final transSentences = await (translationDb.select(
+            translationDb.translationSentences,
+          )..where((t) => t.bookId.equals(_bookId))).get();
+          tSw.stop();
+
+          final langMap = <int, Map<int, String>>{};
+          for (final t in transSentences) {
+            if (t.translation == null) continue;
+            // Skip para_ids that aren't part of this book's Pāli text.
+            if (!paraIdSet.contains(t.paraId)) continue;
+            langMap.putIfAbsent(t.paraId, () => {});
+            langMap[t.paraId]!.update(
+              t.lineId,
+              (existing) => '$existing ${t.translation}',
+              ifAbsent: () => t.translation!,
+            );
+          }
+          transByLang[langCode] = langMap;
+
           developer.log(
-            '[LOAD] Nissaya error ($langCode): $e',
+            '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
+            'sentences=${transSentences.length}',
             name: 'epitaka.reader',
           );
         }
-      } else {
-        // ── Load from standard translation database ───────────────
-        final lang = TranslationLanguage.fromCode(langCode);
-        final translationDb =
-            await _ref.read(translationDbProvider(lang).future);
-        if (translationDb == null) return;
-
-        final tSw = Stopwatch()..start();
-        final transSentences = await (translationDb
-                .select(translationDb.translationSentences)
-              ..where((t) =>
-                  t.bookId.equals(_bookId) & t.paraId.isIn(paraIds)))
-            .get();
-        tSw.stop();
-
-        final langMap = <int, Map<int, String>>{};
-        for (final t in transSentences) {
-          if (t.translation == null) continue;
-          langMap.putIfAbsent(t.paraId, () => {});
-          langMap[t.paraId]!.update(
-            t.lineId,
-            (existing) => '$existing ${t.translation}',
-            ifAbsent: () => t.translation!,
-          );
-        }
-        transByLang[langCode] = langMap;
-
-        developer.log(
-          '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
-          'sentences=${transSentences.length}',
-          name: 'epitaka.reader',
-        );
-      }
-    }));
+      }),
+    );
     transSw.stop();
     developer.log(
       '[LOAD] All translations loaded: ${transSw.elapsedMilliseconds}ms total, '
@@ -449,7 +543,8 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         }
       }
 
-      final isPageStart = pageNumber != null &&
+      final isPageStart =
+          pageNumber != null &&
           previousPageNumber != null &&
           pageNumber != previousPageNumber;
 
@@ -463,20 +558,24 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           final text = transByLang[lang]?[paraId]?[rl.lineId];
           if (text != null) lineTranslations[lang] = text;
         }
-        lines.add(LineData(
-          lineId: rl.lineId,
-          paliText: rl.paliText,
-          translations: lineTranslations,
-        ));
+        lines.add(
+          LineData(
+            lineId: rl.lineId,
+            paliText: rl.paliText,
+            translations: lineTranslations,
+          ),
+        );
       }
 
-      paragraphs.add(ParagraphData(
-        paraId: paraId,
-        lines: lines,
-        pageNumber: pageNumber ?? previousPageNumber,
-        isPageStart: isPageStart,
-        heading: heading,
-      ));
+      paragraphs.add(
+        ParagraphData(
+          paraId: paraId,
+          lines: lines,
+          pageNumber: pageNumber ?? previousPageNumber,
+          isPageStart: isPageStart,
+          heading: heading,
+        ),
+      );
 
       if (pageNumber != null) {
         previousPageNumber = pageNumber;
@@ -504,15 +603,8 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       name: 'epitaka.reader',
     );
 
-    // ── Emit final state ─────────────────────────────────────────────
-    state = state.copyWith(
-      paragraphs: paragraphs,
-      bookLinks: bookLinks,
-      isLoading: false,
-      isLoaded: true,
-      hasMore: false, // no more pages — everything loaded
-      error: null,
-    );
+    // ── Return data for the caller to emit (after generation check) ──
+    return (paragraphs: paragraphs, bookLinks: bookLinks);
   }
 }
 
@@ -522,18 +614,14 @@ class _RawLine {
   final String? paliText;
   final String? pageNumber;
 
-  const _RawLine({
-    required this.lineId,
-    this.paliText,
-    this.pageNumber,
-  });
+  const _RawLine({required this.lineId, this.paliText, this.pageNumber});
 }
 
 /// Provider that loads reader data for a given book (all paragraphs at once).
-final readerDataProvider = StateNotifierProvider.family<
-    ReaderDataNotifier, ReaderDataState, String>(
-  (ref, bookId) => ReaderDataNotifier(ref, bookId),
-);
+final readerDataProvider =
+    StateNotifierProvider.family<ReaderDataNotifier, ReaderDataState, String>(
+      (ref, bookId) => ReaderDataNotifier(ref, bookId),
+    );
 
 // ---------------------------------------------------------------------------
 // Helpers

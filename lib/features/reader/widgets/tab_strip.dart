@@ -77,9 +77,7 @@ class _TabStripState extends ConsumerState<TabStrip> {
     return Container(
       decoration: BoxDecoration(
         color: colors.surface,
-        border: Border(
-          bottom: BorderSide(color: colors.outlineVariant),
-        ),
+        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -88,52 +86,65 @@ class _TabStripState extends ConsumerState<TabStrip> {
             height: 44,
             child: ReorderableListView.builder(
               scrollDirection: Axis.horizontal,
-              buildDefaultDragHandles: true,
+              buildDefaultDragHandles: false,
               padding: EdgeInsets.symmetric(
-                horizontal:
-                    isDesktop ? AppDimensions.marginDesktop : AppDimensions.marginMobile,
+                horizontal: isDesktop
+                    ? AppDimensions.marginDesktop
+                    : AppDimensions.marginMobile,
               ),
               itemCount: _localTabs.length,
               onReorder: (oldIndex, newIndex) {
+                // ReorderableListView reports newIndex in the list *before*
+                // the dragged item is removed. Both the local update and the
+                // provider apply the standard "decrement when moving down"
+                // adjustment, so we must pass the RAW newIndex to the provider
+                // and only adjust a local copy here. Mutating newIndex before
+                // calling reorderTab caused a double-adjustment (the provider
+                // adjusted it again), which produced wrong positions —
+                // especially noticeable when the active tab was dragged.
+                final adjustedIndex = oldIndex < newIndex
+                    ? newIndex - 1
+                    : newIndex;
+
                 // ── 1. Update local state immediately (same frame) ──
                 // This prevents ReorderableListView from snapping the
                 // item back to its original position after release.
                 setState(() {
-                  if (oldIndex < newIndex) newIndex--;
                   final tab = _localTabs.removeAt(oldIndex);
-                  _localTabs.insert(newIndex, tab);
+                  _localTabs.insert(adjustedIndex, tab);
 
                   // Update local active index after the move
                   if (_localActiveIndex == oldIndex) {
-                    _localActiveIndex = newIndex;
+                    _localActiveIndex = adjustedIndex;
                   } else if (oldIndex < _localActiveIndex &&
-                      newIndex >= _localActiveIndex) {
+                      adjustedIndex >= _localActiveIndex) {
                     _localActiveIndex--;
                   } else if (oldIndex > _localActiveIndex &&
-                      newIndex <= _localActiveIndex) {
+                      adjustedIndex <= _localActiveIndex) {
                     _localActiveIndex++;
                   }
                 });
 
                 // ── 2. Update provider for persistence ──────────────
-                // ref.listen above will sync _localTabs back, which is
-                // a no-op since they already match.
-                ref.read(readerTabsProvider.notifier).reorderTab(
-                    oldIndex, newIndex);
+                // Pass the RAW newIndex; reorderTab applies its own correct
+                // adjustment. ref.listen above will sync _localTabs back,
+                // which is a no-op since they already match.
+                ref
+                    .read(readerTabsProvider.notifier)
+                    .reorderTab(oldIndex, newIndex);
               },
               itemBuilder: (context, index) {
                 final tab = _localTabs[index];
                 final isActive = index == _localActiveIndex;
                 return _TabChip(
                   key: ValueKey('tab-${tab.bookId}'),
+                  index: index,
                   tab: tab,
                   isActive: isActive,
-                  onTap: () => ref
-                      .read(readerTabsProvider.notifier)
-                      .switchTo(index),
-                  onClose: () => ref
-                      .read(readerTabsProvider.notifier)
-                      .closeTab(index),
+                  onTap: () =>
+                      ref.read(readerTabsProvider.notifier).switchTo(index),
+                  onClose: () =>
+                      ref.read(readerTabsProvider.notifier).closeTab(index),
                 );
               },
             ),
@@ -145,6 +156,7 @@ class _TabStripState extends ConsumerState<TabStrip> {
 }
 
 class _TabChip extends StatelessWidget {
+  final int index;
   final ReaderTabInfo tab;
   final bool isActive;
   final VoidCallback onTap;
@@ -152,6 +164,7 @@ class _TabChip extends StatelessWidget {
 
   const _TabChip({
     super.key,
+    required this.index,
     required this.tab,
     required this.isActive,
     required this.onTap,
@@ -164,54 +177,61 @@ class _TabChip extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppDimensions.radiusMd),
-          ),
-          child: Container(
-            height: 40,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? colors.surfaceContainerLowest
-                  : colors.surfaceContainerHigh,
-              border: Border(
-                bottom: BorderSide(
-                  color: isActive ? colors.primary : Colors.transparent,
-                  width: 2,
-                ),
-              ),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppDimensions.radiusMd),
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ]
-                  : null,
+      child: ReorderableDragStartListener(
+        index: index,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppDimensions.radiusMd),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tab.bookId,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: isActive ? colors.primary : colors.onSurfaceVariant,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                      fontSize: 13,
-                    ),
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? colors.surfaceContainerLowest
+                    : colors.surfaceContainerHigh,
+                border: Border(
+                  bottom: BorderSide(
+                    color: isActive ? colors.primary : Colors.transparent,
+                    width: 2,
                   ),
-                  const SizedBox(width: 6),
-                  _CloseButton(onClose: onClose, isActive: isActive),
-                ],
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(AppDimensions.radiusMd),
+                ),
+                boxShadow: isActive
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      tab.bookId,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: isActive
+                            ? colors.primary
+                            : colors.onSurfaceVariant,
+                        fontWeight: isActive
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _CloseButton(onClose: onClose, isActive: isActive),
+                  ],
+                ),
               ),
             ),
           ),
@@ -219,7 +239,6 @@ class _TabChip extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _CloseButton extends StatelessWidget {
@@ -245,9 +264,7 @@ class _CloseButton extends StatelessWidget {
             child: Icon(
               Icons.close,
               size: 14,
-              color: isActive
-                  ? colors.onSurfaceVariant
-                  : colors.outline,
+              color: isActive ? colors.onSurfaceVariant : colors.outline,
             ),
           ),
         ),

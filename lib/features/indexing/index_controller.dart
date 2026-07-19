@@ -66,10 +66,9 @@ class IndexController extends StateNotifier<IndexState> {
 
       debugPrint(
         '[INDEX] controller: needs build '
-        '(paliMissing=${!status.paliBuilt}, '
-        'missingTranslations=${status.missingTranslations.length})',
+        '(paliMissing=${!status.paliBuilt})',
       );
-      state = IndexState(status: IndexStatus.needsTranslationChoice);
+      state = const IndexState.notBuilt();
     } on AppDatabaseCorruptedException catch (e) {
       state = IndexState.corrupted('app_data.db could not be opened: $e');
     } catch (e) {

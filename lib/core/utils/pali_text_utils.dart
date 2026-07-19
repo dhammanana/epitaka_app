@@ -1,10 +1,20 @@
+import 'dart:collection';
+import 'dart:developer' as developer;
+
 import 'pali_script_converter.dart';
 
 /// Returns the best font family name for displaying text in [script].
 ///
 /// Uses the script-specific fonts bundled in `assets/fonts/` when available,
 /// falling back to a general-purpose font otherwise.
-String scriptFontFamily(Script script) {
+///
+/// For scripts that don't yet have a dedicated bundled font (Thai, Khmer,
+/// Tibetan, Bengali, etc.) this returns `null` so Flutter falls back to the
+/// platform's default font — which includes proper rendering (and correct
+/// combining-mark shaping) for those scripts. Returning a Latin font such as
+/// `NotoSerif` here would drop the script's vowel signs / tone marks, since
+/// that font has no glyphs for them.
+String? scriptFontFamily(Script script) {
   switch (script) {
     case Script.sinhala:
       return 'NotoSansSinhala';
@@ -34,10 +44,41 @@ String scriptFontFamily(Script script) {
     case Script.thai:
     case Script.khmer:
     case Script.tibetan:
-      // These scripts don't have dedicated fonts in assets/fonts yet.
-      // NotoSerif may have limited support; fall back to NotoSerif.
-      return 'NotoSerif';
+      // No dedicated font bundled yet — let the platform font handle these
+      // scripts (it has the required glyphs and OpenType shaping).
+      return null;
   }
+}
+
+/// Memoizes [convertPaliToScript] results, keyed by "scriptIndex\u0000text".
+///
+/// Conversion runs inside widget `build()` (via [PaliText]/[PaliHtmlText]), so
+/// the same paragraph text is re-converted on every rebuild. Caching the
+/// result avoids repeating the (now map-backed) conversion work for identical
+/// text. Bounded to avoid unbounded memory growth across books/sessions.
+const int _kConvertCacheCap = 8000;
+final Map<String, String> _convertCache = LinkedHashMap<String, String>();
+
+String _cacheConvert(
+  String text,
+  Script? targetScript,
+  String Function() compute,
+) {
+  final key = '${targetScript?.index ?? -1}\u0000$text';
+  final cached = _convertCache[key];
+  if (cached != null) return cached;
+  final result = compute();
+  if (_convertCache.length >= _kConvertCacheCap) {
+    // Evict the oldest quarter (FIFO via LinkedHashMap insertion order) to
+    // bound memory without dropping every entry at once.
+    final removeCount = _kConvertCacheCap ~/ 4;
+    final keys = _convertCache.keys.toList();
+    for (var i = 0; i < removeCount; i++) {
+      _convertCache.remove(keys[i]);
+    }
+  }
+  _convertCache[key] = result;
+  return result;
 }
 
 /// Converts Roman-script Pāli text (with diacritics) to the target script.
@@ -56,13 +97,20 @@ String convertPaliToScript(String text, Script? targetScript) {
     return TextProcessor.beautify(text, Script.roman);
   }
 
-  // Step 1: Roman → Sinhala (internal intermediate)
-  final sinhalaText = TextProcessor.convertFrom(text, Script.roman);
+  // Step 1: Roman → Sinhala (internal intermediate). This intermediate is
+  // independent of the target script, so cache it under Script.roman.
+  final sinhalaText = _cacheConvert(text, Script.roman, () {
+    final out = TextProcessor.convertFrom(text, Script.roman);
+    return out;
+  });
 
   if (sinhalaText.isEmpty) return text;
 
   // Step 2: Sinhala → target script
-  return TextProcessor.convert(sinhalaText, targetScript);
+  return _cacheConvert(sinhalaText, targetScript, () {
+    final out = TextProcessor.convert(sinhalaText, targetScript!);
+    return out;
+  });
 }
 
 /// Like [convertPaliToScript] but preserves HTML tags.
@@ -107,16 +155,36 @@ String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
 
   // If no HTML tags, fall through to standard conversion
   if (segments.length == 1 && !segments[0].startsWith('<')) {
-    return convertPaliToScript(text, targetScript);
+    final sw = Stopwatch()..start();
+    final out = convertPaliToScript(text, targetScript);
+    sw.stop();
+    if (sw.elapsedMicroseconds > 1500) {
+      developer.log(
+        '[SCRIPT] convert (no-html) ${sw.elapsedMicroseconds}µs len=${text.length}',
+        name: 'epitaka.perf',
+      );
+    }
+    return out;
   }
 
   // Convert only non-tag segments (even-indexed segments are tags)
-  final result = segments.map((segment) {
-    if (segment.startsWith('<') && segment.endsWith('>')) {
-      return segment; // preserve HTML tag as-is
-    }
-    return convertPaliToScript(segment, targetScript);
-  }).join('');
+  final sw = Stopwatch()..start();
+  final result = segments
+      .map((segment) {
+        if (segment.startsWith('<') && segment.endsWith('>')) {
+          return segment; // preserve HTML tag as-is
+        }
+        return convertPaliToScript(segment, targetScript);
+      })
+      .join('');
+  sw.stop();
+  if (sw.elapsedMicroseconds > 1500) {
+    developer.log(
+      '[SCRIPT] convert (html) ${sw.elapsedMicroseconds}µs len=${text.length} '
+      'segments=${segments.length}',
+      name: 'epitaka.perf',
+    );
+  }
 
   return result;
 }
@@ -135,10 +203,12 @@ String convertSearchQueryForScript(String query, Script script) {
 
   // Convert each word individually to preserve word boundaries
   final words = query.split(RegExp(r'\s+'));
-  final converted = words.map((w) {
-    if (w.trim().isEmpty) return w;
-    return convertPaliToScript(w.trim(), script);
-  }).join(' ');
+  final converted = words
+      .map((w) {
+        if (w.trim().isEmpty) return w;
+        return convertPaliToScript(w.trim(), script);
+      })
+      .join(' ');
 
   return converted;
 }

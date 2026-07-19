@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../../../../core/database/app_database.dart';
 import '../../../../core/providers/app_db_provider.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -195,27 +194,31 @@ class ResetDataTile extends ConsumerWidget {
         'exportedAt': DateTime.now().toIso8601String(),
         'appVersion': 'ePitaka',
         'bookmarks': bookmarks
-            .map((b) => {
-                  'name': b.name,
-                  'bookId': b.bookId,
-                  'paraId': b.paraId,
-                  'lineId': b.lineId,
-                  'bookName': b.bookName,
-                  'pageNumber': b.pageNumber,
-                  'createdAt': b.createdAt.toIso8601String(),
-                  'updatedAt': b.updatedAt.toIso8601String(),
-                })
+            .map(
+              (b) => {
+                'name': b.name,
+                'bookId': b.bookId,
+                'paraId': b.paraId,
+                'lineId': b.lineId,
+                'bookName': b.bookName,
+                'pageNumber': b.pageNumber,
+                'createdAt': b.createdAt.toIso8601String(),
+                'updatedAt': b.updatedAt.toIso8601String(),
+              },
+            )
             .toList(),
         'readingHistory': history
-            .map((h) => {
-                  'bookId': h.bookId,
-                  'bookName': h.bookName,
-                  'paraId': h.paraId,
-                  'lineId': h.lineId,
-                  'openedAt': h.openedAt.toIso8601String(),
-                  'updatedAt': h.updatedAt.toIso8601String(),
-                  'readCount': h.readCount,
-                })
+            .map(
+              (h) => {
+                'bookId': h.bookId,
+                'bookName': h.bookName,
+                'paraId': h.paraId,
+                'lineId': h.lineId,
+                'openedAt': h.openedAt.toIso8601String(),
+                'updatedAt': h.updatedAt.toIso8601String(),
+                'readCount': h.readCount,
+              },
+            )
             .toList(),
       };
 
@@ -237,10 +240,7 @@ class ResetDataTile extends ConsumerWidget {
           content: Text('Backup saved to: $filePath'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: 'OK',
-            onPressed: () {},
-          ),
+          action: SnackBarAction(label: 'OK', onPressed: () {}),
         ),
       );
     } catch (e) {

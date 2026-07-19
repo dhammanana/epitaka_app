@@ -24,16 +24,13 @@ enum Script {
   malayalam,
   brahmi,
   tibetan,
-  cyrillic
+  cyrillic,
 }
 
 class _CodePointRange {
   final int start;
   final int end;
-  const _CodePointRange({
-    required this.start,
-    required this.end,
-  });
+  const _CodePointRange({required this.start, required this.end});
 }
 
 class ScriptInfo {
@@ -53,121 +50,137 @@ class ScriptInfo {
 
 const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
-      script: Script.sinhala,
-      nameInLocale: 'සිංහල',
-      localeCode: 'si',
-      codePointRanges: [_CodePointRange(start: 0x0D80, end: 0x0DFF)],
-      index: 0),
+    script: Script.sinhala,
+    nameInLocale: 'සිංහල',
+    localeCode: 'si',
+    codePointRanges: [_CodePointRange(start: 0x0D80, end: 0x0DFF)],
+    index: 0,
+  ),
   ScriptInfo(
-      script: Script.devanagari,
-      nameInLocale: 'हिन्दी',
-      localeCode: 'hi',
-      codePointRanges: [_CodePointRange(start: 0x0900, end: 0x097F)],
-      index: 1),
+    script: Script.devanagari,
+    nameInLocale: 'हिन्दी',
+    localeCode: 'hi',
+    codePointRanges: [_CodePointRange(start: 0x0900, end: 0x097F)],
+    index: 1,
+  ),
   ScriptInfo(
-      script: Script.roman,
-      nameInLocale: 'Roman',
-      localeCode: 'ro',
-      codePointRanges: [
-        _CodePointRange(start: 0x0000, end: 0x017F),
-        _CodePointRange(start: 0x1E00, end: 0x1EFF),
-      ],
-      index: 3), // latin extended and latin extended additional blocks
+    script: Script.roman,
+    nameInLocale: 'Roman',
+    localeCode: 'ro',
+    codePointRanges: [
+      _CodePointRange(start: 0x0000, end: 0x017F),
+      _CodePointRange(start: 0x1E00, end: 0x1EFF),
+    ],
+    index: 3,
+  ), // latin extended and latin extended additional blocks
   ScriptInfo(
-      script: Script.thai,
-      nameInLocale: 'ไทย',
-      localeCode: 'th',
-      codePointRanges: [
-        _CodePointRange(start: 0x0E00, end: 0x0E7F),
-        _CodePointRange(start: 0xF700, end: 0xF70F),
-      ],
-      index: 4),
+    script: Script.thai,
+    nameInLocale: 'ไทย',
+    localeCode: 'th',
+    codePointRanges: [
+      _CodePointRange(start: 0x0E00, end: 0x0E7F),
+      _CodePointRange(start: 0xF700, end: 0xF70F),
+    ],
+    index: 4,
+  ),
   ScriptInfo(
-      script: Script.laos,
-      nameInLocale: 'ລາວ',
-      localeCode: 'lo',
-      codePointRanges: [_CodePointRange(start: 0x0E80, end: 0x0EFF)],
-      index: 5),
+    script: Script.laos,
+    nameInLocale: 'ລາວ',
+    localeCode: 'lo',
+    codePointRanges: [_CodePointRange(start: 0x0E80, end: 0x0EFF)],
+    index: 5,
+  ),
   ScriptInfo(
-      script: Script.myanmar,
-      nameInLocale: 'ဗမာစာ',
-      localeCode: 'my',
-      codePointRanges: [_CodePointRange(start: 0x1000, end: 0x107F)],
-      index: 6),
+    script: Script.myanmar,
+    nameInLocale: 'ဗမာစာ',
+    localeCode: 'my',
+    codePointRanges: [_CodePointRange(start: 0x1000, end: 0x107F)],
+    index: 6,
+  ),
   ScriptInfo(
-      script: Script.khmer,
-      nameInLocale: 'ភាសាខ្មែរ',
-      localeCode: 'km',
-      codePointRanges: [_CodePointRange(start: 0x1780, end: 0x17FF)],
-      index: 7),
+    script: Script.khmer,
+    nameInLocale: 'ភាសាខ្មែរ',
+    localeCode: 'km',
+    codePointRanges: [_CodePointRange(start: 0x1780, end: 0x17FF)],
+    index: 7,
+  ),
   ScriptInfo(
-      script: Script.bengali,
-      nameInLocale: 'বাংলা',
-      localeCode: 'be',
-      codePointRanges: [_CodePointRange(start: 0x0980, end: 0x09FF)],
-      index: 8),
+    script: Script.bengali,
+    nameInLocale: 'বাংলা',
+    localeCode: 'be',
+    codePointRanges: [_CodePointRange(start: 0x0980, end: 0x09FF)],
+    index: 8,
+  ),
   ScriptInfo(
-      script: Script.gurmukhi,
-      nameInLocale: 'ਗੁਰਮੁਖੀ',
-      localeCode: 'gm',
-      codePointRanges: [_CodePointRange(start: 0x0A00, end: 0x0A7F)],
-      index: 9),
+    script: Script.gurmukhi,
+    nameInLocale: 'ਗੁਰਮੁਖੀ',
+    localeCode: 'gm',
+    codePointRanges: [_CodePointRange(start: 0x0A00, end: 0x0A7F)],
+    index: 9,
+  ),
   ScriptInfo(
-      script: Script.taitham,
-      nameInLocale: 'Tai Tham LN',
-      localeCode: 'tt',
-      codePointRanges: [_CodePointRange(start: 0x1A20, end: 0x1AAF)],
-      index: 10),
+    script: Script.taitham,
+    nameInLocale: 'Tai Tham LN',
+    localeCode: 'tt',
+    codePointRanges: [_CodePointRange(start: 0x1A20, end: 0x1AAF)],
+    index: 10,
+  ),
   ScriptInfo(
-      script: Script.gujarati,
-      nameInLocale: 'ગુજરાતી',
-      localeCode: 'gj',
-      codePointRanges: [_CodePointRange(start: 0x0A80, end: 0x0AFF)],
-      index: 11),
+    script: Script.gujarati,
+    nameInLocale: 'ગુજરાતી',
+    localeCode: 'gj',
+    codePointRanges: [_CodePointRange(start: 0x0A80, end: 0x0AFF)],
+    index: 11,
+  ),
   ScriptInfo(
-      script: Script.telugu,
-      nameInLocale: 'తెలుగు',
-      localeCode: 'te',
-      codePointRanges: [_CodePointRange(start: 0x0C00, end: 0x0C7F)],
-      index: 12),
+    script: Script.telugu,
+    nameInLocale: 'తెలుగు',
+    localeCode: 'te',
+    codePointRanges: [_CodePointRange(start: 0x0C00, end: 0x0C7F)],
+    index: 12,
+  ),
   ScriptInfo(
-      script: Script.kannada,
-      nameInLocale: 'ಕನ್ನಡ',
-      localeCode: 'ka',
-      codePointRanges: [_CodePointRange(start: 0x0C80, end: 0x0CFF)],
-      index: 13),
+    script: Script.kannada,
+    nameInLocale: 'ಕನ್ನಡ',
+    localeCode: 'ka',
+    codePointRanges: [_CodePointRange(start: 0x0C80, end: 0x0CFF)],
+    index: 13,
+  ),
   ScriptInfo(
-      script: Script.malayalam,
-      nameInLocale: 'മലയാളം',
-      localeCode: 'mm',
-      codePointRanges: [_CodePointRange(start: 0x0D00, end: 0x0D7F)],
-      index: 14),
+    script: Script.malayalam,
+    nameInLocale: 'മലയാളം',
+    localeCode: 'mm',
+    codePointRanges: [_CodePointRange(start: 0x0D00, end: 0x0D7F)],
+    index: 14,
+  ),
   ScriptInfo(
-      script: Script.brahmi,
-      nameInLocale: 'Brāhmī',
-      localeCode: 'br',
-      //charCodeAt returns two codes for each letter [[0x11000, 0x1107F]]
-      codePointRanges: [
-        _CodePointRange(start: 0xD804, end: 0xD804),
-        _CodePointRange(start: 0xDC00, end: 0xDC7F),
-      ],
-      index: 15),
+    script: Script.brahmi,
+    nameInLocale: 'Brāhmī',
+    localeCode: 'br',
+    //charCodeAt returns two codes for each letter [[0x11000, 0x1107F]]
+    codePointRanges: [
+      _CodePointRange(start: 0xD804, end: 0xD804),
+      _CodePointRange(start: 0xDC00, end: 0xDC7F),
+    ],
+    index: 15,
+  ),
   ScriptInfo(
-      script: Script.tibetan,
-      nameInLocale: 'བོད་སྐད།',
-      localeCode: 'tb',
-      codePointRanges: [_CodePointRange(start: 0x0F00, end: 0x0FFF)],
-      index: 16),
+    script: Script.tibetan,
+    nameInLocale: 'བོད་སྐད།',
+    localeCode: 'tb',
+    codePointRanges: [_CodePointRange(start: 0x0F00, end: 0x0FFF)],
+    index: 16,
+  ),
   ScriptInfo(
-      script: Script.cyrillic,
-      nameInLocale: 'кириллица',
-      localeCode: 'cy',
-      codePointRanges: [
-        _CodePointRange(start: 0x0400, end: 0x04FF),
-        _CodePointRange(start: 0x0300, end: 0x036F),
-      ],
-      index:
-          17), //charCodeAt returns two codes for each letter [[0x11000, 0x1107F]]
+    script: Script.cyrillic,
+    nameInLocale: 'кириллица',
+    localeCode: 'cy',
+    codePointRanges: [
+      _CodePointRange(start: 0x0400, end: 0x04FF),
+      _CodePointRange(start: 0x0300, end: 0x036F),
+    ],
+    index: 17,
+  ), //charCodeAt returns two codes for each letter [[0x11000, 0x1107F]]
 ];
 
 Script? _getScriptForCode(int charCode) {
@@ -201,7 +214,7 @@ const specials = [
     'അ',
     '𑀅',
     'ཨ',
-    'а'
+    'а',
   ],
   [
     'ආ',
@@ -220,7 +233,7 @@ const specials = [
     'ആ',
     '𑀆',
     'ཨཱ',
-    'а̄'
+    'а̄',
   ],
   [
     'ඉ',
@@ -239,7 +252,7 @@ const specials = [
     'ഇ',
     '𑀇',
     'ཨི',
-    'и'
+    'и',
   ],
   [
     'ඊ',
@@ -258,7 +271,7 @@ const specials = [
     'ഈ',
     '𑀈',
     'ཨཱི',
-    'ӣ'
+    'ӣ',
   ],
   [
     'උ',
@@ -277,7 +290,7 @@ const specials = [
     'ഉ',
     '𑀉',
     'ཨུ',
-    'у'
+    'у',
   ],
   [
     'ඌ',
@@ -296,7 +309,7 @@ const specials = [
     'ഊ',
     '𑀊',
     'ཨཱུ',
-    'ӯ'
+    'ӯ',
   ],
   [
     'එ',
@@ -315,7 +328,7 @@ const specials = [
     'ഏ',
     '𑀏',
     'ཨེ',
-    'е'
+    'е',
   ],
   [
     'ඔ',
@@ -334,7 +347,7 @@ const specials = [
     'ഓ',
     '𑀑',
     'ཨོ',
-    'о'
+    'о',
   ],
   // various signs
   [
@@ -354,7 +367,7 @@ const specials = [
     'ം',
     '𑀁',
     '\u0F7E',
-    'м̣'
+    'м̣',
   ], // niggahita - anusawara
   // visarga - not in pali but deva original text has it (thai/lao/tt - not found. using the closest equivalent per wikipedia)
   [
@@ -374,7 +387,7 @@ const specials = [
     'ഃ',
     '𑀂',
     '\u0F7F',
-    'х̣'
+    'х̣',
   ],
   // virama (al - hal). roman/cyrillic need special handling
   [
@@ -394,7 +407,7 @@ const specials = [
     '്',
     '\uD804\uDC46',
     '\u0F84',
-    ''
+    '',
   ],
   // digits
   [
@@ -414,7 +427,7 @@ const specials = [
     '൦',
     '𑁦',
     '༠',
-    '0'
+    '0',
   ],
   [
     '1',
@@ -433,7 +446,7 @@ const specials = [
     '൧',
     '𑁧',
     '༡',
-    '1'
+    '1',
   ],
   [
     '2',
@@ -452,7 +465,7 @@ const specials = [
     '൨',
     '𑁨',
     '༢',
-    '2'
+    '2',
   ],
   [
     '3',
@@ -471,7 +484,7 @@ const specials = [
     '൩',
     '𑁩',
     '༣',
-    '3'
+    '3',
   ],
   [
     '4',
@@ -490,7 +503,7 @@ const specials = [
     '൪',
     '𑁪',
     '༤',
-    '4'
+    '4',
   ],
   [
     '5',
@@ -509,7 +522,7 @@ const specials = [
     '൫',
     '𑁫',
     '༥',
-    '5'
+    '5',
   ],
   [
     '6',
@@ -528,7 +541,7 @@ const specials = [
     '൬',
     '𑁬',
     '༦',
-    '6'
+    '6',
   ],
   [
     '7',
@@ -547,7 +560,7 @@ const specials = [
     '൭',
     '𑁭',
     '༧',
-    '7'
+    '7',
   ],
   [
     '8',
@@ -566,7 +579,7 @@ const specials = [
     '൮',
     '𑁮',
     '༨',
-    '8'
+    '8',
   ],
   [
     '9',
@@ -585,8 +598,8 @@ const specials = [
     '൯',
     '𑁯',
     '༩',
-    '9'
-  ]
+    '9',
+  ],
 ];
 
 const consos = [
@@ -608,7 +621,7 @@ const consos = [
     'ക',
     '𑀓',
     'ཀ',
-    'к'
+    'к',
   ],
   [
     'ඛ',
@@ -627,7 +640,7 @@ const consos = [
     'ഖ',
     '𑀔',
     'ཁ',
-    'кх'
+    'кх',
   ],
   [
     'ග',
@@ -646,7 +659,7 @@ const consos = [
     'ഗ',
     '𑀕',
     'ག',
-    'г'
+    'г',
   ],
   [
     'ඝ',
@@ -665,7 +678,7 @@ const consos = [
     'ഘ',
     '𑀖',
     'གྷ',
-    'гх'
+    'гх',
   ],
   [
     'ඞ',
@@ -684,7 +697,7 @@ const consos = [
     'ങ',
     '𑀗',
     'ང',
-    'н̇'
+    'н̇',
   ],
   // palatal stops
   [
@@ -704,7 +717,7 @@ const consos = [
     'ച',
     '𑀘',
     'ཙ',
-    'ч'
+    'ч',
   ],
   [
     'ඡ',
@@ -723,7 +736,7 @@ const consos = [
     'ഛ',
     '𑀙',
     'ཚ',
-    'чх'
+    'чх',
   ],
   [
     'ජ',
@@ -742,7 +755,7 @@ const consos = [
     'ജ',
     '𑀚',
     'ཛ',
-    'дж'
+    'дж',
   ],
   [
     'ඣ',
@@ -761,7 +774,7 @@ const consos = [
     'ഝ',
     '𑀛',
     'ཛྷ',
-    'джх'
+    'джх',
   ],
   [
     'ඤ',
@@ -780,7 +793,7 @@ const consos = [
     'ഞ',
     '𑀜',
     'ཉ',
-    'н̃'
+    'н̃',
   ],
   // retroflex stops
   [
@@ -800,7 +813,7 @@ const consos = [
     'ട',
     '𑀝',
     'ཊ',
-    'т̣'
+    'т̣',
   ],
   [
     'ඨ',
@@ -819,7 +832,7 @@ const consos = [
     'ഠ',
     '𑀞',
     'ཋ',
-    'т̣х'
+    'т̣х',
   ],
   [
     'ඩ',
@@ -838,7 +851,7 @@ const consos = [
     'ഡ',
     '𑀟',
     'ཌ',
-    'д̣'
+    'д̣',
   ],
   [
     'ඪ',
@@ -857,7 +870,7 @@ const consos = [
     'ഢ',
     '𑀠',
     'ཌྷ',
-    'д̣х'
+    'д̣х',
   ],
   [
     'ණ',
@@ -876,7 +889,7 @@ const consos = [
     'ണ',
     '𑀡',
     'ཎ',
-    'н̣'
+    'н̣',
   ],
   // dental stops
   [
@@ -896,7 +909,7 @@ const consos = [
     'ത',
     '𑀢',
     'ཏ',
-    'т'
+    'т',
   ],
   [
     'ථ',
@@ -915,7 +928,7 @@ const consos = [
     'ഥ',
     '𑀣',
     'ཐ',
-    'тх'
+    'тх',
   ],
   [
     'ද',
@@ -934,7 +947,7 @@ const consos = [
     'ദ',
     '𑀤',
     'ད',
-    'д'
+    'д',
   ],
   [
     'ධ',
@@ -953,7 +966,7 @@ const consos = [
     'ധ',
     '𑀥',
     'དྷ',
-    'дх'
+    'дх',
   ],
   [
     'න',
@@ -972,7 +985,7 @@ const consos = [
     'ന',
     '𑀦',
     'ན',
-    'н'
+    'н',
   ],
   // labial stops
   [
@@ -992,7 +1005,7 @@ const consos = [
     'പ',
     '𑀧',
     'པ',
-    'п'
+    'п',
   ],
   [
     'ඵ',
@@ -1011,7 +1024,7 @@ const consos = [
     'ഫ',
     '𑀨',
     'ཕ',
-    'пх'
+    'пх',
   ],
   [
     'බ',
@@ -1030,7 +1043,7 @@ const consos = [
     'ബ',
     '𑀩',
     'བ',
-    'б'
+    'б',
   ],
   [
     'භ',
@@ -1049,7 +1062,7 @@ const consos = [
     'ഭ',
     '𑀪',
     'བྷ',
-    'бх'
+    'бх',
   ],
   [
     'ම',
@@ -1068,7 +1081,7 @@ const consos = [
     'മ',
     '𑀫',
     'མ',
-    'м'
+    'м',
   ],
   // liquids, fricatives, etc.
   [
@@ -1088,7 +1101,7 @@ const consos = [
     'യ',
     '𑀬',
     'ཡ',
-    'й'
+    'й',
   ],
   [
     'ර',
@@ -1107,7 +1120,7 @@ const consos = [
     'ര',
     '𑀭',
     'ར',
-    'р'
+    'р',
   ],
   [
     'ල',
@@ -1126,7 +1139,7 @@ const consos = [
     'ല',
     '𑀮',
     'ལ',
-    'л'
+    'л',
   ],
   [
     'ළ',
@@ -1145,7 +1158,7 @@ const consos = [
     'ള',
     '𑀴',
     'ལ༹',
-    'л̣'
+    'л̣',
   ],
   [
     'ව',
@@ -1164,7 +1177,7 @@ const consos = [
     'വ',
     '𑀯',
     'ཝ',
-    'в'
+    'в',
   ],
   [
     'ස',
@@ -1183,7 +1196,7 @@ const consos = [
     'സ',
     '𑀲',
     'ས',
-    'с'
+    'с',
   ],
   [
     'හ',
@@ -1202,8 +1215,8 @@ const consos = [
     'ഹ',
     '𑀳',
     'ཧ',
-    'х'
-  ]
+    'х',
+  ],
 ];
 
 const vowels = [
@@ -1225,7 +1238,7 @@ const vowels = [
     'ാ',
     '𑀸',
     '\u0F71',
-    'а̄'
+    'а̄',
   ],
   [
     'ි',
@@ -1244,7 +1257,7 @@ const vowels = [
     'ി',
     '𑀺',
     '\u0F72',
-    'и'
+    'и',
   ],
   [
     'ී',
@@ -1263,7 +1276,7 @@ const vowels = [
     'ീ',
     '𑀻',
     '\u0F71\u0F72',
-    'ӣ'
+    'ӣ',
   ],
   [
     'ු',
@@ -1282,7 +1295,7 @@ const vowels = [
     'ു',
     '𑀼',
     '\u0F74',
-    'у'
+    'у',
   ],
   [
     'ූ',
@@ -1301,7 +1314,7 @@ const vowels = [
     'ൂ',
     '𑀽',
     '\u0F71\u0F74',
-    'ӯ'
+    'ӯ',
   ],
   [
     'ෙ',
@@ -1320,7 +1333,7 @@ const vowels = [
     'േ',
     '𑁂',
     '\u0F7A',
-    'е'
+    'е',
   ], //for th/lo - should appear in front
   [
     'ො',
@@ -1339,8 +1352,8 @@ const vowels = [
     'ോ',
     '𑁄',
     '\u0F7C',
-    'о'
-  ] //for th/lo - should appear in front
+    'о',
+  ], //for th/lo - should appear in front
 ];
 const sinhalaConsonantRange = 'ක-ෆ';
 const thaiConsonantRange = 'ก-ฮ';
@@ -1349,8 +1362,10 @@ const myanmarConsonantRange = 'က-ဠ';
 
 String beautifySinhala(String text, {Script? script, String rendType = ''}) {
   // change joiners before U+0DBA Yayanna and U+0DBB Rayanna to Virama + ZWJ
-  return text.replaceAllMapped(RegExp('\u0DCA([\u0DBA\u0DBB])'),
-      (match) => '\u0DCA\u200D${match.group(1)}');
+  return text.replaceAllMapped(
+    RegExp('\u0DCA([\u0DBA\u0DBB])'),
+    (match) => '\u0DCA\u200D${match.group(1)}',
+  );
 }
 
 String unbeautifySinhala(String text) {
@@ -1362,26 +1377,36 @@ String unbeautifySinhala(String text) {
 String beautifyMyanmar(String text, {Script? script, String rendType = ''}) {
   // new unicode 5.1 spec https://www.unicode.org/notes/tn11/UTN11_3.pdf
   text = text.replaceAll('[,;]', '၊'); // comma/semicolon -> single line
-  text = text.replaceAll('[\u2026\u0964\u0965]+',
-      '။'); // ellipsis/danda/double danda -> double line
+  text = text.replaceAll(
+    '[\u2026\u0964\u0965]+',
+    '။',
+  ); // ellipsis/danda/double danda -> double line
   text = text.replaceAll('ဉ\u1039ဉ', 'ည'); // kn + kna has a single char
-  text =
-      text.replaceAll('သ\u1039သ', 'ဿ'); // s + sa has a single char (great sa)
-  text = text.replaceAllMapped(RegExp('င္([က-ဠ])'),
-      (match) => 'င\u103A္${match.group(1)}'); // kinzi - ඞ + al
+  text = text.replaceAll(
+    'သ\u1039သ',
+    'ဿ',
+  ); // s + sa has a single char (great sa)
+  text = text.replaceAllMapped(
+    RegExp('င္([က-ဠ])'),
+    (match) => 'င\u103A္${match.group(1)}',
+  ); // kinzi - ඞ + al
   text = text.replaceAll('္ယ', 'ျ'); // yansaya  - yapin
   text = text.replaceAll('္ရ', 'ြ'); // rakar - yayit
   text = text.replaceAll('္ဝ', 'ွ'); // al + wa - wahswe
   text = text.replaceAll('္ဟ', 'ှ'); // al + ha - hahto
   // following code for tall aa is from https://www.facebook.com/pndaza.mlm
-  text = text.replaceAllMapped(RegExp('([ခဂငဒပဝ]ေ?)\u102c'),
-      (match) => "${match.group(1)}\u102b"); // aa to tall aa
   text = text.replaceAllMapped(
-      RegExp('(က္ခ|န္ဒ|ပ္ပ|မ္ပ)(ေ?)\u102b'),
-      (match) =>
-          "${match.group(1)}${match.group(2)}\u102c"); // restore back tall aa to aa for some pattern
-  text = text.replaceAllMapped(RegExp('(ဒ္ဓ|ဒွ)(ေ?)\u102c'),
-      (match) => "${match.group(1)}${match.group(2)}\u102b");
+    RegExp('([ခဂငဒပဝ]ေ?)\u102c'),
+    (match) => "${match.group(1)}\u102b",
+  ); // aa to tall aa
+  text = text.replaceAllMapped(
+    RegExp('(က္ခ|န္ဒ|ပ္ပ|မ္ပ)(ေ?)\u102b'),
+    (match) => "${match.group(1)}${match.group(2)}\u102c",
+  ); // restore back tall aa to aa for some pattern
+  text = text.replaceAllMapped(
+    RegExp('(ဒ္ဓ|ဒွ)(ေ?)\u102c'),
+    (match) => "${match.group(1)}${match.group(2)}\u102b",
+  );
   return text.replaceAll('သင်္ဃ', 'သံဃ');
 }
 
@@ -1393,11 +1418,15 @@ String unbeautifyMyanmar(String text) {
   text = text.replaceAll('ြ', '္ရ'); // rakar - yayit
   text = text.replaceAll('ျ', '္ယ'); // yansaya  - yapin
   text = text.replaceAll('\u103A', ''); // kinzi
-  text =
-      text.replaceAll('ဿ', 'သ\u1039သ'); // s + sa has a single char (great sa)
+  text = text.replaceAll(
+    'ဿ',
+    'သ\u1039သ',
+  ); // s + sa has a single char (great sa)
   text = text.replaceAll('ည', 'ဉ\u1039ဉ'); // nnga
-  text = text.replaceAll('သံဃ',
-      'သင္ဃ'); // nigghahita to ṅ for this word for searching - from Pn Daza
+  text = text.replaceAll(
+    'သံဃ',
+    'သင္ဃ',
+  ); // nigghahita to ṅ for this word for searching - from Pn Daza
 
   text = text.replaceAll('၊', ','); // single line -> comma
   return text.replaceAll('။', '.'); // double line -> period
@@ -1420,14 +1449,20 @@ String beautifyCommon(String text, {Script? script, String rendType = ''}) {
   text = text.replaceAll('॰…', '…');
 
   text = text.replaceAll(
-      '॰', '·'); // abbre sign changed - prevent capitalization in notes
+    '॰',
+    '·',
+  ); // abbre sign changed - prevent capitalization in notes
   text = text.replaceAll(
-      '[।॥]', '.'); //all other single and double dandas converted to period
+    '[।॥]',
+    '.',
+  ); //all other single and double dandas converted to period
 
   // cleanup punctuation 1) two spaces to one
   // 2) There should be no spaces before these punctuation marks.
   text = text.replaceAllMapped(
-      RegExp('\\s([\\s,!;\\?\\.])'), (match) => '${match.group(1)}');
+    RegExp('\\s([\\s,!;\\?\\.])'),
+    (match) => '${match.group(1)}',
+  );
   return text;
 }
 
@@ -1455,12 +1490,16 @@ String unCapitalize(String text) => text.toLowerCase();
 
 String swapEO(String text, {Script? script, String rendType = ''}) {
   if (script == Script.thai) {
-    return text.replaceAllMapped(RegExp('([ก-ฮ])([เโ])'),
-        (match) => '${match.group(2)}${match.group(1)}');
+    return text.replaceAllMapped(
+      RegExp('([ก-ฮ])([เโ])'),
+      (match) => '${match.group(2)}${match.group(1)}',
+    );
   }
   if (script == Script.laos) {
-    return text.replaceAllMapped(RegExp('([ກ-ຮ])([ເໂ])'),
-        (match) => '${match.group(2)}${match.group(1)}');
+    return text.replaceAllMapped(
+      RegExp('([ກ-ຮ])([ເໂ])'),
+      (match) => '${match.group(2)}${match.group(1)}',
+    );
   }
   return text;
   // throw new Error(`Unsupported script ${script} for swap_e_o method.`);
@@ -1469,12 +1508,16 @@ String swapEO(String text, {Script? script, String rendType = ''}) {
 // to be used when converting from
 String unSwapEO(String text, {Script? script}) {
   if (script == Script.thai) {
-    return text.replaceAllMapped(RegExp('([เโ])([ก-ฮ])'),
-        (match) => '${match.group(2)}${match.group(1)}');
+    return text.replaceAllMapped(
+      RegExp('([เโ])([ก-ฮ])'),
+      (match) => '${match.group(2)}${match.group(1)}',
+    );
   }
   if (script == Script.laos) {
-    return text.replaceAllMapped(RegExp('([ເໂ])([ກ-ຮ])'),
-        (match) => '${match.group(2)}${match.group(1)}');
+    return text.replaceAllMapped(
+      RegExp('([ເໂ])([ກ-ຮ])'),
+      (match) => '${match.group(2)}${match.group(1)}',
+    );
   }
   return text;
   // throw new Error(`Unsupported script ${script} for un_swap_e_o method.`);
@@ -1613,8 +1656,19 @@ List<Function> unbeautifyFucn(Script script) {
   }
 }
 
-List<List<Object>> prepareHashMaps(int fromIndex, int toIndex,
-    [bool useVowels = true]) {
+List<List<Object>> prepareHashMaps(
+  int fromIndex,
+  int toIndex, [
+  bool useVowels = true,
+]) {
+  // The generated maps depend only on the (from, to, useVowels) triple, which is
+  // constant per script. Building them is expensive (iterates the full
+  // consonant/special/vowel tables and constructs Maps), so cache the result
+  // instead of rebuilding it on every conversion call.
+  final cacheKey = '$fromIndex-$toIndex-$useVowels';
+  final cached = _hashMapCache[cacheKey];
+  if (cached != null) return cached;
+
   var _vowels = useVowels ? vowels : [];
   final List<List<String>> fullAr = [...consos, ...specials, ..._vowels];
   final List<List<List<String>>> finalAr = [[], [], []];
@@ -1625,16 +1679,25 @@ List<List<Object>> prepareHashMaps(int fromIndex, int toIndex,
     }
   }
   finalAr.where((element) => element.isNotEmpty).toList();
-  return List.from(finalAr
-      .where((element) => element.isNotEmpty)
-      .toList()
-      .map((element) => [
+  final result = List<List<Object>>.from(
+    finalAr
+        .where((element) => element.isNotEmpty)
+        .toList()
+        .map(
+          (element) => [
             element[0][0].length,
-            {for (var v in element) v[0]: v[1]}
-          ])
-      .toList()
-      .reversed); // longest is first
+            {for (var v in element) v[0]: v[1]},
+          ],
+        )
+        .toList()
+        .reversed,
+  ); // longest is first
+  _hashMapCache[cacheKey] = result;
+  return result;
 }
+
+/// Memoized results of [prepareHashMaps], keyed by "from-to-useVowels".
+final Map<String, List<List<Object>>> _hashMapCache = {};
 
 String replaceByMaps(String inputText, List<List<Object>> hashMaps) {
   var outputAr = [];
@@ -1673,13 +1736,19 @@ String replaceByMaps(String inputText, List<List<Object>> hashMaps) {
 // cyrillic mapping extracted from https://dhamma.ru/scripts/transdisp.js - -TODO capitalize cyrl too
 String insertA(String text, Script script) {
   final a = (script == Script.cyrillic) ? '\u0430' : 'a'; // roman a or cyrl a
-  text = text.replaceAllMapped(RegExp('([ක-ෆ])([^\u0DCF-\u0DDF\u0DCA$a])'),
-      (match) => '${match.group(1)}$a${match.group(2)}');
-  text = text.replaceAllMapped(RegExp('([ක-ෆ])([^\u0DCF-\u0DDF\u0DCA$a])'),
-      (match) => '${match.group(1)}$a${match.group(2)}');
+  text = text.replaceAllMapped(
+    RegExp('([ක-ෆ])([^\u0DCF-\u0DDF\u0DCA$a])'),
+    (match) => '${match.group(1)}$a${match.group(2)}',
+  );
+  text = text.replaceAllMapped(
+    RegExp('([ක-ෆ])([^\u0DCF-\u0DDF\u0DCA$a])'),
+    (match) => '${match.group(1)}$a${match.group(2)}',
+  );
   // conso at the end of string not matched by regex above
   return text.replaceAllMapped(
-      RegExp(r'([ක-ෆ])$'), (match) => '${match.group(1)}$a');
+    RegExp(r'([ක-ෆ])$'),
+    (match) => '${match.group(1)}$a',
+  );
 }
 
 const IV_TO_DV = {
@@ -1690,18 +1759,26 @@ const IV_TO_DV = {
   'උ': 'ු',
   'ඌ': 'ූ',
   'එ': 'ෙ',
-  'ඔ': 'ො'
+  'ඔ': 'ො',
 };
 String removeA(String text, Script script) {
-  text = text.replaceAllMapped(RegExp('([ක-ෆ])([^අආඉඊඋඌඑඔ\u0DCA])'),
-      (match) => '${match.group(1)}\u0DCA${match.group(2)}');
+  text = text.replaceAllMapped(
+    RegExp('([ක-ෆ])([^අආඉඊඋඌඑඔ\u0DCA])'),
+    (match) => '${match.group(1)}\u0DCA${match.group(2)}',
+  );
   // done twice to match successive hal
-  text = text.replaceAllMapped(RegExp('([ක-ෆ])([^අආඉඊඋඌඑඔ\u0DCA])'),
-      (match) => '${match.group(1)}\u0DCA${match.group(2)}');
-  text = text.replaceAllMapped(RegExp(r'([ක-ෆ])$'),
-      (match) => '${match.group(1)}\u0DCA'); // last conso not matched by above
-  text = text.replaceAllMapped(RegExp(r'([ක-ෆ])([අආඉඊඋඌඑඔ])'),
-      (match) => '${match.group(1)}${IV_TO_DV[match.group(2)]}');
+  text = text.replaceAllMapped(
+    RegExp('([ක-ෆ])([^අආඉඊඋඌඑඔ\u0DCA])'),
+    (match) => '${match.group(1)}\u0DCA${match.group(2)}',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'([ක-ෆ])$'),
+    (match) => '${match.group(1)}\u0DCA',
+  ); // last conso not matched by above
+  text = text.replaceAllMapped(
+    RegExp(r'([ක-ෆ])([අආඉඊඋඌඑඔ])'),
+    (match) => '${match.group(1)}${IV_TO_DV[match.group(2)]}',
+  );
   return text;
 }
 

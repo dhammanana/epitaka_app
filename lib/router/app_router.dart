@@ -6,12 +6,14 @@ import '../features/reader/screens/reader_screen.dart';
 import '../features/search/widgets/search_screen.dart';
 import '../features/settings/screens/appearance_settings_screen.dart';
 import '../features/settings/screens/dictionary_settings_screen.dart';
+import '../features/settings/screens/help_screen.dart';
 import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
 import '../features/settings/screens/tts_settings_screen.dart';
 import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
+import '../shared/widgets/responsive_scaffold.dart';
 
 /// The route paths for the app.
 class AppRoutes {
@@ -27,6 +29,7 @@ class AppRoutes {
   static const ttsSettings = '/settings/tts';
   static const ttsReplacements = '/settings/tts/replacements';
   static const dictionarySettings = '/settings/dictionary';
+  static const help = '/settings/help';
   static const contents = '/contents/:bookId';
   static const gavesana = '/gavesana';
 }
@@ -47,7 +50,8 @@ GoRouter buildRouter() {
       GoRoute(
         path: '/reader',
         name: 'reader',
-        builder: (context, state) => const ReaderScreen(),
+        builder: (context, state) =>
+            const ResponsiveScaffold(child: ReaderScreen()),
       ),
       GoRoute(
         path: '/search',
@@ -91,6 +95,11 @@ GoRouter buildRouter() {
             name: 'dictionarySettings',
             builder: (context, state) => const DictionarySettingsScreen(),
           ),
+          GoRoute(
+            path: 'help',
+            name: 'help',
+            builder: (context, state) => const HelpScreen(),
+          ),
         ],
       ),
       GoRoute(
@@ -105,7 +114,8 @@ GoRouter buildRouter() {
           final bookId = state.pathParameters['bookId']!;
           final bookName = state.uri.queryParameters['bookName'] ?? bookId;
           final currentParaId = int.tryParse(
-              state.uri.queryParameters['currentParaId'] ?? '');
+            state.uri.queryParameters['currentParaId'] ?? '',
+          );
           return ContentsScreen(
             bookId: bookId,
             bookName: bookName,

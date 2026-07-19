@@ -24,28 +24,22 @@ enum AppLanguage {
 }
 
 /// Theme mode preference.
-enum ThemePreference {
-  system,
-  light,
-  dark,
-}
+enum ThemePreference { system, light, dark }
 
 /// Library expand level for the book browser.
 enum LibraryExpandLevel {
   /// All book groups and nikayas are collapsed by default.
   collapsed,
+
   /// Category tabs are expanded, but groups inside (sub-nikayas) are collapsed.
   category,
+
   /// All books and groups are fully expanded.
   expand,
 }
 
 /// Display mode for translations in the reader.
-enum TranslationDisplayMode {
-  hideJoinLines,
-  lineByLine,
-  sideBySide,
-}
+enum TranslationDisplayMode { hideJoinLines, lineByLine, sideBySide }
 
 /// Font family choices for reading.
 enum ReadingFontFamily {
@@ -120,14 +114,14 @@ class LanguageTypography {
   }
 
   Map<String, dynamic> toJson() => {
-        'fontSize': fontSize,
-        'lineHeight': lineHeight,
-        'fontFamily': fontFamily.code,
-        'bold': bold,
-        'italic': italic,
-        'underline': underline,
-        if (color != null) 'color': color!.toARGB32().toRadixString(16),
-      };
+    'fontSize': fontSize,
+    'lineHeight': lineHeight,
+    'fontFamily': fontFamily.code,
+    'bold': bold,
+    'italic': italic,
+    'underline': underline,
+    if (color != null) 'color': color!.toARGB32().toRadixString(16),
+  };
 
   factory LanguageTypography.fromJson(Map<String, dynamic> json) {
     Color? color;
@@ -140,7 +134,8 @@ class LanguageTypography {
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 17,
       lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 28 / 17,
       fontFamily: ReadingFontFamily.fromCode(
-          (json['fontFamily'] as String?) ?? 'serif'),
+        (json['fontFamily'] as String?) ?? 'serif',
+      ),
       bold: (json['bold'] as bool?) ?? false,
       italic: (json['italic'] as bool?) ?? false,
       underline: (json['underline'] as bool?) ?? false,
@@ -290,7 +285,8 @@ class AppSettings {
   final ColorPair translationColorPair;
 
   /// Convenience: resolve Pāli color for the current brightness.
-  Color paliColorFor(Brightness brightness) => paliColorPair.resolve(brightness);
+  Color paliColorFor(Brightness brightness) =>
+      paliColorPair.resolve(brightness);
 
   /// Convenience: resolve translation color for the current brightness.
   Color translationColorFor(Brightness brightness) =>
@@ -414,13 +410,16 @@ class AppSettings {
       ttsSpeed: ttsSpeed ?? this.ttsSpeed,
       ttsPitch: ttsPitch ?? this.ttsPitch,
       ttsSupertonicVoice: ttsSupertonicVoice ?? this.ttsSupertonicVoice,
-      ttsSupertonicLanguage: ttsSupertonicLanguage ?? this.ttsSupertonicLanguage,
-      ttsSupertonicDownloaded: ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
+      ttsSupertonicLanguage:
+          ttsSupertonicLanguage ?? this.ttsSupertonicLanguage,
+      ttsSupertonicDownloaded:
+          ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
       libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
-      translationVersionMap: translationVersionMap ?? this.translationVersionMap,
+      translationVersionMap:
+          translationVersionMap ?? this.translationVersionMap,
     );
   }
 
@@ -515,9 +514,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   String _saveLanguageOverrides(Map<String, LanguageTypography> overrides) {
-    return jsonEncode(overrides.map(
-      (key, value) => MapEntry(key, value.toJson()),
-    ));
+    return jsonEncode(
+      overrides.map((key, value) => MapEntry(key, value.toJson())),
+    );
   }
 
   LanguageTypography _loadPaliTypography() {
@@ -577,8 +576,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         (l) => l.code == appLangCode,
         orElse: () => AppLanguage.english,
       ),
-      themePreference: ThemePreference.values[
-          prefs.getInt('theme_preference') ?? ThemePreference.system.index],
+      themePreference:
+          ThemePreference.values[prefs.getInt('theme_preference') ??
+              ThemePreference.system.index],
       primaryTranslationLang: prefs.getString('primary_lang') ?? 'en',
       secondaryTranslationLang: prefs.getString('secondary_lang') ?? 'th',
       showPali: prefs.getBool('show_pali') ?? true,
@@ -609,13 +609,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsPitch: prefs.getDouble('tts_pitch') ?? 1.0,
       ttsSupertonicVoice: prefs.getString('tts_supertonic_voice') ?? 'M1',
       ttsSupertonicLanguage: prefs.getString('tts_supertonic_language') ?? 'en',
-      ttsSupertonicDownloaded: prefs.getBool('tts_supertonic_downloaded') ?? false,
-      copyQuoteFormat: _parseCopyQuoteFormat(prefs.getString('copy_quote_format') ?? 'none'),
-      copyDefaultScope: _parseCopyScope(prefs.getString('copy_default_scope') ?? 'both'),
+      ttsSupertonicDownloaded:
+          prefs.getBool('tts_supertonic_downloaded') ?? false,
+      copyQuoteFormat: _parseCopyQuoteFormat(
+        prefs.getString('copy_quote_format') ?? 'none',
+      ),
+      copyDefaultScope: _parseCopyScope(
+        prefs.getString('copy_default_scope') ?? 'both',
+      ),
       paliScript: _parseScript(prefs.getString('pali_script')),
-      libraryExpandLevel: LibraryExpandLevel.values[
-        prefs.getInt('library_expand_level') ?? LibraryExpandLevel.category.index
-      ],
+      libraryExpandLevel:
+          LibraryExpandLevel.values[prefs.getInt('library_expand_level') ??
+              LibraryExpandLevel.category.index],
       translationVersionMap: _loadTranslationVersionMap(),
     );
   }
@@ -652,11 +657,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setSideBySide(bool value) async {
     state = state.copyWith(
-        translationDisplayMode: value
-            ? TranslationDisplayMode.sideBySide
-            : TranslationDisplayMode.lineByLine);
+      translationDisplayMode: value
+          ? TranslationDisplayMode.sideBySide
+          : TranslationDisplayMode.lineByLine,
+    );
     await _prefs?.setString(
-        'translation_display_mode', state.translationDisplayMode.name);
+      'translation_display_mode',
+      state.translationDisplayMode.name,
+    );
   }
 
   Future<void> setTranslationDisplayMode(TranslationDisplayMode mode) async {
@@ -685,7 +693,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   Future<void> setLanguageTypography(
-      String langCode, LanguageTypography typography) async {
+    String langCode,
+    LanguageTypography typography,
+  ) async {
     final overrides = Map<String, LanguageTypography>.from(
       state.typography.languageOverrides,
     );
@@ -701,9 +711,42 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setPaliTypography(LanguageTypography typography) async {
     final newTypo = state.typography.copyWith(pali: typography);
     state = state.copyWith(typography: newTypo);
+    await _prefs?.setString('pali_typography', jsonEncode(typography.toJson()));
+  }
+
+  /// Increase the font size for Pāli and every enabled translation by
+  /// [delta] (clamped to the 12–40px range). Used by the keyboard
+  /// shortcuts (Ctrl/Cmd + / -).
+  Future<void> increaseFontSize([double delta = 1]) async {
+    await _adjustFontSize(delta);
+  }
+
+  /// Decrease the font size for Pāli and every enabled translation by
+  /// [delta] (clamped to the 12–40px range).
+  Future<void> decreaseFontSize([double delta = 1]) async {
+    await _adjustFontSize(-delta);
+  }
+
+  Future<void> _adjustFontSize(double delta) async {
+    final typography = state.typography;
+    final newPali = typography.pali.copyWith(
+      fontSize: (typography.pali.fontSize + delta).clamp(12.0, 40.0),
+    );
+    final newOverrides = <String, LanguageTypography>{};
+    typography.languageOverrides.forEach((lang, t) {
+      newOverrides[lang] = t.copyWith(
+        fontSize: (t.fontSize + delta).clamp(12.0, 40.0),
+      );
+    });
+    final newTypo = typography.copyWith(
+      pali: newPali,
+      languageOverrides: newOverrides,
+    );
+    state = state.copyWith(typography: newTypo);
+    await _prefs?.setString('pali_typography', jsonEncode(newPali.toJson()));
     await _prefs?.setString(
-      'pali_typography',
-      jsonEncode(typography.toJson()),
+      'lang_typography_overrides',
+      _saveLanguageOverrides(newOverrides),
     );
   }
 
@@ -731,13 +774,17 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final pair = ColorPair.fromLight(lightColor);
     state = state.copyWith(translationColorPair: pair);
     await _prefs?.setString(
-        'translation_color_pair', jsonEncode(pair.toJson()));
+      'translation_color_pair',
+      jsonEncode(pair.toJson()),
+    );
   }
 
   Future<void> setTranslationColorPair(ColorPair pair) async {
     state = state.copyWith(translationColorPair: pair);
     await _prefs?.setString(
-        'translation_color_pair', jsonEncode(pair.toJson()));
+      'translation_color_pair',
+      jsonEncode(pair.toJson()),
+    );
   }
 
   Future<void> setPageNumberingSystem(String system) async {
@@ -840,7 +887,8 @@ Script _parseScript(String? value) {
   );
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   return SettingsNotifier(null);
 });

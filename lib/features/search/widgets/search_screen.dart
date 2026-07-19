@@ -13,6 +13,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -35,6 +36,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
   bool _isMultiWord = false;
+  bool _isConverting = false;
 
   @override
   void initState() {
@@ -54,10 +56,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onSearchChanged(String value) {
+    // Prevent re-entry when updating the controller text after Velthuis conversion
+    if (_isConverting) return;
+
+    // Apply Velthuis conversion and update the displayed text on-the-fly
+    final converted = velthuis(value);
+    if (converted != value && converted.trim().isNotEmpty) {
+      _isConverting = true;
+      _searchController.value = TextEditingValue(
+        text: converted,
+        selection: TextSelection.collapsed(offset: converted.length),
+      );
+      _isConverting = false;
+    }
+
+    final effectiveValue = converted;
+
     // Detect multi-word and auto-set distance=3 when second word is typed
-    final wordCount = value.trim().isEmpty
+    final wordCount = effectiveValue.trim().isEmpty
         ? 0
-        : value.trim().split(RegExp(r'\s+')).length;
+        : effectiveValue.trim().split(RegExp(r'\s+')).length;
     if (wordCount >= 2 && !_isMultiWord) {
       setState(() {
         _isMultiWord = true;
@@ -71,13 +89,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), () async {
-      if (value.trim().isNotEmpty) {
-        final suggestions =
-            await ref.read(searchProvider.notifier).getSuggestions(value);
-        if (mounted) {
+      if (effectiveValue.trim().isNotEmpty) {
+        // Use the LAST word as the suggestion prefix, so multi-word queries
+        // continue to show suggestions for the word being typed right now.
+        final words = effectiveValue.trim().split(RegExp(r'\s+'));
+        final lastWord = words.isNotEmpty ? words.last : '';
+        if (lastWord.isNotEmpty) {
+          final suggestions = await ref
+              .read(searchProvider.notifier)
+              .getSuggestions(lastWord);
+          if (mounted) {
+            setState(() {
+              _suggestions = suggestions;
+              _showSuggestions = suggestions.isNotEmpty;
+            });
+          }
+        } else {
           setState(() {
-            _suggestions = suggestions;
-            _showSuggestions = suggestions.isNotEmpty;
+            _suggestions = [];
+            _showSuggestions = false;
           });
         }
       } else {
@@ -90,18 +120,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _executeSearch() {
-    final query = _searchController.text;
+    final rawQuery = _searchController.text;
+    final query = velthuis(rawQuery);
     setState(() => _showSuggestions = false);
     _focusNode.unfocus();
-    ref.read(searchProvider.notifier).search(
-          query: query,
-          fuzzy: _fuzzy,
-          distance: _wordDistance,
-        );
+    ref
+        .read(searchProvider.notifier)
+        .search(query: query, fuzzy: _fuzzy, distance: _wordDistance);
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
-    _searchController.text = suggestion.pali;
+    final currentText = _searchController.text;
+    final lastSpace = currentText.lastIndexOf(' ');
+    if (lastSpace >= 0) {
+      // Multi-word: replace only the last word with the selected suggestion
+      _searchController.text =
+          '${currentText.substring(0, lastSpace + 1)}${suggestion.pali}';
+    } else {
+      _searchController.text = suggestion.pali;
+    }
     setState(() => _showSuggestions = false);
     _executeSearch();
   }
@@ -110,7 +147,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final currentState = ref.read(searchProvider);
     final query = currentState is SearchResults ? currentState.query : null;
 
-    ref.read(readerTabsProvider.notifier).openTab(
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
           ReaderTabInfo(
             bookId: item.bookId,
             bookName: summary.book.bookName ?? item.bookId,
@@ -126,31 +165,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _showResultPreviewDialog(
-      BookResultSummary summary, SearchResultItem item) async {
+    BookResultSummary summary,
+    SearchResultItem item,
+  ) async {
     HapticFeedback.mediumImpact();
 
     final currentState = ref.read(searchProvider);
-    final searchQuery = currentState is SearchResults ? currentState.query : null;
+    final searchQuery = currentState is SearchResults
+        ? currentState.query
+        : null;
 
     try {
       final epitakaDb = await ref.read(epitakaDbProvider.future);
       final settings = ref.read(settingsProvider);
       final activeLang = settings.enabledTranslations.isNotEmpty
           ? settings.enabledTranslations.first
-          : (settings.showTranslation
-              ? settings.primaryTranslationLang
-              : null);
+          : (settings.showTranslation ? settings.primaryTranslationLang : null);
 
       // 1. Find nearest heading at or before the matched paraId
-      final headingRows = await epitakaDb.customSelect(
-        'SELECT title, para_id FROM headings '
-        'WHERE book_id = ? AND para_id <= ? '
-        'ORDER BY para_id DESC LIMIT 1',
-        variables: [
-          Variable.withString(item.bookId),
-          Variable.withInt(item.paraId),
-        ],
-      ).get();
+      final headingRows = await epitakaDb
+          .customSelect(
+            'SELECT title, para_id FROM headings '
+            'WHERE book_id = ? AND para_id <= ? '
+            'ORDER BY para_id DESC LIMIT 1',
+            variables: [
+              Variable.withString(item.bookId),
+              Variable.withInt(item.paraId),
+            ],
+          )
+          .get();
 
       if (headingRows.isEmpty) {
         if (mounted) {
@@ -161,36 +204,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return;
       }
 
-      final headingTitle =
-          (headingRows.first.data['title'] as String?) ?? '';
+      final headingTitle = (headingRows.first.data['title'] as String?) ?? '';
       final headingParaId = headingRows.first.data['para_id'] as int;
 
       // 2. Find next heading boundary
-      final nextHeadingRows = await epitakaDb.customSelect(
-        'SELECT para_id FROM headings '
-        'WHERE book_id = ? AND para_id > ? '
-        'ORDER BY para_id ASC LIMIT 1',
-        variables: [
-          Variable.withString(item.bookId),
-          Variable.withInt(headingParaId),
-        ],
-      ).get();
+      final nextHeadingRows = await epitakaDb
+          .customSelect(
+            'SELECT para_id FROM headings '
+            'WHERE book_id = ? AND para_id > ? '
+            'ORDER BY para_id ASC LIMIT 1',
+            variables: [
+              Variable.withString(item.bookId),
+              Variable.withInt(headingParaId),
+            ],
+          )
+          .get();
 
       final endParaId = nextHeadingRows.isNotEmpty
           ? (nextHeadingRows.first.data['para_id'] as int)
           : 999999;
 
       // 3. Load all sentences in the heading section
-      final sentenceRows = await epitakaDb.customSelect(
-        'SELECT para_id, line_id, pali FROM sentences '
-        'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
-        'ORDER BY para_id, line_id',
-        variables: [
-          Variable.withString(item.bookId),
-          Variable.withInt(headingParaId),
-          Variable.withInt(endParaId),
-        ],
-      ).get();
+      final sentenceRows = await epitakaDb
+          .customSelect(
+            'SELECT para_id, line_id, pali FROM sentences '
+            'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
+            'ORDER BY para_id, line_id',
+            variables: [
+              Variable.withString(item.bookId),
+              Variable.withInt(headingParaId),
+              Variable.withInt(endParaId),
+            ],
+          )
+          .get();
 
       // 4. Load translations for those sentences
       final translationMap = <String, Map<String, String>>{};
@@ -199,16 +245,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           final lang = TranslationLanguage.fromCode(activeLang);
           final transDb = await ref.read(translationDbProvider(lang).future);
           if (transDb != null) {
-            final transRows = await transDb.customSelect(
-              'SELECT para_id, line_id, translation FROM sentences '
-              'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
-              'ORDER BY para_id, line_id',
-              variables: [
-                Variable.withString(item.bookId),
-                Variable.withInt(headingParaId),
-                Variable.withInt(endParaId),
-              ],
-            ).get();
+            final transRows = await transDb
+                .customSelect(
+                  'SELECT para_id, line_id, translation FROM sentences '
+                  'WHERE book_id = ? AND para_id >= ? AND para_id < ? '
+                  'ORDER BY para_id, line_id',
+                  variables: [
+                    Variable.withString(item.bookId),
+                    Variable.withInt(headingParaId),
+                    Variable.withInt(endParaId),
+                  ],
+                )
+                .get();
             for (final row in transRows) {
               final key = '${row.data['para_id']}:${row.data['line_id']}';
               final t = row.data['translation'] as String?;
@@ -235,15 +283,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }).toList();
 
       // Find the first snippet line index
-      final firstSnippetIndex = previewLines
-          .indexWhere((l) => l.paraId == item.paraId);
+      final firstSnippetIndex = previewLines.indexWhere(
+        (l) => l.paraId == item.paraId,
+      );
 
       if (!mounted) return;
 
       await showParagraphPreviewSheet(
         context,
-        title: headingTitle.isNotEmpty ? headingTitle : (summary.book.bookName ?? item.bookId),
-        subtitle: headingTitle.isNotEmpty ? (summary.book.bookName ?? item.bookId) : null,
+        title: headingTitle.isNotEmpty
+            ? headingTitle
+            : (summary.book.bookName ?? item.bookId),
+        subtitle: headingTitle.isNotEmpty
+            ? (summary.book.bookName ?? item.bookId)
+            : null,
         lines: previewLines,
         highlightParaId: item.paraId,
         firstSnippetIndex: firstSnippetIndex >= 0 ? firstSnippetIndex : null,
@@ -251,23 +304,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         actionLabel: 'Open in Reader',
         onAction: () {
           // Open the reader tab
-          ref.read(readerTabsProvider.notifier).openTab(
-            ReaderTabInfo(
-              bookId: item.bookId,
-              bookName: summary.book.bookName ?? item.bookId,
-              initialParaId: item.paraId,
-              searchQuery: searchQuery,
-            ),
-          );
+          ref
+              .read(readerTabsProvider.notifier)
+              .openTab(
+                ReaderTabInfo(
+                  bookId: item.bookId,
+                  bookName: summary.book.bookName ?? item.bookId,
+                  initialParaId: item.paraId,
+                  searchQuery: searchQuery,
+                ),
+              );
           Navigator.of(context).pop();
           context.push('/reader');
         },
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load preview: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load preview: $e')));
       }
     }
   }
@@ -277,10 +332,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final colors = Theme.of(context).colorScheme;
     final searchState = ref.watch(searchProvider);
 
-    final isFromDrawer = GoRouterState.of(context)
-            .uri
-            .queryParameters['fromDrawer'] ==
-        'true';
+    final isFromDrawer =
+        GoRouterState.of(context).uri.queryParameters['fromDrawer'] == 'true';
 
     return Scaffold(
       appBar: AppBar(
@@ -373,7 +426,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             vertical: 12,
           ),
         ),
-        style: AppTypography.bodyPali.copyWith(fontSize: 16, color: colors.onSurface),
+        style: AppTypography.bodyPali.copyWith(
+          fontSize: 16,
+          color: colors.onSurface,
+        ),
         onChanged: _onSearchChanged,
         onSubmitted: (_) => _executeSearch(),
       ),
@@ -446,8 +502,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 color: _wordDistance > 0
                     ? colors.secondaryContainer
                     : (_isMultiWord
-                        ? colors.tertiaryContainer
-                        : colors.surfaceContainerHighest),
+                          ? colors.tertiaryContainer
+                          : colors.surfaceContainerHighest),
                 borderRadius: BorderRadius.circular(16),
                 border: _isMultiWord && _wordDistance == 0
                     ? Border.all(color: colors.tertiary.withValues(alpha: 0.5))
@@ -462,8 +518,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     color: _wordDistance > 0
                         ? colors.onSecondaryContainer
                         : (_isMultiWord
-                            ? colors.onTertiaryContainer
-                            : colors.onSurfaceVariant),
+                              ? colors.onTertiaryContainer
+                              : colors.onSurfaceVariant),
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -472,8 +528,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       color: _wordDistance > 0
                           ? colors.onSecondaryContainer
                           : (_isMultiWord
-                              ? colors.onTertiaryContainer
-                              : colors.onSurfaceVariant),
+                                ? colors.onTertiaryContainer
+                                : colors.onSurfaceVariant),
                       fontWeight: _wordDistance > 0 || _isMultiWord
                           ? FontWeight.w600
                           : FontWeight.w400,
@@ -485,8 +541,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     color: _wordDistance > 0
                         ? colors.onSecondaryContainer
                         : (_isMultiWord
-                            ? colors.onTertiaryContainer
-                            : colors.onSurfaceVariant),
+                              ? colors.onTertiaryContainer
+                              : colors.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -556,8 +612,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         padding: EdgeInsets.zero,
         shrinkWrap: true,
         itemCount: _suggestions.length,
-        separatorBuilder: (_, _) =>
-            Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
+        separatorBuilder: (_, _) => Divider(
+          height: 1,
+          color: colors.outlineVariant.withValues(alpha: 0.3),
+        ),
         itemBuilder: (context, index) {
           final sug = _suggestions[index];
           return InkWell(
@@ -581,7 +639,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
@@ -611,7 +672,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return _buildIndexingState(colors, status, progress);
       case SearchLoading():
         return const Center(child: CircularProgressIndicator());
-      case SearchResults(:final bookSummaries, :final query, :final totalResults):
+      case SearchResults(
+        :final bookSummaries,
+        :final query,
+        :final totalResults,
+      ):
         return _buildResultList(colors, bookSummaries, query, totalResults);
       case SearchError(:final message):
         return _buildErrorState(colors, message);
@@ -654,7 +719,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildIndexingState(
-      ColorScheme colors, String status, double progress) {
+    ColorScheme colors,
+    String status,
+    double progress,
+  ) {
     final p = progress.clamp(0.0, 1.0);
     return Center(
       child: Padding(
@@ -722,9 +790,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.xs),
             Text(
-              p > 0
-                  ? '${(p * 100).toStringAsFixed(0)}% complete'
-                  : 'Starting…',
+              p > 0 ? '${(p * 100).toStringAsFixed(0)}% complete' : 'Starting…',
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontSize: 11,
@@ -898,7 +964,8 @@ class _BookResultCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (summary.book.nikaya != null || summary.book.category != null)
+                        if (summary.book.nikaya != null ||
+                            summary.book.category != null)
                           Text(
                             [
                               if (summary.book.nikaya != null)
@@ -916,7 +983,10 @@ class _BookResultCard extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: summary.isExpanded
                           ? colors.primaryContainer
@@ -936,13 +1006,16 @@ class _BookResultCard extends StatelessWidget {
                             fontSize: 11,
                           ),
                         ),
-                        if (summary.isExpanded && summary.loadedCount < summary.totalCount)
+                        if (summary.isExpanded &&
+                            summary.loadedCount < summary.totalCount)
                           Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
                               '/${summary.loadedCount}',
                               style: AppTypography.labelSmall.copyWith(
-                                color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                                color: colors.onSurfaceVariant.withValues(
+                                  alpha: 0.5,
+                                ),
                                 fontSize: 9,
                               ),
                             ),
@@ -968,14 +1041,17 @@ class _BookResultCard extends StatelessWidget {
           // ── Expanded results ───────────────────────────────────────
           if (summary.isExpanded) ...[
             // Flatten all loaded pages into items
-            ...summary.loadedPages.expand((page) =>
-                page.map((item) => _SearchResultItemTile(
-                      item: item,
-                      colors: colors,
-                      searchQuery: searchQuery,
-                      onTap: () => onTapResult(item),
-                      onLongPress: () => onLongPressResult?.call(item),
-                    ))),
+            ...summary.loadedPages.expand(
+              (page) => page.map(
+                (item) => _SearchResultItemTile(
+                  item: item,
+                  colors: colors,
+                  searchQuery: searchQuery,
+                  onTap: () => onTapResult(item),
+                  onLongPress: () => onLongPressResult?.call(item),
+                ),
+              ),
+            ),
 
             // Load more button
             if (!summary.fullyLoaded)
@@ -1005,7 +1081,7 @@ class _BookResultCard extends StatelessWidget {
   }
 
   String _displayBookName(BookInfo book) {
-    return book.displayName ?? book.bookName ?? book.bookId;
+    return book.displayName;
   }
 }
 
@@ -1032,7 +1108,12 @@ class _SearchResultItemTile extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(AppDimensions.md, 6, AppDimensions.md, 6),
+        padding: const EdgeInsets.fromLTRB(
+          AppDimensions.md,
+          6,
+          AppDimensions.md,
+          6,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1045,13 +1126,13 @@ class _SearchResultItemTile extends StatelessWidget {
                 color: colors.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(
-                '§${item.paraId}',
-                style: AppTypography.labelSmall.copyWith(
-                  fontSize: 9,
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
+              // child: Text(
+              //   '§${item.paraId}',
+              //   style: AppTypography.labelSmall.copyWith(
+              //     fontSize: 9,
+              //     color: colors.onSurfaceVariant,
+              //   ),
+              // ),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -1106,7 +1187,6 @@ class _SearchResultItemTile extends StatelessWidget {
       ),
     );
   }
-
 }
 
 // ── HTML + Markdown Rich Text Renderer ──────────────────────────────────
@@ -1141,10 +1221,12 @@ class _HtmlRichText extends StatelessWidget {
     for (final segment in segments) {
       if (segment.isHtml) {
         // Render as styled text
-        spans.add(TextSpan(
-          text: segment.text,
-          style: segment.htmlStyle?.let((s) => _applyStyle(s)),
-        ));
+        spans.add(
+          TextSpan(
+            text: segment.text,
+            style: segment.htmlStyle?.let((s) => _applyStyle(s)),
+          ),
+        );
       } else {
         // Apply search highlighting to plain text
         _applyHighlighting(segment.text, spans);
@@ -1242,17 +1324,17 @@ class _HtmlRichText extends StatelessWidget {
     int lastIdx = 0;
     for (final interval in merged) {
       if (interval.start > lastIdx) {
-        spans.add(TextSpan(
-          text: plainText.substring(lastIdx, interval.start),
-        ));
+        spans.add(TextSpan(text: plainText.substring(lastIdx, interval.start)));
       }
-      spans.add(TextSpan(
-        text: plainText.substring(interval.start, interval.end),
-        style: TextStyle(
-          backgroundColor: highlightColor,
-          fontWeight: FontWeight.w700,
+      spans.add(
+        TextSpan(
+          text: plainText.substring(interval.start, interval.end),
+          style: TextStyle(
+            backgroundColor: highlightColor,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ));
+      );
       lastIdx = interval.end;
     }
     if (lastIdx < plainText.length) {
@@ -1266,21 +1348,36 @@ class _HtmlRichText extends StatelessWidget {
   /// original [plainText].
   static int _normChar(int c) {
     switch (c) {
-      case 0x0101: return 0x61; // ā → a
-      case 0x012B: return 0x69; // ī → i
-      case 0x016B: return 0x75; // ū → u
-      case 0x014D: return 0x6F; // ō → o
-      case 0x1E45: return 0x6E; // ṅ → n
-      case 0x00F1: return 0x6E; // ñ → n
-      case 0x1E6D: return 0x74; // ṭ → t
-      case 0x1E0D: return 0x64; // ḍ → d
-      case 0x1E47: return 0x6E; // ṇ → n
-      case 0x1E37: return 0x6C; // ḷ → l
-      case 0x1E3B: return 0x6C; // ḻ → l
-      case 0x1E43: return 0x6D; // ṃ → m
-      case 0x1E41: return 0x6D; // ṁ → m
-      case 0x1E25: return 0x68; // ḥ → h
-      default:     return c;
+      case 0x0101:
+        return 0x61; // ā → a
+      case 0x012B:
+        return 0x69; // ī → i
+      case 0x016B:
+        return 0x75; // ū → u
+      case 0x014D:
+        return 0x6F; // ō → o
+      case 0x1E45:
+        return 0x6E; // ṅ → n
+      case 0x00F1:
+        return 0x6E; // ñ → n
+      case 0x1E6D:
+        return 0x74; // ṭ → t
+      case 0x1E0D:
+        return 0x64; // ḍ → d
+      case 0x1E47:
+        return 0x6E; // ṇ → n
+      case 0x1E37:
+        return 0x6C; // ḷ → l
+      case 0x1E3B:
+        return 0x6C; // ḻ → l
+      case 0x1E43:
+        return 0x6D; // ṃ → m
+      case 0x1E41:
+        return 0x6D; // ṁ → m
+      case 0x1E25:
+        return 0x68; // ḥ → h
+      default:
+        return c;
     }
   }
 
@@ -1294,11 +1391,13 @@ class _HtmlRichText extends StatelessWidget {
     for (final match in regex.allMatches(html)) {
       // Add text before this tag
       if (match.start > lastEnd) {
-        segments.add(_TextSegment(
-          text: html.substring(lastEnd, match.start),
-          isHtml: stack.isNotEmpty,
-          htmlStyle: stack.isNotEmpty ? stack.last : null,
-        ));
+        segments.add(
+          _TextSegment(
+            text: html.substring(lastEnd, match.start),
+            isHtml: stack.isNotEmpty,
+            htmlStyle: stack.isNotEmpty ? stack.last : null,
+          ),
+        );
       }
 
       final isClosing = match.group(1) == '/';
@@ -1306,10 +1405,7 @@ class _HtmlRichText extends StatelessWidget {
 
       if (tagName == 'br') {
         // Line break - insert newline
-        segments.add(_TextSegment(
-          text: '\n',
-          isHtml: false,
-        ));
+        segments.add(_TextSegment(text: '\n', isHtml: false));
       } else if (isClosing) {
         // Closing tag
         final tag = _HtmlTag.values.firstWhere(
@@ -1331,11 +1427,13 @@ class _HtmlRichText extends StatelessWidget {
 
     // Remaining text after last tag
     if (lastEnd < html.length) {
-      segments.add(_TextSegment(
-        text: html.substring(lastEnd),
-        isHtml: stack.isNotEmpty,
-        htmlStyle: stack.isNotEmpty ? stack.last : null,
-      ));
+      segments.add(
+        _TextSegment(
+          text: html.substring(lastEnd),
+          isHtml: stack.isNotEmpty,
+          htmlStyle: stack.isNotEmpty ? stack.last : null,
+        ),
+      );
     }
 
     return segments;
@@ -1366,10 +1464,9 @@ class _Interval {
 
 /// Extract normalized search terms for highlighting.
 List<String> _extractSearchTerms(String query) {
-  return normalizePaliFuzzy(query)
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
+  return normalizePaliFuzzy(
+    query,
+  ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
 }
 
 /// Format a number (e.g. 1234 -> "1.2k").

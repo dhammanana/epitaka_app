@@ -6,6 +6,7 @@ import '../../core/theme/app_typography.dart';
 import '../../core/utils/pali_script_converter.dart';
 import '../../core/utils/pali_text_utils.dart';
 import 'pali_text.dart';
+import 'nissaya_text.dart';
 import '../utils/html_text_parser.dart';
 
 /// A single line of preview content.
@@ -34,6 +35,16 @@ class PreviewContent extends ConsumerWidget {
   final int? highlightParaId;
   final int? firstSnippetIndex;
   final String? paliSnippet;
+
+  /// Paragraph + line to scroll into view when the content is first shown
+  /// (e.g. the line containing the word being defined in a book-link sheet).
+  final int? scrollToParaId;
+  final int? scrollToLineId;
+
+  /// Key attached to the target line's widget so a parent scroll view can
+  /// bring it into view via [Scrollable.ensureVisible].
+  final GlobalKey? targetLineKey;
+
   /// Called when the user double-taps on a Pāli text (opens dictionary).
   final ValueChanged<String>? onPaliWordTap;
 
@@ -43,6 +54,9 @@ class PreviewContent extends ConsumerWidget {
     this.highlightParaId,
     this.firstSnippetIndex,
     this.paliSnippet,
+    this.scrollToParaId,
+    this.scrollToLineId,
+    this.targetLineKey,
     this.onPaliWordTap,
   });
 
@@ -56,8 +70,22 @@ class PreviewContent extends ConsumerWidget {
     final script = settings.paliScript;
     final paliTypo = settings.typography.pali;
 
+    // Decide up front whether the exact target line exists in the rendered
+    // range. If it does, we attach the key to that exact line only; otherwise
+    // we fall back to the first line of the target paragraph. This keeps the
+    // two cases mutually exclusive so the same GlobalKey is never attached to
+    // two widgets (which would throw "Duplicate GlobalKey detected").
+    final bool hasExactTarget =
+        scrollToParaId != null &&
+        scrollToLineId != null &&
+        lines.any(
+          (l) => l.paraId == scrollToParaId && l.lineId == scrollToLineId,
+        );
+
+    bool targetKeyPlaced = false;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: lines.asMap().entries.map((entry) {
         final index = entry.key;
         final line = entry.value;
@@ -65,48 +93,57 @@ class PreviewContent extends ConsumerWidget {
         final isFirstSnippetLine =
             isMatch && firstSnippetIndex != null && index == firstSnippetIndex;
 
-        final isNewPara =
-            index == 0 || line.paraId != lines[index - 1].paraId;
+        final isNewPara = index == 0 || line.paraId != lines[index - 1].paraId;
+
+        // Attach the target key to the exact line containing the defined word,
+        // or — only when that exact line is absent — to the first line of the
+        // target paragraph.
+        final isExactTarget =
+            hasExactTarget &&
+            line.paraId == scrollToParaId &&
+            line.lineId == scrollToLineId;
+        final isFirstLineOfTargetPara =
+            !hasExactTarget &&
+            scrollToParaId != null &&
+            line.paraId == scrollToParaId &&
+            !targetKeyPlaced;
+        final isTargetLine = isExactTarget || isFirstLineOfTargetPara;
+        if (isTargetLine) targetKeyPlaced = true;
 
         return Column(
+          key: isTargetLine ? targetLineKey : null,
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Paragraph gap
             if (isNewPara && index > 0) const SizedBox(height: 12),
 
             // Match-highlighted paragraph block
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 2,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: isMatch
                     ? colors.primaryContainer.withValues(alpha: 0.25)
                     : null,
                 border: isMatch
-                    ? Border(
-                        left: BorderSide(
-                          color: colors.primary,
-                          width: 3,
-                        ),
-                      )
+                    ? Border(left: BorderSide(color: colors.primary, width: 3))
                     : null,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Pāli text
-                  if (isFirstSnippetLine && paliSnippet != null &&
+                  if (isFirstSnippetLine &&
+                      paliSnippet != null &&
                       paliSnippet!.isNotEmpty)
-                    _buildPaliSnippet(paliSnippet!, paliColor,
-                        paliTypo, script)
+                    _buildPaliSnippet(paliSnippet!, paliColor, paliTypo, script)
                   else if (line.pali.isNotEmpty)
                     _buildPaliLine(line.pali, paliColor, paliTypo, script),
                   // Translations
                   ...line.translations.entries.map((tEntry) {
                     if (tEntry.value.isEmpty) return const SizedBox.shrink();
-                    final langTypo = settings.typography.languageOverrides[tEntry.key];
+                    final langTypo =
+                        settings.typography.languageOverrides[tEntry.key];
                     return _buildTranslationLine(
                       tEntry.value,
                       transColor,
@@ -137,17 +174,14 @@ class PreviewContent extends ConsumerWidget {
       height: paliTypo.lineHeight,
       fontWeight: paliTypo.bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: paliTypo.italic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          paliTypo.underline ? TextDecoration.underline : TextDecoration.none,
+      decoration: paliTypo.underline
+          ? TextDecoration.underline
+          : TextDecoration.none,
       color: effectiveColor,
     );
 
     return _buildTappablePali(
-      child: HtmlTextParser.richText(
-        converted,
-        baseStyle,
-        maxLines: null,
-      ),
+      child: HtmlTextParser.richText(converted, baseStyle, maxLines: null),
       paliText: snippet,
     );
   }
@@ -165,8 +199,9 @@ class PreviewContent extends ConsumerWidget {
       height: paliTypo.lineHeight,
       fontWeight: paliTypo.bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: paliTypo.italic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          paliTypo.underline ? TextDecoration.underline : TextDecoration.none,
+      decoration: paliTypo.underline
+          ? TextDecoration.underline
+          : TextDecoration.none,
       color: effectiveColor,
     );
 
@@ -177,17 +212,14 @@ class PreviewContent extends ConsumerWidget {
   }
 
   /// Wrap Pāli content in GestureDetector for double-tap dictionary lookup.
-  Widget _buildTappablePali({
-    required Widget child,
-    required String paliText,
-  }) {
+  Widget _buildTappablePali({required Widget child, required String paliText}) {
     if (onPaliWordTap == null) return child;
 
     return GestureDetector(
       onDoubleTap: () {
         // Extract meaningful Pāli words from the text
         final words = paliText
-            .replaceAll(RegExp(r'<[^>]*>'), ' ')  // strip HTML tags
+            .replaceAll(RegExp(r'<[^>]*>'), ' ') // strip HTML tags
             .replaceAll(RegExp(r'[^\wāīūṅñṭḍṇḷṃĀĪŪṄÑṬḌṆḶṀ\s]'), ' ')
             .trim()
             .split(RegExp(r'\s+'))
@@ -217,13 +249,17 @@ class PreviewContent extends ConsumerWidget {
             color: effectiveFallback.withValues(alpha: 0.85),
           );
 
+    // Check for nissaya-formatted text
+    if (NissayaTextParser.isNissayaFormat(text)) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: NissayaText(text: text, baseStyle: style, plainStyle: style),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 2),
-      child: HtmlTextParser.richText(
-        text,
-        style,
-        maxLines: null,
-      ),
+      child: HtmlTextParser.richText(text, style, maxLines: null),
     );
   }
 }
