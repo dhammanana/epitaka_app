@@ -44,10 +44,12 @@ import '../widgets/tab_strip.dart';
 /// Reader screen with multiple tabs, showing Pāli text with translations.
 /// Each tab has its own scroll position stored in [ReaderTabInfo].
 ///
-/// Uses [AnimatedSwitcher] with a slide transition for smooth tab-to-tab
-/// animations, driven by [GestureDetector] for swipe detection. This
-/// avoids the gesture-arena conflicts that can arise when wrapping a
-/// [PageView] with [Listener]/[Focus]/[CallbackShortcuts] widgets.
+/// Tab switching is driven by a finger-following horizontal drag
+/// ([GestureDetector] + a [Transform] on the active reader content). On
+/// release the active tab slides fully off one edge and the target tab
+/// slides in from the opposite edge, giving a smooth, physical page-turn
+/// feel without mounting a [PageView] (which previously caused duplicate
+/// [GlobalKey]/controller assertions when the same book was shown twice).
 ///
 /// Jumping (TOC, TTS auto-scroll, search-result jump, tab restore) is done
 /// purely by paragraph *index* via [ScrollablePositionedList] / an
@@ -62,10 +64,38 @@ class ReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
-    with WidgetsBindingObserver {
-  /// Direction of the last tab switch, used by [AnimatedSwitcher] to
-  /// determine the slide direction.
-  bool _swipingForward = true;
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  /// Horizontal drag offset (px) of the active reader content while the
+  /// user is swiping between tabs or while a settle animation is running.
+  /// Driven through a [ValueNotifier] so the [Transform] can update without
+  /// rebuilding the (heavy) reader content on every pointer move.
+  final ValueNotifier<double> _dragDxNotifier = ValueNotifier(0);
+
+  /// Whether a finger drag is currently in progress (suppresses the
+  /// programmatic slide animation triggered by external tab switches).
+  bool _isDragging = false;
+
+  /// The tab index the current drag is heading toward (null if the drag
+  /// hasn't passed the threshold in either direction).
+  int? _dragTargetIndex;
+
+  /// Animation controller that drives the settle (snap-back / commit)
+  /// animation after a drag ends, and the slide-in for external switches.
+  late final AnimationController _settleController;
+
+  /// Token guarding against stale settle-completion callbacks (e.g. when a
+  /// new drag interrupts an in-flight commit animation).
+  int _settleToken = 0;
+
+  /// Set while a programmatic slide is playing so the [readerTabsProvider]
+  /// listener doesn't start a second, conflicting animation.
+  bool _suppressIndexAnim = false;
+
+  /// Direction of a pending external (non-drag) tab switch that should play
+  /// a slide-in animation. Set in the [readerTabsProvider] listener and
+  /// consumed at the top of [build] so the off-screen offset is applied
+  /// before the first frame (no flash). null = no pending animation.
+  bool? _pendingExternalAnim;
 
   // One controller/listener pair per open book tab.
   final Map<String, ItemScrollController> _itemScrollControllers = {};
@@ -81,9 +111,41 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// "_scrollableListState == null" assertion and stalls jumps.
   String? _lastControllerFetchBookId;
 
-  /// Tracks the last word we looked up via double-click, to avoid
+  /// Tracks the last word we looked up via double-tap, to avoid
   /// re-triggering the dictionary for the same word.
   String? _lastLookedUpWord;
+
+  /// When true, the reader content is wrapped in a [SelectionContainer.disabled]
+  /// so its paragraphs stop participating in the ancestor [SelectionArea]'s
+  /// selection. We toggle this (instead of unmounting [SelectionArea] itself)
+  /// while the dictionary sheet is open: [SelectionContainer.disabled]
+  /// unregisters the paragraphs' selectables from the root registrar without
+  /// disposing the [SelectionArea]/[SelectableRegion] itself, which is the
+  /// state Flutter's selection system can't tolerate mid-focus-shift (that
+  /// caused the '_SelectionKeepAliveState.remove' null crash and the
+  /// '!conflict' / 'parentDataDirty' assertions). The root registrar stays
+  /// mounted the whole time; only the content underneath stops participating.
+  bool _selectionDisabled = false;
+
+  /// Key for the [SelectionArea]'s [SelectableRegionState] so we can clear
+  /// any selection it created after our own double-tap detector looks up a
+  /// word (keeping the region in a clean state for the next tap).
+  final GlobalKey<SelectableRegionState> _selectableRegionKey =
+      GlobalKey<SelectableRegionState>();
+
+  /// Key for the [Listener] wrapping the reader content. We hit-test from
+  /// this widget's render object (a plain [RenderProxyBox]) to locate the
+  /// [RenderParagraph] under the tap. We deliberately do NOT hit-test from
+  /// the [SelectionArea]'s render object, whose `hitTest` is overridden to
+  /// only consider selection handles/toolbar and would never find the text.
+  final GlobalKey _contentHitTestKey = GlobalKey();
+
+  /// Double-tap detection state (raw pointer events, independent of the
+  /// gesture arena that [SelectionArea] and the tab-swipe [GestureDetector]
+  /// fight over).
+  int? _lastTapDownTime;
+  Offset? _lastTapDownPosition;
+  int _tapCounter = 0;
 
   // Track the last paraId we've jumped to per book, so we don't re-jump
   // every time the tab rebuilds (e.g. on unrelated provider changes).
@@ -401,6 +463,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _settleController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 260),
+        )..addListener(() {
+          if (mounted) _dragDxNotifier.value = _settleController.value;
+        });
   }
 
   @override
@@ -888,65 +958,101 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) => attemptScroll());
   }
 
-  // ── Swipe between tabs ───────────────────────────────────────────────
+  // ── Swipe between tabs (finger-following) ─────────────────────────────
   //
-  // Detected via GestureDetector.onHorizontalDragEnd. The velocity
-  // threshold prevents accidental triggers from vertical scrolling that
-  // has a slight horizontal component. The transition animation is
-  // handled by AnimatedSwitcher in the build method.
-  void _onHorizontalSwipe(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity.abs() < 300) return;
-
-    final state = ref.read(readerTabsProvider);
-    if (state.tabs.length <= 1) return;
-
-    if (velocity < 0) {
-      // Swiped left → go to next tab
-      if (state.activeIndex < state.tabs.length - 1) {
-        developer.log(
-          '[UI_SWIPE] velocity=$velocity ← SWIPE LEFT active=${state.activeIndex}→${state.activeIndex + 1}',
-          name: 'epitaka.reader.ui',
-        );
-        _swipingForward = true;
-        ref.read(readerTabsProvider.notifier).switchTo(state.activeIndex + 1);
-      }
-    } else {
-      // Swiped right → go to previous tab
-      if (state.activeIndex > 0) {
-        developer.log(
-          '[UI_SWIPE] velocity=$velocity → SWIPE RIGHT active=${state.activeIndex}→${state.activeIndex - 1}',
-          name: 'epitaka.reader.ui',
-        );
-        _swipingForward = false;
-        ref.read(readerTabsProvider.notifier).switchTo(state.activeIndex - 1);
-      }
-    }
+  // A horizontal drag translates the active reader content in real time.
+  // On release we either snap back (cancel) or play a two-phase slide:
+  // the current tab slides fully off one edge, then the target tab slides
+  // in from the opposite edge. This is driven by [_settleController] so it
+  // stays smooth and respects a proper easing curve. External switches
+  // (tab-strip tap, open-from-search) animate via the [readerTabsProvider]
+  // listener in [build].
+  void _onDragStart(DragStartDetails details) {
+    _isDragging = true;
+    _dragTargetIndex = null;
+    // Invalidate any in-flight settle callback (e.g. an interrupted commit)
+    // and clear suppression so a fresh drag takes over cleanly.
+    _settleToken++;
+    _suppressIndexAnim = false;
+    _settleController.stop();
   }
 
-  // ── AnimatedSwitcher transition builder ──────────────────────────────
-  //
-  // Slides the new tab in from the appropriate direction based on
-  // [_swipingForward].
-  Widget _buildTabTransition(Widget child, Animation<double> animation) {
-    final begin = _swipingForward
-        ? const Offset(0.3, 0.0) // Slide in from right
-        : const Offset(-0.3, 0.0); // Slide in from left
-    final end = Offset.zero;
+  void _onDragUpdate(DragUpdateDetails details) {
+    final tabs = ref.read(readerTabsProvider);
+    if (tabs.tabs.length <= 1) return;
 
-    return SlideTransition(
-      position: Tween<Offset>(
-        begin: begin,
-        end: end,
-      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut)),
-      child: FadeTransition(
-        opacity: Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut)),
-        child: child,
-      ),
+    final width = MediaQuery.of(context).size.width;
+    final next = (_dragDxNotifier.value + details.delta.dx).clamp(
+      -width,
+      width,
     );
+    final active = tabs.activeIndex;
+
+    if (next < -8 && active < tabs.tabs.length - 1) {
+      _dragTargetIndex = active + 1; // swipe left → next
+    } else if (next > 8 && active > 0) {
+      _dragTargetIndex = active - 1; // swipe right → previous
+    } else {
+      _dragTargetIndex = null;
+    }
+
+    _dragDxNotifier.value = next;
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    _isDragging = false;
+    final width = MediaQuery.of(context).size.width;
+    final tabs = ref.read(readerTabsProvider);
+    final active = tabs.activeIndex;
+    final velocity = details.primaryVelocity ?? 0; // px/s, <0 = left
+    final target = _dragTargetIndex;
+
+    final committed =
+        target != null &&
+        (_dragDxNotifier.value.abs() > width * 0.3 || velocity.abs() > 600);
+
+    if (committed) {
+      final forward = target > active; // next → exit left
+      _suppressIndexAnim = true;
+      _animateSettle(
+        from: _dragDxNotifier.value,
+        to: forward ? -width : width,
+        onComplete: () {
+          // Mount the target tab off-screen on the entry edge, then slide in.
+          _dragDxNotifier.value = forward ? width : -width;
+          ref.read(readerTabsProvider.notifier).switchTo(target);
+          _animateSettle(
+            from: _dragDxNotifier.value,
+            to: 0,
+            onComplete: () => _suppressIndexAnim = false,
+          );
+        },
+      );
+    } else {
+      _animateSettle(from: _dragDxNotifier.value, to: 0);
+    }
+    _dragTargetIndex = null;
+  }
+
+  /// Animate [_dragDxNotifier] (via [_settleController]) from [from] to [to].
+  /// [onComplete] only fires for the most recent call, so an interrupted
+  /// settle can't trigger a stale tab switch.
+  void _animateSettle({
+    required double from,
+    required double to,
+    VoidCallback? onComplete,
+  }) {
+    final token = ++_settleToken;
+    _settleController
+      ..stop()
+      ..value = from
+      ..animateTo(
+        to,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      ).then((_) {
+        if (token == _settleToken && mounted) onComplete?.call();
+      });
   }
 
   /// Get the current paraId from approximately 1/3 of the screen height.
@@ -1062,6 +1168,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // ── Word lookup ──────────────────────────────────────────────────────
   void _onWordLookup(String word) {
     if (word.trim().isEmpty) return;
+    developer.log('[DBG] _onWordLookup word="$word"', name: 'epitaka.dict');
     developer.log(
       '[DICT] reader word lookup tap word="$word"',
       name: 'epitaka.dict',
@@ -1078,30 +1185,192 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     // Default: show as a bottom sheet on all platforms. The user can pin it
     // (via the toolbar pin button) to dock it in the right side panel.
-    showDictionarySheet(context, word.trim());
+    //
+    // Disable selection (via SelectionContainer.disabled, NOT by unmounting
+    // SelectionArea) before the sheet opens. We commit the disable on its own
+    // frame first so every paragraph's selectable unregisters from the root
+    // registrar *before* the modal steals focus; only then does the sheet
+    // mount on the next frame. By the time focus shifts, the registrar has
+    // nothing left to reconcile, so there's no teardown race or O(n) walk.
+    // SelectionArea itself stays mounted the whole time.
+    setState(() => _selectionDisabled = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDictionarySheet(context, word.trim()).whenComplete(() {
+        if (mounted) setState(() => _selectionDisabled = false);
+      });
+    });
   }
 
   void _handleSelectionChanged(SelectedContent? selection) {
     _lastSelectedContent = selection;
+    developer.log(
+      '[DBG] onSelectionChanged plain="${selection?.plainText}" '
+      'hasSelection=${selection != null}',
+      name: 'epitaka.dict',
+    );
 
-    // On desktop: when a word is selected via double-click,
-    // `onSelectionChanged` fires BEFORE the `Listener.onPointerDown`
-    // in the event-bubbling chain, so the old `_awaitingSelection`
-    // timing mechanism never worked there.  Instead, detect fresh
-    // single-word selections directly.
-    if (selection != null && selection.plainText.isNotEmpty) {
-      final word = _cleanPali(selection.plainText);
-      // A single Pāli word (no spaces/newlines, 2–50 chars) that
-      // isn't the same word we already looked up is almost certainly
-      // from a double-click (or double-tap on mobile).
-      if (word.length >= 2 &&
-          word.length <= 50 &&
-          !word.contains(' ') &&
-          !word.contains('\n') &&
-          word != _lastLookedUpWord) {
-        _lastLookedUpWord = word;
-        _onWordLookup(word);
+    // Dictionary lookup is now driven explicitly by our own double-tap
+    // detector (see [_handlePointerDown] + [_selectWordAt]), which hit-tests
+    // the render tree to find the word under the tap. We no longer infer a
+    // double-tap from a single-word selection here, because that heuristic
+    // competed with the tab-swipe [GestureDetector] and was flaky from the
+    // second tap onward.
+    //
+    // We still cache the selection for the copy context menu / Ctrl+C
+    // (long-press selection, which is a separate gesture from double-tap).
+  }
+
+  /// Detect a double-tap from raw pointer-down events. This runs *before*
+  /// the gesture arena resolves, so it is not subject to the race between
+  /// [SelectionArea]'s double-tap recognizer and the tab-swipe
+  /// [GestureDetector]. When a double-tap is detected we look up the word
+  /// at the tap point ourselves and open the dictionary.
+  void _handlePointerDown(PointerDownEvent event) {
+    final now = event.timeStamp.inMilliseconds;
+    final lastTime = _lastTapDownTime;
+    final lastPos = _lastTapDownPosition;
+    _lastTapDownTime = now;
+    _lastTapDownPosition = event.localPosition;
+    developer.log(
+      '[DBG] pointerDown #${_tapCounter++} at=${event.localPosition} '
+      'dt=${lastTime != null ? now - lastTime : '-'} '
+      'dist=${lastPos != null ? (event.localPosition - lastPos).distance : '-'}',
+      name: 'epitaka.dict',
+    );
+
+    if (lastTime != null && lastPos != null) {
+      final dt = now - lastTime;
+      final dist = (event.localPosition - lastPos).distance;
+      const kDoubleTapTime = 400; // ms
+      const kDoubleTapSlop = 40.0; // px
+      if (dt >= 0 && dt <= kDoubleTapTime && dist <= kDoubleTapSlop) {
+        // Double-tap confirmed. Look up the word at this point.
+        developer.log('[DBG] DOUBLE-TAP detected', name: 'epitaka.dict');
+        _lastTapDownTime = null;
+        _lastTapDownPosition = null;
+        _selectWordAt(event.position);
+      } else {
+        developer.log(
+          '[DBG] tap too slow/far (dt=$dt dist=$dist) — not a double-tap',
+          name: 'epitaka.dict',
+        );
       }
+    }
+  }
+
+  /// Find the Pāli word rendered at the global [globalPosition] and open the
+  /// dictionary for it.
+  ///
+  /// We hit-test the reader content (via [_contentHitTestKey], a plain
+  /// [RenderProxyBox] that descends into its children) to locate the
+  /// [RenderParagraph] under the tap, then ask it for the word boundary at
+  /// that offset. This is fully self-contained: it does not depend on
+  /// [SelectionArea]'s own (flaky) double-tap recognition, which competes
+  /// with the tab-swipe [GestureDetector] in the gesture arena and caused
+  /// the lookup to work only intermittently (reliably on the first tap,
+  /// then sporadically afterwards).
+  void _selectWordAt(Offset globalPosition) {
+    final context = _contentHitTestKey.currentContext;
+    if (context == null) {
+      developer.log('[DBG] _selectWordAt: no context', name: 'epitaka.dict');
+      return;
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) {
+      developer.log(
+        '[DBG] _selectWordAt: renderObject not RenderBox '
+        '(${renderObject.runtimeType})',
+        name: 'epitaka.dict',
+      );
+      return;
+    }
+
+    // Walk the hit-test path to find the RenderParagraph under the tap.
+    final local = renderObject.globalToLocal(globalPosition);
+    final result = BoxHitTestResult();
+    renderObject.hitTest(result, position: local);
+    developer.log(
+      '[DBG] _selectWordAt: hitTest path len=${result.path.length} '
+      'firstTarget=${result.path.isNotEmpty ? result.path.first.target.runtimeType : 'none'}',
+      name: 'epitaka.dict',
+    );
+
+    RenderParagraph? paragraph;
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is RenderParagraph) {
+        paragraph = target;
+        break;
+      }
+    }
+    // Fallback: if the path didn't contain a RenderParagraph (e.g. the hit
+    // landed on a non-text decorator), walk up from the first hit target's
+    // parent chain to find an enclosing RenderParagraph.
+    if (paragraph == null && result.path.isNotEmpty) {
+      RenderObject? node = result.path.first.target as RenderObject?;
+      while (node != null) {
+        if (node is RenderParagraph) {
+          paragraph = node;
+          break;
+        }
+        node = node.parent;
+      }
+    }
+    if (paragraph == null) {
+      developer.log(
+        '[DBG] _selectWordAt: NO RenderParagraph found',
+        name: 'epitaka.dict',
+      );
+      return;
+    }
+
+    // Position must be local to the paragraph's coordinate system.
+    final paragraphOrigin = paragraph.localToGlobal(Offset.zero);
+    final localInParagraph = globalPosition - paragraphOrigin;
+    if (localInParagraph.dx < 0 ||
+        localInParagraph.dy < 0 ||
+        localInParagraph.dx > paragraph.size.width ||
+        localInParagraph.dy > paragraph.size.height) {
+      return;
+    }
+
+    final textPosition = paragraph.getPositionForOffset(localInParagraph);
+    final boundary = paragraph.getWordBoundary(textPosition);
+    if (!boundary.isValid || boundary.isCollapsed) return;
+
+    final fullText = paragraph.text.toPlainText();
+    if (boundary.end > fullText.length) {
+      developer.log(
+        '[DBG] _selectWordAt: boundary.end(${boundary.end}) > text len '
+        '(${fullText.length})',
+        name: 'epitaka.dict',
+      );
+      return;
+    }
+    final rawWord = fullText.substring(boundary.start, boundary.end);
+    developer.log(
+      '[DBG] _selectWordAt: rawWord="$rawWord" boundary=$boundary',
+      name: 'epitaka.dict',
+    );
+
+    final word = _cleanPali(rawWord);
+    if (word.length >= 2 &&
+        word.length <= 50 &&
+        !word.contains(' ') &&
+        !word.contains('\n') &&
+        word != _lastLookedUpWord) {
+      _lastLookedUpWord = word;
+      developer.log(
+        '[DBG] _selectWordAt: LOOKUP word="$word"',
+        name: 'epitaka.dict',
+      );
+      _onWordLookup(word);
+      // NOTE: We deliberately do NOT call clearSelection() here. Clearing the
+      // selection while the modal dictionary sheet is opening was fighting
+      // SelectionArea's own (now suppressed) selection and triggered
+      // '!conflict' / 'parentDataDirty' framework assertions. Because the
+      // double-tap is now claimed by the inner GestureDetector, SelectionArea
+      // no longer selects the word, so there is nothing to clear.
     }
   }
 
@@ -1535,6 +1804,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _settleController.dispose();
+    _dragDxNotifier.dispose();
     _saveHistoryTimer?.cancel();
     _ttsJumpTimer?.cancel();
     _inBookSearchTimer?.cancel();
@@ -1555,6 +1826,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   Widget build(BuildContext context) {
     final tabsState = ref.watch(readerTabsProvider);
+
+    // Apply a pending external tab-switch slide-in. Setting the notifier
+    // value here (before the AnimatedBuilder reads it) means the incoming
+    // tab is painted off-screen on its very first frame, then animates in.
+    if (_pendingExternalAnim != null) {
+      final width = MediaQuery.of(context).size.width;
+      final forward = _pendingExternalAnim!;
+      _dragDxNotifier.value = forward ? width : -width;
+      _pendingExternalAnim = null;
+      _suppressIndexAnim = true;
+      _animateSettle(
+        from: _dragDxNotifier.value,
+        to: 0,
+        onComplete: () => _suppressIndexAnim = false,
+      );
+    }
 
     if (tabsState.isEmpty) {
       final colors = Theme.of(context).colorScheme;
@@ -1705,6 +1992,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           });
         }
       }
+
+      // ── Queue a slide animation for external (non-drag) tab switches ──
+      // (tab-strip tap, open from search/contents/history). Drag commits
+      // set [_suppressIndexAnim] so this is skipped and the drag's own
+      // two-phase animation plays instead. We only *record* the direction
+      // here; the offset is applied at the top of [build] so the incoming
+      // tab starts off-screen on the first frame (no flash).
+      final prevIndex = prev?.activeIndex ?? next.activeIndex;
+      final prevBookId = prev?.activeTab?.bookId;
+      final lengthChanged = next.length != prev?.length;
+      if (next.activeIndex != prevIndex &&
+          !lengthChanged &&
+          next.activeTab?.bookId != prevBookId &&
+          !_suppressIndexAnim &&
+          !_isDragging) {
+        _pendingExternalAnim = next.activeIndex > prevIndex;
+      }
     });
 
     // ── In-book search global shortcut listener ───────────────────
@@ -1841,7 +2145,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             Expanded(
               child: Stack(
                 children: [
-                  // ── Swipeable tab content with smooth animation ──────
+                  // ── Swipeable tab content with finger-following slide ──
                   CallbackShortcuts(
                     bindings: {
                       SingleActivator(LogicalKeyboardKey.keyC, control: true):
@@ -1852,32 +2156,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     child: Focus(
                       autofocus: true,
                       child: GestureDetector(
-                        onHorizontalDragEnd: _onHorizontalSwipe,
-                        child: SelectionArea(
-                          onSelectionChanged: _handleSelectionChanged,
-                          contextMenuBuilder: _buildCopyContextMenu,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            switchInCurve: Curves.easeInOut,
-                            switchOutCurve: Curves.easeInOut,
-                            transitionBuilder: _buildTabTransition,
-                            child: KeyedSubtree(
-                              key: ValueKey('tab-${activeTab.bookId}'),
-                              child: _buildReaderContent(
-                                context,
-                                readerState,
-                                settings,
-                                colors,
-                                activeTab,
-                                resolvedPaliColor,
-                                resolvedTransColor,
-                                enabledLangs,
-                                langTypographies,
-                                ttsHighlightLineId: ttsCurrentLineId,
-                                ttsHighlightParaId: ttsCurrentParaId,
-                              ),
-                            ),
-                          ),
+                        onHorizontalDragStart: _onDragStart,
+                        onHorizontalDragUpdate: _onDragUpdate,
+                        onHorizontalDragEnd: _onDragEnd,
+                        child: _buildReaderContentWithSelection(
+                          context,
+                          readerState,
+                          settings,
+                          colors,
+                          activeTab,
+                          resolvedPaliColor,
+                          resolvedTransColor,
+                          enabledLangs,
+                          langTypographies,
+                          ttsCurrentLineId,
+                          ttsCurrentParaId,
                         ),
                       ),
                     ),
@@ -2099,6 +2392,64 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Builds the reader content wrapped in a permanently-mounted [SelectionArea]
+  /// (used for long-press/drag text selection). The [SelectionArea] is never
+  /// added/removed from the tree — doing so mid-focus-shift crashes the
+  /// selection system. Instead, while [_selectionDisabled] is true the content
+  /// is wrapped in [SelectionContainer.disabled], which unregisters the
+  /// paragraphs' selectables from the root registrar without disposing the
+  /// [SelectionArea] itself.
+  Widget _buildReaderContentWithSelection(
+    BuildContext context,
+    ReaderDataState data,
+    AppSettings settings,
+    ColorScheme colors,
+    ReaderTabInfo activeTab,
+    Color paliColor,
+    Color translationColor,
+    List<String> enabledLangs,
+    Map<String, LanguageTypography> langTypographies,
+    int? ttsHighlightLineId,
+    int? ttsHighlightParaId,
+  ) {
+    final content = Listener(
+      key: _contentHitTestKey,
+      onPointerDown: _handlePointerDown,
+      child: AnimatedBuilder(
+        animation: _dragDxNotifier,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(_dragDxNotifier.value, 0),
+          child: child,
+        ),
+        child: KeyedSubtree(
+          key: ValueKey('tab-${activeTab.bookId}'),
+          child: _buildReaderContent(
+            context,
+            data,
+            settings,
+            colors,
+            activeTab,
+            paliColor,
+            translationColor,
+            enabledLangs,
+            langTypographies,
+            ttsHighlightLineId: ttsHighlightLineId,
+            ttsHighlightParaId: ttsHighlightParaId,
+          ),
+        ),
+      ),
+    );
+
+    return SelectionArea(
+      key: _selectableRegionKey,
+      onSelectionChanged: _handleSelectionChanged,
+      contextMenuBuilder: _buildCopyContextMenu,
+      child: _selectionDisabled
+          ? SelectionContainer.disabled(child: content)
+          : content,
     );
   }
 

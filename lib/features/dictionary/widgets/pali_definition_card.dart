@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/pali_definition_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
@@ -25,20 +26,34 @@ class PaliDefinitionCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final entry = result.entry;
-    final script = ref.watch(settingsProvider).paliScript;
+    final settings = ref.watch(settingsProvider);
+    final script = settings.paliScript;
+    final pali = settings.typography.pali;
+    final trans = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
 
-    // Pāli text is rendered in the same script as the reading book.
+    // Pāli text is rendered in the same script as the reading book, using
+    // the user's Pāli typography (font family / size / line-height). The
+    // dictionary uses a slightly smaller scale than the reader.
     final paliStyle = TextStyle(
-      fontSize: 13,
-      height: 1.4,
+      fontSize: (pali.fontSize * 0.8).clamp(12.0, 26.0),
+      height: pali.lineHeight,
       color: colors.onSurface,
-      fontFamily: scriptFontFamily(script),
+      fontFamily: scriptFontFamily(script) ?? pali.fontFamily.fontFamily,
     );
     final contextStyle = TextStyle(
-      fontSize: 12,
-      height: 1.4,
+      fontSize: (pali.fontSize * 0.72).clamp(11.0, 24.0),
+      height: pali.lineHeight,
       color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-      fontFamily: scriptFontFamily(script),
+      fontFamily: scriptFontFamily(script) ?? pali.fontFamily.fontFamily,
+    );
+    final transStyle = TextStyle(
+      fontSize: (trans.fontSize * 0.8).clamp(11.0, 24.0),
+      height: trans.lineHeight,
+      fontStyle: FontStyle.italic,
+      color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+      fontFamily: trans.fontFamily.fontFamily,
     );
 
     return Container(
@@ -115,10 +130,11 @@ class PaliDefinitionCard extends ConsumerWidget {
               'body': Style(
                 margin: Margins.zero,
                 padding: HtmlPaddings.zero,
-                fontSize: FontSize(12),
-                lineHeight: const LineHeight(1.4),
+                fontSize: FontSize(paliStyle.fontSize ?? 13),
+                lineHeight: LineHeight(pali.lineHeight),
                 fontStyle: FontStyle.italic,
-                color: colors.onSurfaceVariant,
+                color: colors.onSurface,
+                fontFamily: paliStyle.fontFamily,
               ),
               'b': Style(fontWeight: FontWeight.bold),
               'i': Style(fontStyle: FontStyle.italic),
@@ -136,10 +152,11 @@ class PaliDefinitionCard extends ConsumerWidget {
                   'body': Style(
                     margin: Margins.zero,
                     padding: HtmlPaddings.zero,
-                    fontSize: FontSize(12),
-                    lineHeight: const LineHeight(1.4),
+                    fontSize: FontSize(transStyle.fontSize ?? 12),
+                    lineHeight: LineHeight(trans.lineHeight),
                     fontStyle: FontStyle.italic,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+                    color: transStyle.color,
+                    fontFamily: transStyle.fontFamily,
                   ),
                   'b': Style(fontWeight: FontWeight.bold),
                   'i': Style(fontStyle: FontStyle.italic),
@@ -200,57 +217,58 @@ class PaliDefinitionSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final resultsAsync = ref.watch(paliDefinitionProvider(searchWord));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.sm,
+        AppDimensions.marginMobile,
+        0,
+      ),
+      child: resultsAsync.when(
+        // While loading, show the header + a small spinner.
+        loading: () => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.auto_stories, size: 12, color: colors.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(
-              bookName,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurfaceVariant,
-              ),
+            _header(),
+            const SizedBox(height: 4),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        resultsAsync.when(
-          loading: () => const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          error: (_, _) => Text(
-            'No entry found',
-            style: TextStyle(
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          data: (results) {
-            if (results.isEmpty) {
-              return Text(
-                'No entry found',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontStyle: FontStyle.italic,
-                  color: colors.onSurfaceVariant,
-                ),
-              );
-            }
-            return Column(
-              children: results.map((r) {
-                return PaliDefinitionCard(result: r, colors: colors);
-              }).toList(),
-            );
-          },
-        ),
-      ],
+        // No linked sentence for this word → hide the section entirely.
+        error: (_, _) => const SizedBox.shrink(),
+        data: (results) {
+          if (results.isEmpty) return const SizedBox.shrink();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _header(),
+              const SizedBox(height: 4),
+              ...results.map(
+                (r) => PaliDefinitionCard(result: r, colors: colors),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
+
+  Widget _header() => Row(
+    children: [
+      Icon(Icons.auto_stories, size: 12, color: colors.onSurfaceVariant),
+      const SizedBox(width: 4),
+      Text(
+        bookName,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: colors.onSurfaceVariant,
+        ),
+      ),
+    ],
+  );
 }

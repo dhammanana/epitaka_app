@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
@@ -15,13 +16,18 @@ import '../../../shared/providers/side_panel_provider.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
-void showDictionarySheet(BuildContext context, String word) {
+Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
   developer.log(
     '[DICT] showDictionarySheet word="$word"',
     name: 'epitaka.dict',
   );
-  showModalBottomSheet(
+  return showModalBottomSheet(
     context: context,
+    // Route the sheet through the root navigator so it lives in its own
+    // overlay entry, away from the reader's focus/semantics subtree (which
+    // previously wrapped the SelectionArea). This keeps the sheet's own
+    // TextField focus grab from conflicting with the reader's selection state.
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     // The DraggableScrollableSheet handles its own drag/resize, so we
@@ -33,17 +39,18 @@ void showDictionarySheet(BuildContext context, String word) {
 }
 
 // ── Sheet sizing ────────────────────────────────────────────────────────
-// Three snap levels plus the fully-expanded maximum:
-//   1/3  → smallest collapsed state
-//   1/2  → default (enough to read a single word's meaning)
-//   2/3  → mid expansion
-//   0.88 → maximum
-// Dragging below [_sheetCloseExtent] dismisses the sheet.
-const double _sheetMinSize = 0.15;
+// The sheet follows the finger (no snap) so the user can freely:
+//   • drag up    → the sheet grows and its content scrolls (see more info)
+//   • drag down  → when released below [_sheetCloseExtent] the sheet closes
+//
+// We dismiss via a single guarded route pop (see the notification listener)
+// which avoids the previous bug where a repeated maybePop also closed the
+// reader route underneath.
+const double _sheetMinSize = 0.25;
 const double _sheetInitialSize = 0.5;
-const double _sheetMaxSize = 0.88;
-const List<double> _sheetSnapSizes = [0.33, 0.5, 0.66, 0.88];
-const double _sheetCloseExtent = 0.28;
+const double _sheetMaxSize = 0.95;
+// Dragging the sheet below this extent dismisses it.
+const double _sheetCloseExtent = 0.3;
 
 // ── Main Sheet Widget ──────────────────────────────────────────────────────
 
@@ -61,6 +68,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   final _focusNode = FocusNode();
   Timer? _debounce;
   bool _isConverting = false;
+
+  // Guards the single dismiss of this sheet's route so that a continuous
+  // drag gesture can't pop the reader route underneath as well.
+  bool _dismissed = false;
 
   // The currently looked up word
   String _query = '';
@@ -168,13 +179,23 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final trans = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
+    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
 
     return NotificationListener<DraggableScrollableNotification>(
-      // Dismiss when the user drags the sheet below the lowest snap level.
+      // Dismiss when the user drags the sheet below the smallest snap level.
+      // Guarded by [_dismissed] so the pop only happens once per gesture,
+      // preventing the reader route underneath from also being closed.
       onNotification: (notification) {
-        if (notification.extent <= _sheetCloseExtent) {
-          Navigator.of(context).maybePop();
+        if (!_dismissed && notification.extent <= _sheetCloseExtent) {
+          _dismissed = true;
+          Navigator.of(context).pop();
         }
         return false;
       },
@@ -182,8 +203,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         initialChildSize: _sheetInitialSize,
         minChildSize: _sheetMinSize,
         maxChildSize: _sheetMaxSize,
-        snap: true,
-        snapSizes: _sheetSnapSizes,
+        // No snap: the sheet tracks the finger so a downward drag can always
+        // reach [_sheetCloseExtent] and close the sheet from any height.
+        snap: false,
         builder: (context, scrollController) {
           return Container(
             decoration: BoxDecoration(
@@ -194,14 +216,22 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
             child: Column(
               children: [
-                // Drag handle
+                // Drag handle — a visual affordance for the pull-to-close /
+                // drag-to-expand gesture. The whole sheet is already draggable
+                // (handled by DraggableScrollableSheet), so this is purely
+                // decorative.
                 Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  width: 32,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colors.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
                 ),
 
@@ -251,7 +281,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                           ),
                           style: AppTypography.bodyTranslation.copyWith(
                             color: colors.onSurface,
-                            fontSize: 16,
+                            fontSize: transSize,
+                            fontFamily: trans.fontFamily.fontFamily,
                           ),
                           onChanged: _onSearchChanged,
                           onSubmitted: _performSearch,
@@ -264,7 +295,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                         const SizedBox(width: 4),
                         _SheetPinButton(
                           word: _query,
-                          onPinned: () => Navigator.of(context).maybePop(),
+                          onPinned: () => Navigator.of(context).pop(),
                         ),
                       ],
                     ],
@@ -326,6 +357,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildIdleState(ColorScheme colors) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final trans = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
+    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
+    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -340,6 +378,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             'Dictionary',
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurfaceVariant,
+              fontSize: paliSize,
             ),
           ),
           const SizedBox(height: AppDimensions.sm),
@@ -348,7 +387,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             textAlign: TextAlign.center,
             style: AppTypography.bodyTranslation.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-              fontSize: 14,
+              fontSize: transSize,
+              fontFamily: trans.fontFamily.fontFamily,
             ),
           ),
         ],
@@ -397,6 +437,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     ColorScheme colors,
     ScrollController scrollController,
   ) {
+    final settings = ref.watch(settingsProvider);
+    final trans = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
+
+    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
     return ref
         .watch(dpdDictionarySearchProvider(_query))
         .when(
@@ -454,6 +500,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       'Did you mean…',
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
+                        fontSize: transSize,
                       ),
                     ),
                   ),
@@ -540,20 +587,24 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// - book_id=11 (DPD) → rich DPD section (headwords + deconstructor)
   /// - book_id=100 (Pāli definition) → linked sentence cards
   /// - everything else → plain-text definition lookup
+  ///
+  /// Each section owns its own outer padding and returns a zero-size widget
+  /// when it has no record, so empty dictionaries simply disappear (no
+  /// "No entry found" text).
   List<Widget> _buildDictionarySections(
     ColorScheme colors,
     DpdFullLookup lookup,
     String searchWord,
     List<DictionaryBook> enabledBooks,
   ) {
-    if (enabledBooks.isEmpty) return [];
+    if (enabledBooks.isEmpty) return const <Widget>[];
 
     return enabledBooks.map((book) {
       final child = switch (book.id) {
         11 =>
           (lookup.hasHeadwords || lookup.hasDeconstructor)
               ? _buildDpdSection(colors, lookup)
-              : null,
+              : const SizedBox.shrink(),
         100 => PaliDefinitionSection(
           searchWord: searchWord,
           bookName: book.name,
@@ -566,24 +617,19 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           colors: colors,
         ),
       };
-      if (child == null) return const SliverToBoxAdapter(child: SizedBox());
-      return SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppDimensions.marginMobile,
-            AppDimensions.sm,
-            AppDimensions.marginMobile,
-            0,
-          ),
-          child: child,
-        ),
-      );
+      if (child is SizedBox && child.child == null) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      return SliverToBoxAdapter(child: child);
     }).toList();
   }
 
   // ── DPD Section ──────────────────────────────────────────────────────────
 
   Widget _buildDpdSection(ColorScheme colors, DpdFullLookup lookup) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -597,7 +643,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               style: AppTypography.labelSmall.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w700,
-                fontSize: 12,
+                fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+                fontFamily: paliFontFamily,
               ),
             ),
           ],
@@ -609,8 +656,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           lookup.searchedKey,
           style: AppTypography.displayPali.copyWith(
             color: colors.onSurface,
-            fontSize: 24,
+            fontSize: (pali.fontSize * 1.1).clamp(16.0, 28.0),
             fontWeight: FontWeight.bold,
+            fontFamily: pali.fontFamily.fontFamily,
           ),
         ),
         const SizedBox(height: 10),
@@ -640,6 +688,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildDeconstructorSection(ColorScheme colors, DpdFullLookup lookup) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -652,7 +703,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
-                fontSize: 12,
+                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
               ),
             ),
           ],
@@ -711,7 +762,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                         style: AppTypography.bodyTranslation.copyWith(
                           color: colors.primary,
                           fontWeight: FontWeight.w500,
-                          fontSize: 13,
+                          fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
+                          fontFamily: paliFontFamily,
                         ),
                       ),
                     ),
@@ -760,7 +812,11 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                       fontWeight: isTokenActive
                                           ? FontWeight.w600
                                           : FontWeight.w400,
-                                      fontSize: 12,
+                                      fontSize: (pali.fontSize * 0.75).clamp(
+                                        11.0,
+                                        18.0,
+                                      ),
+                                      fontFamily: paliFontFamily,
                                     ),
                                   ),
                                 ),
@@ -802,22 +858,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildTokenContent(ColorScheme colors, String token) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
     final cached = _subLookupCache[token];
     if (cached != null) {
       if (cached.isEmpty) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Center(
-            child: Text(
-              'No definition found for "$token"',
-              style: TextStyle(
-                fontSize: 13,
-                fontStyle: FontStyle.italic,
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-          ),
-        );
+        return const SizedBox.shrink();
       }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,

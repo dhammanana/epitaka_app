@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
 
 import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/settings_provider.dart';
+import '../../../core/theme/app_dimensions.dart';
 
 // ── HTML → plain text ─────────────────────────────────────────────────────
 
@@ -102,6 +104,8 @@ class DpdHtmlRichText extends StatelessWidget {
   Widget build(BuildContext context) {
     final processedHtml = _makeWordsClickable(html);
 
+    // Render DPD meanings as clean, normal HTML that follows the app's
+    // theme (font family / size / colour are supplied via [baseStyle]).
     return Html(
       data: processedHtml,
       onLinkTap: (url, attributes, element) {
@@ -117,36 +121,33 @@ class DpdHtmlRichText extends StatelessWidget {
           margin: Margins.zero,
           padding: HtmlPaddings.zero,
           fontSize: FontSize(baseStyle.fontSize ?? 14),
-          lineHeight: const LineHeight(1.4),
+          lineHeight: LineHeight(1.5),
           color: baseStyle.color,
           fontFamily: baseStyle.fontFamily,
         ),
-        'details': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
-        'summary': Style(
-          fontWeight: FontWeight.w600,
-          margin: Margins.only(bottom: 2),
-        ),
+        'p': Style(margin: Margins.only(bottom: 6)),
         'b': Style(fontWeight: FontWeight.bold),
+        'strong': Style(fontWeight: FontWeight.bold),
         'i': Style(fontStyle: FontStyle.italic),
+        'em': Style(fontStyle: FontStyle.italic),
+        'u': Style(textDecoration: TextDecoration.underline),
         'a': Style(
           color: linkColor,
           fontWeight: FontWeight.w500,
           textDecoration: TextDecoration.none,
         ),
-        '.dpd-meaning': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
-        '.dpd-meaning-detail': Style(
-          margin: Margins.zero,
-          padding: HtmlPaddings.only(left: 8),
-          border: const Border(
-            left: BorderSide(color: Color(0x33000000), width: 1),
-          ),
+        'details': Style(margin: Margins.only(bottom: 4)),
+        'summary': Style(
+          fontWeight: FontWeight.w600,
+          color: linkColor,
+          margin: Margins.only(bottom: 2),
         ),
-        '.dpd-grammar': Style(margin: Margins.only(bottom: 1)),
-        '.dpd-sanskrit': Style(margin: Margins.only(bottom: 1)),
-        '.dpd-example': Style(
-          fontStyle: FontStyle.italic,
-          margin: Margins.only(bottom: 1),
+        'div': Style(margin: Margins.only(bottom: 2)),
+        'ul': Style(
+          margin: Margins.only(bottom: 4),
+          padding: HtmlPaddings.only(left: 16),
         ),
+        'li': Style(margin: Margins.only(bottom: 2)),
       },
     );
   }
@@ -197,7 +198,10 @@ class DictHtmlContent extends StatelessWidget {
 // ── DPD Headword Card ──────────────────────────────────────────────────────
 
 /// Displays a DPD headword with lemma and clickable HTML meaning.
-class DpdHeadwordCard extends StatelessWidget {
+///
+/// Font sizes follow the app's Pāli typography settings so they scale with
+/// the reader (Ctrl/Cmd + / − and the Typography settings screen).
+class DpdHeadwordCard extends ConsumerWidget {
   final String lemma;
   final String? meaningHtml;
   final ColorScheme colors;
@@ -214,8 +218,18 @@ class DpdHeadwordCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final sw = Stopwatch()..start();
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
+    // The dictionary uses a slightly smaller type scale than the reader.
+    final baseSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
+    final lemmaSize = compact ? (baseSize * 0.9).clamp(12.0, 22.0) : baseSize;
+    final meaningSize = compact
+        ? (baseSize * 0.85).clamp(11.0, 20.0)
+        : baseSize;
+
     final child = Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 6),
@@ -231,10 +245,11 @@ class DpdHeadwordCard extends StatelessWidget {
           Text(
             lemma,
             style: TextStyle(
-              fontSize: compact ? 13 : 16,
+              fontSize: lemmaSize,
+              height: pali.lineHeight,
               fontWeight: FontWeight.w600,
               color: colors.primary,
-              fontFamily: 'Georgia',
+              fontFamily: paliFontFamily,
             ),
           ),
           const SizedBox(height: 4),
@@ -242,23 +257,16 @@ class DpdHeadwordCard extends StatelessWidget {
             DpdHtmlRichText(
               html: meaningHtml!,
               baseStyle: TextStyle(
-                fontSize: compact ? 12 : 14,
-                height: 1.3,
+                fontSize: meaningSize,
+                height: pali.lineHeight,
                 color: colors.onSurface,
-                fontFamily: 'Georgia',
+                fontFamily: paliFontFamily,
               ),
               linkColor: colors.primary,
               onWordTap: onWordTap,
             )
           else
-            Text(
-              'No definition available',
-              style: TextStyle(
-                fontSize: 13,
-                fontStyle: FontStyle.italic,
-                color: colors.onSurfaceVariant,
-              ),
-            ),
+            const SizedBox.shrink(),
         ],
       ),
     );
@@ -293,54 +301,64 @@ class DictDefinitionSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final typo = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
+    final defFontFamily = typo.fontFamily.fontFamily;
+    final defFontSize = (typo.fontSize * 0.8).clamp(12.0, 24.0);
+    final defLineHeight = typo.lineHeight;
+
     final key = DictLookupKey(bookId, searchWord);
     final defsAsync = ref.watch(dictionaryDefinitionProvider(key));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    Widget header() => Row(
       children: [
-        Row(
+        Icon(Icons.book, size: 12, color: colors.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Text(
+          bookName,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.sm,
+        AppDimensions.marginMobile,
+        0,
+      ),
+      child: defsAsync.when(
+        // While loading, show the header + a small spinner.
+        loading: () => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.book, size: 12, color: colors.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(
-              bookName,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurfaceVariant,
-              ),
+            header(),
+            const SizedBox(height: 4),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        defsAsync.when(
-          loading: () => const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          error: (_, _) => Text(
-            'No entry found',
-            style: TextStyle(
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          data: (definitions) {
-            if (definitions.isEmpty) {
-              return Text(
-                'No entry found',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontStyle: FontStyle.italic,
-                  color: colors.onSurfaceVariant,
-                ),
-              );
-            }
-            return Column(
-              children: definitions.map((def) {
+        // No record for this word in this dictionary → hide entirely
+        // (no header, no "No entry found" text).
+        error: (_, _) => const SizedBox.shrink(),
+        data: (definitions) {
+          if (definitions.isEmpty) return const SizedBox.shrink();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header(),
+              const SizedBox(height: 4),
+              ...definitions.map((def) {
                 final definition = def['definition'] as String? ?? '';
                 final plain = stripHtmlToPlainText(definition);
                 return Container(
@@ -357,17 +375,18 @@ class DictDefinitionSection extends ConsumerWidget {
                   child: Text(
                     plain,
                     style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
+                      fontSize: defFontSize,
+                      height: defLineHeight,
                       color: colors.onSurface,
+                      fontFamily: defFontFamily,
                     ),
                   ),
                 );
-              }).toList(),
-            );
-          },
-        ),
-      ],
+              }),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -375,7 +394,9 @@ class DictDefinitionSection extends ConsumerWidget {
 // ── Suggestion Card (fallback "Did you mean?" tile) ────────────────────────
 
 /// A compact suggestion tile for prefix search results.
-class SuggestionTile extends StatelessWidget {
+///
+/// Font sizes follow the app's typography settings.
+class SuggestionTile extends ConsumerWidget {
   final String word;
   final String? meaningPreview;
   final VoidCallback onTap;
@@ -390,7 +411,16 @@ class SuggestionTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final trans = settings.typography.typographyFor(
+      settings.primaryTranslationLang,
+    );
+    final paliFontFamily = pali.fontFamily.fontFamily;
+    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
+    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       color: colors.surfaceContainerLow,
@@ -417,7 +447,8 @@ class SuggestionTile extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: colors.primary,
-                        fontSize: 14,
+                        fontSize: paliSize,
+                        fontFamily: paliFontFamily,
                       ),
                     ),
                     if (meaningPreview != null && meaningPreview!.isNotEmpty)
@@ -426,7 +457,7 @@ class SuggestionTile extends StatelessWidget {
                         child: Text(
                           _stripHtml(meaningPreview!),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: transSize * 0.8,
                             color: colors.onSurfaceVariant,
                           ),
                           maxLines: 1,

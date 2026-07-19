@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/velthuis.dart';
@@ -427,7 +428,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
 // ── DPD Section ────────────────────────────────────────────────────────
 
-class _DpdSection extends StatelessWidget {
+class _DpdSection extends ConsumerWidget {
   final ColorScheme colors;
   final DpdFullLookup lookup;
   final ValueChanged<String> onWordTap;
@@ -439,7 +440,10 @@ class _DpdSection extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -452,7 +456,8 @@ class _DpdSection extends StatelessWidget {
               style: AppTypography.labelSmall.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w700,
-                fontSize: 10,
+                fontSize: (pali.fontSize * 0.6).clamp(10.0, 16.0),
+                fontFamily: paliFontFamily,
               ),
             ),
           ],
@@ -462,8 +467,9 @@ class _DpdSection extends StatelessWidget {
           lookup.searchedKey,
           style: AppTypography.headlineSmall.copyWith(
             color: colors.onSurface,
-            fontSize: 18,
+            fontSize: (pali.fontSize * 1.0).clamp(16.0, 30.0),
             fontWeight: FontWeight.bold,
+            fontFamily: paliFontFamily,
           ),
         ),
         const SizedBox(height: 6),
