@@ -73,6 +73,12 @@ class AppLocalizations {
   String get ttsReplacementsSubtitle =>
       _t('Regex text replacements', 'Thay thế văn bản bằng regex');
   String get script => _t('Script', 'Chữ viết');
+  String get stripVariantAnnotations =>
+      _t('Show variant readings', 'Hiển phiên bản văn bản khác');
+  String get stripVariantAnnotationsSubtitle => _t(
+    'Show variant readings from other textual versions',
+    'Hiển thị các phiên bản văn bản từ các bản khác',
+  );
   String get libraryBrowser => _t('Library Browser', 'Trình duyệt thư viện');
   String get defaultExpandLevel =>
       _t('Default expand level', 'Mức mở rộng mặc định');

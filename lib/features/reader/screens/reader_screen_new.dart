@@ -22,6 +22,7 @@ import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
+import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 
 import '../../settings/widgets/settings_dialog.dart';
 import '../../library/screens/library_screen.dart';
@@ -35,12 +36,10 @@ import '../widgets/bookmark_dialog.dart';
 import '../widgets/jump_sheet.dart';
 import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
-import '../widgets/reader_context_menu.dart';
+import '../widgets/reader_selection_overlay.dart';
 import '../widgets/reader_drag_thumb.dart';
 import '../widgets/reader_in_book_search_bar.dart';
 import '../widgets/reader_tts_widgets.dart';
-import '../widgets/reader_content_list.dart';
-import '../widgets/reader_content_with_selection.dart';
 import '../widgets/tab_strip.dart';
 
 /// Reader screen with multiple tabs, showing Pāli text with translations.
@@ -117,37 +116,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// re-triggering the dictionary for the same word.
   String? _lastLookedUpWord;
 
-  /// When true, the reader content is wrapped in a [SelectionContainer.disabled]
-  /// so its paragraphs stop participating in the ancestor [SelectionArea]'s
-  /// selection. We toggle this (instead of unmounting [SelectionArea] itself)
-  /// while the dictionary sheet is open: [SelectionContainer.disabled]
-  /// unregisters the paragraphs' selectables from the root registrar without
-  /// disposing the [SelectionArea]/[SelectableRegion] itself, which is the
-  /// state Flutter's selection system can't tolerate mid-focus-shift (that
-  /// caused the '_SelectionKeepAliveState.remove' null crash and the
-  /// '!conflict' / 'parentDataDirty' assertions). The root registrar stays
-  /// mounted the whole time; only the content underneath stops participating.
-  bool _selectionDisabled = false;
+  // ═══════════════════════════════════════════════════════════════════════
+  // CUSTOM TEXT SELECTION (replaces SelectionArea — flutter/flutter#124078)
+  // Character-level selection with draggable handles & cross-paragraph support.
+  // ═══════════════════════════════════════════════════════════════════════
 
-  /// Key for the [SelectionArea]'s [SelectableRegionState] so we can clear
-  /// any selection it created after our own double-tap detector looks up a
-  /// word (keeping the region in a clean state for the next tap).
-  final GlobalKey<SelectableRegionState> _selectableRegionKey =
-      GlobalKey<SelectableRegionState>();
+  /// The current document-level text selection, or null when nothing selected.
+  DocumentSelection? _documentSelection;
 
   /// Key for the [Listener] wrapping the reader content. We hit-test from
   /// this widget's render object (a plain [RenderProxyBox]) to locate the
-  /// [RenderParagraph] under the tap. We deliberately do NOT hit-test from
-  /// the [SelectionArea]'s render object, whose `hitTest` is overridden to
-  /// only consider selection handles/toolbar and would never find the text.
+  /// [RenderParagraph] under the tap.
   final GlobalKey _contentHitTestKey = GlobalKey();
 
-  /// Double-tap detection state (raw pointer events, independent of the
-  /// gesture arena that [SelectionArea] and the tab-swipe [GestureDetector]
-  /// fight over).
-  int? _lastTapDownTime;
-  Offset? _lastTapDownPosition;
-  int _tapCounter = 0;
+  /// Cache of plain text per paragraph, keyed by bookId.
+  final Map<String, List<String>> _paragraphPlainTexts = {};
 
   // Track the last paraId we've jumped to per book, so we don't re-jump
   // every time the tab rebuilds (e.g. on unrelated provider changes).
@@ -160,10 +143,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Visible paragraph indices for the active tab (used for copying fallback).
   int _visibleStartIndex = 0;
   int _visibleEndIndex = 0;
-
-  /// Cached selection content from [SelectionArea.onSelectionChanged] for
-  /// Ctrl+C and context-menu copy buttons.
-  SelectedContent? _lastSelectedContent;
 
   // App lifecycle state for background TTS optimization
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
@@ -542,6 +521,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _onScrollOffsetChanged(String bookId, double delta) {
     if (!mounted || delta == 0) return;
     if (ref.read(readerTabsProvider).activeTab?.bookId != bookId) return;
+    // Any scroll dismisses the custom text selection (the highlight is tied
+    // to a paragraph that is now moving out of context).
+    _clearDocumentSelection();
     if (!Mobile.isPhone(context)) return;
 
     // Suppress app bar collapse/expand for ALL programmatic scrolls,
@@ -1188,76 +1170,279 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Default: show as a bottom sheet on all platforms. The user can pin it
     // (via the toolbar pin button) to dock it in the right side panel.
     //
-    // Disable selection (via SelectionContainer.disabled, NOT by unmounting
-    // SelectionArea) before the sheet opens. We commit the disable on its own
-    // frame first so every paragraph's selectable unregisters from the root
-    // registrar *before* the modal steals focus; only then does the sheet
-    // mount on the next frame. By the time focus shifts, the registrar has
-    // nothing left to reconcile, so there's no teardown race or O(n) walk.
-    // SelectionArea itself stays mounted the whole time.
-    setState(() => _selectionDisabled = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDictionarySheet(context, word.trim()).whenComplete(() {
-        if (mounted) setState(() => _selectionDisabled = false);
-      });
+    // We no longer toggle SelectionArea here: the reader uses a custom
+    // hit-test-based selection (see [_selectWordAt] /
+    // [_selectParagraphAt]) instead of a framework [SelectionArea], which
+    // crashes on lazily-scrolled lists (flutter/flutter#124078, #152420).
+
+    showDictionarySheet(context, word.trim());
+  }
+
+  /// Select the whole paragraph rendered at the global [globalPosition] for
+  /// our custom (SelectionArea-free) copy path.
+  ///
+  /// Release-safe: instead of walking render-object parents (which relies on
+  /// [RenderObject.debugCreator] and is stripped in release builds), we map
+  /// the tap's Y to a paragraph index using the [ScrollablePositionedList]'s
+  /// reported item-edge fractions. The selected paragraph's render box is
+  /// then found by walking the reader content tree for the matching paraId
+  /// (see [_findSelectedRenderBox]) so the overlay can paint the highlight.
+  // ── Text selection helpers ───────────────────────────────────────────
+
+  /// Build (or retrieve cached) plain text for every paragraph in the active
+  /// book. The plain text concatenates all Pāli and translation lines with
+  /// spaces so that text offsets map 1:1 to the rendered text.
+  List<String> _plainTextsForBook(String bookId) {
+    if (_paragraphPlainTexts.containsKey(bookId)) {
+      return _paragraphPlainTexts[bookId]!;
+    }
+    final readerState = ref.read(readerDataProvider(bookId));
+    final texts = <String>[];
+    for (final para in readerState.paragraphs) {
+      final buffer = StringBuffer();
+      for (final line in para.lines) {
+        if (line.paliText != null && line.paliText!.isNotEmpty) {
+          if (buffer.isNotEmpty) buffer.write(' ');
+          buffer.write(line.paliText);
+        }
+        for (final entry in line.translations.entries) {
+          if (entry.value.isNotEmpty) {
+            if (buffer.isNotEmpty) buffer.write(' ');
+            buffer.write(entry.value.replaceAll(RegExp(r'<[^>]*>'), ''));
+          }
+        }
+      }
+      texts.add(buffer.toString());
+    }
+    _paragraphPlainTexts[bookId] = texts;
+    return texts;
+  }
+
+  /// Resolve a global position to a (paragraphIndex, textOffset) within the
+  /// active book's text. Returns null if the position is not over text.
+  DocumentTextPosition? _resolveDocumentPosition(Offset globalPosition) {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return null;
+    final bookId = activeTab.bookId;
+
+    final rootCtx = _contentHitTestKey.currentContext;
+    if (rootCtx == null) return null;
+    final rootBox = rootCtx.findRenderObject();
+    if (rootBox is! RenderBox) return null;
+
+    final local = rootBox.globalToLocal(globalPosition);
+    final result = BoxHitTestResult();
+    rootBox.hitTest(result, position: local);
+
+    RenderParagraph? targetParagraph;
+    for (final entry in result.path) {
+      if (entry.target is RenderParagraph) {
+        targetParagraph = entry.target as RenderParagraph;
+        break;
+      }
+    }
+    if (targetParagraph == null && result.path.isNotEmpty) {
+      RenderObject? node = result.path.first.target as RenderObject?;
+      while (node != null) {
+        if (node is RenderParagraph) {
+          targetParagraph = node;
+          break;
+        }
+        node = node.parent;
+      }
+    }
+    if (targetParagraph == null || !targetParagraph.attached) return null;
+
+    int? paragraphIndex;
+    void visit(Element element) {
+      if (paragraphIndex != null) return;
+      final w = element.widget;
+      if (w is ReadingParagraph) {
+        final box = element.findRenderObject();
+        if (box == targetParagraph) {
+          paragraphIndex = _paragraphIndexForParaId(bookId, w.paragraph.paraId);
+          return;
+        }
+      }
+      element.visitChildElements(visit);
+    }
+    rootCtx.visitChildElements(visit);
+
+    if (paragraphIndex == null) return null;
+
+    final paragraphOrigin = targetParagraph.localToGlobal(Offset.zero);
+    final localInParagraph = globalPosition - paragraphOrigin;
+    final textPosition = targetParagraph.getPositionForOffset(localInParagraph);
+
+    return DocumentTextPosition(paragraphIndex!, textPosition.offset);
+  }
+
+  int _paragraphIndexForParaId(String bookId, int paraId) {
+    final readerState = ref.read(readerDataProvider(bookId));
+    for (int i = 0; i < readerState.paragraphs.length; i++) {
+      if (readerState.paragraphs[i].paraId == paraId) return i;
+    }
+    return -1;
+  }
+
+  _ParagraphRenderInfo? _resolveParagraphRender(int paragraphIndex) {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return null;
+    final bookId = activeTab.bookId;
+    final readerState = ref.read(readerDataProvider(bookId));
+    if (paragraphIndex < 0 || paragraphIndex >= readerState.paragraphs.length) {
+      return null;
+    }
+    final targetParaId = readerState.paragraphs[paragraphIndex].paraId;
+
+    final rootCtx = _contentHitTestKey.currentContext;
+    if (rootCtx == null) return null;
+
+    RenderParagraph? foundRp;
+    RenderBox? foundContainer;
+    void visit(Element element) {
+      if (foundRp != null) return;
+      final w = element.widget;
+      if (w is ReadingParagraph && w.paragraph.paraId == targetParaId) {
+        final box = element.findRenderObject();
+        if (box is RenderBox) {
+          foundContainer = box;
+          void findRp(RenderObject node) {
+            if (foundRp != null) return;
+            if (node is RenderParagraph) {
+              foundRp = node;
+              return;
+            }
+            node.visitChildren(findRp);
+          }
+          findRp(box);
+        }
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+    rootCtx.visitChildElements(visit);
+
+    if (foundRp == null || !foundRp!.attached) return null;
+    return _ParagraphRenderInfo(
+      renderParagraph: foundRp!,
+      containerBox: foundContainer!,
+      paraId: targetParaId,
+    );
+  }
+
+  /// Select the word under the global position (long-press).
+  void _selectWordAtPosition(Offset globalPosition) {
+    final docPos = _resolveDocumentPosition(globalPosition);
+    if (docPos == null) return;
+
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final plainTexts = _plainTextsForBook(activeTab.bookId);
+    if (docPos.paragraphIndex >= plainTexts.length) return;
+
+    final rootCtx = _contentHitTestKey.currentContext;
+    if (rootCtx == null) return;
+    final rootBox = rootCtx.findRenderObject();
+    if (rootBox is! RenderBox) return;
+
+    final local = rootBox.globalToLocal(globalPosition);
+    final result = BoxHitTestResult();
+    rootBox.hitTest(result, position: local);
+
+    RenderParagraph? paragraph;
+    for (final entry in result.path) {
+      if (entry.target is RenderParagraph) {
+        paragraph = entry.target as RenderParagraph;
+        break;
+      }
+    }
+    if (paragraph == null) return;
+
+    final paragraphOrigin = paragraph.localToGlobal(Offset.zero);
+    final localInParagraph = globalPosition - paragraphOrigin;
+    final textPosition = paragraph.getPositionForOffset(localInParagraph);
+    final boundary = paragraph.getWordBoundary(textPosition);
+
+    if (!boundary.isValid || boundary.isCollapsed) return;
+
+    setState(() {
+      _documentSelection = DocumentSelection(
+        baseParagraphIndex: docPos.paragraphIndex,
+        baseTextOffset: boundary.start,
+        extentParagraphIndex: docPos.paragraphIndex,
+        extentTextOffset: boundary.end,
+        anchorParagraphIndex: docPos.paragraphIndex,
+        anchorTextOffset: boundary.start,
+      );
     });
   }
 
-  void _handleSelectionChanged(SelectedContent? selection) {
-    _lastSelectedContent = selection;
-    developer.log(
-      '[DBG] onSelectionChanged plain="${selection?.plainText}" '
-      'hasSelection=${selection != null}',
-      name: 'epitaka.dict',
-    );
-
-    // Dictionary lookup is now driven explicitly by our own double-tap
-    // detector (see [_handlePointerDown] + [_selectWordAt]), which hit-tests
-    // the render tree to find the word under the tap. We no longer infer a
-    // double-tap from a single-word selection here, because that heuristic
-    // competed with the tab-swipe [GestureDetector] and was flaky from the
-    // second tap onward.
-    //
-    // We still cache the selection for the copy context menu / Ctrl+C
-    // (long-press selection, which is a separate gesture from double-tap).
+  void _clearDocumentSelection() {
+    if (_documentSelection != null) {
+      setState(() => _documentSelection = null);
+    }
   }
 
-  /// Detect a double-tap from raw pointer-down events. This runs *before*
-  /// the gesture arena resolves, so it is not subject to the race between
-  /// [SelectionArea]'s double-tap recognizer and the tab-swipe
-  /// [GestureDetector]. When a double-tap is detected we look up the word
-  /// at the tap point ourselves and open the dictionary.
-  void _handlePointerDown(PointerDownEvent event) {
-    final now = event.timeStamp.inMilliseconds;
-    final lastTime = _lastTapDownTime;
-    final lastPos = _lastTapDownPosition;
-    _lastTapDownTime = now;
-    _lastTapDownPosition = event.localPosition;
-    developer.log(
-      '[DBG] pointerDown #${_tapCounter++} at=${event.localPosition} '
-      'dt=${lastTime != null ? now - lastTime : '-'} '
-      'dist=${lastPos != null ? (event.localPosition - lastPos).distance : '-'}',
-      name: 'epitaka.dict',
-    );
+  void _onSelectionChanged(DocumentSelection newSel) {
+    setState(() => _documentSelection = newSel);
+  }
 
-    if (lastTime != null && lastPos != null) {
-      final dt = now - lastTime;
-      final dist = (event.localPosition - lastPos).distance;
-      const kDoubleTapTime = 400; // ms
-      const kDoubleTapSlop = 40.0; // px
-      if (dt >= 0 && dt <= kDoubleTapTime && dist <= kDoubleTapSlop) {
-        // Double-tap confirmed. Look up the word at this point.
-        developer.log('[DBG] DOUBLE-TAP detected', name: 'epitaka.dict');
-        _lastTapDownTime = null;
-        _lastTapDownPosition = null;
-        _selectWordAt(event.position);
-      } else {
-        developer.log(
-          '[DBG] tap too slow/far (dt=$dt dist=$dist) — not a double-tap',
-          name: 'epitaka.dict',
-        );
-      }
+  void _onCopyRange(
+    int startParaIdx,
+    int startOffset,
+    int endParaIdx,
+    int endOffset,
+    CopyScope scope,
+    bool addQuote,
+  ) {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+
+    final selectedParagraphs = <ParagraphData>[];
+    for (int pIdx = startParaIdx; pIdx <= endParaIdx; pIdx++) {
+      if (pIdx < 0 || pIdx >= readerState.paragraphs.length) continue;
+      selectedParagraphs.add(readerState.paragraphs[pIdx]);
     }
+    if (selectedParagraphs.isEmpty) return;
+    _copyParagraphs(selectedParagraphs, scope, addQuote: addQuote);
+  }
+
+  Future<void> _copyParagraphs(
+    List<ParagraphData> paragraphs,
+    CopyScope scope, {
+    required bool addQuote,
+  }) async {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+
+    final settings = ref.read(settingsProvider);
+    final quoteFormat = addQuote
+        ? settings.copyQuoteFormat
+        : CopyQuoteFormat.none;
+    final brightness = Theme.of(context).brightness;
+    final paliColor = settings.paliColorPair.resolve(brightness);
+    final transColor = settings.translationColorPair.resolve(brightness);
+    final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
+    final enabledLangs = settings.enabledTranslations.isNotEmpty
+        ? settings.enabledTranslations.toList()
+        : (settings.showTranslation
+              ? [settings.primaryTranslationLang]
+              : <String>[]);
+
+    await ReadingClipboard.copy(
+      paragraphs,
+      scope: scope,
+      quoteFormat: quoteFormat,
+      bookId: activeTab.bookId,
+      bookName: readerState.bookName,
+      htmlColor: transColor,
+      paliCssColor: paliColor,
+      pageNumberingSystem: pageSystemLabel,
+      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+    );
   }
 
   /// Find the Pāli word rendered at the global [globalPosition] and open the
@@ -1266,11 +1451,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// We hit-test the reader content (via [_contentHitTestKey], a plain
   /// [RenderProxyBox] that descends into its children) to locate the
   /// [RenderParagraph] under the tap, then ask it for the word boundary at
-  /// that offset. This is fully self-contained: it does not depend on
-  /// [SelectionArea]'s own (flaky) double-tap recognition, which competes
-  /// with the tab-swipe [GestureDetector] in the gesture arena and caused
-  /// the lookup to work only intermittently (reliably on the first tap,
-  /// then sporadically afterwards).
+  /// that offset. This is fully self-contained and does not depend on any
+  /// framework selection machinery.
   void _selectWordAt(Offset globalPosition) {
     final context = _contentHitTestKey.currentContext;
     if (context == null) {
@@ -1367,12 +1549,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         name: 'epitaka.dict',
       );
       _onWordLookup(word);
-      // NOTE: We deliberately do NOT call clearSelection() here. Clearing the
-      // selection while the modal dictionary sheet is opening was fighting
-      // SelectionArea's own (now suppressed) selection and triggered
-      // '!conflict' / 'parentDataDirty' framework assertions. Because the
-      // double-tap is now claimed by the inner GestureDetector, SelectionArea
-      // no longer selects the word, so there is nothing to clear.
+      // The dictionary sheet opens on top; our custom selection (if any) is
+      // independent of the framework SelectableRegion, so there is nothing
+      // to clear here.
     }
   }
 
@@ -1380,237 +1559,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return text.replaceAll(RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), '').trim();
   }
 
-  // ── Copy with style ──────────────────────────────────────────────────
-
-  Widget _buildCopyContextMenu(
-    BuildContext context,
-    SelectableRegionState selectableRegionState,
-  ) {
-    final anchors = selectableRegionState.contextMenuAnchors;
-    final colors = Theme.of(context).colorScheme;
-
-    return AdaptiveTextSelectionToolbar(
-      anchors: anchors,
-      children: [
-        ContextMenuButton(
-          icon: Icons.copy_all,
-          label: 'Copy with Style',
-          onTap: () {
-            _copySelectedContent(CopyScope.both, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.text_fields,
-          label: 'Pāli Only',
-          onTap: () {
-            _copySelectedContent(CopyScope.pali, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.translate,
-          label: 'Translation Only',
-          onTap: () {
-            _copySelectedContent(CopyScope.translation, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.format_quote,
-          label: 'Copy with Quote',
-          onTap: () {
-            _copySelectedContent(CopyScope.both, addQuote: true);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.select_all,
-          label: 'Select All',
-          onTap: () => selectableRegionState.selectAll(),
-          colors: colors,
-        ),
-      ],
-    );
-  }
+  // ── Copy with style (custom, SelectionArea-free) ───────────────────
+  //
+  // Selection is a single paragraph chosen by long-press (see
+  // [_selectParagraphAt]); the highlight is painted by [_ReaderSelectionOverlay].
+  // The copy buttons copy that paragraph's [ParagraphData] with style. There
+  // is no cross-paragraph range selection in this implementation (that would
+  // require tracking drag geometry across recycled list items), so the old
+  // "Select All" button is dropped.
 
   void _onCopyShortcut() {
-    _copySelectedContent(CopyScope.both, addQuote: false);
+    final sel = _documentSelection;
+    if (sel != null && !sel.isCollapsed) {
+      _onCopyRange(
+        sel.baseParagraphIndex,
+        sel.baseTextOffset,
+        sel.extentParagraphIndex,
+        sel.extentTextOffset,
+        CopyScope.both,
+        false,
+      );
+    } else {
+      _copyVisibleContent(CopyScope.both, addQuote: false);
+    }
   }
-
-  Future<void> _copySelectedContent(
-    CopyScope scope, {
-    required bool addQuote,
-  }) async {
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    if (readerState.paragraphs.isEmpty) return;
-
-    final selectedContent = _lastSelectedContent;
-    if (selectedContent == null || selectedContent.plainText.trim().isEmpty) {
-      await _copyVisibleContent(scope, addQuote: addQuote);
-      return;
-    }
-
-    final selectedParagraphs = _findSelectedParagraphs(
-      selectedContent.plainText,
-      readerState.paragraphs,
-      enabledLangCodes: scope == CopyScope.translation
-          ? null
-          : ref.read(settingsProvider).enabledTranslations.isNotEmpty
-          ? ref.read(settingsProvider).enabledTranslations.toSet()
-          : (ref.read(settingsProvider).showTranslation
-                ? {ref.read(settingsProvider).primaryTranslationLang}
-                : null as Set<String>?),
-    );
-
-    if (selectedParagraphs.isEmpty) {
-      await _copyVisibleContent(scope, addQuote: addQuote);
-      return;
-    }
-
-    final settings = ref.read(settingsProvider);
-    final quoteFormat = addQuote
-        ? settings.copyQuoteFormat
-        : CopyQuoteFormat.none;
-    final brightness = Theme.of(context).brightness;
-    final paliColor = settings.paliColorPair.resolve(brightness);
-    final transColor = settings.translationColorPair.resolve(brightness);
-    final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
-    final enabledLangs = settings.enabledTranslations.isNotEmpty
-        ? settings.enabledTranslations.toList()
-        : (settings.showTranslation
-              ? [settings.primaryTranslationLang]
-              : <String>[]);
-
-    await ReadingClipboard.copy(
-      selectedParagraphs,
-      scope: scope,
-      quoteFormat: quoteFormat,
-      bookId: activeTab.bookId,
-      bookName: readerState.bookName,
-      htmlColor: transColor,
-      paliCssColor: paliColor,
-      pageNumberingSystem: pageSystemLabel,
-      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
-    );
-  }
-
-  List<ParagraphData> _findSelectedParagraphs(
-    String selectedText,
-    List<ParagraphData> allParagraphs, {
-    Set<String>? enabledLangCodes,
-  }) {
-    if (selectedText.isEmpty || allParagraphs.isEmpty) return [];
-
-    final normSelected = _stripTags(selectedText).toLowerCase().trim();
-    if (normSelected.isEmpty) return [];
-
-    final buffer = StringBuffer();
-    final lineParaIndex = <int>[];
-    final lineIndexInPara = <int>[];
-    final lineStart = <int>[];
-    final lineEnd = <int>[];
-
-    for (int pi = 0; pi < allParagraphs.length; pi++) {
-      final para = allParagraphs[pi];
-
-      if (para.heading != null) {
-        buffer.writeln(_stripTags(para.heading!.title));
-      }
-      if (para.isPageStart && para.pageNumber != null) {
-        buffer.writeln('p. ${para.pageNumber}');
-      }
-
-      for (int li = 0; li < para.lines.length; li++) {
-        final line = para.lines[li];
-        final start = buffer.length;
-        if (line.paliText != null) {
-          buffer.writeln(_stripTags(line.paliText!));
-        }
-        for (final entry in line.translations.entries) {
-          if (enabledLangCodes != null && !enabledLangCodes.contains(entry.key))
-            continue;
-          buffer.writeln(_stripTags(entry.value));
-        }
-        final end = buffer.length;
-        if (end > start) {
-          lineParaIndex.add(pi);
-          lineIndexInPara.add(li);
-          lineStart.add(start);
-          lineEnd.add(end);
-        }
-      }
-    }
-
-    final fullText = buffer.toString().toLowerCase();
-
-    final collapsedBuffer = StringBuffer();
-    final collapsedToOrig = <int>[];
-    for (int idx = 0; idx < fullText.length; idx++) {
-      final ch = fullText[idx];
-      if (ch.trim().isEmpty) continue;
-      collapsedBuffer.write(ch);
-      collapsedToOrig.add(idx);
-    }
-    final collapsedFullText = collapsedBuffer.toString();
-    final collapsedSelected = normSelected.replaceAll(RegExp(r'\s+'), '');
-
-    if (collapsedSelected.isEmpty) return [];
-
-    int cStart = collapsedFullText.indexOf(collapsedSelected);
-    int cMatchLen = collapsedSelected.length;
-    if (cStart < 0) {
-      final prefixLen = collapsedSelected.length.clamp(0, 100);
-      final prefix = collapsedSelected.substring(0, prefixLen);
-      cStart = collapsedFullText.indexOf(prefix);
-      if (cStart < 0) return [];
-      cMatchLen = prefixLen;
-    }
-    final cEnd = (cStart + cMatchLen).clamp(0, collapsedToOrig.length);
-    if (cEnd <= cStart || collapsedToOrig.isEmpty) return [];
-
-    final selStart = collapsedToOrig[cStart];
-    final selEnd =
-        collapsedToOrig[(cEnd - 1).clamp(0, collapsedToOrig.length - 1)] + 1;
-
-    final matches = <int>[];
-    for (int i = 0; i < lineStart.length; i++) {
-      if (selStart < lineEnd[i] && selEnd > lineStart[i]) {
-        matches.add(i);
-      }
-    }
-    if (matches.isEmpty) return [];
-
-    final result = <ParagraphData>[];
-    int i = 0;
-    while (i < matches.length) {
-      final pi = lineParaIndex[matches[i]];
-      final keptLineIndices = <int>[];
-      while (i < matches.length && lineParaIndex[matches[i]] == pi) {
-        keptLineIndices.add(lineIndexInPara[matches[i]]);
-        i++;
-      }
-      final original = allParagraphs[pi];
-      final trimmedLines = keptLineIndices
-          .map((li) => original.lines[li])
-          .toList();
-      result.add(original.copyWith(lines: trimmedLines, isPageStart: false));
-    }
-
-    return result;
-  }
-
-  String _stripTags(String s) => s
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
 
   Future<void> _copyVisibleContent(
     CopyScope scope, {
@@ -1970,6 +1942,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ? globalTtsState
         : TtsPlaybackState.stopped;
 
+    // When the dictionary sheet is open we exclude the reader's deep
+    // semantics subtree from collection. Collecting it simultaneously with the
+    // sheet's own semantics causes re-entrant flushSemantics and the
+    // '!semantics.parentDataDirty' / '!conflict' framework assertions.
+    final dictionarySheetOpen = ref.watch(dictionarySheetOpenProvider);
+
     final ttsCurrentLineId =
         _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
         ? ttsReadingState.currentLineId
@@ -1985,6 +1963,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ReaderTabsState next,
     ) {
       if (next.activeTab?.bookId != prev?.activeTab?.bookId) {
+        _clearDocumentSelection();
+        _paragraphPlainTexts.clear();
         final tab = next.activeTab;
         if (tab != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2161,18 +2141,39 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         onHorizontalDragStart: _onDragStart,
                         onHorizontalDragUpdate: _onDragUpdate,
                         onHorizontalDragEnd: _onDragEnd,
-                        child: _buildReaderContentWithSelection(
-                          context,
-                          readerState,
-                          settings,
-                          colors,
-                          activeTab,
-                          resolvedPaliColor,
-                          resolvedTransColor,
-                          enabledLangs,
-                          langTypographies,
-                          ttsCurrentLineId,
-                          ttsCurrentParaId,
+                        // Long-press starts a paragraph selection; double-tap
+                        // looks up the tapped word. Using the framework's
+                        // recognizers (instead of a hand-rolled pointer timer
+                        // on the inner Listener) lets the gesture arena resolve
+                        // these unambiguously against the horizontal-drag
+                        // recognizer: a stationary hold wins long-press, a swipe
+                        // wins drag, and two quick taps win double-tap. This
+                        // also stops a long-press from ever being misread as a
+                        // double-tap (which previously opened the dictionary).
+                        // onLongPressStart / onDoubleTapDown give us the global
+                        // position at press time (onLongPress / onDoubleTap do
+                        // not pass details).
+                        onLongPressStart: (details) =>
+                            _selectWordAtPosition(details.globalPosition),
+                        onDoubleTapDown: (details) =>
+                            _selectWordAt(details.globalPosition),
+                        // Exclude the reader's semantics while the modal
+                        // dictionary sheet is open (see dictionarySheetOpen).
+                        child: ExcludeSemantics(
+                          excluding: dictionarySheetOpen,
+                          child: _buildReaderContentWithSelection(
+                            context,
+                            readerState,
+                            settings,
+                            colors,
+                            activeTab,
+                            resolvedPaliColor,
+                            resolvedTransColor,
+                            enabledLangs,
+                            langTypographies,
+                            ttsCurrentLineId,
+                            ttsCurrentParaId,
+                          ),
                         ),
                       ),
                     ),
@@ -2397,13 +2398,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  /// Builds the reader content wrapped in a permanently-mounted [SelectionArea]
-  /// (used for long-press/drag text selection). The [SelectionArea] is never
-  /// added/removed from the tree — doing so mid-focus-shift crashes the
-  /// selection system. Instead, while [_selectionDisabled] is true the content
-  /// is wrapped in [SelectionContainer.disabled], which unregisters the
-  /// paragraphs' selectables from the root registrar without disposing the
-  /// [SelectionArea] itself.
+  /// Builds the reader content. We deliberately do NOT wrap the scrollable
+  /// paragraph list in a framework [SelectionArea]: that crashes on
+  /// lazily-scrolled/recycled lists (flutter/flutter#124078, #152420). Instead
+  /// text selection is handled by our own hit-test-based long-press (see
+  /// [_selectParagraphAt]) and painted by a [CustomPaint] overlay that is
+  /// recomputed each frame from the live [RenderParagraph], so it survives
+  /// scroll and tab switches without holding stale render objects.
   Widget _buildReaderContentWithSelection(
     BuildContext context,
     ReaderDataState data,
@@ -2417,30 +2418,48 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
   ) {
-    return ReaderContentWithSelection(
-      bookId: activeTab.bookId,
-      data: data,
-      settings: settings,
-      colors: colors,
-      paliColor: paliColor,
-      translationColor: translationColor,
-      enabledLangs: enabledLangs,
-      langTypographies: langTypographies,
-      itemScrollController: _scrollControllerFor(activeTab.bookId),
-      itemPositionsListener: _positionsListenerFor(activeTab.bookId),
-      scrollOffsetListener: _scrollOffsetListenerFor(activeTab.bookId),
-      contentHitTestKey: _contentHitTestKey,
-      dragDxNotifier: _dragDxNotifier,
-      selectableRegionKey: _selectableRegionKey,
-      onPointerDown: _handlePointerDown,
-      onSelectionChanged: _handleSelectionChanged,
-      contextMenuBuilder: _buildCopyContextMenu,
-      selectionDisabled: _selectionDisabled,
-      ttsHighlightLineId: ttsHighlightLineId,
-      ttsHighlightParaId: ttsHighlightParaId,
-      ttsTargetParaId: _ttsTargetParaId,
-      ttsTargetLineKeys: _ttsTargetLineKeys,
-      searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
+    final content = Listener(
+      key: _contentHitTestKey,
+      child: AnimatedBuilder(
+        animation: _dragDxNotifier,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(_dragDxNotifier.value, 0),
+          child: child,
+        ),
+        child: KeyedSubtree(
+          key: ValueKey('tab-${activeTab.bookId}'),
+          child: _buildReaderContent(
+            context,
+            data,
+            settings,
+            colors,
+            activeTab,
+            paliColor,
+            translationColor,
+            enabledLangs,
+            langTypographies,
+            ttsHighlightLineId: ttsHighlightLineId,
+            ttsHighlightParaId: ttsHighlightParaId,
+          ),
+        ),
+      ),
+    );
+
+    return Stack(
+      children: [
+        content,
+        ReaderSelectionOverlay(
+          selection: _documentSelection,
+          resolvePosition: _resolveDocumentPosition,
+          resolveParagraphRender: _resolveParagraphRender,
+          paragraphs: data.paragraphs,
+          highlightColor: colors.primaryContainer.withValues(alpha: 0.4),
+          onCopyRange: _onCopyRange,
+          onClear: _clearDocumentSelection,
+          onSelectionChanged: _onSelectionChanged,
+          itemScrollController: _itemScrollControllers[activeTab.bookId],
+        ),
+      ],
     );
   }
 
@@ -2457,37 +2476,91 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
   }) {
-    final bookId = activeTab.bookId;
+    if (data.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (data.error != null) {
+      return Center(child: Text('Error loading text: ${data.error}'));
+    }
+
+    if (data.paragraphs.isEmpty) {
+      return const Center(child: Text('No content found.'));
+    }
+
+    final displayMode = _toParagraphDisplayMode(
+      settings.translationDisplayMode,
+      settings.showTranslation,
+    );
 
     // Log the first time content is actually built for this book so we can
     // measure the gap between "data loaded" and "first visible frame".
-    if (!_loggedFirstContentFrame.contains(bookId)) {
-      _loggedFirstContentFrame.add(bookId);
+    if (!_loggedFirstContentFrame.contains(activeTab.bookId)) {
+      _loggedFirstContentFrame.add(activeTab.bookId);
       developer.log(
-        '[BUILD] first content frame for book=$bookId '
+        '[BUILD] first content frame for book=${activeTab.bookId} '
         'paraCount=${data.paragraphs.length}',
         name: 'epitaka.reader.ui',
       );
     }
 
-    return ReaderContentList(
-      bookId: bookId,
-      data: data,
-      settings: settings,
-      colors: colors,
-      paliColor: paliColor,
-      translationColor: translationColor,
-      enabledLangs: enabledLangs,
-      langTypographies: langTypographies,
-      itemScrollController: _scrollControllerFor(bookId),
-      itemPositionsListener: _positionsListenerFor(bookId),
-      scrollOffsetListener: _scrollOffsetListenerFor(bookId),
-      ttsHighlightLineId: ttsHighlightLineId,
-      ttsHighlightParaId: ttsHighlightParaId,
-      ttsTargetParaId: _ttsTargetParaId,
-      ttsTargetLineKeys: _ttsTargetLineKeys,
-      searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
-      onFirstContentFrame: null,
+    return ScrollablePositionedList.builder(
+      key: ValueKey('reader-${activeTab.bookId}'),
+      itemScrollController: _scrollControllerFor(activeTab.bookId),
+      itemPositionsListener: _positionsListenerFor(activeTab.bookId),
+      scrollOffsetListener: _scrollOffsetListenerFor(activeTab.bookId),
+      padding: const EdgeInsets.fromLTRB(
+        0,
+        AppDimensions.lg,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      itemCount: data.paragraphs.length,
+      itemBuilder: (context, index) {
+        final paragraph = data.paragraphs[index];
+
+        // Issue 4: Pass line keys for the TTS target paragraph so
+        // Scrollable.ensureVisible can precisely scroll to the line.
+        Map<int, GlobalKey>? lineKeys;
+        if (_ttsTargetParaId != null &&
+            paragraph.paraId == _ttsTargetParaId &&
+            _ttsTargetLineKeys.isNotEmpty) {
+          lineKeys = Map.from(_ttsTargetLineKeys);
+        }
+
+        return ReadingParagraph(
+          // Stable key for every paragraph — never a shared GlobalKey. Re-keying
+          // a list item at runtime forces a semantics re-parent that crashes
+          // (see [_selectedParagraphIndex]). The selected paragraph is found by
+          // walking the render tree in [_findSelectedRenderBox], keyed on paraId.
+          key: ValueKey('para-${activeTab.bookId}-${paragraph.paraId}'),
+          paragraph: paragraph,
+          isFirst: index == 0,
+          bookName: index == 0 ? data.bookName : null,
+          bookDescription: index == 0 ? data.bookDescription : null,
+          showPali: settings.showPali,
+          showTranslation: settings.showTranslation,
+          displayMode: displayMode,
+          paliColor: paliColor,
+          translationColor: translationColor,
+          paliTypography: settings.typography.pali,
+          langTypographies: langTypographies,
+          enabledLangCodes: enabledLangs,
+          bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
+          searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
+          ttsHighlightLineId: ttsHighlightLineId,
+          ttsHighlightParaId: ttsHighlightParaId,
+          lineKeys: lineKeys,
+          paliFontSize: settings.typography.pali.fontSize,
+          paliLineHeight: settings.typography.pali.lineHeight,
+          translationFontSize: settings.typography.fontSizeFor(
+            settings.primaryTranslationLang,
+          ),
+          translationLineHeight: settings.typography.lineHeightFor(
+            settings.primaryTranslationLang,
+          ),
+        );
+      },
     );
   }
 
@@ -2537,6 +2610,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       },
     );
-  }}
+  }
 
-
+  ParagraphDisplayMode _toParagraphDisplayMode(
+    TranslationDisplayMode mode,
+    bool showTranslation,
+  ) {
+    if (!showTranslation) return ParagraphDisplayMode.hideJoinLines;
+    switch (mode) {
+      case TranslationDisplayMode.sideBySide:
+        return ParagraphDisplayMode.sideBySide;
+      case TranslationDisplayMode.lineByLine:
+        return ParagraphDisplayMode.lineByLine;
+      case TranslationDisplayMode.hideJoinLines:
+        return ParagraphDisplayMode.hideJoinLines;
+    }
+  }
+}

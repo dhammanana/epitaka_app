@@ -8,6 +8,7 @@ import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/gavesana_download_provider.dart';
 import '../providers/gavesana_provider.dart';
+import 'gavesana_fts_build_dialog.dart';
 
 /// Full-screen Gavesana semantic search.
 ///
@@ -41,10 +42,27 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     final notifier = ref.read(gavesanaProvider.notifier);
     if (!notifier.isInitialized) {
       setState(() => _initializing = true);
-      notifier.init().then((_) {
-        if (mounted) setState(() => _initializing = false);
-      }).catchError((_) {
-        if (mounted) setState(() => _initializing = false);
+      notifier
+          .init()
+          .then((_) {
+            if (mounted) setState(() => _initializing = false);
+            _maybePromptBm25Build();
+          })
+          .catchError((_) {
+            if (mounted) setState(() => _initializing = false);
+          });
+    } else {
+      _maybePromptBm25Build();
+    }
+  }
+
+  /// Show the BM25 build dialog automatically if the index hasn't been
+  /// built yet. The user can dismiss it and still use vector search.
+  void _maybePromptBm25Build() {
+    final notifier = ref.read(gavesanaProvider.notifier);
+    if (notifier.isInitialized && !notifier.isBm25IndexBuilt && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) GavesanaFtsBuildDialog.show(context);
       });
     }
   }
@@ -93,11 +111,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                 color: colors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Icon(
-                Icons.psychology,
-                size: 16,
-                color: colors.primary,
-              ),
+              child: Icon(Icons.psychology, size: 16, color: colors.primary),
             ),
             const SizedBox(width: 8),
             Text(
@@ -116,12 +130,18 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
             child: assetsReady.when(
               data: (ready) => ready
                   ? Icon(Icons.check_circle, size: 16, color: colors.tertiary)
-                  : Icon(Icons.cloud_download, size: 16, color: colors.onSurfaceVariant),
+                  : Icon(
+                      Icons.cloud_download,
+                      size: 16,
+                      color: colors.onSurfaceVariant,
+                    ),
               loading: () => const SizedBox(
-                width: 16, height: 16,
+                width: 16,
+                height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              error: (_, __) => Icon(Icons.warning, size: 16, color: colors.error),
+              error: (_, __) =>
+                  Icon(Icons.warning, size: 16, color: colors.error),
             ),
           ),
         ],
@@ -207,13 +227,28 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                     if (_queryController.text.isNotEmpty) _executeSearch();
                   },
                   itemBuilder: (_) => [
-                    const PopupMenuItem(value: 5, child: Text('Show 5 results')),
-                    const PopupMenuItem(value: 10, child: Text('Show 10 results')),
-                    const PopupMenuItem(value: 20, child: Text('Show 20 results')),
-                    const PopupMenuItem(value: 50, child: Text('Show 50 results')),
+                    const PopupMenuItem(
+                      value: 5,
+                      child: Text('Show 5 results'),
+                    ),
+                    const PopupMenuItem(
+                      value: 10,
+                      child: Text('Show 10 results'),
+                    ),
+                    const PopupMenuItem(
+                      value: 20,
+                      child: Text('Show 20 results'),
+                    ),
+                    const PopupMenuItem(
+                      value: 50,
+                      child: Text('Show 50 results'),
+                    ),
                   ],
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(16),
@@ -245,13 +280,39 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                 ),
                 const SizedBox(width: 8),
 
+                // Build / Rebuild BM25 index button (always available)
+                TextButton.icon(
+                  onPressed: () => GavesanaFtsBuildDialog.show(
+                    context,
+                    rebuild: notifier.isBm25IndexBuilt,
+                  ),
+                  icon: Icon(
+                    notifier.isBm25IndexBuilt
+                        ? Icons.refresh
+                        : Icons.text_fields,
+                    size: 14,
+                  ),
+                  label: Text(
+                    notifier.isBm25IndexBuilt ? 'Rebuild BM25' : 'Build BM25',
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+
                 // Result count
                 if (state == GavesanaState.ready && notifier.results.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                      borderRadius: BorderRadius.circular(
+                        AppDimensions.radiusSm,
+                      ),
                     ),
                     child: Text(
                       '${notifier.results.length} result${notifier.results.length == 1 ? '' : 's'}',
@@ -265,12 +326,59 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
             ),
           ),
 
+          // ── Vector/BM25 weight slider ─────────────────────────
+          if (state == GavesanaState.ready && notifier.results.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimensions.marginMobile,
+                AppDimensions.xs,
+                AppDimensions.marginMobile,
+                0,
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.hub, size: 14, color: colors.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Vector ${((notifier.vectorWeight) * 100).toStringAsFixed(0)}%',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: notifier.vectorWeight,
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 20,
+                      onChanged: (v) {
+                        setState(() => notifier.vectorWeight = v);
+                        notifier.rerank();
+                      },
+                    ),
+                  ),
+                  Text(
+                    'BM25 ${((1 - notifier.vectorWeight) * 100).toStringAsFixed(0)}%',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.text_fields,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+
           const SizedBox(height: AppDimensions.sm),
 
           // ── Body ────────────────────────────────────────────
-          Expanded(
-            child: _buildBody(colors, state, notifier, assetsReady),
-          ),
+          Expanded(child: _buildBody(colors, state, notifier, assetsReady)),
         ],
       ),
     );
@@ -341,7 +449,11 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.cloud_download, size: 48, color: colors.onSurfaceVariant),
+                  Icon(
+                    Icons.cloud_download,
+                    size: 48,
+                    color: colors.onSurfaceVariant,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'Gavesana AI assets not found.',
@@ -426,7 +538,8 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
         // Idle state
         return _buildIdleState(colors);
       },
-      loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      loading: () =>
+          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const SizedBox.shrink(),
     );
   }
@@ -474,10 +587,7 @@ class _GavesanaResultCard extends ConsumerWidget {
   final GavesanaSearchHit hit;
   final int index;
 
-  const _GavesanaResultCard({
-    required this.hit,
-    required this.index,
-  });
+  const _GavesanaResultCard({required this.hit, required this.index});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -526,18 +636,18 @@ class _GavesanaResultCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // Similarity badge
+                  // Similarity badge — shows vector cosine + RRF score
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: hit.similarity > 0.7
+                      color: hit.displayScore > 0.7
                           ? colors.tertiaryContainer
-                          : (hit.similarity > 0.5
-                              ? colors.secondaryContainer
-                              : colors.surfaceContainerHighest),
+                          : (hit.displayScore > 0.5
+                                ? colors.secondaryContainer
+                                : colors.surfaceContainerHighest),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -546,17 +656,28 @@ class _GavesanaResultCard extends ConsumerWidget {
                         Icon(
                           Icons.trending_up,
                           size: 10,
-                          color: hit.similarity > 0.7
+                          color: hit.displayScore > 0.7
                               ? colors.onTertiaryContainer
                               : colors.onSurfaceVariant,
                         ),
                         const SizedBox(width: 2),
                         Text(
-                          '${(hit.similarity * 100).toStringAsFixed(0)}%',
+                          'V ${(hit.similarity * 100).toStringAsFixed(0)}%',
                           style: AppTypography.labelSmall.copyWith(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: hit.similarity > 0.7
+                            color: hit.displayScore > 0.7
+                                ? colors.onTertiaryContainer
+                                : colors.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '· RRF ${(hit.rrfScore).toStringAsFixed(4)}',
+                          style: AppTypography.labelSmall.copyWith(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: hit.displayScore > 0.7
                                 ? colors.onTertiaryContainer
                                 : colors.onSurfaceVariant,
                           ),
@@ -616,14 +737,16 @@ class _GavesanaResultCard extends ConsumerWidget {
   }
 
   void _navigateToResult(BuildContext context, WidgetRef ref) {
-    ref.read(readerTabsProvider.notifier).openTab(
-      ReaderTabInfo(
-        bookId: hit.bookId,
-        bookName: hit.bookName.isNotEmpty ? hit.bookName : hit.bookId,
-        initialParaId: hit.startPara,
-        initialLineId: hit.startLine,
-      ),
-    );
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
+          ReaderTabInfo(
+            bookId: hit.bookId,
+            bookName: hit.bookName.isNotEmpty ? hit.bookName : hit.bookId,
+            initialParaId: hit.startPara,
+            initialLineId: hit.startLine,
+          ),
+        );
     context.push('/reader');
   }
 }

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite_vector/sqlite_vector.dart';
 
+import '../../../core/utils/pali_search_utils.dart';
+
 /// A single search result from vector similarity search.
 class VectorSearchResult {
   final int chunkId;
@@ -30,6 +32,24 @@ class VectorSearchResult {
   });
 }
 
+/// A single BM25 (full-text) search result from the chunk-level FTS index.
+class Bm25SearchResult {
+  final int chunkId;
+
+  /// Textual book ID (e.g. "dn1", "A-i").
+  final String bookId;
+
+  /// Raw FTS5 bm25() score. FTS5 returns *negative* values where more
+  /// negative == more relevant, so callers must sort ASCENDING.
+  final double bm25Score;
+
+  const Bm25SearchResult({
+    required this.chunkId,
+    required this.bookId,
+    required this.bm25Score,
+  });
+}
+
 /// Service for vector similarity search using the sqlite_vector package
 /// (sqlite.ai), which bundles sqlite-vec-compatible extension functions.
 ///
@@ -41,8 +61,22 @@ class GavesanaVectorSearchService {
 
   /// The 16-byte SQLite header magic: "SQLite format 3\0".
   static const List<int> _sqliteHeaderMagic = <int>[
-    0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66,
-    0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
+    0x53,
+    0x51,
+    0x4c,
+    0x69,
+    0x74,
+    0x65,
+    0x20,
+    0x66,
+    0x6f,
+    0x72,
+    0x6d,
+    0x61,
+    0x74,
+    0x20,
+    0x33,
+    0x00,
   ];
 
   /// Verify that a file is a valid SQLite database by checking its
@@ -64,8 +98,10 @@ class GavesanaVectorSearchService {
         }
         for (int i = 0; i < 16; i++) {
           if (header[i] != _sqliteHeaderMagic[i]) {
-            print('[VEC] ❌ Vector DB has invalid SQLite header at byte $i: '
-                'expected ${_sqliteHeaderMagic[i]}, got ${header[i]}');
+            print(
+              '[VEC] ❌ Vector DB has invalid SQLite header at byte $i: '
+              'expected ${_sqliteHeaderMagic[i]}, got ${header[i]}',
+            );
             return false;
           }
         }
@@ -252,6 +288,260 @@ class GavesanaVectorSearchService {
         similarity: 1.0 - (row['distance'] as double),
       );
     }).toList();
+  }
+
+  /// Returns true if the chunk-level BM25 FTS index (`chunks_fts`) exists
+  /// and has at least one row.
+  bool isChunkFtsBuilt() {
+    if (_db == null) return false;
+    try {
+      final existing = _db!.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'",
+      );
+      if (existing.isEmpty) return false;
+      final countRow = _db!.select('SELECT COUNT(*) AS c FROM chunks_fts');
+      return (countRow.first['c'] as int) > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Drop the chunk-level BM25 FTS index (`chunks_fts`) if it exists.
+  /// Used before a rebuild so a half-built/corrupt index from an interrupted
+  /// build is discarded rather than trusted.
+  void dropChunkFts() {
+    if (_db == null) return;
+    try {
+      _db!.execute('DROP TABLE IF EXISTS chunks_fts');
+    } catch (_) {}
+  }
+
+  /// Build a chunk-level FTS5 index (`chunks_fts`) inside the vector database
+  /// so BM25 lexical search can be fused with the vector search.
+  ///
+  /// The index is built **once** and persisted in the vec DB file. It is
+  /// keyed by `chunk_id` so BM25 and vector results share the exact same
+  /// granularity — no paragraph→chunk remapping needed at fusion time.
+  ///
+  /// Diacritics are stripped by SQLite's `unicode61 remove_diacritics 1`
+  /// tokenizer (NOT in app code), so a query for "dhamma" matches indexed
+  /// "dhammā". Pāli text is cleaned with the shared [cleanPaliForIndexing]
+  /// (bracket/punctuation stripping) to match the main `search_fts` index.
+  ///
+  /// Returns true if the index is present (built now or already existed).
+  Future<bool> buildChunkFts(
+    String epitakaDbPath, {
+    void Function(double progress, String status)? onProgress,
+  }) async {
+    if (_db == null) return false;
+    try {
+      final existing = _db!.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'",
+      );
+      if (existing.isNotEmpty) {
+        final countRow = _db!.select('SELECT COUNT(*) AS c FROM chunks_fts');
+        final count = countRow.first['c'] as int;
+        if (count > 0) {
+          print('[VEC] chunks_fts already built ($count rows) — skipping');
+          onProgress?.call(1.0, 'BM25 index ready');
+          return true;
+        }
+        // Exists but empty (interrupted build) → drop and rebuild.
+        _db!.execute('DROP TABLE IF EXISTS chunks_fts');
+      }
+
+      final epiFile = File(epitakaDbPath);
+      if (!epiFile.existsSync()) {
+        print(
+          '[VEC] ❌ epitaka.db not found at $epitakaDbPath '
+          '— cannot build chunks_fts',
+        );
+        return false;
+      }
+
+      final epi = sqlite3.open(epitakaDbPath, mode: OpenMode.readOnly);
+      try {
+        _db!.execute('''
+          CREATE VIRTUAL TABLE chunks_fts USING fts5(
+            chunk_id UNINDEXED,
+            book_id   UNINDEXED,
+            pali_text,
+            tokenize='unicode61 remove_diacritics 1'
+          )
+        ''');
+
+        final chunks = _db!.select(
+          'SELECT chunk_id, book_id, start_para, start_line, '
+          'end_para, end_line FROM chunks ORDER BY chunk_id',
+        );
+        print('[VEC] Building chunks_fts from ${chunks.length} chunks…');
+        final total = chunks.length;
+        onProgress?.call(0.02, 'Indexing ${total} chunks…');
+
+        _db!.execute('BEGIN TRANSACTION');
+        int inserted = 0;
+        int processed = 0;
+        for (final c in chunks) {
+          final raw = _fetchChunkPali(epi, c);
+          if (raw.isNotEmpty) {
+            final cleaned = cleanPaliForIndexing(raw);
+            if (cleaned.isNotEmpty) {
+              _db!.execute(
+                'INSERT INTO chunks_fts(chunk_id, book_id, pali_text) '
+                'VALUES (?, ?, ?)',
+                [c['chunk_id'], c['book_id'], cleaned],
+              );
+              inserted++;
+            }
+          }
+          processed++;
+          // Yield to the event loop every 200 chunks so Flutter can repaint
+          // the progress dialog. Without this the synchronous loop blocks the
+          // UI isolate and Android's ANR watchdog kills the app.
+          if (processed % 200 == 0) {
+            onProgress?.call(
+              (0.02 + (processed / total) * 0.98).clamp(0.02, 1.0),
+              'Indexing chunks… $processed / $total',
+            );
+            await Future.delayed(Duration.zero);
+          }
+        }
+        _db!.execute('COMMIT');
+        print('[VEC] ✅ chunks_fts built: $inserted rows');
+        onProgress?.call(1.0, 'BM25 index ready');
+        return true;
+      } catch (e, stack) {
+        print('[VEC] ❌ chunks_fts build failed: $e');
+        print('[VEC] $stack');
+        try {
+          _db!.execute('ROLLBACK');
+        } catch (_) {}
+        try {
+          _db!.execute('DROP TABLE IF EXISTS chunks_fts');
+        } catch (_) {}
+        return false;
+      } finally {
+        epi.close();
+      }
+    } catch (e, stack) {
+      print('[VEC] ❌ buildChunkFts error: $e');
+      print('[VEC] $stack');
+      return false;
+    }
+  }
+
+  /// Fetch the concatenated Pāli text for a chunk's paragraph/line range
+  /// directly from `epitaka.db` (used while building the chunk FTS index).
+  String _fetchChunkPali(Database epi, Map<String, Object?> c) {
+    final bookId = c['book_id'] as String;
+    final startPara = c['start_para'] as int;
+    final startLine = c['start_line'] as int;
+    final endPara = c['end_para'] as int;
+    final endLine = c['end_line'] as int;
+    try {
+      final rows = epi.select(
+        '''
+        SELECT group_concat(pali, ' ') as text FROM sentences
+        WHERE book_id = ? AND
+          ((para_id = ? AND line_id >= ?) OR
+           (para_id > ? AND para_id < ?) OR
+           (para_id = ? AND line_id <= ?))
+      ''',
+        [bookId, startPara, startLine, startPara, endPara, endPara, endLine],
+      );
+      if (rows.isEmpty) return '';
+      return (rows.first['text'] as String?) ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// BM25 lexical search over the chunk-level FTS index.
+  ///
+  /// Uses FTS5's default **OR** between terms (space-joined) with prefix
+  /// matching (`"term"*`), letting BM25 weight term importance by IDF.
+  /// Diacritic handling is delegated to the `remove_diacritics 1` tokenizer.
+  ///
+  /// Returns results ordered best-first (bm25() is negative; we sort ASC).
+  Future<List<Bm25SearchResult>> searchBm25(
+    String query, {
+    int limit = 100,
+  }) async {
+    if (_db == null) return [];
+    final exists = _db!.select(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'",
+    );
+    if (exists.isEmpty) return [];
+
+    final ftsQuery = _buildBm25Query(query);
+    if (ftsQuery.isEmpty) return [];
+
+    try {
+      final rows = _db!.select(
+        'SELECT chunk_id, book_id, bm25(chunks_fts) AS bm25_score '
+        'FROM chunks_fts '
+        'WHERE pali_text MATCH ? '
+        'ORDER BY bm25_score ASC '
+        'LIMIT ?',
+        [ftsQuery, limit],
+      );
+      return rows
+          .map(
+            (r) => Bm25SearchResult(
+              chunkId: r['chunk_id'] as int,
+              bookId: r['book_id'] as String,
+              bm25Score: r['bm25_score'] as double,
+            ),
+          )
+          .toList();
+    } catch (e, stack) {
+      print('[VEC] ❌ BM25 search failed: $e');
+      print('[VEC] $stack');
+      return [];
+    }
+  }
+
+  /// Build an FTS5 MATCH query: lowercase, quote/escape each term, add a
+  /// prefix `*` and join with spaces (FTS5 default = OR).
+  static String _buildBm25Query(String query) {
+    return query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) {
+          final safe = w.replaceAll('"', '""');
+          return '"$safe"*';
+        })
+        .join(' ');
+  }
+
+  /// Look up a single chunk's metadata by `chunk_id` (used for BM25-only
+  /// hits that did not appear in the vector candidate set).
+  Future<VectorSearchResult?> getChunk(int chunkId) async {
+    if (_db == null) return null;
+    try {
+      final rows = _db!.select(
+        'SELECT chunk_id, book_id, start_para, end_para, start_line, '
+        'end_line, token_count, line_count '
+        'FROM chunks WHERE chunk_id = ?',
+        [chunkId],
+      );
+      if (rows.isEmpty) return null;
+      final r = rows.first;
+      return VectorSearchResult(
+        chunkId: r['chunk_id'] as int,
+        bookId: r['book_id'] as String,
+        startPara: r['start_para'] as int,
+        endPara: r['end_para'] as int,
+        startLine: r['start_line'] as int,
+        endLine: r['end_line'] as int,
+        tokenCount: r['token_count'] as int,
+        lineCount: r['line_count'] as int,
+        similarity: 0.0,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Close the database connection.

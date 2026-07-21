@@ -264,6 +264,9 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
 
   Future<void> _loadHeadings() async {
     final db = await _ref.read(epitakaDbProvider.future);
+
+    final sw = Stopwatch()..start();
+
     final rows =
         await (db.select(db.headings)
               ..where(
@@ -273,6 +276,15 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
               )
               ..orderBy([(h) => OrderingTerm(expression: h.paraId)]))
             .get();
+
+    sw.stop();
+    developer.log(
+      '[LOAD] Headings SQL: ${sw.elapsedMilliseconds}ms rows=${rows.length}',
+      name: 'epitaka.reader',
+    );
+
+    final buildSw = Stopwatch()..start();
+
     _headings = rows
         .map(
           (row) => HeadingInfo(
@@ -286,6 +298,12 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           ),
         )
         .toList();
+
+    buildSw.stop();
+    developer.log(
+      '[LOAD] Headings build: ${buildSw.elapsedMilliseconds}ms',
+      name: 'epitaka.reader',
+    );
   }
 
   /// Find the heading that exactly matches [paraId], if any.

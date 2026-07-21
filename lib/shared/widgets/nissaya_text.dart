@@ -94,7 +94,8 @@ class NissayaText extends StatelessWidget {
       return Text(text, style: plainStyle);
     }
 
-    final effectiveSepColor = separatorColor ??
+    final effectiveSepColor =
+        separatorColor ??
         baseStyle.color?.withValues(alpha: 0.4) ??
         Colors.grey.withValues(alpha: 0.4);
 
@@ -103,9 +104,7 @@ class NissayaText extends StatelessWidget {
       fontWeight: FontWeight.w600,
     );
     final meaningStyle = baseStyle;
-    final separatorStyle = baseStyle.copyWith(
-      color: effectiveSepColor,
-    );
+    final separatorStyle = baseStyle.copyWith(color: effectiveSepColor);
 
     final spans = <InlineSpan>[];
     for (int i = 0; i < pairs.length; i++) {
@@ -124,10 +123,7 @@ class NissayaText extends StatelessWidget {
 
       // Add separator pipe between pairs
       if (i < pairs.length - 1) {
-        spans.add(TextSpan(
-          text: ' | ',
-          style: separatorStyle,
-        ));
+        spans.add(TextSpan(text: ' | ', style: separatorStyle));
       }
     }
 

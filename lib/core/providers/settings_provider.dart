@@ -312,11 +312,30 @@ class AppSettings {
   /// Quote/citation format when copying text.
   final CopyQuoteFormat copyQuoteFormat;
 
+  /// Custom quote format template with placeholders.
+  /// Placeholders: {book_id}, {book_name}, {heading}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}
+  /// Default: "- {book_name} > {heading} VRI p.{vri_page}"
+  final String quoteTemplate;
+
+  /// Whether to use full book name (true) or book ID (false) in quotes.
+  final bool useBookName;
+
+  /// Whether to include section heading in quotes.
+  final bool includeHeading;
+
+  /// Page numbering system to use in quotes: vri, pts, thai, myanmar.
+  final String quotePageNumberSystem;
+
   /// Default copy scope (Pāli, translation, or both).
   final CopyScope copyDefaultScope;
 
   /// Pāli script conversion target (e.g. Roman, Sinhala, Thai, Myanmar).
   final Script paliScript;
+
+  /// Whether Pāli variant annotations wrapped in square brackets
+  /// (e.g. "[variant reading]") are stripped from displayed Pāli text.
+  /// Defaults to true (hidden) for a cleaner reading/search display.
+  final bool stripVariantAnnotations;
 
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
@@ -353,8 +372,13 @@ class AppSettings {
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
     this.paliScript = Script.roman,
+    this.stripVariantAnnotations = true,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.translationVersionMap = const {},
+    this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
+    this.useBookName = true,
+    this.includeHeading = true,
+    this.quotePageNumberSystem = 'vri',
   });
 
   AppSettings copyWith({
@@ -384,7 +408,12 @@ class AppSettings {
     CopyScope? copyDefaultScope,
     Script? paliScript,
     LibraryExpandLevel? libraryExpandLevel,
+    bool? stripVariantAnnotations,
     Map<String, String>? translationVersionMap,
+    String? quoteTemplate,
+    bool? useBookName,
+    bool? includeHeading,
+    String? quotePageNumberSystem,
   }) {
     return AppSettings(
       appLanguage: appLanguage ?? this.appLanguage,
@@ -418,8 +447,15 @@ class AppSettings {
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
       libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
+      stripVariantAnnotations:
+          stripVariantAnnotations ?? this.stripVariantAnnotations,
       translationVersionMap:
           translationVersionMap ?? this.translationVersionMap,
+      quoteTemplate: quoteTemplate ?? this.quoteTemplate,
+      useBookName: useBookName ?? this.useBookName,
+      includeHeading: includeHeading ?? this.includeHeading,
+      quotePageNumberSystem:
+          quotePageNumberSystem ?? this.quotePageNumberSystem,
     );
   }
 
@@ -621,7 +657,15 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       libraryExpandLevel:
           LibraryExpandLevel.values[prefs.getInt('library_expand_level') ??
               LibraryExpandLevel.category.index],
+      stripVariantAnnotations:
+          prefs.getBool('strip_variant_annotations') ?? true,
       translationVersionMap: _loadTranslationVersionMap(),
+      quoteTemplate:
+          prefs.getString('quote_template') ??
+          '- {book_name} > {heading} VRI p.{vri_page}',
+      useBookName: prefs.getBool('use_book_name') ?? true,
+      includeHeading: prefs.getBool('include_heading') ?? true,
+      quotePageNumberSystem: prefs.getString('quote_page_system') ?? 'vri',
     );
   }
 
@@ -852,9 +896,34 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('pali_script', script.name);
   }
 
+  Future<void> setStripVariantAnnotations(bool value) async {
+    state = state.copyWith(stripVariantAnnotations: value);
+    await _prefs?.setBool('strip_variant_annotations', value);
+  }
+
   Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
     state = state.copyWith(libraryExpandLevel: level);
     await _prefs?.setInt('library_expand_level', level.index);
+  }
+
+  Future<void> setQuoteTemplate(String template) async {
+    state = state.copyWith(quoteTemplate: template);
+    await _prefs?.setString('quote_template', template);
+  }
+
+  Future<void> setUseBookName(bool value) async {
+    state = state.copyWith(useBookName: value);
+    await _prefs?.setBool('use_book_name', value);
+  }
+
+  Future<void> setIncludeHeading(bool value) async {
+    state = state.copyWith(includeHeading: value);
+    await _prefs?.setBool('include_heading', value);
+  }
+
+  Future<void> setQuotePageNumberSystem(String system) async {
+    state = state.copyWith(quotePageNumberSystem: system);
+    await _prefs?.setString('quote_page_system', system);
   }
 
   /// Set the translation version (suffix) to use for a language code.

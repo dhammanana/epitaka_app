@@ -56,123 +56,129 @@ class PaliDefinitionCard extends ConsumerWidget {
       fontFamily: trans.fontFamily.fontFamily,
     );
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
+    return Material(
+      // Material (not Container+DecoratedBox) so any ListTile rendered inside
+      // the HTML (e.g. <details>/<summary>) finds a Material ancestor and
+      // avoids Flutter's "ListTile background color or ink splashes may be
+      // invisible" assertion.
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row: book id + open-book button
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  entry.bookId,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: colors.onSurfaceVariant,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row: book id + open-book button
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    entry.bookId,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-              InkWell(
-                onTap: () => _openBook(context, ref),
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.menu_book_outlined,
-                        size: 14,
-                        color: colors.primary,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        'p${entry.paraId}.${entry.lineId}',
-                        style: TextStyle(
-                          fontSize: 11,
+                InkWell(
+                  onTap: () => _openBook(context, ref),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.menu_book_outlined,
+                          size: 14,
                           color: colors.primary,
-                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 2),
+                        Text(
+                          'p${entry.paraId}.${entry.lineId}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
+              ],
+            ),
+            const SizedBox(height: 4),
 
-          // Context lines before (faded)
-          if (result.beforeLines.isNotEmpty)
-            ...result.beforeLines.map(
-              (line) => _contextLine(
-                convertPaliToScriptPreservingHtml(line, script),
-                contextStyle,
+            // Context lines before (faded)
+            if (result.beforeLines.isNotEmpty)
+              ...result.beforeLines.map(
+                (line) => _contextLine(
+                  convertPaliToScriptPreservingHtml(line, script),
+                  contextStyle,
+                ),
               ),
+
+            // Main Pāli sentence (converted to the reading-book script)
+            Html(
+              data: convertPaliToScriptPreservingHtml(result.pali, script),
+              style: {
+                'body': Style(
+                  margin: Margins.zero,
+                  padding: HtmlPaddings.zero,
+                  fontSize: FontSize(paliStyle.fontSize ?? 13),
+                  lineHeight: LineHeight(pali.lineHeight),
+                  fontStyle: FontStyle.italic,
+                  color: colors.onSurface,
+                  fontFamily: paliStyle.fontFamily,
+                ),
+                'b': Style(fontWeight: FontWeight.bold),
+                'i': Style(fontStyle: FontStyle.italic),
+              },
             ),
 
-          // Main Pāli sentence (converted to the reading-book script)
-          Html(
-            data: convertPaliToScriptPreservingHtml(result.pali, script),
-            style: {
-              'body': Style(
-                margin: Margins.zero,
-                padding: HtmlPaddings.zero,
-                fontSize: FontSize(paliStyle.fontSize ?? 13),
-                lineHeight: LineHeight(pali.lineHeight),
-                fontStyle: FontStyle.italic,
-                color: colors.onSurface,
-                fontFamily: paliStyle.fontFamily,
+            // Translation of the first activated language (HTML: <b>, <i>)
+            if (result.translation != null &&
+                result.translation!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Html(
+                  data: result.translation,
+                  style: {
+                    'body': Style(
+                      margin: Margins.zero,
+                      padding: HtmlPaddings.zero,
+                      fontSize: FontSize(transStyle.fontSize ?? 12),
+                      lineHeight: LineHeight(trans.lineHeight),
+                      fontStyle: FontStyle.italic,
+                      color: transStyle.color,
+                      fontFamily: transStyle.fontFamily,
+                    ),
+                    'b': Style(fontWeight: FontWeight.bold),
+                    'i': Style(fontStyle: FontStyle.italic),
+                  },
+                ),
               ),
-              'b': Style(fontWeight: FontWeight.bold),
-              'i': Style(fontStyle: FontStyle.italic),
-            },
-          ),
 
-          // Translation of the first activated language (HTML: <b>, <i>)
-          if (result.translation != null &&
-              result.translation!.trim().isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Html(
-                data: result.translation,
-                style: {
-                  'body': Style(
-                    margin: Margins.zero,
-                    padding: HtmlPaddings.zero,
-                    fontSize: FontSize(transStyle.fontSize ?? 12),
-                    lineHeight: LineHeight(trans.lineHeight),
-                    fontStyle: FontStyle.italic,
-                    color: transStyle.color,
-                    fontFamily: transStyle.fontFamily,
-                  ),
-                  'b': Style(fontWeight: FontWeight.bold),
-                  'i': Style(fontStyle: FontStyle.italic),
-                },
+            // Context lines after (faded)
+            if (result.afterLines.isNotEmpty)
+              ...result.afterLines.map(
+                (line) => _contextLine(
+                  convertPaliToScriptPreservingHtml(line, script),
+                  contextStyle,
+                ),
               ),
-            ),
-
-          // Context lines after (faded)
-          if (result.afterLines.isNotEmpty)
-            ...result.afterLines.map(
-              (line) => _contextLine(
-                convertPaliToScriptPreservingHtml(line, script),
-                contextStyle,
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

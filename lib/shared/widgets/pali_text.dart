@@ -50,10 +50,13 @@ class PaliText extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final settings = ref.watch(settingsProvider);
+    stripVariantAnnotations = settings.stripVariantAnnotations;
+    final script = settings.paliScript;
     final converted = convertPaliToScriptPreservingHtml(data, script);
     final fontFamily = scriptFontFamily(script);
-    final effectiveStyle = style?.copyWith(fontFamily: fontFamily) ??
+    final effectiveStyle =
+        style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
 
     return Text(
@@ -72,7 +75,117 @@ class PaliText extends ConsumerWidget {
   }
 }
 
-/// Like [PaliText] but renders Pāli text that may contain HTML tags
+/// Like [PaliHtmlText] but renders Pāli reading variants (text wrapped in
+/// `[...]` in the source) as small tappable chips instead of inline text.
+///
+/// When the user enables “show variant readings” (see
+/// [AppSettings.stripVariantAnnotations]), each variant becomes a compact
+/// chip; tapping it reveals the variant text in a tooltip. This keeps the
+/// main reading flow clean while still making variants discoverable.
+///
+/// When variants are hidden (the default), this behaves like [PaliHtmlText]
+/// (the variant segments are simply omitted by the converter).
+class PaliTextWithVariants extends ConsumerWidget {
+  final String data;
+  final TextStyle? style;
+  final int? maxLines;
+  final TextOverflow? overflow;
+  final TextAlign? textAlign;
+
+  const PaliTextWithVariants(
+    this.data, {
+    super.key,
+    this.style,
+    this.maxLines,
+    this.overflow,
+    this.textAlign,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    stripVariantAnnotations = settings.stripVariantAnnotations;
+    final script = settings.paliScript;
+    final colors = Theme.of(context).colorScheme;
+    final fontFamily = scriptFontFamily(script);
+    final baseStyle =
+        style?.copyWith(fontFamily: fontFamily) ??
+        TextStyle(fontFamily: fontFamily);
+
+    final segments = convertPaliToScriptSegments(data, script);
+    final spans = <InlineSpan>[];
+    for (final seg in segments) {
+      if (seg.isVariant) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _VariantChip(text: seg.text, colors: colors),
+          ),
+        );
+      } else {
+        spans.addAll(HtmlTextParser.parse(seg.text, baseStyle));
+      }
+    }
+
+    return Text.rich(
+      TextSpan(style: baseStyle, children: spans),
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
+      textAlign: textAlign ?? TextAlign.start,
+    );
+  }
+}
+
+/// Compact, tappable chip showing a Pāli reading variant. Tapping reveals the
+/// variant text in a tooltip so readers can inspect it without clutter.
+class _VariantChip extends StatelessWidget {
+  final String text;
+  final ColorScheme colors;
+  const _VariantChip({required this.text, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: text,
+      preferBelow: true,
+      child: InkWell(
+        onTap: () {
+          // Show a lightweight snackbar as an alternative to the tooltip
+          // (tooltips need a long press on some platforms).
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(text),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: colors.tertiaryContainer,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: colors.tertiary.withValues(alpha: 0.5),
+              width: 0.8,
+            ),
+          ),
+          child: Text(
+            'variant',
+            style: TextStyle(
+              fontSize: 10,
+              fontFamily: scriptFontFamily(Script.roman),
+              color: colors.onTertiaryContainer,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// (`<b>`, `<i>`, `<u>`, `<h1-6>`, `<br>`).
 ///
 /// Internally it converts the Pāli script (preserving HTML tags) and then
@@ -106,10 +219,13 @@ class PaliHtmlText extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final settings = ref.watch(settingsProvider);
+    stripVariantAnnotations = settings.stripVariantAnnotations;
+    final script = settings.paliScript;
     final converted = convertPaliToScriptPreservingHtml(html, script);
     final fontFamily = scriptFontFamily(script);
-    final effectiveStyle = style?.copyWith(fontFamily: fontFamily) ??
+    final effectiveStyle =
+        style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
 
     return HtmlTextParser.richText(
@@ -156,7 +272,8 @@ class PaliTextStatic extends StatelessWidget {
     final s = script ?? Script.roman;
     final converted = convertPaliToScriptPreservingHtml(data, s);
     final fontFamily = scriptFontFamily(s);
-    final effectiveStyle = style?.copyWith(fontFamily: fontFamily) ??
+    final effectiveStyle =
+        style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
 
     return Text(

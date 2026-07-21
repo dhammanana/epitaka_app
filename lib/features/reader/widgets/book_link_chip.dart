@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:selectable/selectable.dart';
 
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -33,28 +34,30 @@ class BookLinkChip extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(right: 4, bottom: 2),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: effectiveColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: effectiveColor.withValues(alpha: 0.35),
-              width: 0.8,
+      child: IgnoreSelectable(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: effectiveColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: effectiveColor.withValues(alpha: 0.35),
+                width: 0.8,
+              ),
             ),
-          ),
-          child: PaliTextStatic(
-            word,
-            script,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              fontStyle: FontStyle.italic,
-              color: effectiveColor,
-              height: 1.3,
+            child: PaliTextStatic(
+              word,
+              script,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                fontStyle: FontStyle.italic,
+                color: effectiveColor,
+                height: 1.3,
+              ),
             ),
           ),
         ),

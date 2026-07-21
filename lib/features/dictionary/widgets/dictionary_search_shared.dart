@@ -104,51 +104,60 @@ class DpdHtmlRichText extends StatelessWidget {
   Widget build(BuildContext context) {
     final processedHtml = _makeWordsClickable(html);
 
-    // Render DPD meanings as clean, normal HTML that follows the app's
-    // theme (font family / size / colour are supplied via [baseStyle]).
-    return Html(
-      data: processedHtml,
-      onLinkTap: (url, attributes, element) {
-        if (url != null && url.startsWith('lookup://')) {
-          final word = url.substring(9);
-          if (word.isNotEmpty) {
-            onWordTap(word);
+    // flutter_html's Html widget emits WidgetSpan placeholders for inline
+    // elements (links, <details>/<summary>, etc). During flushSemantics,
+    // Flutter groups sibling placeholder fragments and asserts they merge
+    // up compatibly; several of these in the same tree (e.g. multiple
+    // headword cards stacked in a scroll view) can produce incompatible
+    // merge groups and trip the framework's '!conflict' assertion, or a
+    // re-entrant flush that trips '!semantics.parentDataDirty'. Word taps
+    // are already handled by onLinkTap/onWordTap, so no accessibility is
+    // lost by excluding this subtree from the semantics tree.
+    return ExcludeSemantics(
+      child: Html(
+        data: processedHtml,
+        onLinkTap: (url, attributes, element) {
+          if (url != null && url.startsWith('lookup://')) {
+            final word = url.substring(9);
+            if (word.isNotEmpty) {
+              onWordTap(word);
+            }
           }
-        }
-      },
-      style: {
-        'body': Style(
-          margin: Margins.zero,
-          padding: HtmlPaddings.zero,
-          fontSize: FontSize(baseStyle.fontSize ?? 14),
-          lineHeight: LineHeight(1.5),
-          color: baseStyle.color,
-          fontFamily: baseStyle.fontFamily,
-        ),
-        'p': Style(margin: Margins.only(bottom: 6)),
-        'b': Style(fontWeight: FontWeight.bold),
-        'strong': Style(fontWeight: FontWeight.bold),
-        'i': Style(fontStyle: FontStyle.italic),
-        'em': Style(fontStyle: FontStyle.italic),
-        'u': Style(textDecoration: TextDecoration.underline),
-        'a': Style(
-          color: linkColor,
-          fontWeight: FontWeight.w500,
-          textDecoration: TextDecoration.none,
-        ),
-        'details': Style(margin: Margins.only(bottom: 4)),
-        'summary': Style(
-          fontWeight: FontWeight.w600,
-          color: linkColor,
-          margin: Margins.only(bottom: 2),
-        ),
-        'div': Style(margin: Margins.only(bottom: 2)),
-        'ul': Style(
-          margin: Margins.only(bottom: 4),
-          padding: HtmlPaddings.only(left: 16),
-        ),
-        'li': Style(margin: Margins.only(bottom: 2)),
-      },
+        },
+        style: {
+          'body': Style(
+            margin: Margins.zero,
+            padding: HtmlPaddings.zero,
+            fontSize: FontSize(baseStyle.fontSize ?? 14),
+            lineHeight: LineHeight(1.5),
+            color: baseStyle.color,
+            fontFamily: baseStyle.fontFamily,
+          ),
+          'p': Style(margin: Margins.only(bottom: 6)),
+          'b': Style(fontWeight: FontWeight.bold),
+          'strong': Style(fontWeight: FontWeight.bold),
+          'i': Style(fontStyle: FontStyle.italic),
+          'em': Style(fontStyle: FontStyle.italic),
+          'u': Style(textDecoration: TextDecoration.underline),
+          'a': Style(
+            color: linkColor,
+            fontWeight: FontWeight.w500,
+            textDecoration: TextDecoration.none,
+          ),
+          'details': Style(margin: Margins.only(bottom: 4)),
+          'summary': Style(
+            fontWeight: FontWeight.w600,
+            color: linkColor,
+            margin: Margins.only(bottom: 2),
+          ),
+          'div': Style(margin: Margins.only(bottom: 2)),
+          'ul': Style(
+            margin: Margins.only(bottom: 4),
+            padding: HtmlPaddings.only(left: 16),
+          ),
+          'li': Style(margin: Margins.only(bottom: 2)),
+        },
+      ),
     );
   }
 }
@@ -172,25 +181,35 @@ class DictHtmlContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (html.trim().isEmpty) return const SizedBox.shrink();
 
-    return Html(
-      data: html,
-      style: {
-        'body': Style(
-          margin: Margins.zero,
-          padding: HtmlPaddings.zero,
-          fontSize: FontSize(baseStyle.fontSize ?? 14),
-          lineHeight: const LineHeight(1.4),
-          color: baseStyle.color,
-          fontFamily: baseStyle.fontFamily,
-        ),
-        'p': Style(margin: Margins.only(bottom: 2)),
-        'b': Style(fontWeight: FontWeight.bold),
-        'i': Style(fontStyle: FontStyle.italic),
-        'u': Style(textDecoration: TextDecoration.underline),
-        'ul': Style(margin: Margins.zero, padding: HtmlPaddings.only(left: 16)),
-        'li': Style(margin: Margins.only(bottom: 2)),
-        if (extraStyles != null) ...extraStyles!,
-      },
+    // Same WidgetSpan merge-up hazard as DpdHtmlRichText above — this
+    // widget renders raw HTML from arbitrary dictionary books via
+    // flutter_html, so it's just as exposed to the semantics '!conflict'
+    // assertion. This content isn't independently tappable, so excluding
+    // it from semantics is a straightforward safety measure.
+    return ExcludeSemantics(
+      child: Html(
+        data: html,
+        style: {
+          'body': Style(
+            margin: Margins.zero,
+            padding: HtmlPaddings.zero,
+            fontSize: FontSize(baseStyle.fontSize ?? 14),
+            lineHeight: const LineHeight(1.4),
+            color: baseStyle.color,
+            fontFamily: baseStyle.fontFamily,
+          ),
+          'p': Style(margin: Margins.only(bottom: 2)),
+          'b': Style(fontWeight: FontWeight.bold),
+          'i': Style(fontStyle: FontStyle.italic),
+          'u': Style(textDecoration: TextDecoration.underline),
+          'ul': Style(
+            margin: Margins.zero,
+            padding: HtmlPaddings.only(left: 16),
+          ),
+          'li': Style(margin: Margins.only(bottom: 2)),
+          if (extraStyles != null) ...extraStyles!,
+        },
+      ),
     );
   }
 }
@@ -230,44 +249,50 @@ class DpdHeadwordCard extends ConsumerWidget {
         ? (baseSize * 0.85).clamp(11.0, 20.0)
         : baseSize;
 
-    final child = Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: EdgeInsets.all(compact ? 6 : 10),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
+    final child = Material(
+      // Use Material (not a Container+DecoratedBox) for the card background so
+      // that any ListTile rendered inside the HTML (e.g. <details>/<summary>)
+      // finds a Material ancestor and doesn't trigger Flutter's
+      // "ListTile background color or ink splashes may be invisible" assertion.
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            lemma,
-            style: TextStyle(
-              fontSize: lemmaSize,
-              height: pali.lineHeight,
-              fontWeight: FontWeight.w600,
-              color: colors.primary,
-              fontFamily: paliFontFamily,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (meaningHtml != null && meaningHtml!.isNotEmpty)
-            DpdHtmlRichText(
-              html: meaningHtml!,
-              baseStyle: TextStyle(
-                fontSize: meaningSize,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: EdgeInsets.all(compact ? 6 : 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lemma,
+              style: TextStyle(
+                fontSize: lemmaSize,
                 height: pali.lineHeight,
-                color: colors.onSurface,
+                fontWeight: FontWeight.w600,
+                color: colors.primary,
                 fontFamily: paliFontFamily,
               ),
-              linkColor: colors.primary,
-              onWordTap: onWordTap,
-            )
-          else
-            const SizedBox.shrink(),
-        ],
+            ),
+            const SizedBox(height: 4),
+            if (meaningHtml != null && meaningHtml!.isNotEmpty)
+              DpdHtmlRichText(
+                html: meaningHtml!,
+                baseStyle: TextStyle(
+                  fontSize: meaningSize,
+                  height: pali.lineHeight,
+                  color: colors.onSurface,
+                  fontFamily: paliFontFamily,
+                ),
+                linkColor: colors.primary,
+                onWordTap: onWordTap,
+              )
+            else
+              const SizedBox.shrink(),
+          ],
+        ),
       ),
     );
     sw.stop();
@@ -361,24 +386,26 @@ class DictDefinitionSection extends ConsumerWidget {
               ...definitions.map((def) {
                 final definition = def['definition'] as String? ?? '';
                 final plain = stripHtmlToPlainText(definition);
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 4),
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerLow,
+                return Material(
+                  color: colors.surfaceContainerLow,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
+                    side: BorderSide(
                       color: colors.outlineVariant.withValues(alpha: 0.5),
                     ),
                   ),
-                  child: Text(
-                    plain,
-                    style: TextStyle(
-                      fontSize: defFontSize,
-                      height: defLineHeight,
-                      color: colors.onSurface,
-                      fontFamily: defFontFamily,
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      plain,
+                      style: TextStyle(
+                        fontSize: defFontSize,
+                        height: defLineHeight,
+                        color: colors.onSurface,
+                        fontFamily: defFontFamily,
+                      ),
                     ),
                   ),
                 );

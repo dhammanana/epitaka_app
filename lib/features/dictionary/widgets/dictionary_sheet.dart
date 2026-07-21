@@ -13,6 +13,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
+import '../providers/dictionary_sheet_open_provider.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
@@ -21,7 +22,16 @@ Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
     '[DICT] showDictionarySheet word="$word"',
     name: 'epitaka.dict',
   );
-  return showModalBottomSheet(
+  // Mark the sheet as open so the reader behind it can drop its (very deep)
+  // semantics subtree from collection. Collecting the reader's huge
+  // ScrollablePositionedList while the sheet's own semantics are being built
+  // causes re-entrant flushSemantics and the framework's
+  // '!semantics.parentDataDirty' / '!conflict' assertions (see
+  // reading_paragraph.dart). A modal sheet is exactly the case where the
+  // behind-content should not be in the accessibility tree.
+  final container = ProviderScope.containerOf(context);
+  container.read(dictionarySheetOpenProvider.notifier).state = true;
+  return showModalBottomSheet<T>(
     context: context,
     // Route the sheet through the root navigator so it lives in its own
     // overlay entry, away from the reader's focus/semantics subtree (which
@@ -35,7 +45,9 @@ Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
     // rubber-band effect (especially noticeable on Android).
     enableDrag: false,
     builder: (_) => DictionarySheet(initialWord: word),
-  );
+  ).whenComplete(() {
+    container.read(dictionarySheetOpenProvider.notifier).state = false;
+  });
 }
 
 // ── Sheet sizing ────────────────────────────────────────────────────────
@@ -515,6 +527,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final result = results[index];
+                      // Note: meaningPreview is plain text (stripped inside
+                      // SuggestionTile via _stripHtml), not flutter_html —
+                      // no WidgetSpan risk here, so this one doesn't need
+                      // ExcludeSemantics like the DPD cards below do.
                       return SuggestionTile(
                         word: result.lemma1,
                         meaningPreview: result.meaningHtml,
@@ -669,7 +685,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           const SizedBox(height: 12),
         ],
 
-        // Headwords HTML
+        // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
+        // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
+        // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
+        // so no extra wrapping is needed here.
         if (lookup.hasHeadwords)
           ...lookup.headwords.map((hw) {
             return DpdHeadwordCard(
@@ -866,6 +885,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       if (cached.isEmpty) {
         return const SizedBox.shrink();
       }
+      // DpdHeadwordCard/DpdHtmlRichText self-excludes from semantics at
+      // the source, so no extra wrapping needed here either.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: cached.map((hw) {

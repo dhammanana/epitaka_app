@@ -3,6 +3,26 @@ import 'dart:developer' as developer;
 
 import 'pali_script_converter.dart';
 
+/// Whether Pāli variant annotations wrapped in square brackets (e.g.
+/// "[variant text]") are stripped from displayed Pāli text.
+///
+/// These bracketed spans are reading variants, not part of the main text.
+/// Stripping them by default keeps the reader/search/dictionary output clean.
+/// When `false`, the variants are shown as-is.
+///
+/// Set from the user's `stripVariantAnnotations` setting (see
+/// [SettingsNotifier]) — [PaliText]/[PaliHtmlText] push the current value
+/// here before converting, so every display surface is affected uniformly.
+bool stripVariantAnnotations = true;
+
+/// Strips Pāli variant annotations wrapped in square brackets (`[...]`).
+/// Returns [text] unchanged when [stripVariantAnnotations] is false.
+String _applyVariantStripping(String text) {
+  if (!stripVariantAnnotations) return text;
+  return text.replaceAll(RegExp(r'\[[^\]]*\]'), ' ');
+}
+
+/// Memoizes [convertPaliToScript] results, keyed by "scriptIndex\u0000text".
 /// Returns the best font family name for displaying text in [script].
 ///
 /// Uses the script-specific fonts bundled in `assets/fonts/` when available,
@@ -50,6 +70,77 @@ String? scriptFontFamily(Script script) {
   }
 }
 
+/// A piece of Pāli text after script conversion.
+///
+/// [isVariant] marks reading-variant spans (stored in the source as
+/// `[variant text]`). When [stripVariantAnnotations] is true, variant
+/// segments are dropped; when false, they are kept so the UI can render
+/// them as tappable chips (see [PaliTextWithVariants]).
+class PaliSegment {
+  final String text;
+  final bool isVariant;
+  const PaliSegment(this.text, {this.isVariant = false});
+}
+
+/// Splits Pāli [text] into [PaliSegment]s (normal text vs. reading variants),
+/// converting each to [targetScript].
+///
+/// Variant spans are detected as text wrapped in square brackets (`[...]`).
+/// When [stripVariantAnnotations] is true, variant segments are omitted.
+/// Normal segments keep their HTML tags (handled by the converter).
+///
+/// This is the variant-aware counterpart to [convertPaliToScriptPreservingHtml]
+/// and is used by [PaliTextWithVariants] to render variants as chips.
+List<PaliSegment> convertPaliToScriptSegments(
+  String text,
+  Script? targetScript,
+) {
+  if (text.isEmpty) return const [];
+
+  final segments = <PaliSegment>[];
+  final variantPattern = RegExp(r'\[([^\[\]]*)\]');
+  int lastEnd = 0;
+
+  for (final m in variantPattern.allMatches(text)) {
+    // Normal text before this variant.
+    if (m.start > lastEnd) {
+      final before = text.substring(lastEnd, m.start);
+      if (before.trim().isNotEmpty) {
+        segments.add(
+          PaliSegment(convertPaliToScriptPreservingHtml(before, targetScript)),
+        );
+      }
+    }
+    // The variant content (without the surrounding brackets).
+    final variantText = m.group(1) ?? '';
+    if (variantText.trim().isNotEmpty) {
+      if (stripVariantAnnotations) {
+        // Dropped entirely when stripping is enabled.
+      } else {
+        segments.add(
+          PaliSegment(
+            convertPaliToScriptPreservingHtml(variantText, targetScript),
+            isVariant: true,
+          ),
+        );
+      }
+    }
+    lastEnd = m.end;
+  }
+
+  // Trailing normal text after the last variant.
+  if (lastEnd < text.length) {
+    final after = text.substring(lastEnd);
+    if (after.trim().isNotEmpty) {
+      segments.add(
+        PaliSegment(convertPaliToScriptPreservingHtml(after, targetScript)),
+      );
+    }
+  }
+
+  return segments;
+}
+
 /// Memoizes [convertPaliToScript] results, keyed by "scriptIndex\u0000text".
 ///
 /// Conversion runs inside widget `build()` (via [PaliText]/[PaliHtmlText]), so
@@ -92,6 +183,10 @@ String _cacheConvert(
 /// returned unchanged (only beautifyCommon is applied).
 String convertPaliToScript(String text, Script? targetScript) {
   if (text.isEmpty) return text;
+  // Strip variant annotations up front so they never reach the converter
+  // (and never get script-converted into garbage for non-Roman scripts).
+  text = _applyVariantStripping(text);
+  if (text.isEmpty) return text;
   if (targetScript == null || targetScript == Script.roman) {
     // For Roman, only apply common beautification (cleanup)
     return TextProcessor.beautify(text, Script.roman);
@@ -120,6 +215,11 @@ String convertPaliToScript(String text, Script? targetScript) {
 /// converted. This prevents corruption of HTML markup during script
 /// conversion.
 String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
+  if (text.isEmpty) return text;
+  // Strip variant annotations first. We remove them from the raw text
+  // before splitting on HTML tags so bracketed variants inside or outside
+  // tags are handled consistently.
+  text = _applyVariantStripping(text);
   if (text.isEmpty) return text;
   if (targetScript == null || targetScript == Script.roman) {
     // Apply standard beautification for Roman (same as convertPaliToScript)

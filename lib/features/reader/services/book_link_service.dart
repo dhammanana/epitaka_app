@@ -17,59 +17,66 @@ class BookLinkService {
   /// `src_book` or `dst_book`.  Returns a [BookLinksMap] keyed by
   /// paragraph ID then line ID.
   Future<BookLinksMap> getLinksForBook(String bookId) async {
-    final rows = await _db
+    final srcRowsFuture = _db
         .customSelect(
-          'SELECT src_book, src_para, src_line, '
-          '       dst_book, dst_para, dst_line, word '
-          'FROM book_links '
-          'WHERE src_book = ? OR dst_book = ? '
-          'ORDER BY src_para, src_line, dst_para, dst_line',
-          variables: [Variable.withString(bookId), Variable.withString(bookId)],
+          '''
+  SELECT src_book, src_para, src_line,
+         dst_book, dst_para, dst_line, word
+  FROM book_links
+  WHERE src_book = ?
+  ORDER BY src_para, src_line
+  ''',
+          variables: [Variable.withString(bookId)],
         )
         .get();
 
+    final dstRowsFuture = _db
+        .customSelect(
+          '''
+  SELECT src_book, src_para, src_line,
+         dst_book, dst_para, dst_line, word
+  FROM book_links
+  WHERE dst_book = ?
+  ORDER BY dst_para, dst_line
+  ''',
+          variables: [Variable.withString(bookId)],
+        )
+        .get();
+
+    final results = await Future.wait([srcRowsFuture, dstRowsFuture]);
+    final srcRows = results[0];
+    final dstRows = results[1];
+
     final result = <int, ParaBookLinks>{};
 
-    for (final row in rows) {
-      final srcBook = row.data['src_book'] as String;
-      final srcPara = row.data['src_para'] as int;
-      final srcLine = row.data['src_line'] as int;
-      final dstBook = row.data['dst_book'] as String;
-      final dstPara = row.data['dst_para'] as int;
-      final dstLine = row.data['dst_line'] as int;
-      final word = row.data['word'] as String;
+    for (final row in srcRows) {
+      _addLink(
+        result,
+        row.data['src_para'] as int,
+        row.data['src_line'] as int,
+        BookLinkData(
+          word: row.data['word'] as String,
+          linkedBookId: row.data['dst_book'] as String,
+          linkedParaId: row.data['dst_para'] as int,
+          linkedLineId: row.data['dst_line'] as int,
+          isSource: true,
+        ),
+      );
+    }
 
-      // Determine which para/line this link belongs to in the current book
-      // and which is the "other" side.
-      if (srcBook == bookId) {
-        _addLink(
-          result,
-          srcPara,
-          srcLine,
-          BookLinkData(
-            word: word,
-            linkedBookId: dstBook,
-            linkedParaId: dstPara,
-            linkedLineId: dstLine,
-            isSource: true,
-          ),
-        );
-      }
-
-      if (dstBook == bookId) {
-        _addLink(
-          result,
-          dstPara,
-          dstLine,
-          BookLinkData(
-            word: word,
-            linkedBookId: srcBook,
-            linkedParaId: srcPara,
-            linkedLineId: srcLine,
-            isSource: false,
-          ),
-        );
-      }
+    for (final row in dstRows) {
+      _addLink(
+        result,
+        row.data['dst_para'] as int,
+        row.data['dst_line'] as int,
+        BookLinkData(
+          word: row.data['word'] as String,
+          linkedBookId: row.data['src_book'] as String,
+          linkedParaId: row.data['src_para'] as int,
+          linkedLineId: row.data['src_line'] as int,
+          isSource: false,
+        ),
+      );
     }
 
     return result;

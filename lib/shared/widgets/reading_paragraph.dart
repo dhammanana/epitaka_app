@@ -543,8 +543,10 @@ class ReadingParagraph extends ConsumerWidget {
       );
     }
 
-    // Use PaliHtmlText for normal display (auto-converts script + handles HTML)
-    return PaliHtmlText(text, style: baseStyle);
+    // Use PaliTextWithVariants for normal display: it auto-converts the
+    // script, handles HTML, and (when enabled) renders reading variants as
+    // tappable chips instead of inline text.
+    return PaliTextWithVariants(text, style: baseStyle);
   }
 
   /// Build translation text with HTML tag and nissaya format support.

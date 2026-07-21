@@ -449,6 +449,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.28.0"
+  equatable:
+    dependency: transitive
+    description:
+      name: equatable
+      sha256: "3bce007a596ff8b3119c45d68aaef631272537c03d30e5d4534dd24bf4c5eaa2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   fake_async:
     dependency: transitive
     description:
@@ -481,6 +489,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  float_column:
+    dependency: transitive
+    description:
+      name: float_column
+      sha256: b7affc971d2fd499b043541fd9f65fa6540a41ba8df0f59c224b35a8a7344d23
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   flutter:
     dependency: "direct main"
     description: flutter
@@ -1213,6 +1229,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.8"
+  selectable:
+    dependency: "direct main"
+    description:
+      name: selectable
+      sha256: ab8273f548e2291767c61903929ba1d5214985241dbc1e1f878f4029e38d05fe
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.5"
   shared_preferences:
     dependency: "direct main"
     description:

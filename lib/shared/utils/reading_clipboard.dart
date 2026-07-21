@@ -15,7 +15,8 @@ export 'copy_types.dart';
 class ReadingClipboard {
   ReadingClipboard._();
 
-  /// Copies [paragraphs] to the clipboard as rich HTML + plain text fallback.
+  /// Copies [paragraphs] to the clipboard as rich HTML + plain text fallback
+  /// using the legacy [CopyQuoteFormat] enum.
   ///
   /// [htmlColor] is the CSS colour used for the main body text (translation).
   /// [paliCssColor] is the CSS colour used for Pāli text.
@@ -62,8 +63,55 @@ class ReadingClipboard {
       citation = buf.toString();
     }
 
+    await _copyWithContent(
+      paragraphs: paragraphs,
+      scope: scope,
+      citation: citation,
+      htmlColor: htmlColor,
+      paliCssColor: paliCssColor,
+      enabledLangCodes: enabledLangCodes,
+    );
+  }
+
+  /// Copies [paragraphs] to the clipboard using a custom template string.
+  /// The [citation] parameter should be the pre-built citation string
+  /// with all placeholders resolved.
+  static Future<void> copyWithTemplate(
+    List<ParagraphData> paragraphs, {
+    required CopyScope scope,
+    required String template,
+    required String citation,
+    required String bookId,
+    String? bookName,
+    Color htmlColor = const Color(0xFF33312E),
+    Color paliCssColor = const Color(0xFF7A2E1D),
+    Set<String>? enabledLangCodes,
+  }) async {
+    if (paragraphs.isEmpty) return;
+
+    await _copyWithContent(
+      paragraphs: paragraphs,
+      scope: scope,
+      citation: citation,
+      htmlColor: htmlColor,
+      paliCssColor: paliCssColor,
+      enabledLangCodes: enabledLangCodes,
+    );
+  }
+
+  /// Internal method to copy with resolved citation
+  static Future<void> _copyWithContent({
+    required List<ParagraphData> paragraphs,
+    required CopyScope scope,
+    required String citation,
+    required Color htmlColor,
+    required Color paliCssColor,
+    Set<String>? enabledLangCodes,
+  }) async {
     final plain = StringBuffer();
-    final html = StringBuffer('<div style="color:${_toCss(htmlColor)};font-family:Georgia,serif;font-size:16px;line-height:1.6;">');
+    final html = StringBuffer(
+      '<div style="color:${_toCss(htmlColor)};font-family:Georgia,serif;font-size:16px;line-height:1.6;">',
+    );
 
     final paliStyle =
         'color:${_toCss(paliCssColor)};font-family:Georgia,serif;font-size:16px;font-weight:400;';
@@ -82,15 +130,19 @@ class ReadingClipboard {
             final formatted = _htmlFromTaggedText(pali);
             plain.writeln(_stripTags(pali));
             html.writeln(
-                '<p style="${paliStyle}margin:0 0 4px 0;"><i>$formatted</i></p>');
+              '<p style="${paliStyle}margin:0 0 4px 0;"><i>$formatted</i></p>',
+            );
           }
         }
 
         // Translation line
         if (scope != CopyScope.pali) {
           // Copy only enabled translations (or all if none specified)
-          final translationEntries = enabledLangCodes != null && enabledLangCodes.isNotEmpty
-              ? line.translations.entries.where((e) => enabledLangCodes.contains(e.key))
+          final translationEntries =
+              enabledLangCodes != null && enabledLangCodes.isNotEmpty
+              ? line.translations.entries.where(
+                  (e) => enabledLangCodes.contains(e.key),
+                )
               : line.translations.entries;
           for (final entry in translationEntries) {
             final text = entry.value.trim();
@@ -99,7 +151,8 @@ class ReadingClipboard {
             final formatted = _htmlFromTaggedText(text);
             plain.writeln(_stripTags(text));
             html.writeln(
-                '<p style="margin:0 0 2px 0;padding-left:16px;">$formatted</p>');
+              '<p style="margin:0 0 2px 0;padding-left:16px;">$formatted</p>',
+            );
           }
         }
       }
@@ -115,7 +168,9 @@ class ReadingClipboard {
     if (citation.isNotEmpty) {
       plain.writeln();
       plain.writeln(citation);
-      html.writeln('<p style="margin-top:12px;color:#888;font-style:italic;font-size:13px;">${_escape(citation)}</p>');
+      html.writeln(
+        '<p style="margin-top:12px;color:#888;font-style:italic;font-size:13px;">${_escape(citation)}</p>',
+      );
     }
 
     html.writeln('</div>');
@@ -157,21 +212,9 @@ class ReadingClipboard {
         );
 
     // Escape every run of non-markup characters
-    result = result.replaceAllMapped(
-      RegExp(r'[^<>]+'),
-      (m) => _escape(m[0]!),
-    );
+    result = result.replaceAllMapped(RegExp(r'[^<>]+'), (m) => _escape(m[0]!));
 
     return result;
-  }
-
-  /// Build a range string like "12–14" or just "12" for the citation.
-  static String _pageRange(ParagraphData first, ParagraphData last) {
-    final fp = first.pageNumber;
-    final lp = last.pageNumber;
-    if (fp == null && lp == null) return '';
-    if (fp == lp || fp == null) return lp ?? fp ?? '';
-    return '$fp–$lp';
   }
 
   /// Wrap HTML fragment in a full HTML document for clipboard compatibility.
@@ -192,11 +235,20 @@ class ReadingClipboard {
 
   /// Escape HTML special characters.
   static String _escape(String s) =>
-      s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      s.replaceAll('&', '&').replaceAll('<', '<').replaceAll('>', '>');
 
   /// Strip all HTML tags from a string.
-  static String _stripTags(String s) =>
-      s.replaceAll(RegExp(r'<[^>]*>'), '')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
+  static String _stripTags(String s) => s
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// Build a range string like "12–14" or just "12" for the citation.
+  static String _pageRange(ParagraphData first, ParagraphData last) {
+    final fp = first.pageNumber;
+    final lp = last.pageNumber;
+    if (fp == null && lp == null) return '';
+    if (fp == lp || fp == null) return lp ?? fp ?? '';
+    return '$fp–$lp';
+  }
 }
