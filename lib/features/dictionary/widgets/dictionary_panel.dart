@@ -45,7 +45,6 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   bool _isConverting = false;
 
   String _query = '';
-  final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
   final List<String> _searchHistory = [];
 
   @override
@@ -117,9 +116,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     final converted = velthuis(value);
     if (converted != value && converted.trim().isNotEmpty) {
       _isConverting = true;
-      _searchController.value = TextEditingValue(
-        text: converted,
-        selection: TextSelection.collapsed(offset: converted.length),
+      _searchController.value = convertedTextEditingValue(
+        _searchController.value,
       );
       _isConverting = false;
     }
@@ -144,10 +142,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
     _addToHistory(word);
-    setState(() {
-      _query = word;
-      _subLookupCache.clear();
-    });
+    setState(() => _query = word);
   }
 
   void _selectWord(String word) {

@@ -84,10 +84,22 @@ class EpitakaApp extends ConsumerStatefulWidget {
 class _EpitakaAppState extends ConsumerState<EpitakaApp> {
   late final GoRouter _router;
 
+  /// Passed to GoRouter (see `buildRouter`) so AppShortcuts can resolve a
+  /// BuildContext that's under MaterialApp/GoRouter at invocation time —
+  /// the context available where CallbackShortcuts/PlatformMenuBar are
+  /// wired up (above MaterialApp.router) is not, and using it directly
+  /// causes "No MaterialLocalizations found" / broken context.go/push.
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
-    _router = buildRouter();
+    // NOTE: buildRouter must be updated to accept and forward this key to
+    // its GoRouter(...) constructor, e.g.:
+    //   GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
+    //     return GoRouter(navigatorKey: navigatorKey, ...);
+    //   }
+    _router = buildRouter(navigatorKey: _navigatorKey);
 
     // Initialize settings from SharedPreferences
     SharedPreferences.getInstance().then((prefs) {
@@ -113,26 +125,38 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
 
     return AudioServiceInitializer(
       child: Consumer(
-        builder: (context, ref, _) => CallbackShortcuts(
-          bindings: AppShortcuts.bindings(context, ref),
-          child: MaterialApp.router(
-            title: 'ePitaka',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.light(accentColor: settings.accentColor),
-            darkTheme: AppTheme.dark(accentColor: settings.accentColor),
-            themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-            routerConfig: _router,
-            locale: _resolveLocale(settings.appLanguage),
-            supportedLocales: AppLocalizationsDelegate.supportedLocales,
-            localizationsDelegates: [
-              const AppLocalizationsDelegate(),
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-            builder: (context, child) => IndexGate(child: child!),
-          ),
-        ),
+        builder: (context, ref, _) {
+          final app = CallbackShortcuts(
+            bindings: AppShortcuts.bindings(_navigatorKey, ref),
+            child: MaterialApp.router(
+              title: 'ePitaka',
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.light(accentColor: settings.accentColor),
+              darkTheme: AppTheme.dark(accentColor: settings.accentColor),
+              themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+              routerConfig: _router,
+              locale: _resolveLocale(settings.appLanguage),
+              supportedLocales: AppLocalizationsDelegate.supportedLocales,
+              localizationsDelegates: [
+                const AppLocalizationsDelegate(),
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              builder: (context, child) => IndexGate(child: child!),
+            ),
+          );
+
+          // On macOS, wraps `app` in a native PlatformMenuBar so shortcuts
+          // are listed in the system menu bar and macOS's own default
+          // Cmd+F ("Find…") no longer swallows ours before CallbackShortcuts
+          // sees it. On other platforms this is a no-op passthrough.
+          return AppShortcuts.menuBar(
+            navigatorKey: _navigatorKey,
+            ref: ref,
+            child: app,
+          );
+        },
       ),
     );
   }

@@ -66,9 +66,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final converted = velthuis(value);
     if (converted != value && converted.trim().isNotEmpty) {
       _isConverting = true;
-      _searchController.value = TextEditingValue(
-        text: converted,
-        selection: TextSelection.collapsed(offset: converted.length),
+      _searchController.value = convertedTextEditingValue(
+        _searchController.value,
       );
       _isConverting = false;
     }

@@ -45,13 +45,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   void _handleTabQueryParam() {
-    final uri = Uri.tryParse(GoRouterState.of(context).uri.toString());
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return; // not a routed context (e.g. shown as a dialog)
+
+    GoRouterState state;
+    try {
+      state = GoRouterState.of(context);
+    } catch (_) {
+      return; // context isn't under a matched GoRoute builder
+    }
+
+    final uri = Uri.tryParse(state.uri.toString());
     if (uri != null && uri.queryParameters.containsKey('tab')) {
       final tabParam = uri.queryParameters['tab'];
       final tabIndex = int.tryParse(tabParam ?? '');
       if (tabIndex != null && tabIndex >= 0 && tabIndex < 3) {
         setState(() => _selectedIndex = tabIndex);
-        // Clean the query parameter so it doesn't re-trigger
         context.go('/');
       }
     }

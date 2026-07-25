@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Velthuis-to-Unicode Pāḷi converter.
 ///
 /// Converts ASCII representations of Pāḷi diacritics into proper Unicode.
@@ -39,4 +41,25 @@ String velthuis(String input) {
       .replaceAll('.N', 'Ṇ')
       .replaceAll('.M', 'Ṃ')
       .replaceAll('.L', 'Ḷ');
+}
+
+/// Converts [value] with velthuis() while keeping the cursor in a sensible
+/// place, instead of always snapping it to the end of the text.
+TextEditingValue convertedTextEditingValue(TextEditingValue value) {
+  final oldOffset = value.selection.baseOffset < 0
+      ? value.text.length
+      : value.selection.baseOffset;
+
+  final converted = velthuis(value.text);
+
+  final beforeCursor = value.text.substring(
+    0,
+    oldOffset.clamp(0, value.text.length),
+  );
+  final newOffset = velthuis(beforeCursor).length.clamp(0, converted.length);
+
+  return TextEditingValue(
+    text: converted,
+    selection: TextSelection.collapsed(offset: newOffset),
+  );
 }

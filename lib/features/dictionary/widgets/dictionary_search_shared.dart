@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +61,79 @@ final dictionaryDefinitionProvider = FutureProvider.autoDispose
       }
     });
 
+// ── Clickable-word HTML transform (memoized) ───────────────────────────────
+//
+// Turning plain-text Pāli words inside DPD's meaning_html into clickable
+// <a href="lookup://..."> anchors is the most expensive step in rendering a
+// DPD entry (two regex passes over the whole HTML string). The bottom sheet
+// (DraggableScrollableSheet) rebuilds its entire content tree on every drag
+// frame, so without caching this work was being redone dozens of times per
+// second while the user simply resized the sheet. Since the same raw HTML
+// keeps coming back for a given headword, a small cache makes repeat calls
+// effectively free.
+
+final RegExp _htmlTagContentRegex = RegExp(r'>([^<]+)<');
+final RegExp _paliWordRegex = RegExp(
+  r'[āīūṅñṭḍṇḷṃṛṣūēōĀĪŪṄÑṬḌṆḶṂṚṢŪĒŌa-zA-Z]+(?:\.[\d]+)?',
+);
+
+// Spans that should never be broken up into individual clickable words:
+//  - <summary>...</summary> — the headword's own gloss (e.g. "free from
+//    desire") reads as one heading, not a list of lookup targets, and its
+//    English gloss words aren't valid Pāli dictionary entries anyway.
+//  - <b>Label:</b> — bold section labels like "Grammar:", "Root:",
+//    "Example:" are structural headings, not text to look up.
+// Both were previously getting wrapped in <a> like everything else, which
+// visually fragmented them (some letters linked/colored, some plain) and,
+// combined with the <a> style below, stripped their bold weight entirely.
+final RegExp _protectedSpanRegex = RegExp(
+  r'(<summary>.*?</summary>)|(<b>[^<]*:</b>)',
+  dotAll: true,
+);
+
+final Map<String, String> _clickableHtmlCache = {};
+const int _clickableHtmlCacheLimit = 200;
+
+/// Wraps Pāli words in [html] with clickable anchor tags so tapping them
+/// triggers a dictionary lookup, caching the result per input string.
+String _clickableHtmlFor(String html) {
+  final cached = _clickableHtmlCache[html];
+  if (cached != null) return cached;
+
+  // Swap out protected spans for placeholders so the word-linking pass
+  // below can't touch them, then restore the originals afterward.
+  final protectedSpans = <String>[];
+  final withPlaceholders = html.replaceAllMapped(_protectedSpanRegex, (m) {
+    protectedSpans.add(m.group(0)!);
+    return '\u0000${protectedSpans.length - 1}\u0000';
+  });
+
+  final linked = withPlaceholders.replaceAllMapped(_htmlTagContentRegex, (
+    match,
+  ) {
+    final text = match.group(1)!;
+    final processed = text.splitMapJoin(
+      _paliWordRegex,
+      onMatch: (m) {
+        final word = m.group(0)!;
+        return '<a href="lookup://$word">$word</a>';
+      },
+      onNonMatch: (s) => s,
+    );
+    return '>$processed<';
+  });
+
+  final result = linked.replaceAllMapped(RegExp(r'\u0000(\d+)\u0000'), (m) {
+    return protectedSpans[int.parse(m.group(1)!)];
+  });
+
+  if (_clickableHtmlCache.length >= _clickableHtmlCacheLimit) {
+    _clickableHtmlCache.remove(_clickableHtmlCache.keys.first);
+  }
+  _clickableHtmlCache[html] = result;
+  return result;
+}
+
 // ── HTML Rich Text Widget ──────────────────────────────────────────────────
 
 /// Renders DPD `meaning_html` using real HTML rendering with `flutter_html`.
@@ -83,26 +154,9 @@ class DpdHtmlRichText extends StatelessWidget {
     required this.onWordTap,
   });
 
-  /// Wrap Pāli words in the HTML text content with clickable anchor tags
-  /// so tapping them triggers a dictionary lookup via [onLinkTap].
-  String _makeWordsClickable(String html) {
-    return html.replaceAllMapped(RegExp(r'>([^<]+)<'), (match) {
-      final text = match.group(1)!;
-      final processed = text.splitMapJoin(
-        RegExp(r'[āīūṅñṭḍṇḷṃūēōĀĪŪṄÑṬḌṆḶṂŪĒŌa-zA-Z]+(?:\.[\d]+)?'),
-        onMatch: (m) {
-          final word = m.group(0)!;
-          return '<a href="lookup://$word">$word</a>';
-        },
-        onNonMatch: (s) => s,
-      );
-      return '>$processed<';
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final processedHtml = _makeWordsClickable(html);
+    final processedHtml = _clickableHtmlFor(html);
 
     // flutter_html's Html widget emits WidgetSpan placeholders for inline
     // elements (links, <details>/<summary>, etc). During flushSemantics,
@@ -139,11 +193,13 @@ class DpdHtmlRichText extends StatelessWidget {
           'i': Style(fontStyle: FontStyle.italic),
           'em': Style(fontStyle: FontStyle.italic),
           'u': Style(textDecoration: TextDecoration.underline),
-          'a': Style(
-            color: linkColor,
-            fontWeight: FontWeight.w500,
-            textDecoration: TextDecoration.none,
-          ),
+          // No fontWeight here on purpose: this used to hardcode w500,
+          // which silently downgraded any <b> ancestor's bold weight
+          // whenever a word inside it got linkified (e.g. bold section
+          // labels, or the highlighted headword inside an example verse).
+          // Leaving weight unset lets it inherit from the ancestor as
+          // normal HTML cascade would.
+          'a': Style(color: linkColor, textDecoration: TextDecoration.none),
           'details': Style(margin: Margins.only(bottom: 4)),
           'summary': Style(
             fontWeight: FontWeight.w600,
@@ -238,7 +294,6 @@ class DpdHeadwordCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sw = Stopwatch()..start();
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final paliFontFamily = pali.fontFamily.fontFamily;
@@ -249,7 +304,7 @@ class DpdHeadwordCard extends ConsumerWidget {
         ? (baseSize * 0.85).clamp(11.0, 20.0)
         : baseSize;
 
-    final child = Material(
+    return Material(
       // Use Material (not a Container+DecoratedBox) for the card background so
       // that any ListTile rendered inside the HTML (e.g. <details>/<summary>)
       // finds a Material ancestor and doesn't trigger Flutter's
@@ -295,15 +350,6 @@ class DpdHeadwordCard extends ConsumerWidget {
         ),
       ),
     );
-    sw.stop();
-    if (sw.elapsedMilliseconds > 4) {
-      developer.log(
-        '[DICT] DpdHeadwordCard build ${sw.elapsedMilliseconds}ms '
-        'lemma="$lemma" htmlLen=${(meaningHtml ?? '').length}',
-        name: 'epitaka.dict',
-      );
-    }
-    return child;
   }
 }
 

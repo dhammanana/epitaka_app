@@ -21,7 +21,6 @@ import '../../../shared/utils/reading_clipboard.dart';
 import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/providers/side_panel_provider.dart';
-import '../../../shared/widgets/reading_paragraph.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 
 import '../../settings/widgets/settings_dialog.dart';
@@ -40,7 +39,6 @@ import '../widgets/reader_context_menu.dart';
 import '../widgets/reader_drag_thumb.dart';
 import '../widgets/reader_in_book_search_bar.dart';
 import '../widgets/reader_tts_widgets.dart';
-import '../widgets/reader_content_list.dart';
 import '../widgets/reader_content_with_selection.dart';
 import '../widgets/tab_strip.dart';
 
@@ -273,10 +271,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// The paraId that _ttsTargetLineKeys belong to (for passing to
   /// ReadingParagraph).
   int? _ttsTargetParaId;
-
-  /// Book IDs for which we've already logged the first content frame.
-  /// Used to measure the gap between data-loaded and first-visible-frame.
-  final Set<String> _loggedFirstContentFrame = {};
 
   // ── In-book search ───────────────────────────────────────────────────
 
@@ -1443,6 +1437,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final dx = event.localPosition.dx - _swipeStartPos!.dx;
     final dy = (event.localPosition.dy - _swipeStartPos!.dy).abs();
 
+    // Clear double-tap state on significant movement in any direction.
+    // When the user scrolls (vertical movement), the old tap-down position
+    // stays cached and the NEXT pointer-down can be misinterpreted as the
+    // second tap of a double-tap, triggering a false dictionary lookup.
+    if (dx.abs() > 10 || dy > 10) {
+      _lastTapDownTime = null;
+      _lastTapDownPosition = null;
+    }
+
     // Must be primarily horizontal and past a small threshold
     if (!_isSwiping) {
       if (dx.abs() < 10 || dx.abs() < dy) return;
@@ -1517,9 +1520,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // Stop scrolling
       _autoScrollTimer?.cancel();
       _autoScrollTimer = null;
-    } else if (_autoScrollTimer == null) {
-      // Start the persistent timer (only when transitioning from stopped)
-      _autoScrollTimer = Timer.periodic(
+      return;
+    }
+    // Start the persistent timer (only when transitioning from stopped)
+    _autoScrollTimer ??= Timer.periodic(
         const Duration(milliseconds: 16),
         (_) {
           if (!mounted) {
@@ -1544,7 +1548,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           }
         },
       );
-    }
     // If timer is already running, it will pick up the new speed
     // on the next tick automatically.
   }
@@ -1774,8 +1777,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           buffer.writeln(_stripTags(line.paliText!));
         }
         for (final entry in line.translations.entries) {
-          if (enabledLangCodes != null && !enabledLangCodes.contains(entry.key))
+          if (enabledLangCodes != null && !enabledLangCodes.contains(entry.key)) {
             continue;
+          }
           buffer.writeln(_stripTags(entry.value));
         }
         final end = buffer.length;
@@ -2676,53 +2680,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ttsTargetParaId: _ttsTargetParaId,
       ttsTargetLineKeys: _ttsTargetLineKeys,
       searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
-    );
-  }
-
-  Widget _buildReaderContent(
-    BuildContext context,
-    ReaderDataState data,
-    AppSettings settings,
-    ColorScheme colors,
-    ReaderTabInfo activeTab,
-    Color paliColor,
-    Color translationColor,
-    List<String> enabledLangs,
-    Map<String, LanguageTypography> langTypographies, {
-    int? ttsHighlightLineId,
-    int? ttsHighlightParaId,
-  }) {
-    final bookId = activeTab.bookId;
-
-    // Log the first time content is actually built for this book so we can
-    // measure the gap between "data loaded" and "first visible frame".
-    if (!_loggedFirstContentFrame.contains(bookId)) {
-      _loggedFirstContentFrame.add(bookId);
-      developer.log(
-        '[BUILD] first content frame for book=$bookId '
-        'paraCount=${data.paragraphs.length}',
-        name: 'epitaka.reader.ui',
-      );
-    }
-
-    return ReaderContentList(
-      bookId: bookId,
-      data: data,
-      settings: settings,
-      colors: colors,
-      paliColor: paliColor,
-      translationColor: translationColor,
-      enabledLangs: enabledLangs,
-      langTypographies: langTypographies,
-      itemScrollController: _scrollControllerFor(bookId),
-      itemPositionsListener: _positionsListenerFor(bookId),
-      scrollOffsetListener: _scrollOffsetListenerFor(bookId),
-      ttsHighlightLineId: ttsHighlightLineId,
-      ttsHighlightParaId: ttsHighlightParaId,
-      ttsTargetParaId: _ttsTargetParaId,
-      ttsTargetLineKeys: _ttsTargetLineKeys,
-      searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
-      onFirstContentFrame: null,
     );
   }
 

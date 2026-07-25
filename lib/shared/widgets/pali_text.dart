@@ -85,16 +85,20 @@ class PaliText extends ConsumerWidget {
 ///
 /// When variants are hidden (the default), this behaves like [PaliHtmlText]
 /// (the variant segments are simply omitted by the converter).
-class PaliTextWithVariants extends ConsumerWidget {
+class PaliTextWithVariants extends StatelessWidget {
   final String data;
   final TextStyle? style;
   final int? maxLines;
   final TextOverflow? overflow;
   final TextAlign? textAlign;
+  final Script script;
+  final ColorScheme colors;
 
   const PaliTextWithVariants(
     this.data, {
     super.key,
+    required this.script,
+    required this.colors,
     this.style,
     this.maxLines,
     this.overflow,
@@ -102,18 +106,17 @@ class PaliTextWithVariants extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    stripVariantAnnotations = settings.stripVariantAnnotations;
-    final script = settings.paliScript;
-    final colors = Theme.of(context).colorScheme;
+  Widget build(BuildContext context) {
     final fontFamily = scriptFontFamily(script);
+
     final baseStyle =
         style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
 
     final segments = convertPaliToScriptSegments(data, script);
+
     final spans = <InlineSpan>[];
+
     for (final seg in segments) {
       if (seg.isVariant) {
         spans.add(

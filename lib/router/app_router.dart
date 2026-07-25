@@ -1,3 +1,5 @@
+import 'package:flutter/src/widgets/framework.dart';
+import 'package:flutter/src/widgets/navigator.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/gavesana/screens/gavesana_screen.dart';
@@ -37,9 +39,10 @@ class AppRoutes {
 /// The `_buildRouter()` function is called from `app.dart`.
 /// The FTS index gate is applied via the top-level `builder` parameter,
 /// so every route is gated without redundant re-mounts.
-GoRouter buildRouter() {
+GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
   return GoRouter(
     initialLocation: AppRoutes.library,
+    navigatorKey: navigatorKey,
     debugLogDiagnostics: false,
     routes: [
       GoRoute(

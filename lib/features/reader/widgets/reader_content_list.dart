@@ -178,6 +178,12 @@ class ReaderContentList extends StatelessWidget {
           ttsHighlightLineId: ttsHighlightLineId,
           ttsHighlightParaId: ttsHighlightParaId,
           lineKeys: lineKeys,
+          // Pass script and pageNumberingSystem from parent instead of
+          // forcing ReadingParagraph to watch settingsProvider directly.
+          // This avoids rebuilding ALL visible paragraphs on every
+          // unrelated settings change.
+          script: settings.paliScript,
+          pageNumberingSystem: settings.pageNumberingSystem,
           paliFontSize: settings.typography.pali.fontSize,
           paliLineHeight: settings.typography.pali.lineHeight,
           translationFontSize: settings.typography.fontSizeFor(

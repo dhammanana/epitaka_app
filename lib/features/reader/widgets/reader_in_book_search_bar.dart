@@ -77,16 +77,19 @@ class ReaderInBookSearchBar extends StatelessWidget {
                     vertical: 0,
                   ),
                   isDense: true,
-                  suffixIcon: controller.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          color: colors.onSurfaceVariant,
-                          onPressed: () {
-                            controller.clear();
-                            onQueryChanged('');
-                          },
-                        )
-                      : null,
+                  suffixIcon: Visibility(
+                    visible: controller.text.isNotEmpty,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        controller.clear();
+                        onQueryChanged('');
+                      },
+                    ),
+                  ),
                 ),
                 style: TextStyle(fontSize: 14, color: colors.onSurface),
                 onChanged: (v) {

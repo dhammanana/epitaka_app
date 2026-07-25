@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
@@ -18,10 +18,6 @@ import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
 Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
-  developer.log(
-    '[DICT] showDictionarySheet word="$word"',
-    name: 'epitaka.dict',
-  );
   // Mark the sheet as open so the reader behind it can drop its (very deep)
   // semantics subtree from collection. Collecting the reader's huge
   // ScrollablePositionedList while the sheet's own semantics are being built
@@ -59,7 +55,7 @@ Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
 // which avoids the previous bug where a repeated maybePop also closed the
 // reader route underneath.
 const double _sheetMinSize = 0.25;
-const double _sheetInitialSize = 0.5;
+const double _sheetInitialSize = 0.7;
 const double _sheetMaxSize = 0.95;
 // Dragging the sheet below this extent dismisses it.
 const double _sheetCloseExtent = 0.3;
@@ -78,6 +74,7 @@ class DictionarySheet extends ConsumerStatefulWidget {
 class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
+  final _sheetController = DraggableScrollableController();
   Timer? _debounce;
   bool _isConverting = false;
 
@@ -97,32 +94,52 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// Cached sub-lookup results for deconstructor tokens.
   /// key: token word, value: list of headword rows
   final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
+  // Bumped whenever _subLookupCache gains an entry, so the DPD section
+  // memoization below knows to rebuild.
+  int _subLookupVersion = 0;
+
+  // The DPD section (headwords + deconstructor) is the most expensive part
+  // of the sheet to build: it parses full HTML entries and regex-processes
+  // them into clickable links. DraggableScrollableSheet re-invokes its
+  // `builder` on every drag frame (not just on setState), so without this
+  // cache the whole DPD section — and all its HTML parsing — was being
+  // rebuilt from scratch dozens of times per second while the user simply
+  // dragged the sheet. We reuse the last built widget whenever the
+  // underlying data and UI state haven't actually changed.
+  Widget? _cachedDpdSectionWidget;
+  DpdFullLookup? _cachedDpdSectionLookup;
+  int _cachedDpdSectionCardIndex = -2;
+  int _cachedDpdSectionTokenIndex = -2;
+  int _cachedDpdSectionSubLookupVersion = -1;
 
   // Search history
-  final List<String> _searchHistory = [];
+  late final List<String> _searchHistory = [];
+  static const _historyPrefsKey = 'dict_search_history';
+  static const _historyMaxLen = 100;
 
   @override
   void initState() {
     super.initState();
+    _loadHistory();
     final initial = widget.initialWord.trim();
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
       _addToHistory(initial);
       _performSearch(initial);
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _focusNode.requestFocus();
-      });
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _focusNode.dispose();
-    _debounce?.cancel();
-    super.dispose();
+  Future _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_historyPrefsKey) ?? [];
+    if (mounted) {
+      setState(() {
+        _searchHistory
+          ..clear()
+          ..addAll(saved);
+      });
+    }
   }
 
   void _addToHistory(String word) {
@@ -131,10 +148,25 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     setState(() {
       _searchHistory.remove(w);
       _searchHistory.insert(0, w);
-      if (_searchHistory.length > 15) {
+      if (_searchHistory.length > _historyMaxLen) {
         _searchHistory.removeLast();
       }
     });
+    _saveHistory();
+  }
+
+  Future<void> _saveHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_historyPrefsKey, _searchHistory);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _focusNode.dispose();
+    _sheetController.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   void _onSearchChanged(String value) {
@@ -145,9 +177,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
     if (converted != value && converted.trim().isNotEmpty) {
       _isConverting = true;
-      _searchController.value = TextEditingValue(
-        text: converted,
-        selection: TextSelection.collapsed(offset: converted.length),
+      _searchController.value = convertedTextEditingValue(
+        _searchController.value,
       );
       _isConverting = false;
     }
@@ -158,7 +189,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       return;
     }
 
-    _debounce = Timer(const Duration(milliseconds: 500), () {
+    _debounce = Timer(const Duration(milliseconds: 200), () {
       _initiateSearch(trimmed);
     });
   }
@@ -171,7 +202,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
-    developer.log('[DICT] initiateSearch word="$word"', name: 'epitaka.dict');
     _addToHistory(word);
     setState(() {
       _query = word;
@@ -192,12 +222,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
     final trans = settings.typography.typographyFor(
       settings.primaryTranslationLang,
     );
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
     final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
 
     return NotificationListener<DraggableScrollableNotification>(
@@ -212,6 +240,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         return false;
       },
       child: DraggableScrollableSheet(
+        controller: _sheetController,
         initialChildSize: _sheetInitialSize,
         minChildSize: _sheetMinSize,
         maxChildSize: _sheetMaxSize,
@@ -220,144 +249,177 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         snap: false,
         builder: (context, scrollController) {
           return Container(
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppDimensions.radiusSheet),
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(AppDimensions.radiusSheet),
+                ),
               ),
-            ),
-            child: Column(
-              children: [
-                // Drag handle — a visual affordance for the pull-to-close /
-                // drag-to-expand gesture. The whole sheet is already draggable
-                // (handled by DraggableScrollableSheet), so this is purely
-                // decorative.
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: colors.outlineVariant,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Search bar row
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    4,
-                    AppDimensions.sm,
-                    AppDimensions.marginMobile - 8,
-                    0,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          focusNode: _focusNode,
-                          textInputAction: TextInputAction.search,
-                          decoration: InputDecoration(
-                            hintText: 'Search Pāḷi…',
-                            prefixIcon: Icon(
-                              Icons.search,
-                              color: colors.onSurfaceVariant,
-                            ),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _onSearchChanged('');
-                                      _focusNode.requestFocus();
-                                    },
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: colors.surfaceContainerHighest,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppDimensions.radiusXl,
+              child: Column(
+                children: [
+                  // The handle, search bar, and history row are wrapped in a
+                  // GestureDetector so dragging on them also resizes/closes the
+                  // sheet, same as dragging on the content area below.
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onVerticalDragUpdate: (details) {
+                      final screenHeight = MediaQuery.of(context).size.height;
+                      final delta = details.primaryDelta! / screenHeight;
+                      final newSize = (_sheetController.size - delta).clamp(
+                        _sheetMinSize,
+                        _sheetMaxSize,
+                      );
+                      _sheetController.jumpTo(newSize);
+                    },
+                    onVerticalDragEnd: (details) {
+                      if (_sheetController.size <= _sheetCloseExtent &&
+                          !_dismissed) {
+                        _dismissed = true;
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    child: Column(
+                      children: [
+                        // Drag handle — a visual affordance for the pull-to-close /
+                        // drag-to-expand gesture. The whole sheet is already draggable
+                        // (handled by DraggableScrollableSheet), so this is purely
+                        // decorative.
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                            child: Container(
+                              width: 36,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: colors.outlineVariant,
+                                borderRadius: BorderRadius.circular(2),
                               ),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: AppDimensions.md,
-                              vertical: 12,
                             ),
                           ),
-                          style: AppTypography.bodyTranslation.copyWith(
-                            color: colors.onSurface,
-                            fontSize: transSize,
-                            fontFamily: trans.fontFamily.fontFamily,
-                          ),
-                          onChanged: _onSearchChanged,
-                          onSubmitted: _performSearch,
                         ),
-                      ),
-                      // Pin to right side panel (desktop only). When pinned,
-                      // the lookup moves to the docked panel and this sheet
-                      // closes.
-                      if (ResponsiveBreakpoint.isDesktop(context)) ...[
-                        const SizedBox(width: 4),
-                        _SheetPinButton(
-                          word: _query,
-                          onPinned: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
 
-                // Search history row
-                if (_searchHistory.isNotEmpty)
-                  Container(
-                    height: 40,
-                    margin: const EdgeInsets.only(top: 8, left: 16, right: 16),
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _searchHistory.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        return ActionChip(
-                          label: Text(_searchHistory[index]),
-                          labelStyle: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant,
+                        // Search bar row
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            4,
+                            AppDimensions.sm,
+                            AppDimensions.marginMobile - 8,
+                            0,
                           ),
-                          backgroundColor: colors.surfaceContainerHighest,
-                          side: BorderSide.none,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  focusNode: _focusNode,
+                                  autofocus: true,
+                                  textInputAction: TextInputAction.search,
+                                  decoration: InputDecoration(
+                                    hintText: 'Search Pāḷi…',
+                                    prefixIcon: Icon(
+                                      Icons.search,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                    suffixIcon:
+                                        _searchController.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              _onSearchChanged('');
+                                              _focusNode.requestFocus();
+                                            },
+                                          )
+                                        : null,
+                                    filled: true,
+                                    fillColor: colors.surfaceContainerHighest,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppDimensions.radiusXl,
+                                      ),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: AppDimensions.md,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                  style: AppTypography.bodyTranslation.copyWith(
+                                    color: colors.onSurface,
+                                    fontSize: transSize,
+                                    fontFamily: trans.fontFamily.fontFamily,
+                                  ),
+                                  onChanged: _onSearchChanged,
+                                  onSubmitted: _performSearch,
+                                ),
+                              ),
+                              // Pin to right side panel (desktop only). When pinned,
+                              // the lookup moves to the docked panel and this sheet
+                              // closes.
+                              if (ResponsiveBreakpoint.isDesktop(context)) ...[
+                                const SizedBox(width: 4),
+                                _SheetPinButton(
+                                  word: _query,
+                                  onPinned: () => Navigator.of(context).pop(),
+                                ),
+                              ],
+                            ],
                           ),
-                          onPressed: () {
-                            _searchController.text = _searchHistory[index];
-                            _performSearch(_searchHistory[index]);
-                          },
-                        );
-                      },
+                        ),
+                        // Search history row
+                        if (_searchHistory.isNotEmpty)
+                          Container(
+                            height: 40,
+                            margin: const EdgeInsets.only(
+                              top: 8,
+                              left: 16,
+                              right: 16,
+                            ),
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _searchHistory.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                return ActionChip(
+                                  label: Text(_searchHistory[index]),
+                                  labelStyle: AppTypography.labelSmall.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                  backgroundColor:
+                                      colors.surfaceContainerHighest,
+                                  side: BorderSide.none,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  onPressed: () {
+                                    _searchController.text =
+                                        _searchHistory[index];
+                                    _performSearch(_searchHistory[index]);
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                      ],
                     ),
                   ),
 
-                const SizedBox(height: AppDimensions.sm),
-                const Divider(height: 1),
+                  const SizedBox(height: AppDimensions.sm),
+                  const Divider(height: 1),
 
-                // Content area (uses the sheet's scroll controller so the
-                // sheet resizes while the content scrolls).
-                Expanded(child: _buildContent(colors, scrollController)),
+                  // Content area (uses the sheet's scroll controller so the
+                  // sheet resizes while the content scrolls).
+                  Expanded(child: _buildContent(colors, scrollController)),
 
-                // Clear the system navigation bar.
-                SizedBox(height: bottomPadding),
-              ],
-            ),
-          );
-        },
-      ),
+                  // Clear the system navigation bar.
+                  SizedBox(height: bottomPadding),
+                ],
+              ),
+            );
+          },
+        ),
     );
   }
 
@@ -412,7 +474,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// If the exact lookup fails, fall back to prefix search suggestions.
   Widget _buildResults(ColorScheme colors, ScrollController scrollController) {
     // Try exact lookup first
-    developer.log('[DICT] buildResults query="$_query"', name: 'epitaka.dict');
     return ref
         .watch(dpdDictionaryLookupProvider(_query))
         .when(
@@ -429,12 +490,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
           ),
           data: (lookup) {
-            developer.log(
-              '[DICT] buildResults data ready query="$_query" '
-              'hasHeadwords=${lookup.hasHeadwords} '
-              'hasDecon=${lookup.hasDeconstructor}',
-              name: 'epitaka.dict',
-            );
             if (lookup.hasHeadwords || lookup.hasDeconstructor) {
               return _buildDictionaryResults(colors, lookup, scrollController);
             }
@@ -570,8 +625,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           error: (_, _) => const SizedBox.shrink(),
           data: (books) {
             final enabledBooks = books.where((b) => b.userChoice).toList();
-            final sw = Stopwatch()..start();
-            final w = CustomScrollView(
+            return CustomScrollView(
               controller: scrollController,
               slivers: [
                 ..._buildDictionarySections(
@@ -583,15 +637,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 const SliverToBoxAdapter(child: SizedBox(height: 40)),
               ],
             );
-            sw.stop();
-            developer.log(
-              '[DICT] buildDictionaryResults render ${sw.elapsedMilliseconds}ms '
-              'enabledBooks=${enabledBooks.length} '
-              'headwords=${lookup.headwords.length} '
-              'decon=${lookup.deconstructionCandidates.length}',
-              name: 'epitaka.dict',
-            );
-            return w;
           },
         );
       },
@@ -619,7 +664,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       final child = switch (book.id) {
         11 =>
           (lookup.hasHeadwords || lookup.hasDeconstructor)
-              ? _buildDpdSection(colors, lookup)
+              ? _buildDpdSectionMemoized(colors, lookup)
               : const SizedBox.shrink(),
         100 => PaliDefinitionSection(
           searchWord: searchWord,
@@ -642,67 +687,91 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   // ── DPD Section ──────────────────────────────────────────────────────────
 
+  /// Returns the DPD section widget, rebuilding it only when the underlying
+  /// data or expand/collapse state actually changed. See the fields above
+  /// for why this cache exists — it's what keeps sheet dragging smooth.
+  Widget _buildDpdSectionMemoized(ColorScheme colors, DpdFullLookup lookup) {
+    final cached = _cachedDpdSectionWidget;
+    if (cached != null &&
+        identical(_cachedDpdSectionLookup, lookup) &&
+        _cachedDpdSectionCardIndex == _activeDeconCardIndex &&
+        _cachedDpdSectionTokenIndex == _activeDeconTokenIndex &&
+        _cachedDpdSectionSubLookupVersion == _subLookupVersion) {
+      return cached;
+    }
+    final built = _buildDpdSection(colors, lookup);
+    _cachedDpdSectionWidget = built;
+    _cachedDpdSectionLookup = lookup;
+    _cachedDpdSectionCardIndex = _activeDeconCardIndex;
+    _cachedDpdSectionTokenIndex = _activeDeconTokenIndex;
+    _cachedDpdSectionSubLookupVersion = _subLookupVersion;
+    return built;
+  }
+
   Widget _buildDpdSection(ColorScheme colors, DpdFullLookup lookup) {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final paliFontFamily = pali.fontFamily.fontFamily;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section label
-        Row(
-          children: [
-            Icon(Icons.auto_stories, size: 16, color: colors.primary),
-            const SizedBox(width: 6),
-            Text(
-              'dpd dictionary',
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w700,
-                fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
-                fontFamily: paliFontFamily,
+    return Padding(
+      padding: EdgeInsetsGeometry.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section label
+          Row(
+            children: [
+              Icon(Icons.auto_stories, size: 16, color: colors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'dpd dictionary',
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+                  fontFamily: paliFontFamily,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-
-        // Searched word
-        Text(
-          lookup.searchedKey,
-          style: AppTypography.displayPali.copyWith(
-            color: colors.onSurface,
-            fontSize: (pali.fontSize * 1.1).clamp(16.0, 28.0),
-            fontWeight: FontWeight.bold,
-            fontFamily: pali.fontFamily.fontFamily,
+            ],
           ),
-        ),
-        const SizedBox(height: 10),
+          const SizedBox(height: 6),
 
-        // Deconstructor cards (if available)
-        if (lookup.hasDeconstructor) ...[
-          _buildDeconstructorSection(colors, lookup),
-          const SizedBox(height: 12),
+          // Searched word
+          Text(
+            lookup.searchedKey,
+            style: AppTypography.displayPali.copyWith(
+              color: colors.onSurface,
+              fontSize: (pali.fontSize * 1.1).clamp(16.0, 28.0),
+              fontWeight: FontWeight.bold,
+              fontFamily: pali.fontFamily.fontFamily,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Deconstructor cards (if available)
+          if (lookup.hasDeconstructor) ...[
+            _buildDeconstructorSection(colors, lookup),
+            const SizedBox(height: 12),
+          ],
+
+          // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
+          // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
+          // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
+          // so no extra wrapping is needed here.
+          if (lookup.hasHeadwords)
+            ...lookup.headwords.map((hw) {
+              return DpdHeadwordCard(
+                lemma: hw.lemma1,
+                meaningHtml: hw.meaningHtml,
+                colors: colors,
+                onWordTap: _selectWord,
+              );
+            }),
+          const SizedBox(height: 8),
+
+          const Divider(height: 1),
+          const SizedBox(height: AppDimensions.sm),
         ],
-
-        // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
-        // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
-        // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
-        // so no extra wrapping is needed here.
-        if (lookup.hasHeadwords)
-          ...lookup.headwords.map((hw) {
-            return DpdHeadwordCard(
-              lemma: hw.lemma1,
-              meaningHtml: hw.meaningHtml,
-              colors: colors,
-              onWordTap: _selectWord,
-            );
-          }),
-        const SizedBox(height: 8),
-
-        const Divider(height: 1),
-        const SizedBox(height: AppDimensions.sm),
-      ],
+      ),
     );
   }
 
@@ -877,9 +946,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildTokenContent(ColorScheme colors, String token) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliFontFamily = pali.fontFamily.fontFamily;
     final cached = _subLookupCache[token];
     if (cached != null) {
       if (cached.isEmpty) {
@@ -922,6 +988,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       if (mounted) {
         setState(() {
           _subLookupCache[token] = headwords;
+          _subLookupVersion++;
         });
       }
     } catch (_) {}
