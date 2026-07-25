@@ -36,13 +36,16 @@ class ParagraphHeading {
   });
 }
 
-/// A paragraph with multiple lines and optional page number.
+/// A paragraph with multiple lines and optional page numbers.
 class ParagraphData {
   final int paraId;
   final List<LineData> lines;
 
-  /// The page number (e.g. VRI page) for this paragraph.
+  /// The primary page number (from settings' preferred page numbering system).
   final String? pageNumber;
+
+  /// All page numbers keyed by system code: 'vri', 'pts', 'thai', 'my'.
+  final Map<String, String> pageNumbers;
 
   /// True if this paragraph starts a new page (page number differs from previous).
   final bool isPageStart;
@@ -54,6 +57,7 @@ class ParagraphData {
     required this.paraId,
     this.lines = const [],
     this.pageNumber,
+    this.pageNumbers = const {},
     this.isPageStart = false,
     this.heading,
   });
@@ -62,6 +66,7 @@ class ParagraphData {
     int? paraId,
     List<LineData>? lines,
     String? pageNumber,
+    Map<String, String>? pageNumbers,
     bool? isPageStart,
     ParagraphHeading? heading,
   }) {
@@ -69,6 +74,7 @@ class ParagraphData {
       paraId: paraId ?? this.paraId,
       lines: lines ?? this.lines,
       pageNumber: pageNumber ?? this.pageNumber,
+      pageNumbers: pageNumbers ?? this.pageNumbers,
       isPageStart: isPageStart ?? this.isPageStart,
       heading: heading ?? this.heading,
     );
@@ -434,19 +440,45 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     );
 
     // ── Group into paraId -> lines ───────────────────────────────────
+    // Read all four page number columns from each sentence row, not just
+    // the one matching the selected page system. This way the quote citation
+    // can use ANY page system (e.g. {pts_page} gets the real PTS page, not
+    // a copy of VRI page).
     final groupSw = Stopwatch()..start();
     final paraLines = <int, List<_RawLine>>{};
     for (final s in sentences) {
-      final pageValue = _getPageValue(s, pageColumn);
+      final pageNumbers = <String, String>{
+        'vri': (s as dynamic).vripage as String? ?? '',
+        'pts': (s as dynamic).ptspage as String? ?? '',
+        'thai': (s as dynamic).thaipage as String? ?? '',
+        'my': (s as dynamic).mypage as String? ?? '',
+      };
+      // Remove empty entries
+      pageNumbers.removeWhere((_, v) => v.isEmpty);
+
+      // The primary page number from the user's preferred system
+      final preferredPage = pageNumbers[pageColumn == 'vripage' ? 'vri' :
+          pageColumn == 'ptspage' ? 'pts' :
+          pageColumn == 'thaipage' ? 'thai' :
+          pageColumn == 'mypage' ? 'my' : 'vri'];
+
       paraLines.putIfAbsent(s.paraId, () => []);
       if (s.pali != null && s.pali!.trim().isNotEmpty) {
         paraLines[s.paraId]!.add(
-          _RawLine(lineId: s.lineId, paliText: s.pali!, pageNumber: pageValue),
+          _RawLine(
+            lineId: s.lineId,
+            paliText: s.pali!,
+            pageNumbers: pageNumbers,
+          ),
         );
-      } else if (pageValue != null && pageValue.isNotEmpty) {
+      } else if (preferredPage != null && preferredPage.isNotEmpty) {
         if (paraLines[s.paraId]!.isEmpty) {
           paraLines[s.paraId]!.add(
-            _RawLine(lineId: s.lineId, paliText: null, pageNumber: pageValue),
+            _RawLine(
+              lineId: s.lineId,
+              paliText: null,
+              pageNumbers: pageNumbers,
+            ),
           );
         }
       }
@@ -553,11 +585,18 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       final paraId = entry.key;
       final rawLines = entry.value;
 
+      // Merge page numbers from all raw lines in this paragraph
+      final mergedPageNumbers = <String, String>{};
       String? pageNumber;
       for (final rl in rawLines) {
-        if (rl.pageNumber != null && rl.pageNumber!.isNotEmpty) {
-          pageNumber = rl.pageNumber;
-          break;
+        mergedPageNumbers.addAll(rl.pageNumbers);
+        // Primary page number from the user's preferred system
+        if (pageNumber == null) {
+          final preferredCode = pageColumn == 'vripage' ? 'vri' :
+              pageColumn == 'ptspage' ? 'pts' :
+              pageColumn == 'thaipage' ? 'thai' :
+              pageColumn == 'mypage' ? 'my' : 'vri';
+          pageNumber = mergedPageNumbers[preferredCode];
         }
       }
 
@@ -590,6 +629,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           paraId: paraId,
           lines: lines,
           pageNumber: pageNumber ?? previousPageNumber,
+          pageNumbers: Map.unmodifiable(mergedPageNumbers),
           isPageStart: isPageStart,
           heading: heading,
         ),
@@ -630,9 +670,11 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
 class _RawLine {
   final int lineId;
   final String? paliText;
-  final String? pageNumber;
 
-  const _RawLine({required this.lineId, this.paliText, this.pageNumber});
+  /// All page numbers for this line, keyed by system code.
+  final Map<String, String> pageNumbers;
+
+  const _RawLine({required this.lineId, this.paliText, this.pageNumbers = const {}});
 }
 
 /// Provider that loads reader data for a given book (all paragraphs at once).
@@ -661,18 +703,4 @@ String _pageColumnName(String system) {
   }
 }
 
-/// Get the page value from a sentence row for the given column.
-String? _getPageValue(dynamic s, String column) {
-  switch (column) {
-    case 'vripage':
-      return (s as dynamic).vripage as String?;
-    case 'ptspage':
-      return (s as dynamic).ptspage as String?;
-    case 'thaipage':
-      return (s as dynamic).thaipage as String?;
-    case 'mypage':
-      return (s as dynamic).mypage as String?;
-    default:
-      return null;
-  }
-}
+

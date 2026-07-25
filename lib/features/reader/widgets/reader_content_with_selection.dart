@@ -33,6 +33,10 @@ class ReaderContentWithSelection extends StatelessWidget {
     required this.dragDxNotifier,
     required this.selectableRegionKey,
     required this.onPointerDown,
+    this.onPointerMove,
+    this.onPointerUp,
+    this.onPointerCancel,
+    this.scrollOffsetController,
     required this.onSelectionChanged,
     required this.contextMenuBuilder,
     required this.selectionDisabled,
@@ -62,9 +66,17 @@ class ReaderContentWithSelection extends StatelessWidget {
   final GlobalKey contentHitTestKey;
   final ValueNotifier<double> dragDxNotifier;
 
+  // Raw pointer events (passive — don't participate in gesture arena)
+  final void Function(PointerDownEvent) onPointerDown;
+  final void Function(PointerMoveEvent)? onPointerMove;
+  final void Function(PointerUpEvent)? onPointerUp;
+  final void Function(PointerCancelEvent)? onPointerCancel;
+
+  // Scroll controller for auto-scroll
+  final ScrollOffsetController? scrollOffsetController;
+
   // SelectionArea
   final GlobalKey<SelectableRegionState> selectableRegionKey;
-  final void Function(PointerDownEvent) onPointerDown;
   final void Function(SelectedContent?) onSelectionChanged;
   final Widget Function(BuildContext, SelectableRegionState) contextMenuBuilder;
   final bool selectionDisabled;
@@ -95,6 +107,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       itemScrollController: itemScrollController,
       itemPositionsListener: itemPositionsListener,
       scrollOffsetListener: scrollOffsetListener,
+      scrollOffsetController: scrollOffsetController,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
       ttsTargetParaId: ttsTargetParaId,
@@ -108,6 +121,9 @@ class ReaderContentWithSelection extends StatelessWidget {
     final content = Listener(
       key: contentHitTestKey,
       onPointerDown: onPointerDown,
+      onPointerMove: onPointerMove,
+      onPointerUp: onPointerUp,
+      onPointerCancel: onPointerCancel,
       child: AnimatedBuilder(
         animation: dragDxNotifier,
         builder: (context, child) => Transform.translate(

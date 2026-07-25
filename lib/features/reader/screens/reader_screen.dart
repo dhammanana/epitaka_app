@@ -18,6 +18,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/utils/reading_clipboard.dart';
+import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
@@ -148,6 +149,44 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   int? _lastTapDownTime;
   Offset? _lastTapDownPosition;
   int _tapCounter = 0;
+
+  /// Tab-swipe tracking via raw pointer events (bypasses gesture arena).
+  /// The outer GestureDetector was removed because it added a
+  /// HorizontalDragGestureRecognizer that competed with SelectionArea's
+  /// MultiDragGestureRecognizer, blocking vertical scrolling when text
+  /// was selected. We now track horizontal drags passively from the
+  /// existing Listener (which doesn't participate in the gesture arena).
+  Offset? _swipeStartPos;
+  bool _isSwiping = false;
+  double _lastSwipeDx = 0;
+
+  // ── Auto-scroll when dragging selection handle near viewport edge ──
+  //
+  // Flutter's built-in SelectionArea auto-scroll can't drive
+  // ScrollablePositionedList because the SelectableRegion is outside the
+  // list's internal Scrollable. We manually detect edge proximity from
+  // raw pointer events and drive the scroll ourselves.
+  //
+  // Uses a persistent timer (not recreated on every pointer move) and a
+  // small non-zero duration (16ms) for animateScroll to avoid flicker.
+  static const double _kAutoScrollEdgeThreshold = 50.0;
+  static const double _kAutoScrollBaseSpeed = 3.0; // px per 16ms tick
+
+  /// Controller attached to the active tab's ScrollablePositionedList
+  /// for pixel-based auto-scrolling.
+  final ScrollOffsetController _autoScrollOffsetController =
+      ScrollOffsetController();
+
+  /// Persistent timer that scrolls the list while the pointer is near the
+  /// viewport edge. Created once, stays alive until auto-scroll stops.
+  Timer? _autoScrollTimer;
+
+  /// Current auto-scroll speed. 0 = stopped. Positive = scroll down.
+  /// Updated by [_checkAutoScrollEdge] on each pointer move; read by the
+  /// persistent timer on each tick. This avoids recreating the timer.
+  double _autoScrollSpeed = 0;
+
+
 
   // Track the last paraId we've jumped to per book, so we don't re-jump
   // every time the tab rebuilds (e.g. on unrelated provider changes).
@@ -1228,6 +1267,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [GestureDetector]. When a double-tap is detected we look up the word
   /// at the tap point ourselves and open the dictionary.
   void _handlePointerDown(PointerDownEvent event) {
+    // Record start position for potential tab-swipe
+    _swipeStartPos = event.localPosition;
+    _isSwiping = false;
+    _lastSwipeDx = 0;
+
     final now = event.timeStamp.inMilliseconds;
     final lastTime = _lastTapDownTime;
     final lastPos = _lastTapDownPosition;
@@ -1376,6 +1420,168 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
+  /// Handle raw pointer move for tab-swipe detection and auto-scroll.
+  /// Uses the existing [Listener] (passive — no gesture arena participation)
+  /// to track horizontal drags without competing with [SelectionArea].
+  ///
+  /// When there's an active text selection and the pointer is near the
+  /// viewport edge, starts auto-scrolling to extend selection beyond the
+  /// visible area. Flutter's built-in SelectionArea auto-scroll can't drive
+  /// ScrollablePositionedList because the SelectableRegion is outside the
+  /// list's internal Scrollable, so we handle it manually.
+  void _handlePointerMoveForTabSwipe(PointerMoveEvent event) {
+    // ── Auto-scroll when dragging selection handle near viewport edge ──
+    if (_lastSelectedContent != null) {
+      _checkAutoScrollEdge(event);
+    } else {
+      _stopAutoScroll();
+    }
+
+    // ── Tab-swipe detection ──
+    if (_swipeStartPos == null) return;
+
+    final dx = event.localPosition.dx - _swipeStartPos!.dx;
+    final dy = (event.localPosition.dy - _swipeStartPos!.dy).abs();
+
+    // Must be primarily horizontal and past a small threshold
+    if (!_isSwiping) {
+      if (dx.abs() < 10 || dx.abs() < dy) return;
+      _isSwiping = true;
+      _lastSwipeDx = dx;
+      _onDragStart(DragStartDetails(
+        globalPosition: event.position,
+        localPosition: event.localPosition,
+      ));
+      return;
+    }
+
+    final deltaDx = dx - _lastSwipeDx;
+    _lastSwipeDx = dx;
+
+    if (deltaDx != 0) {
+      _onDragUpdate(DragUpdateDetails(
+        delta: Offset(deltaDx, 0),
+        globalPosition: event.position,
+        localPosition: event.localPosition,
+      ));
+    }
+  }
+
+  /// Check if the pointer is near the viewport edge and start/stop
+  /// auto-scroll accordingly.
+  ///
+  /// Instead of recreating the timer on every move, we just update
+  /// [_autoScrollSpeed]. A persistent timer reads this value on each
+  /// tick and scrolls if non-zero. This avoids the flicker caused by
+  /// constantly cancelling and re-creating timers.
+  void _checkAutoScrollEdge(PointerMoveEvent event) {
+    final renderBox =
+        _contentHitTestKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) {
+      _setAutoScrollSpeed(0);
+      return;
+    }
+
+    final viewportHeight = renderBox.size.height;
+    final localY = event.localPosition.dy;
+    final clampedY = localY.clamp(0.0, viewportHeight);
+
+    double speed;
+    if (clampedY < _kAutoScrollEdgeThreshold) {
+      // Near top edge — scroll backward (up)
+      final intensity =
+          1.0 - (clampedY / _kAutoScrollEdgeThreshold);
+      speed = -_kAutoScrollBaseSpeed * (0.5 + 0.5 * intensity);
+    } else if (clampedY > viewportHeight - _kAutoScrollEdgeThreshold) {
+      // Near bottom edge — scroll forward (down)
+      final intensity =
+          ((clampedY - (viewportHeight - _kAutoScrollEdgeThreshold)) /
+              _kAutoScrollEdgeThreshold);
+      speed = _kAutoScrollBaseSpeed * (0.5 + 0.5 * intensity);
+    } else {
+      speed = 0;
+    }
+
+    _setAutoScrollSpeed(speed);
+  }
+
+  /// Update the auto-scroll speed and ensure the persistent timer is
+  /// running (or stopped) as needed.
+  void _setAutoScrollSpeed(double speed) {
+    // No change — nothing to do
+    if (speed == _autoScrollSpeed) return;
+
+    _autoScrollSpeed = speed;
+
+    if (speed == 0) {
+      // Stop scrolling
+      _autoScrollTimer?.cancel();
+      _autoScrollTimer = null;
+    } else if (_autoScrollTimer == null) {
+      // Start the persistent timer (only when transitioning from stopped)
+      _autoScrollTimer = Timer.periodic(
+        const Duration(milliseconds: 16),
+        (_) {
+          if (!mounted) {
+            _autoScrollTimer?.cancel();
+            _autoScrollTimer = null;
+            _autoScrollSpeed = 0;
+            return;
+          }
+          final currentSpeed = _autoScrollSpeed;
+          if (currentSpeed == 0) return;
+          try {
+            _autoScrollOffsetController.animateScroll(
+              offset: currentSpeed,
+              duration: const Duration(milliseconds: 16),
+              curve: Curves.linear,
+            );
+          } catch (e) {
+            developer.log(
+              '[AUTO_SCROLL] animateScroll error: $e',
+              name: 'epitaka.reader.ui',
+            );
+          }
+        },
+      );
+    }
+    // If timer is already running, it will pick up the new speed
+    // on the next tick automatically.
+  }
+
+  /// Stop auto-scrolling and cancel the timer.
+  void _stopAutoScroll() {
+    _autoScrollSpeed = 0;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
+
+  /// Handle raw pointer up for tab-swipe completion.
+  void _handlePointerUpForTabSwipe(PointerUpEvent event) {
+    _finishTabSwipe();
+  }
+
+  /// Handle raw pointer cancel (e.g. system gesture interrupts).
+  void _handlePointerCancelForTabSwipe(PointerCancelEvent event) {
+    _finishTabSwipe();
+  }
+
+  /// Common cleanup for tab-swipe completion/cancellation.
+  /// Velocity from raw pointer events is unreliable, so we rely on the
+  /// position-based threshold (_dragDxNotifier.abs() > width * 0.3).
+  void _finishTabSwipe() {
+    _stopAutoScroll();
+    if (_isSwiping) {
+      _onDragEnd(DragEndDetails(
+        velocity: Velocity.zero,
+        primaryVelocity: 0,
+      ));
+    }
+    _swipeStartPos = null;
+    _isSwiping = false;
+    _lastSwipeDx = 0;
+  }
+
   String _cleanPali(String text) {
     return text.replaceAll(RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), '').trim();
   }
@@ -1392,6 +1598,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return AdaptiveTextSelectionToolbar(
       anchors: anchors,
       children: [
+        ContextMenuButton(
+          icon: Icons.copy,
+          label: 'Copy Plain Text',
+          onTap: () {
+            _copyPlainText();
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        ),
         ContextMenuButton(
           icon: Icons.copy_all,
           label: 'Copy with Style',
@@ -1438,6 +1653,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
+  /// Copy the selected text as plain text.
+  /// Uses Flutter's [SelectedContent.plainText] directly (the actual text the
+  /// user selected), without trying to reconstruct paragraph/line structure.
+  /// This is simpler and more reliable — it works for partial line selections
+  /// and different scripts, but loses line-break formatting.
+  void _copyPlainText() {
+    final selectedContent = _lastSelectedContent;
+    if (selectedContent == null || selectedContent.plainText.trim().isEmpty) {
+      return;
+    }
+    Clipboard.setData(ClipboardData(text: selectedContent.plainText));
+  }
+
   void _onCopyShortcut() {
     _copySelectedContent(CopyScope.both, addQuote: false);
   }
@@ -1476,28 +1704,39 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
 
     final settings = ref.read(settingsProvider);
-    final quoteFormat = addQuote
-        ? settings.copyQuoteFormat
-        : CopyQuoteFormat.none;
     final brightness = Theme.of(context).brightness;
     final paliColor = settings.paliColorPair.resolve(brightness);
     final transColor = settings.translationColorPair.resolve(brightness);
-    final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
     final enabledLangs = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.toList()
         : (settings.showTranslation
               ? [settings.primaryTranslationLang]
               : <String>[]);
 
-    await ReadingClipboard.copy(
+    // Build citation from template if addQuote is true
+    String citation = '';
+    if (addQuote) {
+      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
+      final firstPara = selectedParagraphs.first;
+      final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
+      citation = buildCitationFromTemplate(
+        settings.quoteTemplate,
+        activeTab.bookId,
+        readerState.bookName,
+        nearbyHeading,
+        firstPara.pageNumbers,
+      );
+    }
+
+    await ReadingClipboard.copyWithTemplate(
       selectedParagraphs,
       scope: scope,
-      quoteFormat: quoteFormat,
+      template: settings.quoteTemplate,
+      citation: citation,
       bookId: activeTab.bookId,
       bookName: readerState.bookName,
       htmlColor: transColor,
       paliCssColor: paliColor,
-      pageNumberingSystem: pageSystemLabel,
       enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
     );
   }
@@ -1635,15 +1874,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
     final paragraphs = readerState.paragraphs.sublist(start, end + 1);
 
-    final quoteFormat = addQuote
-        ? settings.copyQuoteFormat
-        : CopyQuoteFormat.none;
-
     final brightness = Theme.of(context).brightness;
     final paliColor = settings.paliColorPair.resolve(brightness);
     final transColor = settings.translationColorPair.resolve(brightness);
-
-    final pageSystemLabel = _pageSystemLabel(settings.pageNumberingSystem);
 
     final enabledLangs = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.toList()
@@ -1651,33 +1884,35 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               ? [settings.primaryTranslationLang]
               : <String>[]);
 
-    await ReadingClipboard.copy(
+    // Build citation from template if addQuote is true
+    String citation = '';
+    if (addQuote) {
+      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
+      final firstPara = paragraphs.first;
+      final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
+      citation = buildCitationFromTemplate(
+        settings.quoteTemplate,
+        activeTab.bookId,
+        readerState.bookName,
+        nearbyHeading,
+        firstPara.pageNumbers,
+      );
+    }
+
+    await ReadingClipboard.copyWithTemplate(
       paragraphs,
       scope: scope,
-      quoteFormat: quoteFormat,
+      template: settings.quoteTemplate,
+      citation: citation,
       bookId: activeTab.bookId,
       bookName: readerState.bookName,
       htmlColor: transColor,
       paliCssColor: paliColor,
-      pageNumberingSystem: pageSystemLabel,
       enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
     );
   }
 
-  String _pageSystemLabel(String code) {
-    switch (code) {
-      case 'vri':
-        return 'VRI';
-      case 'pts':
-        return 'PTS';
-      case 'thai':
-        return 'Thai';
-      case 'my':
-        return 'Myanmar';
-      default:
-        return 'VRI';
-    }
-  }
+
 
   // ── TTS Floating Controls ────────────────────────────────────────────
 
@@ -1806,6 +2041,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _autoScrollTimer?.cancel();
     _settleController.dispose();
     _dragDxNotifier.dispose();
     _saveHistoryTimer?.cancel();
@@ -2157,11 +2393,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     },
                     child: Focus(
                       autofocus: true,
-                      child: GestureDetector(
-                        onHorizontalDragStart: _onDragStart,
-                        onHorizontalDragUpdate: _onDragUpdate,
-                        onHorizontalDragEnd: _onDragEnd,
-                        child: _buildReaderContentWithSelection(
+                      child: _buildReaderContentWithSelection(
                           context,
                           readerState,
                           settings,
@@ -2173,7 +2405,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                           langTypographies,
                           ttsCurrentLineId,
                           ttsCurrentParaId,
-                        ),
                       ),
                     ),
                   ),
@@ -2433,6 +2664,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       dragDxNotifier: _dragDxNotifier,
       selectableRegionKey: _selectableRegionKey,
       onPointerDown: _handlePointerDown,
+      onPointerMove: _handlePointerMoveForTabSwipe,
+      onPointerUp: _handlePointerUpForTabSwipe,
+      onPointerCancel: _handlePointerCancelForTabSwipe,
+      scrollOffsetController: _autoScrollOffsetController,
       onSelectionChanged: _handleSelectionChanged,
       contextMenuBuilder: _buildCopyContextMenu,
       selectionDisabled: _selectionDisabled,

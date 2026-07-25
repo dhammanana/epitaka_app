@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:selectable/selectable.dart';
 
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -34,7 +33,7 @@ class BookLinkChip extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(right: 4, bottom: 2),
-      child: IgnoreSelectable(
+      child: SelectionContainer.disabled(
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),

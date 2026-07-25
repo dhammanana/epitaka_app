@@ -1,44 +1,56 @@
 import '../providers/reader_provider.dart';
 
 /// Builds a citation string from the template by replacing placeholders.
-
-/// Builds a citation string from the template by replacing placeholders.
-/// Placeholders: {book_id}, {book_name}, {heading}, {vri_page}, {pts_page},
-/// {thai_page}, {myanmar_page}
+///
+/// The [template] can contain any of the following placeholders:
+/// - `{book_id}` — the book's ID (e.g. "dn1")
+/// - `{book_name}` — the full book name (e.g. "Brahmajāla Sutta")
+/// - `{heading}` — the nearest section heading (e.g. "1. The Net of Views")
+/// - `{vri_page}` — VRI edition page number
+/// - `{pts_page}` — PTS edition page number
+/// - `{thai_page}` — Thai edition page number
+/// - `{myanmar_page}` — Myanmar edition page number
+///
+/// Both `{book_id}` and `{book_name}` are replaced regardless — the user
+/// controls which one to use by typing the placeholder they want.
+/// `{heading}` is replaced with the heading title if available, or removed.
+/// Each page placeholder is replaced with the correct value from
+/// [pageNumbers] (keyed by system code: 'vri', 'pts', 'thai', 'my').
+/// If a page number is missing for a system, the placeholder becomes empty.
 String buildCitationFromTemplate(
   String template,
   String bookId,
   String? bookName,
   ParagraphHeading? heading,
-  String? pageNumber,
-  String quotePageSystem,
-  bool useBookName,
-  bool includeHeading,
+  Map<String, String> pageNumbers,
 ) {
   String result = template;
 
-  // Replace {book_id} or {book_name}
-  if (useBookName) {
-    result = result.replaceAll('{book_name}', bookName ?? bookId);
-  } else {
-    result = result.replaceAll('{book_id}', bookId);
-  }
+  // Always replace both book_id and book_name — user picks which to use
+  result = result.replaceAll('{book_id}', bookId);
+  result = result.replaceAll('{book_name}', bookName ?? bookId);
 
-  // Replace {heading}
-  if (includeHeading && heading != null && heading.title.isNotEmpty) {
+  // Replace heading or remove the placeholder
+  if (heading != null && heading.title.isNotEmpty) {
     result = result.replaceAll('{heading}', heading.title);
   } else {
     result = result.replaceAll('{heading}', '');
   }
 
-  // Replace page placeholders - use the current page numbering system
-  result = result.replaceAll('{vri_page}', pageNumber ?? '');
-  result = result.replaceAll('{pts_page}', pageNumber ?? '');
-  result = result.replaceAll('{thai_page}', pageNumber ?? '');
-  result = result.replaceAll('{myanmar_page}', pageNumber ?? '');
+  // Replace each page placeholder with the correct value from the map
+  result = result.replaceAll('{vri_page}', pageNumbers['vri'] ?? '');
+  result = result.replaceAll('{pts_page}', pageNumbers['pts'] ?? '');
+  result = result.replaceAll('{thai_page}', pageNumbers['thai'] ?? '');
+  result = result.replaceAll('{myanmar_page}', pageNumbers['my'] ?? '');
 
-  // Clean up double spaces and trim
+  // Clean up: remove double spaces, leading/trailing punctuation when
+  // a placeholder was empty, and trim.
   result = result.replaceAll(RegExp(r'\s+'), ' ').trim();
+  // Remove dangling punctuation like "> " or "— " that was left when
+  // {heading} was empty. Strips leading/trailing dashes, pipes, colons,
+  // greater-than signs, and their surrounding whitespace.
+  result = result.replaceAll(RegExp(r'^[\s>\-—:|,;.]+\s*'), '').trim();
+  result = result.replaceAll(RegExp(r'\s*[\s>\-—:|,;.]+$'), '').trim();
 
   return result;
 }

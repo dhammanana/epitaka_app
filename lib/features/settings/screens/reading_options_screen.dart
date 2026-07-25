@@ -5,7 +5,8 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../shared/utils/reading_clipboard.dart';
+import '../../../shared/utils/reading_clipboard.dart' show CopyScope;
+import '../../../features/reader/utils/reader_quote_utils.dart' show pageSystemLabel;
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -85,25 +86,6 @@ class ReadingOptionsScreen extends ConsumerWidget {
             title: loc.copyClipboard,
             colors: colors,
             children: [
-              _DropdownTile<CopyQuoteFormat>(
-                icon: Icons.format_quote,
-                title: loc.quoteFormat,
-                subtitle: _copyQuoteLabel(settings.copyQuoteFormat, loc),
-                value: _copyQuoteLabel(settings.copyQuoteFormat, loc),
-                options: [
-                  loc.none,
-                  loc.bookIdLabel,
-                  loc.bookNameLabel,
-                  loc.fullCitation,
-                ],
-                selectedValue: _copyQuoteLabel(settings.copyQuoteFormat, loc),
-                onSelected: (label) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setCopyQuoteFormat(_copyQuoteCode(label, loc));
-                },
-                colors: colors,
-              ),
               _DropdownTile<CopyScope>(
                 icon: Icons.content_copy,
                 title: loc.defaultCopyScope,
@@ -120,6 +102,8 @@ class ReadingOptionsScreen extends ConsumerWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppDimensions.md),
+          _QuoteFormatSection(colors: colors, settings: settings, loc: loc),
           const SizedBox(height: AppDimensions.md),
           SettingsSection(
             title: loc.autoScrollSpeed,
@@ -233,26 +217,6 @@ class ReadingOptionsScreen extends ConsumerWidget {
   }
 }
 
-String _copyQuoteLabel(CopyQuoteFormat format, AppLocalizations loc) {
-  switch (format) {
-    case CopyQuoteFormat.none:
-      return loc.none;
-    case CopyQuoteFormat.bookId:
-      return loc.bookIdLabel;
-    case CopyQuoteFormat.bookName:
-      return loc.bookNameLabel;
-    case CopyQuoteFormat.full:
-      return loc.fullCitation;
-  }
-}
-
-CopyQuoteFormat _copyQuoteCode(String label, AppLocalizations loc) {
-  if (label == loc.bookNameLabel) return CopyQuoteFormat.bookName;
-  if (label == loc.bookIdLabel) return CopyQuoteFormat.bookId;
-  if (label == loc.fullCitation) return CopyQuoteFormat.full;
-  return CopyQuoteFormat.none;
-}
-
 String _copyScopeLabel(CopyScope scope, AppLocalizations loc) {
   switch (scope) {
     case CopyScope.pali:
@@ -268,6 +232,188 @@ CopyScope _copyScopeCode(String label, AppLocalizations loc) {
   if (label == loc.paliOnly) return CopyScope.pali;
   if (label == loc.translationOnly) return CopyScope.translation;
   return CopyScope.both;
+}
+
+/// Settings section for customizing the quote/citation format.
+class _QuoteFormatSection extends ConsumerStatefulWidget {
+  final ColorScheme colors;
+  final AppSettings settings;
+  final AppLocalizations loc;
+
+  const _QuoteFormatSection({
+    required this.colors,
+    required this.settings,
+    required this.loc,
+  });
+
+  @override
+  _QuoteFormatSectionState createState() => _QuoteFormatSectionState();
+}
+
+class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.settings.quoteTemplate);
+  }
+
+  @override
+  void didUpdateWidget(_QuoteFormatSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings.quoteTemplate != widget.settings.quoteTemplate) {
+      _controller.text = widget.settings.quoteTemplate;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.colors;
+    final loc = widget.loc;
+    final settings = ref.watch(settingsProvider);
+
+    return SettingsSection(
+      title: loc.quoteFormat,
+      colors: colors,
+      children: [
+        // ── Template text field ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.md,
+            AppDimensions.md,
+            AppDimensions.md,
+            0,
+          ),
+          child: TextField(
+            controller: _controller,
+            decoration: InputDecoration(
+              hintText: '- {book_name} > {heading} VRI p.{vri_page}',
+              labelText: 'Template',
+              helperText: 'Customize the citation format. Use the variables shown below.',
+              helperMaxLines: 5,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+            maxLines: 2,
+            minLines: 1,
+            textInputAction: TextInputAction.done,
+            style: AppTypography.bodyPali.copyWith(
+              fontFamily: 'monospace',
+              fontSize: 14,
+              color: colors.onSurface,
+            ),
+            onChanged: (v) {
+              ref
+                  .read(settingsProvider.notifier)
+                  .setQuoteTemplate(v);
+            },
+          ),
+        ),
+        const SizedBox(height: 4),
+        // ── Available variables help ──
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.md),
+          child: Text(
+            'Available variables: {book_id}, {book_name}, {heading}, '
+            '{vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant,
+              height: 1.5,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppDimensions.md),
+        // ── Page numbering system ──
+        _DropdownTile(
+          icon: Icons.numbers,
+          title: 'Page System',
+          subtitle: pageSystemLabel(settings.quotePageNumberSystem),
+          value: pageSystemLabel(settings.quotePageNumberSystem),
+          options: [
+            pageSystemLabel('vri'),
+            pageSystemLabel('pts'),
+            pageSystemLabel('thai'),
+            pageSystemLabel('my'),
+          ],
+          selectedValue: pageSystemLabel(settings.quotePageNumberSystem),
+          onSelected: (label) {
+            final code = _pageSystemCode(label);
+            ref
+                .read(settingsProvider.notifier)
+                .setQuotePageNumberSystem(code);
+          },
+          colors: colors,
+        ),
+        // ── Preview ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.md,
+            0,
+            AppDimensions.md,
+            AppDimensions.md,
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Preview',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _previewCitation(settings),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurface,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _previewCitation(AppSettings settings) {
+    String result = settings.quoteTemplate;
+    result = result.replaceAll('{book_id}', 'dn1');
+    result = result.replaceAll('{book_name}', 'Brahmajāla Sutta');
+    result = result.replaceAll('{heading}', '1. The Net of Views');
+    result = result.replaceAll('{vri_page}', '12');
+    result = result.replaceAll('{pts_page}', '8');
+    result = result.replaceAll('{thai_page}', '15');
+    result = result.replaceAll('{myanmar_page}', '10');
+    return result.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String _pageSystemCode(String label) {
+    if (label == pageSystemLabel('vri')) return 'vri';
+    if (label == pageSystemLabel('pts')) return 'pts';
+    if (label == pageSystemLabel('thai')) return 'thai';
+    if (label == pageSystemLabel('my')) return 'my';
+    return 'vri';
+  }
 }
 
 class _DropdownTile<T> extends StatelessWidget {
