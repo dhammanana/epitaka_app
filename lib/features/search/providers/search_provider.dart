@@ -582,12 +582,16 @@ class SearchNotifier extends StateNotifier<SearchState> {
         final lineTranslations = transLineMap[pid] ?? {};
         final lineTrans = lineTranslations[lid];
 
-        // Check if this line matches the search query (in Pali or translation)
-        final paliLower = pali.toLowerCase();
-        bool isMatch = searchWords.any((w) => paliLower.contains(w));
+        // Check if this line matches the search query (in Pali or translation).
+        // Both the line text and search words must be normalized through
+        // normalizePaliFuzzy so diacritics don't cause a mismatch — the
+        // FTS index stores normalized text, but the sentences table stores
+        // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
+        final paliNormalized = normalizePaliFuzzy(pali);
+        bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
         if (!isMatch && lineTrans != null) {
-          final transLower = lineTrans.toLowerCase();
-          isMatch = searchWords.any((w) => transLower.contains(w));
+          final transNormalized = normalizePaliFuzzy(lineTrans);
+          isMatch = searchWords.any((w) => transNormalized.contains(w));
         }
 
         paraLines.putIfAbsent(pid, () => []).add(SearchResultLine(

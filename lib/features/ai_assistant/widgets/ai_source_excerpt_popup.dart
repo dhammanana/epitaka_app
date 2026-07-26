@@ -59,6 +59,7 @@ class _SourceExcerptPopupState extends ConsumerState<_SourceExcerptPopup> {
         bookId: widget.source.bookId,
         bookName: widget.source.bookName ?? widget.source.bookId,
         initialParaId: widget.source.paraId,
+        initialLineId: widget.source.lineId,
       ),
     );
     context.push('/reader');

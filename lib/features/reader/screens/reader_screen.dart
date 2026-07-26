@@ -922,9 +922,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           name: 'epitaka.tts',
         );
         _suppressAppBarScroll = true;
+        // When the in-book search bar is visible, use a slightly lower
+        // alignment (0.38 instead of 0.3) so the line doesn't end up
+        // directly behind the search bar at the top of the content area.
+        final lineAlignment = _showInBookSearch ? 0.38 : 0.3;
         Scrollable.ensureVisible(
           lineContext,
-          alignment: 0.3, // show line in upper third of viewport
+          alignment: lineAlignment, // show line in upper third of viewport
           duration: const Duration(milliseconds: 100),
           curve: Curves.easeOut,
         ).then((_) {
@@ -1961,7 +1965,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _jumpToParagraph(activeTab.bookId, targetParaId, lineId: targetLineId);
+        // When a lineId is available, the fine-scroll in _scrollToLine will
+        // position the line at 30% of the viewport. Without a lineId, use a
+        // small alignment (5%) so the paragraph isn't flush with the top and
+        // hidden behind the app bar / search bar.
+        _jumpToParagraph(
+          activeTab.bookId,
+          targetParaId,
+          alignment: targetLineId != null ? 0.0 : 0.05,
+          lineId: targetLineId,
+        );
       });
     } else if (isTabRestore) {
       _isInitialJumpPending = true;

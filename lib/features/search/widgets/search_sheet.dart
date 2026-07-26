@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
@@ -52,11 +53,24 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
       _ => null,
     };
 
+    // Find the first matching line's lineId for precise line-level jumping
+    final int? initialLineId;
+    if (result.lines.isNotEmpty) {
+      final firstMatchLine = result.lines.firstWhere(
+        (l) => l.isMatch,
+        orElse: () => result.lines.first,
+      );
+      initialLineId = firstMatchLine.lineId;
+    } else {
+      initialLineId = null;
+    }
+
     ref.read(readerTabsProvider.notifier).openTab(
           ReaderTabInfo(
             bookId: result.bookId,
             bookName: result.bookId,
             initialParaId: result.paraId,
+            initialLineId: initialLineId,
             searchQuery: query,
           ),
         );
@@ -184,9 +198,9 @@ class _SearchResultTile extends ConsumerWidget {
           Expanded(child: Text(result.bookId, style: AppTypography.labelSmall.copyWith(color: colors.primary, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
           const SizedBox(width: 4), Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant)]),
         const SizedBox(height: 4),
-        if (paliText.isNotEmpty) PaliText(paliText, style: AppTypography.bodyPali.copyWith(color: colors.onSurface), maxLines: 2, overflow: TextOverflow.ellipsis),
+        if (paliText.isNotEmpty) PaliHtmlText(paliText, style: AppTypography.bodyPali.copyWith(color: colors.onSurface), maxLines: 2, overflow: TextOverflow.ellipsis),
         if (translation != null && translation.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2),
-          child: Text(translation, style: AppTypography.bodyTranslation.copyWith(color: colors.onSurfaceVariant, fontStyle: FontStyle.italic), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          child: HtmlTextParser.richText(translation, AppTypography.bodyTranslation.copyWith(color: colors.onSurfaceVariant, fontStyle: FontStyle.italic), maxLines: 1, overflow: TextOverflow.ellipsis)),
       ]),
     ));
   }

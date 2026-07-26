@@ -8,44 +8,72 @@ class HtmlTextParser {
   /// Parse [html] into a list of [InlineSpan]s using [base] as the default
   /// text style.
   ///
+  /// Supports nested tags: `<b><i>text</i></b>` produces a [TextSpan] with
+  /// both bold and italic styles.
+  ///
+  /// Supported tags: `<b>`, `<i>`, `<u>`, `<mark>`, `<h1-6>`, `<br>`
+  ///
   /// If [html] contains no `<` character, returns a single [TextSpan] with
   /// the plain text for efficiency.
   static List<InlineSpan> parse(String html, TextStyle base) {
     if (!html.contains('<')) return [TextSpan(text: html)];
 
     final spans = <InlineSpan>[];
-    final boldStyle = base.copyWith(fontWeight: FontWeight.w700);
-    final italicStyle = base.copyWith(fontStyle: FontStyle.italic);
-    final underlineStyle = base.copyWith(decoration: TextDecoration.underline);
-    final markStyle = base.copyWith(
-      backgroundColor: Colors.yellow.withValues(alpha: 0.3),
-      fontWeight: FontWeight.w700,
-    );
+    // Style stack: each opening tag pushes a new style, each closing tag
+    // pops one. This correctly handles nested tags like <b><i>text</i></b>.
+    final styleStack = <TextStyle>[base];
 
     final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
-    final pattern = RegExp(
-      r'<b>(.*?)</b>|<i>(.*?)</i>|<u>(.*?)</u>|<mark>(.*?)</mark>|'
-      r'<h[1-6][^>]*>(.*?)</h[1-6]>|'
-      r'([^<]+)',
-      dotAll: true,
+    // Match opening tags, closing tags, <br>, and plain text
+    final tagPattern = RegExp(
+      r'<(/?)(b|i|u|mark|h[1-6])\s*/?>|<br\s*/?>|([^<]+)',
       caseSensitive: false,
+      dotAll: true,
     );
 
-    for (final m in pattern.allMatches(normalized)) {
-      if (m.group(1) != null) {
-        spans.add(TextSpan(text: m.group(1), style: boldStyle));
+    for (final m in tagPattern.allMatches(normalized)) {
+      final tag = m.group(0)!;
+      if (tag.startsWith('<br')) {
+        spans.add(TextSpan(text: '\n', style: styleStack.last));
+      } else if (m.group(1) == '/') {
+        // Closing tag — pop the style stack
+        if (styleStack.length > 1) styleStack.removeLast();
       } else if (m.group(2) != null) {
-        spans.add(TextSpan(text: m.group(2), style: italicStyle));
+        // Opening tag — push a new style
+        final tagName = m.group(2)!.toLowerCase();
+        final current = styleStack.last;
+        TextStyle tagStyle;
+        switch (tagName) {
+          case 'b':
+          case 'h1':
+          case 'h2':
+          case 'h3':
+          case 'h4':
+          case 'h5':
+          case 'h6':
+            tagStyle = current.copyWith(fontWeight: FontWeight.w700);
+            break;
+          case 'i':
+            tagStyle = current.copyWith(fontStyle: FontStyle.italic);
+            break;
+          case 'u':
+            tagStyle = current.copyWith(decoration: TextDecoration.underline);
+            break;
+          case 'mark':
+            tagStyle = current.copyWith(
+              backgroundColor: Colors.yellow.withValues(alpha: 0.3),
+              fontWeight: FontWeight.w700,
+            );
+            break;
+          default:
+            tagStyle = current;
+        }
+        styleStack.add(tagStyle);
       } else if (m.group(3) != null) {
-        spans.add(TextSpan(text: m.group(3), style: underlineStyle));
-      } else if (m.group(4) != null) {
-        spans.add(TextSpan(text: m.group(4), style: markStyle));
-      } else if (m.group(5) != null) {
-        spans.add(TextSpan(text: m.group(5), style: boldStyle));
-      } else if (m.group(6) != null) {
-        final text = m.group(6)!;
-        if (text.trim().isNotEmpty || text == '\n') {
-          spans.add(TextSpan(text: text));
+        // Plain text
+        final text = m.group(3)!;
+        if (text.isNotEmpty) {
+          spans.add(TextSpan(text: text, style: styleStack.last));
         }
       }
     }

@@ -5,6 +5,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/utils/html_text_parser.dart';
 import '../providers/search_provider.dart';
 
 /// A single search result card showing book info, Pāli/translation snippet,
@@ -113,43 +114,74 @@ class _HighlightedText extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = query;
     if (q == null || q.isEmpty) {
-      return Text(
+      return HtmlTextParser.richText(
         text,
-        style: style,
+        style,
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
       );
     }
 
     final queryLower = q.toLowerCase();
-    final textLower = text.toLowerCase();
-    final spans = <TextSpan>[];
-    int start = 0;
 
-    while (true) {
-      final index = textLower.indexOf(queryLower, start);
-      if (index == -1) {
-        spans.add(TextSpan(text: text.substring(start)));
-        break;
+    // Parse HTML into spans first, then highlight search terms within each
+    // span's text content. This properly handles <b>/<i> tags in the text.
+    final allSpans = HtmlTextParser.parse(text, style);
+    final resultSpans = <InlineSpan>[];
+
+    for (final span in allSpans) {
+      if (span is! TextSpan || span.text == null || span.text!.isEmpty) {
+        resultSpans.add(span);
+        continue;
       }
 
-      if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index)));
+      final spanText = span.text!;
+      final spanStyle = span.style ?? style;
+      final textLower = spanText.toLowerCase();
+
+      // Find all match positions in this span's text
+      final ranges = <MapEntry<int, int>>[];
+      int pos = 0;
+      while (true) {
+        final index = textLower.indexOf(queryLower, pos);
+        if (index == -1) break;
+        ranges.add(MapEntry(index, index + q.length));
+        pos = index + q.length;
       }
 
-      spans.add(TextSpan(
-        text: text.substring(index, index + q.length),
-        style: style.copyWith(
-          backgroundColor: Colors.yellow.withValues(alpha: 0.3),
-          fontWeight: FontWeight.w600,
-        ),
-      ));
+      if (ranges.isEmpty) {
+        resultSpans.add(TextSpan(text: spanText, style: spanStyle));
+        continue;
+      }
 
-      start = index + q.length;
+      // Build highlighted spans
+      int lastEnd = 0;
+      for (final r in ranges) {
+        if (r.key > lastEnd) {
+          resultSpans.add(TextSpan(
+            text: spanText.substring(lastEnd, r.key),
+            style: spanStyle,
+          ));
+        }
+        resultSpans.add(TextSpan(
+          text: spanText.substring(r.key, r.value),
+          style: spanStyle.copyWith(
+            backgroundColor: Colors.yellow.withValues(alpha: 0.3),
+            fontWeight: FontWeight.w600,
+          ),
+        ));
+        lastEnd = r.value;
+      }
+      if (lastEnd < spanText.length) {
+        resultSpans.add(TextSpan(
+          text: spanText.substring(lastEnd),
+          style: spanStyle,
+        ));
+      }
     }
 
-    return RichText(
-      text: TextSpan(children: spans, style: style),
+    return Text.rich(
+      TextSpan(style: style, children: resultSpans),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
     );

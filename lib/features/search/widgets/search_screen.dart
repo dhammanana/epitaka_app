@@ -15,8 +15,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/utils/html_text_parser.dart';
 import '../../../core/utils/velthuis.dart';
-import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -150,6 +150,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final currentState = ref.read(searchProvider);
     final query = currentState is SearchResults ? currentState.query : null;
 
+    // Find the first matching line's lineId for precise line-level jumping
+    final int? initialLineId;
+    if (item.lines.isNotEmpty) {
+      final firstMatchLine = item.lines.firstWhere(
+        (l) => l.isMatch,
+        orElse: () => item.lines.first,
+      );
+      initialLineId = firstMatchLine.lineId;
+    } else {
+      initialLineId = null;
+    }
+
     ref
         .read(readerTabsProvider.notifier)
         .openTab(
@@ -157,6 +169,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             bookId: item.bookId,
             bookName: summary.book.bookName ?? item.bookId,
             initialParaId: item.paraId,
+            initialLineId: initialLineId,
             searchQuery: query,
           ),
         );
@@ -308,6 +321,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             : '',
         actionLabel: 'Open in Reader',
         onAction: () {
+          // Find the first matching line's lineId for precise line-level jumping
+          final int? initialLineId;
+          if (item.lines.isNotEmpty) {
+            final firstMatchLine = item.lines.firstWhere(
+              (l) => l.isMatch,
+              orElse: () => item.lines.first,
+            );
+            initialLineId = firstMatchLine.lineId;
+          } else {
+            initialLineId = null;
+          }
+
           // Open the reader tab
           ref
               .read(readerTabsProvider.notifier)
@@ -316,6 +341,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   bookId: item.bookId,
                   bookName: summary.book.bookName ?? item.bookId,
                   initialParaId: item.paraId,
+                  initialLineId: initialLineId,
                   searchQuery: searchQuery,
                 ),
               );
@@ -1440,103 +1466,98 @@ class _LineTile extends StatelessWidget {
     required TextStyle style,
     required Color highlightColor,
   }) {
+    // Convert script first (preserving HTML tags like <b>, <i>)
+    final converted = convertPaliToScriptPreservingHtml(text, script);
+    final effStyle = style.copyWith(fontFamily: scriptFontFamily(script));
+
     if (searchTerms.isEmpty || text.isEmpty) {
-      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(converted, effStyle, maxLines: 3, overflow: TextOverflow.ellipsis);
     }
 
-    // Match directly in original text using diacritic-agnostic comparison,
-    // so positions are always correct (normalizePaliFuzzy removes some chars,
-    // which would misalign positions if we matched in normalized text).
     final nterms = searchTerms
         .map((t) => normalizePaliFuzzy(t))
         .where((t) => t.isNotEmpty)
         .toList();
 
     if (nterms.isEmpty) {
-      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(converted, effStyle, maxLines: 3, overflow: TextOverflow.ellipsis);
     }
 
-    // Find all match positions by scanning the original text directly
-    final ranges = <MapEntry<int, int>>[];
-    for (final nt in nterms) {
-      int maxStart = text.length - nt.length;
-      for (int i = 0; i <= maxStart;) {
-        final candidate = text.substring(i, i + nt.length);
-        if (normalizePaliFuzzy(candidate) == nt) {
-          ranges.add(MapEntry(i, i + nt.length));
-          i += nt.length;
-        } else {
-          i++;
+    // Parse HTML into styled TextSpans, then highlight search terms within
+    // each span's text content. This properly handles <b>/<i> tags in the
+    // Pali text — styling is applied by HtmlTextParser, and matching runs
+    // on the plain text of each span (not on the raw HTML).
+    final allSpans = HtmlTextParser.parse(converted, effStyle);
+    final resultSpans = <InlineSpan>[];
+
+    for (final span in allSpans) {
+      if (span is! TextSpan || span.text == null || span.text!.isEmpty) {
+        resultSpans.add(span);
+        continue;
+      }
+
+      final spanText = span.text!;
+      final spanStyle = span.style ?? effStyle;
+
+      // Find match positions in this span's text
+      final ranges = <MapEntry<int, int>>[];
+      for (final nt in nterms) {
+        int pos = 0;
+        while (pos <= spanText.length - nt.length) {
+          final candidate = spanText.substring(pos, pos + nt.length);
+          if (normalizePaliFuzzy(candidate) == nt) {
+            ranges.add(MapEntry(pos, pos + nt.length));
+            pos += nt.length;
+          } else {
+            pos++;
+          }
         }
       }
-    }
 
-    if (ranges.isEmpty) {
-      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
-    }
+      if (ranges.isEmpty) {
+        resultSpans.add(TextSpan(text: spanText, style: spanStyle));
+        continue;
+      }
 
-    // Sort ranges and merge overlapping ones
-    ranges.sort((a, b) => a.key.compareTo(b.key));
-    final merged = <MapEntry<int, int>>[];
-    for (final r in ranges) {
-      if (merged.isEmpty) {
-        merged.add(r);
-      } else {
-        final last = merged.last;
-        if (r.key <= last.value) {
-          merged[merged.length - 1] = MapEntry(
-            last.key,
-            r.value > last.value ? r.value : last.value,
-          );
-        } else {
+      // Sort and merge overlapping ranges
+      ranges.sort((a, b) => a.key.compareTo(b.key));
+      final merged = <MapEntry<int, int>>[];
+      for (final r in ranges) {
+        if (merged.isEmpty || r.key > merged.last.value) {
           merged.add(r);
+        } else if (r.value > merged.last.value) {
+          merged[merged.length - 1] = MapEntry(merged.last.key, r.value);
         }
       }
-    }
 
-    // Convert each segment to the target script and build TextSpans
-    final fontFamily = scriptFontFamily(script);
-    final effStyle = style.copyWith(fontFamily: fontFamily);
-
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-
-    for (final r in merged) {
-      // Non-matching segment before this match
-      if (r.key > lastEnd) {
-        final seg = convertPaliToScriptPreservingHtml(
-          text.substring(lastEnd, r.key),
-          script,
-        );
-        spans.add(TextSpan(text: seg, style: effStyle));
+      // Build highlighted spans
+      int lastEnd = 0;
+      for (final r in merged) {
+        if (r.key > lastEnd) {
+          resultSpans.add(TextSpan(
+            text: spanText.substring(lastEnd, r.key),
+            style: spanStyle,
+          ));
+        }
+        resultSpans.add(TextSpan(
+          text: spanText.substring(r.key, r.value),
+          style: spanStyle.copyWith(
+            backgroundColor: highlightColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ));
+        lastEnd = r.value;
       }
-
-      // Matching segment (converted and highlighted)
-      final seg = convertPaliToScriptPreservingHtml(
-        text.substring(r.key, r.value),
-        script,
-      );
-      spans.add(TextSpan(
-        text: seg,
-        style: effStyle.copyWith(
-          backgroundColor: highlightColor,
-          fontWeight: FontWeight.bold,
-        ),
-      ));
-      lastEnd = r.value;
-    }
-
-    // Remaining text after last match
-    if (lastEnd < text.length) {
-      final seg = convertPaliToScriptPreservingHtml(
-        text.substring(lastEnd),
-        script,
-      );
-      spans.add(TextSpan(text: seg, style: effStyle));
+      if (lastEnd < spanText.length) {
+        resultSpans.add(TextSpan(
+          text: spanText.substring(lastEnd),
+          style: spanStyle,
+        ));
+      }
     }
 
     return Text.rich(
-      TextSpan(style: effStyle, children: spans),
+      TextSpan(style: effStyle, children: resultSpans),
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
     );
@@ -1550,79 +1571,88 @@ class _LineTile extends StatelessWidget {
     required Color highlightColor,
   }) {
     if (searchTerms.isEmpty || text.isEmpty) {
-      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(text, style, maxLines: 2, overflow: TextOverflow.ellipsis);
     }
 
-    // Normalize both for matching
-    final normalized = text.toLowerCase();
     final nterms = searchTerms
         .map((t) => t.toLowerCase())
         .where((t) => t.isNotEmpty)
         .toList();
 
     if (nterms.isEmpty) {
-      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(text, style, maxLines: 2, overflow: TextOverflow.ellipsis);
     }
 
-    // Find all match positions
-    final ranges = <MapEntry<int, int>>[];
-    for (final nt in nterms) {
-      int pos = 0;
-      while (true) {
-        final idx = normalized.indexOf(nt, pos);
-        if (idx < 0) break;
-        ranges.add(MapEntry(idx, idx + nt.length));
-        pos = idx + nt.length;
+    // Parse HTML into spans, then highlight search terms within each span
+    final allSpans = HtmlTextParser.parse(text, style);
+    final resultSpans = <InlineSpan>[];
+
+    for (final span in allSpans) {
+      if (span is! TextSpan || span.text == null || span.text!.isEmpty) {
+        resultSpans.add(span);
+        continue;
       }
-    }
 
-    if (ranges.isEmpty) {
-      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
-    }
+      final spanText = span.text!;
+      final spanStyle = span.style ?? style;
+      final normalized = spanText.toLowerCase();
 
-    // Sort and merge
-    ranges.sort((a, b) => a.key.compareTo(b.key));
-    final merged = <MapEntry<int, int>>[];
-    for (final r in ranges) {
-      if (merged.isEmpty) {
-        merged.add(r);
-      } else {
-        final last = merged.last;
-        if (r.key <= last.value) {
-          merged[merged.length - 1] = MapEntry(
-            last.key,
-            r.value > last.value ? r.value : last.value,
-          );
-        } else {
-          merged.add(r);
+      // Find match positions in this span's text
+      final ranges = <MapEntry<int, int>>[];
+      for (final nt in nterms) {
+        int pos = 0;
+        while (true) {
+          final idx = normalized.indexOf(nt, pos);
+          if (idx < 0) break;
+          ranges.add(MapEntry(idx, idx + nt.length));
+          pos = idx + nt.length;
         }
       }
-    }
 
-    // Build TextSpans from the original text (not normalized)
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-
-    for (final r in merged) {
-      if (r.key > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, r.key), style: style));
+      if (ranges.isEmpty) {
+        resultSpans.add(TextSpan(text: spanText, style: spanStyle));
+        continue;
       }
-      spans.add(TextSpan(
-        text: text.substring(r.key, r.value),
-        style: style.copyWith(
-          backgroundColor: highlightColor,
-          fontWeight: FontWeight.bold,
-        ),
-      ));
-      lastEnd = r.value;
-    }
 
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd), style: style));
+      // Sort and merge overlapping ranges
+      ranges.sort((a, b) => a.key.compareTo(b.key));
+      final merged = <MapEntry<int, int>>[];
+      for (final r in ranges) {
+        if (merged.isEmpty || r.key > merged.last.value) {
+          merged.add(r);
+        } else if (r.value > merged.last.value) {
+          merged[merged.length - 1] = MapEntry(merged.last.key, r.value);
+        }
+      }
+
+      // Build highlighted spans
+      int lastEnd = 0;
+      for (final r in merged) {
+        if (r.key > lastEnd) {
+          resultSpans.add(TextSpan(
+            text: spanText.substring(lastEnd, r.key),
+            style: spanStyle,
+          ));
+        }
+        resultSpans.add(TextSpan(
+          text: spanText.substring(r.key, r.value),
+          style: spanStyle.copyWith(
+            backgroundColor: highlightColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ));
+        lastEnd = r.value;
+      }
+      if (lastEnd < spanText.length) {
+        resultSpans.add(TextSpan(
+          text: spanText.substring(lastEnd),
+          style: spanStyle,
+        ));
+      }
     }
 
     return Text.rich(
-      TextSpan(style: style, children: spans),
+      TextSpan(style: style, children: resultSpans),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
