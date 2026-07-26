@@ -172,6 +172,18 @@ class AppShortcuts {
       ref.read(settingsProvider.notifier).decreaseFontSize();
     }
 
+    void switchToTab(int index) {
+      ref.read(readerTabsProvider.notifier).switchTo(index);
+    }
+
+    void nextTab() {
+      ref.read(readerTabsProvider.notifier).nextTab();
+    }
+
+    void previousTab() {
+      ref.read(readerTabsProvider.notifier).previousTab();
+    }
+
     return [
       AppAction(
         label: 'Find in Book',
@@ -284,6 +296,94 @@ class AppShortcuts {
           meta: true,
         ),
         invoke: decreaseFont,
+      ),
+      // Tab shortcuts — no macActivator needed since Tab/digits aren't
+      // macOS system-menu keys, and we don't want them in the Edit menu.
+      AppAction(
+        label: 'Switch to Tab 1',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit1, control: true),
+          SingleActivator(LogicalKeyboardKey.digit1, meta: true),
+        ],
+        invoke: () => switchToTab(0),
+      ),
+      AppAction(
+        label: 'Switch to Tab 2',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit2, control: true),
+          SingleActivator(LogicalKeyboardKey.digit2, meta: true),
+        ],
+        invoke: () => switchToTab(1),
+      ),
+      AppAction(
+        label: 'Switch to Tab 3',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit3, control: true),
+          SingleActivator(LogicalKeyboardKey.digit3, meta: true),
+        ],
+        invoke: () => switchToTab(2),
+      ),
+      AppAction(
+        label: 'Switch to Tab 4',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit4, control: true),
+          SingleActivator(LogicalKeyboardKey.digit4, meta: true),
+        ],
+        invoke: () => switchToTab(3),
+      ),
+      AppAction(
+        label: 'Switch to Tab 5',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit5, control: true),
+          SingleActivator(LogicalKeyboardKey.digit5, meta: true),
+        ],
+        invoke: () => switchToTab(4),
+      ),
+      AppAction(
+        label: 'Switch to Tab 6',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit6, control: true),
+          SingleActivator(LogicalKeyboardKey.digit6, meta: true),
+        ],
+        invoke: () => switchToTab(5),
+      ),
+      AppAction(
+        label: 'Switch to Tab 7',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit7, control: true),
+          SingleActivator(LogicalKeyboardKey.digit7, meta: true),
+        ],
+        invoke: () => switchToTab(6),
+      ),
+      AppAction(
+        label: 'Switch to Tab 8',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit8, control: true),
+          SingleActivator(LogicalKeyboardKey.digit8, meta: true),
+        ],
+        invoke: () => switchToTab(7),
+      ),
+      AppAction(
+        label: 'Switch to Tab 9',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.digit9, control: true),
+          SingleActivator(LogicalKeyboardKey.digit9, meta: true),
+        ],
+        invoke: () => switchToTab(8),
+      ),
+      AppAction(
+        label: 'Next Tab',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.tab, control: true),
+        ],
+        invoke: nextTab,
+      ),
+      AppAction(
+        label: 'Previous Tab',
+        activators: const [
+          SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true),
+        ],
+        invoke: previousTab,
       ),
     ];
   }

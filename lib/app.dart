@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/utils/app_localizations.dart';
 import 'core/providers/settings_provider.dart';
 import 'core/theme/app_theme.dart';
+import 'features/deep_links/deep_link_service.dart';
 import 'features/indexing/index_gate.dart';
 import 'features/settings/services/tts_audio_handler.dart';
 import 'router/app_router.dart';
@@ -107,6 +108,12 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     });
   }
 
+  @override
+  void dispose() {
+    DeepLinkService.instance.dispose();
+    super.dispose();
+  }
+
   /// Map [AppLanguage] to a Flutter [Locale].
   Locale _resolveLocale(AppLanguage lang) {
     switch (lang) {
@@ -119,6 +126,12 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Initialise deep link handling (epitaka:// custom scheme) after the
+    // first frame so the GoRouter is already attached to the navigator key.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DeepLinkService.instance.init(_navigatorKey);
+    });
+
     final settings = ref.watch(settingsProvider);
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
     final isDark = settings.resolveDarkMode(platformBrightness);

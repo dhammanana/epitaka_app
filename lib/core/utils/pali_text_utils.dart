@@ -203,7 +203,7 @@ String convertPaliToScript(String text, Script? targetScript) {
 
   // Step 2: Sinhala → target script
   return _cacheConvert(sinhalaText, targetScript, () {
-    final out = TextProcessor.convert(sinhalaText, targetScript!);
+    final out = TextProcessor.convert(sinhalaText, targetScript);
     return out;
   });
 }

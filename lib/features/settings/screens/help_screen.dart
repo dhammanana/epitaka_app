@@ -57,6 +57,9 @@ class _ShortcutsSection extends StatelessWidget {
       _Shortcut(loc.openSettings, 'Ctrl/⌘ + ,'),
       _Shortcut(loc.increaseFontSize, 'Ctrl/⌘ + +'),
       _Shortcut(loc.decreaseFontSize, 'Ctrl/⌘ + -'),
+      _Shortcut('Switch to Tab 1-9', 'Ctrl/⌘ + 1-9'),
+      _Shortcut('Next Tab', 'Ctrl + Tab'),
+      _Shortcut('Previous Tab', 'Ctrl + Shift + Tab'),
     ];
 
     return Container(

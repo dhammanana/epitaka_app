@@ -71,17 +71,19 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
       final jumps = await JumpService(
         db,
       ).getConnectedJumps(widget.bookId, widget.currentParaId);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _connectedJumps = jumps;
           _isLoadingConnections = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _connectionError = e.toString();
           _isLoadingConnections = false;
         });
+      }
     }
   }
 
@@ -160,9 +162,10 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
   }
 
   Widget _buildConnectedBooksTab(ColorScheme colors, AppLocalizations loc) {
-    if (_isLoadingConnections)
+    if (_isLoadingConnections) {
       return const Center(child: CircularProgressIndicator());
-    if (_connectionError != null)
+    }
+    if (_connectionError != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -173,7 +176,8 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
           ),
         ),
       );
-    if (_connectedJumps == null || _connectedJumps!.isEmpty)
+    }
+    if (_connectedJumps == null || _connectedJumps!.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -193,6 +197,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
           ),
         ),
       );
+    }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,

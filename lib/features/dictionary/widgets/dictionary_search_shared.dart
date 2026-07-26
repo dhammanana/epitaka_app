@@ -316,8 +316,8 @@ class DpdHeadwordCard extends ConsumerWidget {
       ),
       child: Container(
         width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: EdgeInsets.all(compact ? 6 : 10),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: EdgeInsets.all(compact ? 4 : 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -325,13 +325,12 @@ class DpdHeadwordCard extends ConsumerWidget {
               lemma,
               style: TextStyle(
                 fontSize: lemmaSize,
-                height: pali.lineHeight,
+                height: pali.lineHeight * 0.9,
                 fontWeight: FontWeight.w600,
                 color: colors.primary,
                 fontFamily: paliFontFamily,
               ),
             ),
-            const SizedBox(height: 4),
             if (meaningHtml != null && meaningHtml!.isNotEmpty)
               DpdHtmlRichText(
                 html: meaningHtml!,

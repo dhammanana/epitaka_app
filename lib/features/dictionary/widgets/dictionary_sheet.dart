@@ -200,6 +200,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _initiateSearch(converted);
   }
 
+  /// Whether the search text field should auto-focus. When the sheet is
+  /// opened by double-tapping a word (which already fills in the search
+  /// term), we skip auto-focus to avoid popping up the on-screen keyboard
+  /// on touch devices. When opened via the dictionary button or keyboard
+  /// shortcut with no word, we auto-focus so the user can start typing.
+  bool get _shouldAutofocus => widget.initialWord.isEmpty;
+
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
     _addToHistory(word);
@@ -313,7 +320,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                 child: TextField(
                                   controller: _searchController,
                                   focusNode: _focusNode,
-                                  autofocus: true,
+                                  autofocus: _shouldAutofocus,
                                   textInputAction: TextInputAction.search,
                                   decoration: InputDecoration(
                                     hintText: 'Search Pāḷi…',

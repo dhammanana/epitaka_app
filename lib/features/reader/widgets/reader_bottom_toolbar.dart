@@ -10,7 +10,6 @@ class ReaderBottomToolbar extends StatelessWidget {
   final TranslationDisplayMode displayMode;
   final bool showTranslation;
   final TtsPlaybackState ttsPlayback;
-  final VoidCallback onToggleTranslation;
   final VoidCallback onCycleDisplayMode;
   final VoidCallback onContentsTap;
   final VoidCallback onDictionaryTap;
@@ -26,7 +25,6 @@ class ReaderBottomToolbar extends StatelessWidget {
     required this.displayMode,
     required this.showTranslation,
     required this.ttsPlayback,
-    required this.onToggleTranslation,
     required this.onCycleDisplayMode,
     required this.onContentsTap,
     required this.onDictionaryTap,
@@ -39,11 +37,12 @@ class ReaderBottomToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Three-state display mode: hide translation → line-by-line → side-by-side
     IconData displayIcon;
     String displayLabel;
     if (!showTranslation) {
-      displayIcon = Icons.translate;
-      displayLabel = 'No Trans';
+      displayIcon = Icons.visibility_off;
+      displayLabel = 'Hide';
     } else {
       switch (displayMode) {
         case TranslationDisplayMode.lineByLine:
@@ -53,8 +52,8 @@ class ReaderBottomToolbar extends StatelessWidget {
           displayIcon = Icons.view_column;
           displayLabel = 'Side/S';
         case TranslationDisplayMode.hideJoinLines:
-          displayIcon = Icons.translate;
-          displayLabel = 'No Trans';
+          displayIcon = Icons.visibility_off;
+          displayLabel = 'Hide';
       }
     }
 
@@ -108,7 +107,7 @@ class ReaderBottomToolbar extends StatelessWidget {
           ToolbarButton(
             icon: displayIcon,
             label: displayLabel,
-            onTap: showTranslation ? onCycleDisplayMode : onToggleTranslation,
+            onTap: onCycleDisplayMode,
           ),
           const SizedBox(width: 8),
           ToolbarButton(

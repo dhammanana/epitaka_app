@@ -367,20 +367,29 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
     BuildContext context,
   ) {
-    return Wrap(
-      spacing: 4,
-      runSpacing: 2,
-      children: links.map((link) {
-        final chipColor = link.isSource
-            ? colors.primary
-            : colors.tertiary;
-        return BookLinkChip(
-          word: link.word,
-          color: chipColor,
-          script: script,
-          onTap: () => showBookLinkSectionSheet(context, link: link),
-        );
-      }).toList(),
+    if (links.length <= 6) {
+      return Wrap(
+        spacing: 4,
+        runSpacing: 2,
+        children: links.map((link) {
+          final chipColor = link.isSource
+              ? colors.primary
+              : colors.tertiary;
+          return BookLinkChip(
+            word: link.word,
+            color: chipColor,
+            script: script,
+            onTap: () => showBookLinkSectionSheet(context, link: link),
+          );
+        }).toList(),
+      );
+    }
+
+    return _ExpandableChips(
+      links: links,
+      colors: colors,
+      script: script,
+      onChipTap: (link) => showBookLinkSectionSheet(context, link: link),
     );
   }
 
@@ -824,6 +833,119 @@ class _HighlightInterval {
   final int start;
   final int end;
   const _HighlightInterval(this.start, this.end);
+}
+
+/// A small expandable row of book link chips.
+///
+/// Shows at most 6 chips initially, with an expand button to reveal all.
+class _ExpandableChips extends StatefulWidget {
+  final List<BookLinkData> links;
+  final ColorScheme colors;
+  final Script? script;
+  final void Function(BookLinkData link) onChipTap;
+
+  const _ExpandableChips({
+    required this.links,
+    required this.colors,
+    this.script,
+    required this.onChipTap,
+  });
+
+  @override
+  State<_ExpandableChips> createState() => _ExpandableChipsState();
+}
+
+class _ExpandableChipsState extends State<_ExpandableChips> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const int maxVisible = 6;
+    final links = widget.links;
+    final displayLinks = _expanded ? links : links.take(maxVisible).toList();
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 2,
+      children: [
+        ...displayLinks.map(_buildChip),
+        if (!_expanded) _buildExpandButton(),
+        if (_expanded) _buildCollapseButton(),
+      ],
+    );
+  }
+
+  Widget _buildChip(BookLinkData link) {
+    final chipColor = link.isSource
+        ? widget.colors.primary
+        : widget.colors.tertiary;
+    return BookLinkChip(
+      word: link.word,
+      color: chipColor,
+      script: widget.script,
+      onTap: () => widget.onChipTap(link),
+    );
+  }
+
+  Widget _buildExpandButton() {
+    final remaining = widget.links.length - 6;
+    return _buildToggleChip(
+      icon: Icons.expand_more,
+      label: '+$remaining',
+      onTap: () => setState(() => _expanded = true),
+    );
+  }
+
+  Widget _buildCollapseButton() {
+    return _buildToggleChip(
+      icon: Icons.expand_less,
+      label: 'Less',
+      onTap: () => setState(() => _expanded = false),
+    );
+  }
+
+  Widget _buildToggleChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final colors = widget.colors;
+    return Padding(
+      padding: const EdgeInsets.only(right: 4, bottom: 2),
+      child: SelectionContainer.disabled(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.outlineVariant.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: colors.outlineVariant.withValues(alpha: 0.3),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: colors.onSurfaceVariant),
+                const SizedBox(width: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Helper: extract all words (without tags) from an HTML string.

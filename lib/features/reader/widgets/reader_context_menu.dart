@@ -1,3 +1,8 @@
+// lib/features/reader/widgets/reader_context_menu.dart
+//
+// Reusable context menu button widget. The full context menu toolbar is
+// built by [ReaderCopyService.buildContextMenu] in the service layer.
+
 import 'package:flutter/material.dart';
 
 /// Button used inside the custom copy context menu.

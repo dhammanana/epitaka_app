@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// TTS sync state for a single book tab.
@@ -9,10 +10,16 @@ class TtsSyncState {
   final bool ttsJumpInProgress;
   final int? ttsTargetParaId;
 
+  /// Per-line GlobalKeys for precise TTS line fine-scroll.
+  /// Created before a TTS jump in [_jumpToParagraph], consumed by
+  /// [_scrollToLine] for Scrollable.ensureVisible, then cleared.
+  final Map<int, GlobalKey> ttsTargetLineKeys;
+
   const TtsSyncState({
     this.ttsAutoScroll = true,
     this.ttsJumpInProgress = false,
     this.ttsTargetParaId,
+    this.ttsTargetLineKeys = const {},
   });
 
   TtsSyncState copyWith({
@@ -20,6 +27,8 @@ class TtsSyncState {
     bool? ttsJumpInProgress,
     int? ttsTargetParaId,
     bool clearTtsTargetParaId = false,
+    Map<int, GlobalKey>? ttsTargetLineKeys,
+    bool clearTtsTargetLineKeys = false,
   }) {
     return TtsSyncState(
       ttsAutoScroll: ttsAutoScroll ?? this.ttsAutoScroll,
@@ -28,6 +37,10 @@ class TtsSyncState {
           clearTtsTargetParaId
               ? null
               : (ttsTargetParaId ?? this.ttsTargetParaId),
+      ttsTargetLineKeys:
+          clearTtsTargetLineKeys
+              ? const {}
+              : (ttsTargetLineKeys ?? this.ttsTargetLineKeys),
     );
   }
 }
@@ -63,9 +76,29 @@ class TtsSyncNotifier extends StateNotifier<TtsSyncState> {
     developer.log('[TTS_SYNC] setJumpInProgress', name: 'epitaka.tts');
     state = state.copyWith(ttsJumpInProgress: true);
     _ttsJumpTimer?.cancel();
-    _ttsJumpTimer = Timer(const Duration(milliseconds: 800), () {
+    _ttsJumpTimer = Timer(const Duration(milliseconds: 200), () {
       state = state.copyWith(ttsJumpInProgress: false);
     });
+  }
+
+  /// Set a GlobalKey for the specified [lineId] so Scrollable.ensureVisible
+  /// can fine-scroll to that line after the paragraph scroll completes.
+  void setTargetLineKey(int lineId, GlobalKey key) {
+    final newKeys = Map<int, GlobalKey>.from(state.ttsTargetLineKeys);
+    newKeys[lineId] = key;
+    state = state.copyWith(ttsTargetLineKeys: newKeys);
+  }
+
+  /// Remove the GlobalKey for [lineId] (after fine-scroll completes).
+  void removeTargetLineKey(int lineId) {
+    final newKeys = Map<int, GlobalKey>.from(state.ttsTargetLineKeys);
+    newKeys.remove(lineId);
+    state = state.copyWith(ttsTargetLineKeys: newKeys);
+  }
+
+  /// Clear all target line keys (e.g. when jump is abandoned).
+  void clearTargetLineKeys() {
+    state = state.copyWith(clearTtsTargetLineKeys: true);
   }
 
   /// Set the target paraId for TTS line highlighting.

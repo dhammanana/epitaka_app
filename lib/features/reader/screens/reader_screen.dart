@@ -1689,171 +1689,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return;
     }
 
-    final selectedParagraphs = _findSelectedParagraphs(
-      selectedContent.plainText,
-      readerState.paragraphs,
-      enabledLangCodes: scope == CopyScope.translation
-          ? null
-          : ref.read(settingsProvider).enabledTranslations.isNotEmpty
-          ? ref.read(settingsProvider).enabledTranslations.toSet()
-          : (ref.read(settingsProvider).showTranslation
-                ? {ref.read(settingsProvider).primaryTranslationLang}
-                : null as Set<String>?),
-    );
-
-    if (selectedParagraphs.isEmpty) {
-      await _copyVisibleContent(scope, addQuote: addQuote);
-      return;
-    }
-
-    final settings = ref.read(settingsProvider);
-    final brightness = Theme.of(context).brightness;
-    final paliColor = settings.paliColorPair.resolve(brightness);
-    final transColor = settings.translationColorPair.resolve(brightness);
-    final enabledLangs = settings.enabledTranslations.isNotEmpty
-        ? settings.enabledTranslations.toList()
-        : (settings.showTranslation
-              ? [settings.primaryTranslationLang]
-              : <String>[]);
-
-    // Build citation from template if addQuote is true
-    String citation = '';
-    if (addQuote) {
-      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
-      final firstPara = selectedParagraphs.first;
-      final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
-      citation = buildCitationFromTemplate(
-        settings.quoteTemplate,
-        activeTab.bookId,
-        readerState.bookName,
-        nearbyHeading,
-        firstPara.pageNumbers,
-      );
-    }
-
-    await ReadingClipboard.copyWithTemplate(
-      selectedParagraphs,
-      scope: scope,
-      template: settings.quoteTemplate,
-      citation: citation,
-      bookId: activeTab.bookId,
-      bookName: readerState.bookName,
-      htmlColor: transColor,
-      paliCssColor: paliColor,
-      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
-    );
+    // Fallback to visible content since paragraph-level selection is removed
+    await _copyVisibleContent(scope, addQuote: addQuote);
+    return;
   }
 
-  List<ParagraphData> _findSelectedParagraphs(
-    String selectedText,
-    List<ParagraphData> allParagraphs, {
-    Set<String>? enabledLangCodes,
-  }) {
-    if (selectedText.isEmpty || allParagraphs.isEmpty) return [];
 
-    final normSelected = _stripTags(selectedText).toLowerCase().trim();
-    if (normSelected.isEmpty) return [];
-
-    final buffer = StringBuffer();
-    final lineParaIndex = <int>[];
-    final lineIndexInPara = <int>[];
-    final lineStart = <int>[];
-    final lineEnd = <int>[];
-
-    for (int pi = 0; pi < allParagraphs.length; pi++) {
-      final para = allParagraphs[pi];
-
-      if (para.heading != null) {
-        buffer.writeln(_stripTags(para.heading!.title));
-      }
-      if (para.isPageStart && para.pageNumber != null) {
-        buffer.writeln('p. ${para.pageNumber}');
-      }
-
-      for (int li = 0; li < para.lines.length; li++) {
-        final line = para.lines[li];
-        final start = buffer.length;
-        if (line.paliText != null) {
-          buffer.writeln(_stripTags(line.paliText!));
-        }
-        for (final entry in line.translations.entries) {
-          if (enabledLangCodes != null && !enabledLangCodes.contains(entry.key)) {
-            continue;
-          }
-          buffer.writeln(_stripTags(entry.value));
-        }
-        final end = buffer.length;
-        if (end > start) {
-          lineParaIndex.add(pi);
-          lineIndexInPara.add(li);
-          lineStart.add(start);
-          lineEnd.add(end);
-        }
-      }
-    }
-
-    final fullText = buffer.toString().toLowerCase();
-
-    final collapsedBuffer = StringBuffer();
-    final collapsedToOrig = <int>[];
-    for (int idx = 0; idx < fullText.length; idx++) {
-      final ch = fullText[idx];
-      if (ch.trim().isEmpty) continue;
-      collapsedBuffer.write(ch);
-      collapsedToOrig.add(idx);
-    }
-    final collapsedFullText = collapsedBuffer.toString();
-    final collapsedSelected = normSelected.replaceAll(RegExp(r'\s+'), '');
-
-    if (collapsedSelected.isEmpty) return [];
-
-    int cStart = collapsedFullText.indexOf(collapsedSelected);
-    int cMatchLen = collapsedSelected.length;
-    if (cStart < 0) {
-      final prefixLen = collapsedSelected.length.clamp(0, 100);
-      final prefix = collapsedSelected.substring(0, prefixLen);
-      cStart = collapsedFullText.indexOf(prefix);
-      if (cStart < 0) return [];
-      cMatchLen = prefixLen;
-    }
-    final cEnd = (cStart + cMatchLen).clamp(0, collapsedToOrig.length);
-    if (cEnd <= cStart || collapsedToOrig.isEmpty) return [];
-
-    final selStart = collapsedToOrig[cStart];
-    final selEnd =
-        collapsedToOrig[(cEnd - 1).clamp(0, collapsedToOrig.length - 1)] + 1;
-
-    final matches = <int>[];
-    for (int i = 0; i < lineStart.length; i++) {
-      if (selStart < lineEnd[i] && selEnd > lineStart[i]) {
-        matches.add(i);
-      }
-    }
-    if (matches.isEmpty) return [];
-
-    final result = <ParagraphData>[];
-    int i = 0;
-    while (i < matches.length) {
-      final pi = lineParaIndex[matches[i]];
-      final keptLineIndices = <int>[];
-      while (i < matches.length && lineParaIndex[matches[i]] == pi) {
-        keptLineIndices.add(lineIndexInPara[matches[i]]);
-        i++;
-      }
-      final original = allParagraphs[pi];
-      final trimmedLines = keptLineIndices
-          .map((li) => original.lines[li])
-          .toList();
-      result.add(original.copyWith(lines: trimmedLines, isPageStart: false));
-    }
-
-    return result;
-  }
-
-  String _stripTags(String s) => s
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
 
   Future<void> _copyVisibleContent(
     CopyScope scope, {
@@ -2482,22 +2323,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         showTranslation: settings.showTranslation,
                         ttsPlayback: ttsPlaybackStateForTab,
                         onJumpTap: () => _onJumpTap(activeTab, readerState),
-                        onToggleTranslation: () {
-                          if (!settings.showTranslation) {
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setShowTranslation(true);
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setTranslationDisplayMode(
-                                  TranslationDisplayMode.lineByLine,
-                                );
-                          } else {
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setShowTranslation(false);
-                          }
-                        },
                         onCycleDisplayMode: () {
                           final newMode =
                               settings.translationDisplayMode ==

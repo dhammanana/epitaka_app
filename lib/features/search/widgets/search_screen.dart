@@ -13,7 +13,10 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../core/utils/pali_script_converter.dart';
+import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -37,6 +40,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<SearchSuggestion> _suggestions = [];
   bool _isMultiWord = false;
   bool _isConverting = false;
+  bool _showFilters = false;
 
   @override
   void initState() {
@@ -74,7 +78,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // Detect multi-word and auto-set distance=3 when second word is typed
     final wordCount = effectiveValue.trim().isEmpty
         ? 0
-        : effectiveValue.trim().split(RegExp(r'\s+')).length;
+        : effectiveValue.trim().split(RegExp(r'\\s+')).length;
     if (wordCount >= 2 && !_isMultiWord) {
       setState(() {
         _isMultiWord = true;
@@ -91,7 +95,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (effectiveValue.trim().isNotEmpty) {
         // Use the LAST word as the suggestion prefix, so multi-word queries
         // continue to show suggestions for the word being typed right now.
-        final words = effectiveValue.trim().split(RegExp(r'\s+'));
+        final words = effectiveValue.trim().split(RegExp(r'\\s+'));
         final lastWord = words.isNotEmpty ? words.last : '';
         if (lastWord.isNotEmpty) {
           final suggestions = await ref
@@ -299,7 +303,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         lines: previewLines,
         highlightParaId: item.paraId,
         firstSnippetIndex: firstSnippetIndex >= 0 ? firstSnippetIndex : null,
-        paliSnippet: item.paliSnippet ?? item.paliText,
+        paliSnippet: item.lines.isNotEmpty
+            ? item.lines.where((l) => l.isMatch).map((l) => l.pali).join(' ')
+            : '',
         actionLabel: 'Open in Reader',
         onAction: () {
           // Open the reader tab
@@ -443,144 +449,244 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         AppDimensions.marginMobile,
         0,
       ),
-      child: Row(
+      child: Column(
         children: [
-          // Fuzzy toggle
-          FilterChip(
-            label: Text(
-              'Fuzzy',
-              style: AppTypography.labelSmall.copyWith(
-                color: _fuzzy
-                    ? colors.onPrimaryContainer
-                    : colors.onSurfaceVariant,
-              ),
-            ),
-            selected: _fuzzy,
-            onSelected: (val) {
-              setState(() => _fuzzy = val);
-              if (_searchController.text.isNotEmpty) _executeSearch();
-            },
-            selectedColor: colors.primaryContainer,
-            checkmarkColor: colors.primary,
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          const SizedBox(width: 8),
-
-          // Word distance selector — auto-highlights when 2+ words detected
-          PopupMenuButton<int>(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            tooltip: 'Word distance',
-            initialValue: _wordDistance,
-            onSelected: (val) {
-              setState(() => _wordDistance = val);
-              if (_searchController.text.isNotEmpty) _executeSearch();
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 0, child: Text('Any distance')),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 3,
-                child: Row(
-                  children: [
-                    Icon(Icons.check, size: 16, color: Colors.transparent),
-                    SizedBox(width: 8),
-                    Text('Within 3 words'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(value: 1, child: Text('Within 1 word')),
-              const PopupMenuItem(value: 2, child: Text('Within 2 words')),
-              const PopupMenuItem(value: 5, child: Text('Within 5 words')),
-              const PopupMenuItem(value: 10, child: Text('Within 10 words')),
-            ],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _wordDistance > 0
-                    ? colors.secondaryContainer
-                    : (_isMultiWord
-                          ? colors.tertiaryContainer
-                          : colors.surfaceContainerHighest),
-                borderRadius: BorderRadius.circular(16),
-                border: _isMultiWord && _wordDistance == 0
-                    ? Border.all(color: colors.tertiary.withValues(alpha: 0.5))
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.swap_horiz,
-                    size: 14,
-                    color: _wordDistance > 0
-                        ? colors.onSecondaryContainer
-                        : (_isMultiWord
-                              ? colors.onTertiaryContainer
-                              : colors.onSurfaceVariant),
+          Row(
+            children: [
+              // Fuzzy toggle
+              FilterChip(
+                label: Text(
+                  'Fuzzy',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: _fuzzy
+                        ? colors.onPrimaryContainer
+                        : colors.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _wordDistance > 0 ? 'Dist: $_wordDistance' : 'Dist',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: _wordDistance > 0
-                          ? colors.onSecondaryContainer
-                          : (_isMultiWord
-                                ? colors.onTertiaryContainer
-                                : colors.onSurfaceVariant),
-                      fontWeight: _wordDistance > 0 || _isMultiWord
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                ),
+                selected: _fuzzy,
+                onSelected: (val) {
+                  setState(() => _fuzzy = val);
+                  if (_searchController.text.isNotEmpty) _executeSearch();
+                },
+                selectedColor: colors.primaryContainer,
+                checkmarkColor: colors.primary,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              const SizedBox(width: 8),
+
+              // Word distance selector
+              PopupMenuButton<int>(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Word distance',
+                initialValue: _wordDistance,
+                onSelected: (val) {
+                  setState(() => _wordDistance = val);
+                  if (_searchController.text.isNotEmpty) _executeSearch();
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 0, child: Text('Any distance')),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 3,
+                    child: Row(
+                      children: [
+                        Icon(Icons.check, size: 16, color: Colors.transparent),
+                        SizedBox(width: 8),
+                        Text('Within 3 words'),
+                      ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_drop_down,
-                    size: 16,
-                    color: _wordDistance > 0
-                        ? colors.onSecondaryContainer
-                        : (_isMultiWord
-                              ? colors.onTertiaryContainer
-                              : colors.onSurfaceVariant),
-                  ),
+                  const PopupMenuItem(value: 1, child: Text('Within 1 word')),
+                  const PopupMenuItem(value: 2, child: Text('Within 2 words')),
+                  const PopupMenuItem(value: 5, child: Text('Within 5 words')),
+                  const PopupMenuItem(value: 10, child: Text('Within 10 words')),
                 ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _wordDistance > 0
+                        ? colors.secondaryContainer
+                        : (_isMultiWord
+                              ? colors.tertiaryContainer
+                              : colors.surfaceContainerHighest),
+                    borderRadius: BorderRadius.circular(16),
+                    border: _isMultiWord && _wordDistance == 0
+                        ? Border.all(color: colors.tertiary.withValues(alpha: 0.5))
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.swap_horiz,
+                        size: 14,
+                        color: _wordDistance > 0
+                            ? colors.onSecondaryContainer
+                            : (_isMultiWord
+                                  ? colors.onTertiaryContainer
+                                  : colors.onSurfaceVariant),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _wordDistance > 0 ? 'Dist: $_wordDistance' : 'Dist',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: _wordDistance > 0
+                              ? colors.onSecondaryContainer
+                              : (_isMultiWord
+                                    ? colors.onTertiaryContainer
+                                    : colors.onSurfaceVariant),
+                          fontWeight: _wordDistance > 0 || _isMultiWord
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_drop_down,
+                        size: 16,
+                        color: _wordDistance > 0
+                            ? colors.onSecondaryContainer
+                            : (_isMultiWord
+                                  ? colors.onTertiaryContainer
+                                  : colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+
+              // Fuzzy hint
+              if (_fuzzy)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    '(ā=a, ñ=n, ṭ=t …)',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+
+              const Spacer(),
+
+              // Filter toggle
+              IconButton(
+                icon: Icon(
+                  _showFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  size: 20,
+                ),
+                color: _showFilters ? colors.primary : colors.onSurfaceVariant,
+                tooltip: 'Toggle filters',
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+              ),
+
+              // Result count
+              if (searchState is SearchResults)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                  ),
+                  child: Text(
+                    '${searchState.totalResults} result${searchState.totalResults == 1 ? '' : 's'}',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(width: 8),
 
-          // Hint text for fuzzy
-          if (_fuzzy)
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Text(
-                '(ā=a, ñ=n, ṭ=t …)',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                  fontSize: 10,
-                ),
-              ),
-            ),
-
-          const Spacer(),
-
-          // Result count
-          if (searchState is SearchResults)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-              ),
-              child: Text(
-                '${searchState.totalResults} result${searchState.totalResults == 1 ? '' : 's'}',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          // ── Filter panel ───────────────────────────────────────────────
+          if (_showFilters) _buildFilterPanel(colors),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterPanel(ColorScheme colors) {
+    final notifier = ref.read(searchProvider.notifier);
+    final enabledCats = notifier.enabledCategories;
+    final enabledNik = notifier.enabledNikayas;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Category (layer) row
+            Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    'Layer',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: kAllCategories.map((key) => _FilterChip(
+                      label: key,
+                      selected: enabledCats.contains(key),
+                      colors: colors,
+                      onTap: () => notifier.toggleCategory(key),
+                    )).toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Nikaya (pitaka) row
+            Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    'Nikāya',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: kAllNikayas.map((key) => _FilterChip(
+                      label: key,
+                      selected: enabledNik.contains(key),
+                      colors: colors,
+                      onTap: () => notifier.toggleNikaya(key),
+                    )).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -850,7 +956,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return _BookResultCard(
           summary: summary,
           colors: colors,
-          searchQuery: query,
           onTapResult: (item) => _onResultTap(summary, item),
           onLongPressResult: (item) => _onResultLongPress(summary, item),
           onToggleExpanded: () {
@@ -889,12 +994,59 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
+// ── Small filter chip widget ─────────────────────────────────────────────
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme colors;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected
+              ? colors.primaryContainer
+              : colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected
+                ? colors.primary.withValues(alpha: 0.5)
+                : colors.outlineVariant.withValues(alpha: 0.4),
+            width: 0.8,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected
+                ? colors.onPrimaryContainer
+                : colors.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Book Result Card ─────────────────────────────────────────────────────
 
 class _BookResultCard extends StatelessWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
-  final String searchQuery;
   final void Function(SearchResultItem item) onTapResult;
   final void Function(SearchResultItem item)? onLongPressResult;
   final VoidCallback onToggleExpanded;
@@ -903,7 +1055,6 @@ class _BookResultCard extends StatelessWidget {
   const _BookResultCard({
     required this.summary,
     required this.colors,
-    required this.searchQuery,
     required this.onTapResult,
     this.onLongPressResult,
     required this.onToggleExpanded,
@@ -1039,13 +1190,11 @@ class _BookResultCard extends StatelessWidget {
 
           // ── Expanded results ───────────────────────────────────────
           if (summary.isExpanded) ...[
-            // Flatten all loaded pages into items
             ...summary.loadedPages.expand(
               (page) => page.map(
                 (item) => _SearchResultItemTile(
                   item: item,
                   colors: colors,
-                  searchQuery: searchQuery,
                   onTap: () => onTapResult(item),
                   onLongPress: () => onLongPressResult?.call(item),
                 ),
@@ -1084,103 +1233,128 @@ class _BookResultCard extends StatelessWidget {
   }
 }
 
-// ── Search Result Item Tile ──────────────────────────────────────────────
+// ── Search Result Item Tile (line-by-line) ───────────────────────────────
 
-class _SearchResultItemTile extends StatelessWidget {
+class _SearchResultItemTile extends ConsumerWidget {
   final SearchResultItem item;
   final ColorScheme colors;
-  final String searchQuery;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
   const _SearchResultItemTile({
     required this.item,
     required this.colors,
-    required this.searchQuery,
     required this.onTap,
     this.onLongPress,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final searchState = ref.watch(searchProvider);
+    final activeLang = settings.enabledTranslations.isNotEmpty
+        ? settings.enabledTranslations.first
+        : (settings.showTranslation ? settings.primaryTranslationLang : null);
+    final script = settings.paliScript;
+
+    // Extract search terms from the current query
+    final List<String> searchTerms;
+    if (searchState is SearchResults) {
+      final query = searchState.query;
+      searchTerms = normalizePaliFuzzy(query)
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+    } else {
+      searchTerms = const [];
+    }
+
+    // Get typography for Pali
+    final paliTypo = settings.typography.pali;
+    final paliTextStyle = paliTypo.toTextStyle(
+      fallbackColor: colors.onSurface,
+    );
+
+    // Get typography for translation
+    final transTypo = activeLang != null
+        ? settings.typography.typographyFor(activeLang)
+        : null;
+    final transTextStyle = transTypo?.toTextStyle(
+      fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
+    ) ?? TextStyle(
+      fontSize: 12,
+      color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+      fontStyle: FontStyle.italic,
+      height: 1.3,
+    );
+
+    // Only show lines that actually match the search
+    final matchingLines = item.lines.where((l) => l.isMatch).toList();
+    if (matchingLines.isEmpty) return const SizedBox.shrink();
+
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppDimensions.md,
-          6,
+          8,
           AppDimensions.md,
-          6,
+          8,
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Para badge
-            Container(
-              width: 40,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              // child: Text(
-              //   '§${item.paraId}',
-              //   style: AppTypography.labelSmall.copyWith(
-              //     fontSize: 9,
-              //     color: colors.onSurfaceVariant,
-              //   ),
-              // ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // ── Para heading badge (tap to open) ──────────────────────
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
                 children: [
-                  // Pāli text — prefer FTS5 snippet with <mark> tags
-                  // (shows context around the match), fall back to full text.
-                  // When using the snippet, skip client-side searchTerms since
-                  // FTS5 already inserted <mark> tags.
-                  _HtmlRichText(
-                    text: item.paliSnippet ?? item.paliText,
-                    searchTerms: item.paliSnippet != null
-                        ? const []
-                        : _extractSearchTerms(searchQuery),
-                    style: AppTypography.bodyPali.copyWith(
-                      fontSize: 14,
-                      color: colors.onSurface,
-                      height: 1.4,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
                     ),
-                    highlightColor: colors.primary.withValues(alpha: 0.2),
-                    // Show all content — no line limit
-                    maxLines: null,
-                  ),
-                  // Translation text — prefer FTS5 snippet, fall back to full text
-                  if (item.translation != null &&
-                      item.translation!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    _HtmlRichText(
-                      text: item.translationSnippet ?? item.translation!,
-                      searchTerms: item.translationSnippet != null
-                          ? const []
-                          : _extractSearchTerms(searchQuery),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.8),
-                        fontStyle: FontStyle.italic,
-                        height: 1.3,
+                    decoration: BoxDecoration(
+                      color: colors.tertiaryContainer.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '§${item.paraId}',
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 9,
+                        color: colors.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
                       ),
-                      highlightColor: colors.primary.withValues(alpha: 0.15),
-                      // Show all content — no line limit
-                      maxLines: null,
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: 6),
+                  if (matchingLines.length < item.lines.length)
+                    Text(
+                      '${matchingLines.length}/${item.lines.length} matches',
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 9,
+                        color: colors.primary.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  const Spacer(),
+                  Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant),
                 ],
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 16, color: colors.onSurfaceVariant),
+
+            // ── Matching lines with Pali + Translation ──────────────
+            ...matchingLines.map((line) => Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: _LineTile(
+                line: line,
+                searchTerms: searchTerms,
+                paliTextStyle: paliTextStyle,
+                transTextStyle: transTextStyle,
+                colors: colors,
+                script: script,
+              ),
+            )),
           ],
         ),
       ),
@@ -1188,293 +1362,278 @@ class _SearchResultItemTile extends StatelessWidget {
   }
 }
 
-// ── HTML + Markdown Rich Text Renderer ──────────────────────────────────
-
-/// Renders text containing HTML tags (`<b>`, `<i>`, `<u>`, `<mark>`)
-/// and highlights [searchTerms] with a colored background.
-/// Also renders `<br>` as newlines.
-class _HtmlRichText extends StatelessWidget {
-  final String text;
+/// A single line in the search result, showing Pali and translation.
+class _LineTile extends StatelessWidget {
+  final SearchResultLine line;
   final List<String> searchTerms;
-  final TextStyle style;
-  final Color highlightColor;
-  final int? maxLines;
+  final TextStyle paliTextStyle;
+  final TextStyle transTextStyle;
+  final ColorScheme colors;
+  final Script script;
 
-  const _HtmlRichText({
-    required this.text,
-    this.searchTerms = const [],
-    required this.style,
-    required this.highlightColor,
-    this.maxLines,
+  const _LineTile({
+    required this.line,
+    required this.searchTerms,
+    required this.paliTextStyle,
+    required this.transTextStyle,
+    required this.colors,
+    required this.script,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (text.isEmpty) return const SizedBox.shrink();
+    final highlightColor = colors.primary.withValues(alpha: 0.25);
 
-    // First: split HTML tags into segments
-    final segments = _parseHtmlSegments(text);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 3,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: colors.primary.withValues(alpha: 0.15),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Pali text — with search term highlighting and script conversion
+          if (line.pali.isNotEmpty)
+            _buildHighlightedPaliText(
+              text: line.pali,
+              searchTerms: searchTerms,
+              script: script,
+              style: paliTextStyle.copyWith(
+                fontSize: paliTextStyle.fontSize ?? 14,
+                height: paliTextStyle.height ?? 1.4,
+              ),
+              highlightColor: highlightColor,
+            ),
 
-    // Second: for each segment, apply search highlighting
-    final spans = <TextSpan>[];
-    for (final segment in segments) {
-      if (segment.isHtml) {
-        // Render as styled text
-        spans.add(
-          TextSpan(
-            text: segment.text,
-            style: segment.htmlStyle?.let((s) => _applyStyle(s)),
-          ),
-        );
-      } else {
-        // Apply search highlighting to plain text
-        _applyHighlighting(segment.text, spans);
-      }
-    }
-
-    return Text.rich(
-      TextSpan(children: spans, style: style),
-      maxLines: maxLines,
-      // Only ellipsize when a maxLines limit is actually set
-      overflow: maxLines != null ? TextOverflow.ellipsis : TextOverflow.clip,
+          // Translation text — with search term highlighting
+          if (line.translation != null && line.translation!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: _buildHighlightedTranslationText(
+                text: line.translation!,
+                searchTerms: searchTerms,
+                style: transTextStyle.copyWith(
+                  fontSize: transTextStyle.fontSize ?? 12,
+                  height: transTextStyle.height ?? 1.3,
+                ),
+                highlightColor: highlightColor,
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  TextStyle _applyStyle(_HtmlTag tag) {
-    var result = style;
-    switch (tag) {
-      case _HtmlTag.b:
-        result = result.copyWith(fontWeight: FontWeight.w700);
-      case _HtmlTag.i:
-        result = result.copyWith(fontStyle: FontStyle.italic);
-      case _HtmlTag.u:
-        result = result.copyWith(decoration: TextDecoration.underline);
-      case _HtmlTag.mark:
-        result = result.copyWith(
-          backgroundColor: highlightColor,
-          fontWeight: FontWeight.w700,
-        );
-    }
-    return result;
-  }
-
-  void _applyHighlighting(String plainText, List<TextSpan> spans) {
-    if (searchTerms.isEmpty || plainText.isEmpty) {
-      spans.add(TextSpan(text: plainText));
-      return;
+  /// Build Pali text with search terms highlighted, respecting script settings.
+  Widget _buildHighlightedPaliText({
+    required String text,
+    required List<String> searchTerms,
+    required Script script,
+    required TextStyle style,
+    required Color highlightColor,
+  }) {
+    if (searchTerms.isEmpty || text.isEmpty) {
+      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
     }
 
-    // Find intervals directly in the original text's position space by
-    // comparing each character through a normalised lens.  This avoids the
-    // index-mismatch bug that would occur if we called
-    // normalizePaliFuzzy() on the whole string (which strips punctuation
-    // and shifts character positions).
-    final lowerText = plainText.toLowerCase();
-    final textLen = lowerText.length;
-    final intervals = <_Interval>[];
+    // Match directly in original text using diacritic-agnostic comparison,
+    // so positions are always correct (normalizePaliFuzzy removes some chars,
+    // which would misalign positions if we matched in normalized text).
+    final nterms = searchTerms
+        .map((t) => normalizePaliFuzzy(t))
+        .where((t) => t.isNotEmpty)
+        .toList();
 
-    for (final term in searchTerms) {
-      if (term.isEmpty) continue;
-      final termLen = term.length;
-      final maxStart = textLen - termLen;
-      if (maxStart < 0) continue;
+    if (nterms.isEmpty) {
+      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
+    }
 
-      int pos = 0;
-      while (pos <= maxStart) {
-        bool match = true;
-        for (int i = 0; i < termLen; i++) {
-          if (_normChar(lowerText.codeUnitAt(pos + i)) != term.codeUnitAt(i)) {
-            match = false;
-            break;
-          }
-        }
-        if (match) {
-          intervals.add(_Interval(pos, pos + termLen));
-          pos += termLen;
+    // Find all match positions by scanning the original text directly
+    final ranges = <MapEntry<int, int>>[];
+    for (final nt in nterms) {
+      int maxStart = text.length - nt.length;
+      for (int i = 0; i <= maxStart;) {
+        final candidate = text.substring(i, i + nt.length);
+        if (normalizePaliFuzzy(candidate) == nt) {
+          ranges.add(MapEntry(i, i + nt.length));
+          i += nt.length;
         } else {
-          pos++;
+          i++;
         }
       }
     }
 
-    if (intervals.isEmpty) {
-      spans.add(TextSpan(text: plainText));
-      return;
+    if (ranges.isEmpty) {
+      return PaliTextStatic(text, script, style: style, maxLines: 3, overflow: TextOverflow.ellipsis);
     }
 
-    // Sort and merge overlapping/adjacent intervals
-    intervals.sort((a, b) => a.start.compareTo(b.start));
-    final merged = <_Interval>[];
-    var current = intervals.first;
-    for (int i = 1; i < intervals.length; i++) {
-      final next = intervals[i];
-      if (next.start <= current.end) {
-        if (next.end > current.end) {
-          current = _Interval(current.start, next.end);
-        }
+    // Sort ranges and merge overlapping ones
+    ranges.sort((a, b) => a.key.compareTo(b.key));
+    final merged = <MapEntry<int, int>>[];
+    for (final r in ranges) {
+      if (merged.isEmpty) {
+        merged.add(r);
       } else {
-        merged.add(current);
-        current = next;
+        final last = merged.last;
+        if (r.key <= last.value) {
+          merged[merged.length - 1] = MapEntry(
+            last.key,
+            r.value > last.value ? r.value : last.value,
+          );
+        } else {
+          merged.add(r);
+        }
       }
     }
-    merged.add(current);
 
-    // Build spans using original-text positions (always correct now)
-    int lastIdx = 0;
-    for (final interval in merged) {
-      if (interval.start > lastIdx) {
-        spans.add(TextSpan(text: plainText.substring(lastIdx, interval.start)));
-      }
-      spans.add(
-        TextSpan(
-          text: plainText.substring(interval.start, interval.end),
-          style: TextStyle(
-            backgroundColor: highlightColor,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-      lastIdx = interval.end;
-    }
-    if (lastIdx < plainText.length) {
-      spans.add(TextSpan(text: plainText.substring(lastIdx)));
-    }
-  }
+    // Convert each segment to the target script and build TextSpans
+    final fontFamily = scriptFontFamily(script);
+    final effStyle = style.copyWith(fontFamily: fontFamily);
 
-  /// Normalise a single lowercased code point for comparison.
-  /// Pāli diacritics → ASCII; everything else (including punctuation)
-  /// passes through unchanged so that positions stay in sync with the
-  /// original [plainText].
-  static int _normChar(int c) {
-    switch (c) {
-      case 0x0101:
-        return 0x61; // ā → a
-      case 0x012B:
-        return 0x69; // ī → i
-      case 0x016B:
-        return 0x75; // ū → u
-      case 0x014D:
-        return 0x6F; // ō → o
-      case 0x1E45:
-        return 0x6E; // ṅ → n
-      case 0x00F1:
-        return 0x6E; // ñ → n
-      case 0x1E6D:
-        return 0x74; // ṭ → t
-      case 0x1E0D:
-        return 0x64; // ḍ → d
-      case 0x1E47:
-        return 0x6E; // ṇ → n
-      case 0x1E37:
-        return 0x6C; // ḷ → l
-      case 0x1E3B:
-        return 0x6C; // ḻ → l
-      case 0x1E43:
-        return 0x6D; // ṃ → m
-      case 0x1E41:
-        return 0x6D; // ṁ → m
-      case 0x1E25:
-        return 0x68; // ḥ → h
-      default:
-        return c;
-    }
-  }
-
-  /// Parse text with HTML tags into segments.
-  List<_TextSegment> _parseHtmlSegments(String html) {
-    final segments = <_TextSegment>[];
-    final regex = RegExp(r'<(/?)(b|i|u|mark|br)\s*/?>', caseSensitive: false);
-    final stack = <_HtmlTag>[];
+    final spans = <InlineSpan>[];
     int lastEnd = 0;
 
-    for (final match in regex.allMatches(html)) {
-      // Add text before this tag
-      if (match.start > lastEnd) {
-        segments.add(
-          _TextSegment(
-            text: html.substring(lastEnd, match.start),
-            isHtml: stack.isNotEmpty,
-            htmlStyle: stack.isNotEmpty ? stack.last : null,
-          ),
+    for (final r in merged) {
+      // Non-matching segment before this match
+      if (r.key > lastEnd) {
+        final seg = convertPaliToScriptPreservingHtml(
+          text.substring(lastEnd, r.key),
+          script,
         );
+        spans.add(TextSpan(text: seg, style: effStyle));
       }
 
-      final isClosing = match.group(1) == '/';
-      final tagName = match.group(2)!.toLowerCase();
-
-      if (tagName == 'br') {
-        // Line break - insert newline
-        segments.add(_TextSegment(text: '\n', isHtml: false));
-      } else if (isClosing) {
-        // Closing tag
-        final tag = _HtmlTag.values.firstWhere(
-          (t) => t.name == tagName,
-          orElse: () => _HtmlTag.b,
-        );
-        stack.remove(tag);
-      } else {
-        // Opening tag
-        final tag = _HtmlTag.values.firstWhere(
-          (t) => t.name == tagName,
-          orElse: () => _HtmlTag.b,
-        );
-        stack.add(tag);
-      }
-
-      lastEnd = match.end;
-    }
-
-    // Remaining text after last tag
-    if (lastEnd < html.length) {
-      segments.add(
-        _TextSegment(
-          text: html.substring(lastEnd),
-          isHtml: stack.isNotEmpty,
-          htmlStyle: stack.isNotEmpty ? stack.last : null,
-        ),
+      // Matching segment (converted and highlighted)
+      final seg = convertPaliToScriptPreservingHtml(
+        text.substring(r.key, r.value),
+        script,
       );
+      spans.add(TextSpan(
+        text: seg,
+        style: effStyle.copyWith(
+          backgroundColor: highlightColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+      lastEnd = r.value;
     }
 
-    return segments;
+    // Remaining text after last match
+    if (lastEnd < text.length) {
+      final seg = convertPaliToScriptPreservingHtml(
+        text.substring(lastEnd),
+        script,
+      );
+      spans.add(TextSpan(text: seg, style: effStyle));
+    }
+
+    return Text.rich(
+      TextSpan(style: effStyle, children: spans),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+    );
   }
-}
 
-enum _HtmlTag { b, i, u, mark }
+  /// Build translation text with search terms highlighted (no script conversion).
+  Widget _buildHighlightedTranslationText({
+    required String text,
+    required List<String> searchTerms,
+    required TextStyle style,
+    required Color highlightColor,
+  }) {
+    if (searchTerms.isEmpty || text.isEmpty) {
+      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
 
-class _TextSegment {
-  final String text;
-  final bool isHtml;
-  final _HtmlTag? htmlStyle;
+    // Normalize both for matching
+    final normalized = text.toLowerCase();
+    final nterms = searchTerms
+        .map((t) => t.toLowerCase())
+        .where((t) => t.isNotEmpty)
+        .toList();
 
-  const _TextSegment({
-    required this.text,
-    required this.isHtml,
-    this.htmlStyle,
-  });
-}
+    if (nterms.isEmpty) {
+      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
 
-class _Interval {
-  final int start;
-  final int end;
-  const _Interval(this.start, this.end);
+    // Find all match positions
+    final ranges = <MapEntry<int, int>>[];
+    for (final nt in nterms) {
+      int pos = 0;
+      while (true) {
+        final idx = normalized.indexOf(nt, pos);
+        if (idx < 0) break;
+        ranges.add(MapEntry(idx, idx + nt.length));
+        pos = idx + nt.length;
+      }
+    }
+
+    if (ranges.isEmpty) {
+      return Text(text, style: style, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
+
+    // Sort and merge
+    ranges.sort((a, b) => a.key.compareTo(b.key));
+    final merged = <MapEntry<int, int>>[];
+    for (final r in ranges) {
+      if (merged.isEmpty) {
+        merged.add(r);
+      } else {
+        final last = merged.last;
+        if (r.key <= last.value) {
+          merged[merged.length - 1] = MapEntry(
+            last.key,
+            r.value > last.value ? r.value : last.value,
+          );
+        } else {
+          merged.add(r);
+        }
+      }
+    }
+
+    // Build TextSpans from the original text (not normalized)
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+
+    for (final r in merged) {
+      if (r.key > lastEnd) {
+        spans.add(TextSpan(text: text.substring(lastEnd, r.key), style: style));
+      }
+      spans.add(TextSpan(
+        text: text.substring(r.key, r.value),
+        style: style.copyWith(
+          backgroundColor: highlightColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+      lastEnd = r.value;
+    }
+
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd), style: style));
+    }
+
+    return Text.rich(
+      TextSpan(style: style, children: spans),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────
-
-/// Extract normalized search terms for highlighting.
-List<String> _extractSearchTerms(String query) {
-  return normalizePaliFuzzy(
-    query,
-  ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
-}
 
 /// Format a number (e.g. 1234 -> "1.2k").
 String formatCount(int count) {
   if (count < 1000) return count.toString();
   if (count < 10000) return '${(count / 1000).toStringAsFixed(1)}k';
   return '${(count / 1000).toStringAsFixed(0)}k';
-}
-
-extension _Lets<T> on T {
-  R let<R>(R Function(T) fn) => fn(this);
 }

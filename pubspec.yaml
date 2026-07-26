@@ -64,6 +64,8 @@ dependencies:
 
   # Vector search (sqlite-vec via pub — no manual .so/.dylib)
   sqlite_vector: ^1.0.0
+  share_plus: ^12.0.2
+  app_links: ^7.2.1
 
 flutter:
   uses-material-design: true

@@ -122,6 +122,20 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     }
   }
 
+  /// Switch to the next tab (wrapping around to the first).
+  void nextTab() {
+    if (state.tabs.length <= 1) return;
+    final next = (state.activeIndex + 1) % state.tabs.length;
+    switchTo(next);
+  }
+
+  /// Switch to the previous tab (wrapping around to the last).
+  void previousTab() {
+    if (state.tabs.length <= 1) return;
+    final prev = (state.activeIndex - 1 + state.tabs.length) % state.tabs.length;
+    switchTo(prev);
+  }
+
   /// Update the scroll offset and visible position for a specific tab.
   void updateScrollOffset(int index, double offset, {int? paraId, int? lineId}) {
     if (index < 0 || index >= state.tabs.length) return;
