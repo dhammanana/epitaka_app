@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
-import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -9,11 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../../core/models/app_models.dart';
+import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/providers/app_db_provider.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -29,6 +27,7 @@ import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
 import '../providers/tts_reading_provider.dart';
+import '../providers/reader_tts_sync_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../widgets/bookmark_dialog.dart';
@@ -247,30 +246,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Throttle: only update scroll state once per distinct paraId per book.
   final Map<String, int> _lastScrollParaId = {};
 
-  /// Whether TTS should auto-scroll to the spoken line.
-  /// Set to false when the user manually scrolls away from the TTS position.
-  bool _ttsAutoScroll = true;
-
-  /// Flag to prevent _onPositionsChanged from disabling auto-scroll
-  /// when a TTS-initiated jump is in progress. Cleared after a short
-  /// timer delay to cover layout changes from highlighting.
-  bool _ttsJumpInProgress = false;
-
-  /// Timer to clear _ttsJumpInProgress after a short delay.
-  Timer? _ttsJumpTimer;
-
   /// Cached system voices loaded from flutter_tts API.
   List<Map<String, String>>? _cachedSystemVoices;
   bool _voicesLoading = false;
-
-  /// Issue 4: Target line GlobalKey for precise TTS line scroll.
-  /// Created before a TTS jump, used by Scrollable.ensureVisible after
-  /// the paragraph becomes visible, then cleared.
-  final Map<int, GlobalKey> _ttsTargetLineKeys = {};
-
-  /// The paraId that _ttsTargetLineKeys belong to (for passing to
-  /// ReadingParagraph).
-  int? _ttsTargetParaId;
 
   // ── In-book search ───────────────────────────────────────────────────
 
@@ -347,10 +325,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
 
       // ── Collect matching (paraId, lineId) pairs ────────────────────
-      //
-      // Both epitaka.db.sentences and translation*.db.sentences have
-      // `book_id`, `para_id`, `line_id` as a composite primary key, so we
-      // can SELECT line_id and jump to the exact sentence.
+      // Search uses pre-computed diacritic-normalized text cache
+      // (LineData.normalizedText) instead of DB LIKE queries, making it
+      // fast and diacritic-insensitive (ā→a, ṭ→t, ṃ→m, etc.).
 
       final seenKeys = <int>{};
       final matchParas = <int>[];
@@ -365,68 +342,51 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       }
 
-      // 1. Search Pāli text from epitaka.db ─────────────────────────────
-      final epitakaDb = await ref.read(epitakaDbProvider.future);
-      final paliConditions = words
-          .map((_) => "pali LIKE '%' || ? || '%'")
-          .join(' AND ');
+      // Normalize query terms using same functions as _normalizeLineText
+      // in reader_provider.dart (cleanPaliForIndexing + normalizePaliFuzzy).
+      final normalizedTerms = words
+          .map((w) => normalizePaliFuzzy(cleanPaliForIndexing(w)))
+          .where((n) => n.isNotEmpty)
+          .toList();
 
-      final paliRows = await epitakaDb
-          .customSelect(
-            'SELECT para_id, line_id FROM sentences '
-            'WHERE book_id = ? AND $paliConditions '
-            'ORDER BY para_id, line_id LIMIT 500',
-            variables: [
-              Variable.withString(activeTab.bookId),
-              for (final w in words) Variable.withString(w),
-            ],
-          )
-          .get();
-
-      for (final row in paliRows) {
-        addMatch(row.data['para_id'] as int, row.data['line_id'] as int);
+      if (normalizedTerms.isEmpty) {
+        setState(() {
+          _inBookQuery = '';
+          _inBookMatchParaIds = [];
+          _inBookMatchLineIds = [];
+          _inBookMatchIndex = -1;
+        });
+        return;
       }
 
-      // Guard between DB queries
-      if (_lastInBookSearchQuery != query) return;
+      final readerState = ref.read(readerDataProvider(activeTab.bookId));
+      if (readerState.paragraphs.isEmpty) {
+        setState(() {
+          _inBookQuery = '';
+          _inBookMatchParaIds = [];
+          _inBookMatchLineIds = [];
+          _inBookMatchIndex = -1;
+        });
+        return;
+      }
 
-      // 2. Search translation texts from active translation DBs ─────────
-      final settings = ref.read(settingsProvider);
-      final enabledLangs = settings.enabledTranslations.isNotEmpty
-          ? settings.enabledTranslations.toList()
-          : (settings.showTranslation
-                ? [settings.primaryTranslationLang]
-                : <String>[]);
+      // Search using pre-computed normalized text cache — no DB queries
+      for (final para in readerState.paragraphs) {
+        for (final line in para.lines) {
+          final normalized = line.normalizedText;
+          if (normalized.isEmpty) continue;
 
-      for (final langCode in enabledLangs) {
-        if (_lastInBookSearchQuery != query) return;
-
-        try {
-          final lang = TranslationLanguage.fromCode(langCode);
-          final transDb = await ref.read(translationDbProvider(lang).future);
-          if (transDb == null) continue;
-
-          final transConditions = words
-              .map((_) => "translation LIKE '%' || ? || '%'")
-              .join(' AND ');
-
-          final transRows = await transDb
-              .customSelect(
-                'SELECT para_id, line_id FROM sentences '
-                'WHERE book_id = ? AND $transConditions '
-                'ORDER BY para_id, line_id LIMIT 500',
-                variables: [
-                  Variable.withString(activeTab.bookId),
-                  for (final w in words) Variable.withString(w),
-                ],
-              )
-              .get();
-
-          for (final row in transRows) {
-            addMatch(row.data['para_id'] as int, row.data['line_id'] as int);
+          // All normalized terms must be present in the cached text
+          bool allMatch = true;
+          for (final term in normalizedTerms) {
+            if (!normalized.contains(term)) {
+              allMatch = false;
+              break;
+            }
           }
-        } catch (_) {
-          // Translation db may not exist — skip
+          if (allMatch) {
+            addMatch(para.paraId, line.lineId);
+          }
         }
       }
 
@@ -686,8 +646,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         if (_lastScrollParaId[bookId] != visibleParaId) {
           final posSw = Stopwatch()..start();
           developer.log(
-            '[UI_POS] book=$bookId topIndex=$topIndex paraId=$visibleParaId '
-            'ttsJumpInProgress=$_ttsJumpInProgress ttsAutoScroll=$_ttsAutoScroll',
+            '[UI_POS] book=$bookId topIndex=$topIndex paraId=$visibleParaId',
             name: 'epitaka.reader.ui',
           );
           _lastScrollParaId[bookId] = visibleParaId;
@@ -705,7 +664,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
           // Detect manual scroll: if TTS is playing and this scroll
           // was NOT a TTS-initiated jump, disable auto-scroll.
-          // _ttsJumpInProgress is kept true by a timer after each
+          // ttsJumpInProgress is kept true by a timer after each
           // TTS jump to cover layout changes from highlighting.
           //
           // Bug fix: Check if the TTS paragraph is ANYWHERE in the
@@ -713,7 +672,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           // paragraph. The top-most paragraph can differ from the TTS
           // paragraph after a fine-scroll (Scrollable.ensureVisible)
           // without the user having scrolled at all.
-          if (!_ttsJumpInProgress) {
+          final ttsSync = ref.read(ttsSyncProvider(bookId));
+          if (!ttsSync.ttsJumpInProgress) {
             final ttsState = ref.read(ttsReadingProvider);
             if (ttsState.isActive && ttsState.bookId == bookId) {
               final ttsParaId = ttsState.currentParaId;
@@ -730,7 +690,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     'ttsIndex=$ttsIndex visible=${visible.map((p) => p.index).toList()}',
                     name: 'epitaka.reader.ui',
                   );
-                  _ttsAutoScroll = false;
+                  ref.read(ttsSyncProvider(bookId).notifier).disableAutoScroll();
                 }
               }
             }
@@ -858,9 +818,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Issue 4: Create a GlobalKey for the target line so
     // Scrollable.ensureVisible can precisely scroll it into view.
     // Must call setState so the widget rebuilds with the new lineKeys.
+    // Uses ttsSyncProvider as single source of truth for TTS scroll state.
     if (lineId != null) {
-      _ttsTargetParaId = paraId;
-      _ttsTargetLineKeys[lineId] = GlobalKey();
+      ref.read(ttsSyncProvider(bookId).notifier).setTargetParaId(paraId);
+      ref
+          .read(ttsSyncProvider(bookId).notifier)
+          .setTargetLineKey(lineId, GlobalKey());
       if (mounted) setState(() {});
     }
 
@@ -881,7 +844,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // specific line using Scrollable.ensureVisible on the line's
     // GlobalKey context.
     if (lineId != null && mounted) {
-      _scrollToLine(lineId);
+      _scrollToLine(bookId, lineId);
     }
 
     // Clear initialParaId / initialLineId
@@ -936,8 +899,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// from rapid TTS advances don't interfere with each other.
   static const int _kMaxTtsScrollRetries = 15;
 
-  void _scrollToLine(int lineId) {
-    final key = _ttsTargetLineKeys[lineId];
+  void _scrollToLine(String bookId, int lineId) {
+    final ttsSync = ref.read(ttsSyncProvider(bookId));
+    final key = ttsSync.ttsTargetLineKeys[lineId];
     if (key == null) {
       // No key means no fine-scroll needed — clear the suppression
       // that was set by _jumpToParagraph.
@@ -965,16 +929,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           curve: Curves.easeOut,
         ).then((_) {
           if (mounted) {
-            _ttsTargetLineKeys.remove(lineId);
-            _ttsTargetParaId = null;
+            ref
+                .read(ttsSyncProvider(bookId).notifier)
+                .removeTargetLineKey(lineId);
+            ref
+                .read(ttsSyncProvider(bookId).notifier)
+                .clearTargetParaId();
             _suppressAppBarScroll = false;
           }
         });
       } else {
         retries++;
         if (retries >= _kMaxTtsScrollRetries) {
-          _ttsTargetLineKeys.remove(lineId);
-          _ttsTargetParaId = null;
+          ref
+              .read(ttsSyncProvider(bookId).notifier)
+              .removeTargetLineKey(lineId);
+          ref
+              .read(ttsSyncProvider(bookId).notifier)
+              .clearTargetParaId();
           _suppressAppBarScroll = false;
           developer.log(
             '[TTS_LINE] line=$lineId scroll retries exhausted, cleared _suppressAppBarScroll',
@@ -1849,11 +1821,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _followTts(String bookId) {
-    _ttsAutoScroll = true;
+    ref.read(ttsSyncProvider(bookId).notifier).enableAutoScroll();
     // Bug fix: Must set the jump-in-progress flag so the scroll
     // triggered by _jumpToParagraph doesn't immediately re-disable
     // auto-scroll in _onPositionsChanged.
-    _setTtsJumpInProgress();
+    ref.read(ttsSyncProvider(bookId).notifier).setJumpInProgress();
     final ttsState = ref.read(ttsReadingProvider);
     if (ttsState.currentParaId != null) {
       _jumpToParagraph(
@@ -1864,25 +1836,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
-  /// Set _ttsJumpInProgress true for a duration to prevent the position
-  /// listener from disabling auto-scroll during TTS-initiated jumps and
-  /// the subsequent layout changes from highlighting.
-  void _setTtsJumpInProgress() {
-    developer.log(
-      '[TTS_GATE] _ttsJumpInProgress = true (timer 200ms)',
-      name: 'epitaka.reader.ui',
-    );
-    _ttsJumpInProgress = true;
-    _ttsJumpTimer?.cancel();
-    _ttsJumpTimer = Timer(const Duration(milliseconds: 200), () {
-      developer.log(
-        '[TTS_GATE] _ttsJumpInProgress = false (timer expired)',
-        name: 'epitaka.reader.ui',
-      );
-      _ttsJumpInProgress = false;
-    });
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1890,7 +1843,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _settleController.dispose();
     _dragDxNotifier.dispose();
     _saveHistoryTimer?.cancel();
-    _ttsJumpTimer?.cancel();
     _inBookSearchTimer?.cancel();
     _inBookSearchController.dispose();
     _inBookSearchFocusNode.dispose();
@@ -2132,10 +2084,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
       // Save reading history
       final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
+      final ttsSync = ref.read(ttsSyncProvider(currentBookId));
       developer.log(
         '[TTS_UI] listener: prevParaId=$prevParaId nextParaId=$nextParaId '
         'prevLineId=$prevLineId nextLineId=$nextLineId '
-        'ttsAutoScroll=$_ttsAutoScroll',
+        'ttsAutoScroll=${ttsSync.ttsAutoScroll}',
         name: 'epitaka.tts',
       );
       _saveReadingHistory(
@@ -2145,7 +2098,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         explicitLineId: nextLineId,
       );
 
-      if (!_ttsAutoScroll) {
+      if (!ttsSync.ttsAutoScroll) {
         developer.log(
           '[TTS_UI] auto-scroll off, skipping jump',
           name: 'epitaka.tts',
@@ -2154,7 +2107,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         return;
       }
 
-      _setTtsJumpInProgress();
+      ref.read(ttsSyncProvider(currentBookId).notifier).setJumpInProgress();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         developer.log(
@@ -2297,8 +2250,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       bottom: 84,
                       child: TtsFloatingChip(
                         colors: colors,
-                        isAutoScroll: _ttsAutoScroll,
-                        isJumpPending: _ttsJumpInProgress,
+                        isAutoScroll: ref.read(ttsSyncProvider(activeTab.bookId)).ttsAutoScroll,
+                        isJumpPending: ref.read(ttsSyncProvider(activeTab.bookId)).ttsJumpInProgress,
                         isTtsLineVisible: _isTtsLineVisible(
                           activeTab.bookId,
                           ttsReadingState.currentParaId,
@@ -2502,8 +2455,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       selectionDisabled: _selectionDisabled,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
-      ttsTargetParaId: _ttsTargetParaId,
-      ttsTargetLineKeys: _ttsTargetLineKeys,
+      ttsTargetParaId: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetParaId,
+      ttsTargetLineKeys: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetLineKeys,
       searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
     );
   }
