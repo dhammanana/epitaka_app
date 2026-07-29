@@ -93,7 +93,7 @@ jobs:
           name: windows-release
           path: build/windows/epitaka-windows-x64.zip
 
-  # -------------------------------------------------------------
+# -------------------------------------------------------------
   # 3. MACOS BUILD
   # -------------------------------------------------------------
   build-macos:
@@ -109,8 +109,17 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
+      - name: Create macOS Platform Files (if not in git)
+        run: flutter create --platforms=macos .
+
+      - name: Install Flutter Dependencies
         run: flutter pub get
+
+      # ADD THIS: Ensure CocoaPods dependency repo is updated & Pods installed
+      - name: Install CocoaPods
+        run: |
+          cd macos
+          pod install --repo-update
 
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
