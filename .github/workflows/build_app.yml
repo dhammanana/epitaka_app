@@ -74,6 +74,16 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      # ADD THIS STEP BEFORE PUB GET
+      - name: Create Windows Platform Files
+        run: flutter create --platforms=windows .
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -158,6 +168,10 @@ jobs:
         with:
           channel: 'stable'
           cache: true
+
+      # ADD THIS STEP BEFORE PUB GET
+      - name: Create Linux Platform Files
+        run: flutter create --platforms=linux .
 
       - name: Install Dependencies
         run: flutter pub get
