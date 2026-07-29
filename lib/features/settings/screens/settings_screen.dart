@@ -9,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../gavesana/providers/gavesana_download_provider.dart';
 import '../../search/providers/search_provider.dart';
+import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 
 import '../widgets/index_progress_screen.dart';
 import '../widgets/tiles/reset_data_tile.dart';
@@ -152,6 +153,11 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: AppDimensions.md),
 
+          // ── AI Q&A ──────────────────────────────────────────────────
+          _buildAiQaSection(context, colors),
+
+          const SizedBox(height: AppDimensions.md),
+
           // ── Gavesana ───────────────────────────────────────────────
           _buildGavesanaSection(context, colors, ref),
 
@@ -189,6 +195,25 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// AI Q&A settings section.
+  Widget _buildAiQaSection(
+    BuildContext context,
+    ColorScheme colors,
+  ) {
+    return SettingsSection(
+      title: 'AI Q&A',
+      colors: colors,
+      children: [
+        _SettingsTile(
+          icon: Icons.question_answer,
+          title: 'AI Q&A Settings',
+          subtitle: 'Configure API key, models, system prompt',
+          onTap: () => showAiQaSettingsSheet(context),
+        ),
+      ],
     );
   }
 

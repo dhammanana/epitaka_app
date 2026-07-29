@@ -2,7 +2,6 @@ import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../../core/database/epitaka_database.dart';
 import '../../../core/models/app_models.dart';
@@ -108,38 +107,13 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
     try {
       final downloadService = _ref.read(gavesanaDownloadServiceProvider);
 
-      // ── Step 1: Check & copy assets ────────────────────────
-      // 1a. Try Flutter asset bundle (model + tokenizer)
-      if (!await downloadService.areAssetsReady()) {
-        await downloadService.tryCopyFromAssets();
-      }
-
-      // 1b. Vector DB is intentionally NOT bundled in Flutter assets to
-      //     keep the app size small. Try known paths the user may have
-      //     pushed the DB to.
-      final knownPaths = [
-        // App-specific external storage (no extra permissions needed)
-        '/sdcard/epitaka_vec.db',
-        '/storage/emulated/0/epitaka_vec.db',
-      ];
-      try {
-        final extDir = await getExternalStorageDirectory();
-        if (extDir != null) {
-          knownPaths.add(p.join(extDir.path, 'epitaka_vec.db'));
-        }
-      } catch (_) {}
-
-      for (final path in knownPaths) {
-        final copied = await downloadService.tryCopyVectorDbFromLocal(path);
-        if (copied) break;
-      }
-
-      // 1c. Final check — all assets must be present & valid
+      // ── Step 1: Check assets ───────────────────────────────
+      // Assets are either already downloaded from a previous session,
+      // or the user must download them from Settings / first-launch screen.
       if (!await downloadService.areAssetsReady()) {
         _errorMessage =
             'Gavesana assets not found. '
-            'Please download them in Settings '
-            'or provision epitaka_vec.db manually.';
+            'Please download them from Settings -> AI Search.';
         state = GavesanaState.error;
         return;
       }

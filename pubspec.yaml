@@ -1,8 +1,8 @@
 name: epitaka
 
-escription: "ePitaka - Tipitaka Reader in Multiple Languages"
+description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.3+1
 
 environment:
   sdk: ^3.12.2
@@ -46,6 +46,7 @@ dependencies:
   dio: ^5.4.0
 
   # Utils
+  uuid: ^4.5.1
   cupertino_icons: ^1.0.8
   super_clipboard: ^0.9.1
   audio_service: ^0.18.19
@@ -54,6 +55,10 @@ dependencies:
 
   # HTML rendering
   flutter_html: ^3.0.0-beta.2
+
+  # Markdown rendering for AI Q&A
+  flutter_markdown_plus: ^1.0.12
+  markdown: ^7.3.1
 
   # AI inferer
   flutter_onnxruntime: ^1.8.0

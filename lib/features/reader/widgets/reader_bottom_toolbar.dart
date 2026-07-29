@@ -10,7 +10,7 @@ class ReaderBottomToolbar extends StatelessWidget {
   final TranslationDisplayMode displayMode;
   final bool showTranslation;
   final TtsPlaybackState ttsPlayback;
-  final VoidCallback onCycleDisplayMode;
+  final VoidCallback onDisplayLayoutTap;
   final VoidCallback onContentsTap;
   final VoidCallback onDictionaryTap;
   final VoidCallback onListenTap;
@@ -25,7 +25,7 @@ class ReaderBottomToolbar extends StatelessWidget {
     required this.displayMode,
     required this.showTranslation,
     required this.ttsPlayback,
-    required this.onCycleDisplayMode,
+    required this.onDisplayLayoutTap,
     required this.onContentsTap,
     required this.onDictionaryTap,
     required this.onListenTap,
@@ -107,7 +107,7 @@ class ReaderBottomToolbar extends StatelessWidget {
           ToolbarButton(
             icon: displayIcon,
             label: displayLabel,
-            onTap: onCycleDisplayMode,
+            onTap: onDisplayLayoutTap,
           ),
           const SizedBox(width: 8),
           ToolbarButton(

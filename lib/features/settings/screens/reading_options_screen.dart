@@ -323,7 +323,7 @@ class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.md),
           child: Text(
-            'Available variables: {book_id}, {book_name}, {heading}, '
+            'Available variables: {book_id}, {book_name}, {heading}, {para_id}, '
             '{vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,

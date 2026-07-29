@@ -58,6 +58,12 @@ class AiSettingsNotifier extends StateNotifier<AiAssistantSettings> {
     await _persist();
   }
 
+  /// Toggle strict mode on/off.
+  Future<void> setStrictMode(bool value) async {
+    state = state.copyWith(strictMode: value);
+    await _persist();
+  }
+
   /// Update multiple settings at once.
   Future<void> updateAll(AiAssistantSettings newSettings) async {
     state = newSettings;

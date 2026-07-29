@@ -1,6 +1,8 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart' show GlobalKey;
 
+import '../../../core/utils/pali_script_converter.dart';
+
 /// Cleans a raw Pāli word by removing non-word characters.
 String cleanPali(String text) {
   return text
@@ -76,5 +78,7 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
   if (boundary.end > fullText.length) return null;
 
   final rawWord = fullText.substring(boundary.start, boundary.end);
-  return cleanPali(rawWord);
+  // Convert from any Pali script to Roman for dictionary lookup.
+  final romanWord = convertToRomanPali(rawWord);
+  return cleanPali(romanWord);
 }

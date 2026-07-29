@@ -53,7 +53,7 @@ class _AudioServiceInitializerState extends State<AudioServiceInitializer> {
       await AudioService.init(
         builder: () => ttsAudioHandler,
         config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.epitaka.epitaka_app.tts',
+          androidNotificationChannelId: 'com.dn.epitaka.tts',
           androidNotificationChannelName: 'TTS Playback',
           androidStopForegroundOnPause: false,
           androidNotificationIcon: 'mipmap/ic_launcher',

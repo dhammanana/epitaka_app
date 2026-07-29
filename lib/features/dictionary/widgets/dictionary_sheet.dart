@@ -196,7 +196,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   void _performSearch(String value) {
     final converted = velthuis(value).trim();
+    if (converted.isEmpty) return;
     _focusNode.unfocus();
+    _addToHistory(converted);
     _initiateSearch(converted);
   }
 
@@ -209,7 +211,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
-    _addToHistory(word);
     setState(() {
       _query = word;
       _activeDeconCardIndex = -1;
@@ -222,6 +223,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     final converted = velthuis(word).trim();
     if (converted.isEmpty) return;
     _searchController.text = converted;
+    _addToHistory(converted);
     _initiateSearch(converted);
   }
 

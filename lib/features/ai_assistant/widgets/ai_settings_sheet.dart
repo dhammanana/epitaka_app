@@ -228,6 +228,37 @@ class _AiSettingsSheetState extends ConsumerState<_AiSettingsSheet> {
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 10,
                 ),
               ),
+              const SizedBox(height: 20),
+              // ── Strict Mode toggle ───────────────────────────────────
+              Row(
+                children: [
+                  Icon(Icons.psychology, size: 20, color: colors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Strict Source Mode', style: AppTypography.labelMedium.copyWith(
+                          color: colors.onSurface, fontWeight: FontWeight.w600, fontSize: 13,
+                        )),
+                        const SizedBox(height: 2),
+                        Text(
+                          'When ON, AI answers only from provided sources. '
+                          'When OFF, AI can answer freely using its own knowledge.',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: settings.strictMode,
+                    activeTrackColor: colors.primary,
+                    onChanged: (val) => ref.read(aiSettingsProvider.notifier).setStrictMode(val),
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

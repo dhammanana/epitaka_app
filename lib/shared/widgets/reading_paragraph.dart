@@ -156,10 +156,7 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Render a heading with style matching its level (h1=largest, h6=smallest).
-  Widget _buildHeading(
-    ParagraphHeading heading,
-    ColorScheme colors,
-  ) {
+  Widget _buildHeading(ParagraphHeading heading, ColorScheme colors) {
     final level = heading.level.clamp(1, 6);
     final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
@@ -198,50 +195,52 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
     String systemLabel,
   ) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 24, bottom: 12),
-      child: Column(
-        children: [
-          Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  colors.outlineVariant.withValues(alpha: 0.1),
-                  colors.outlineVariant.withValues(alpha: 0.4),
-                  colors.outlineVariant.withValues(alpha: 0.1),
-                ],
+    return SelectionContainer.disabled(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 12),
+        child: Column(
+          children: [
+            Container(
+              height: 2,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colors.outlineVariant.withValues(alpha: 0.1),
+                    colors.outlineVariant.withValues(alpha: 0.4),
+                    colors.outlineVariant.withValues(alpha: 0.1),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: colors.outlineVariant.withValues(alpha: 0.5),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: colors.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Text(
+                    '$systemLabel p. $pageNumber',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: Text(
-                  '$systemLabel p. $pageNumber',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -267,9 +266,7 @@ class ReadingParagraph extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            Expanded(
-              child: _buildContentBlock(context, colors),
-            ),
+            Expanded(child: _buildContentBlock(context, colors)),
           ],
         ),
       ),
@@ -372,9 +369,7 @@ class ReadingParagraph extends StatelessWidget {
         spacing: 4,
         runSpacing: 2,
         children: links.map((link) {
-          final chipColor = link.isSource
-              ? colors.primary
-              : colors.tertiary;
+          final chipColor = link.isSource ? colors.primary : colors.tertiary;
           return BookLinkChip(
             word: link.word,
             color: chipColor,
@@ -407,9 +402,7 @@ class ReadingParagraph extends StatelessWidget {
       final text = translations[langCode];
       if (text == null || text.trim().isEmpty) continue;
       final typo = langTypographies[langCode];
-      children.add(
-        _buildTranslationLine(langCode, text, typo, colors),
-      );
+      children.add(_buildTranslationLine(langCode, text, typo, colors));
     }
     if (children.isEmpty) return const SizedBox.shrink();
 
@@ -525,9 +518,7 @@ class ReadingParagraph extends StatelessWidget {
       if (texts.isEmpty) continue;
 
       final typo = langTypographies[langCode];
-      widgets.add(
-        _buildTranslationLine(langCode, texts, typo, colors),
-      );
+      widgets.add(_buildTranslationLine(langCode, texts, typo, colors));
     }
     if (widgets.isEmpty) return const SizedBox.shrink();
 
@@ -558,7 +549,10 @@ class ReadingParagraph extends StatelessWidget {
       final convertedText = convertPaliToScriptPreservingHtml(text, script);
       final convertedQuery = convertSearchQueryForScript(query, script);
       return _buildHighlightedText(
-        convertedText, convertedQuery, baseStyle, colors,
+        convertedText,
+        convertedQuery,
+        baseStyle,
+        colors,
       );
     }
 
@@ -622,8 +616,7 @@ class ReadingParagraph extends StatelessWidget {
     return Text.rich(TextSpan(style: baseStyle, children: result));
   }
 
-  List<_HighlightInterval> _findTermIntervals(
-      String text, List<String> terms) {
+  List<_HighlightInterval> _findTermIntervals(String text, List<String> terms) {
     final intervals = <_HighlightInterval>[];
     if (terms.isEmpty) return intervals;
 
@@ -953,8 +946,7 @@ List<String> extractWords(String? htmlText) {
   if (htmlText == null || htmlText.isEmpty) return [];
   final clean = htmlText
       .replaceAll(RegExp(r'<[^>]*>'), ' ')
-      .replaceAll(
-          RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), ' ')
+      .replaceAll(RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
   if (clean.isEmpty) return [];

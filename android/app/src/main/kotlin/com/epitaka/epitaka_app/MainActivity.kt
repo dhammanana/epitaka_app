@@ -1,4 +1,4 @@
-package com.epitaka.epitaka_app
+package com.dn.epitaka
 
 import android.content.Context
 import io.flutter.embedding.android.FlutterActivity

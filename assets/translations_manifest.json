@@ -1,5 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
+  "notes": {
+    "epitaka": "Main Pāli Tipitaka database — REQUIRED for the app to function",
+    "epitaka_en": "English translation — used by AI Q&A to search and provide answers in English",
+    "dpd_dictionary": "Digital Pāli Dictionary — REQUIRED for word lookups and definitions",
+    "embeddings": "AI embedding model & vector database — used for semantic search (Gavesana)"
+  },
   "languages": {
     "en": {
       "englishName": "English",
@@ -7,9 +13,13 @@
       "versions": {
         "default": {
           "displayName": "Default",
-          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_en.db.zip",
-          "size": 267436032,
-          "updated": "2026-06-15"
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en.zip",
+          "note": "English translation — used by AI Q&A to search and provide answers",
+          "size": 77572633,
+          "dbSize": 248422400,
+          "updated": "2026-07-29",
+          "compulsory": true,
+          "checksum": ""
         }
       }
     },
@@ -19,9 +29,12 @@
       "versions": {
         "default": {
           "displayName": "Default",
-          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_si.db.zip",
-          "size": 312000000,
-          "updated": "2026-06-15"
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_si.zip",
+          "size": 76477218,
+          "dbSize": 359514112,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": ""
         }
       }
     },
@@ -31,9 +44,12 @@
       "versions": {
         "default": {
           "displayName": "Default",
-          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_th.db.zip",
-          "size": 298000000,
-          "updated": "2026-06-15"
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_th.zip",
+          "size": 78290662,
+          "dbSize": 403492864,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": ""
         }
       }
     },
@@ -43,19 +59,122 @@
       "versions": {
         "default": {
           "displayName": "Default",
-          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_my.db.zip",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_my.zip",
           "size": 350000000,
-          "updated": "2026-07-16"
+          "dbSize": 650000000,
+          "updated": "2026-07-16",
+          "compulsory": false
         },
         "nissaya": {
           "displayName": "Nissaya",
           "suffix": "nissaya",
-          "url": "https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_my_nissaya.db.zip",
-          "size": 649498624,
-          "updated": "2026-07-16",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_my_nissaya.zip",
+          "size": 97759779,
+          "dbSize": 649498624,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": "",
           "type": "nissaya"
         }
       }
+    },
+    "lo": {
+      "englishName": "Lao",
+      "nativeName": "ລາວ",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo.zip",
+          "size": 34891361,
+          "dbSize": 193282048,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": ""
+        }
+      }
+    },
+    "ta": {
+      "englishName": "Tamil",
+      "nativeName": "தமிழ்",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_ta.zip",
+          "size": 80452896,
+          "dbSize": 451190784,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": ""
+        }
+      }
+    },
+    "vi": {
+      "englishName": "Vietnamese",
+      "nativeName": "Tiếng Việt",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_vi.zip",
+          "size": 26743673,
+          "dbSize": 104853504,
+          "updated": "2026-07-29",
+          "compulsory": false,
+          "checksum": ""
+        }
+      }
+    }
+  },
+  "core": {
+    "epitaka": {
+      "displayName": "Tipitaka (Pāli Canon)",
+      "description": "Main Pāli Tipitaka database with all books, headings, and sentences",
+      "note": "Main Pāli Tipitaka database — REQUIRED for the app to function",
+      "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka.zip",
+      "size": 139858478,
+      "dbSize": 500715520,
+      "filename": "epitaka.db",
+      "updated": "2026-07-24",
+      "compulsory": true,
+      "checksum": ""
+    },
+    "dpd_dictionary": {
+      "displayName": "DPD Pāli Dictionary",
+      "description": "Digital Pāli Dictionary with word definitions and grammatical data",
+      "note": "Digital Pāli Dictionary — REQUIRED for word lookups and definitions",
+      "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/dpd-dictionary.zip",
+      "size": 52309558,
+      "dbSize": 200491008,
+      "filename": "dpd-dictionary.db",
+      "updated": "2026-07-18",
+      "compulsory": true,
+      "checksum": ""
+    },
+    "embeddings": {
+      "displayName": "AI Search (Gavesana)",
+      "description": "ONNX model, tokenizer, and vector database for AI-powered semantic search",
+      "note": "Embedding model for semantic search (Gavesana) — optional, enables AI-powered search across the Tipitaka",
+      "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/embeddings.zip",
+      "size": 408567738,
+      "files": [
+        {
+          "filename": "model_quantized.onnx",
+          "size": 270365997,
+          "description": "Quantized ONNX model for sentence embeddings"
+        },
+        {
+          "filename": "tokenizer.json",
+          "size": 33384696,
+          "description": "BPE tokenizer for text preprocessing"
+        },
+        {
+          "filename": "epitaka_vec.db",
+          "size": 359022592,
+          "description": "Vector search database for semantic search"
+        }
+      ],
+      "updated": "2026-07-15",
+      "compulsory": false,
+      "checksum": ""
     }
   }
 }

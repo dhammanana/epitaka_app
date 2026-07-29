@@ -5,11 +5,13 @@
 // falls back to plain text (with real newlines) for apps that don't
 // accept rich formats.
 
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
 import 'copy_types.dart';
 import '../../features/reader/providers/reader_provider.dart';
+import '../../core/utils/pali_script_converter.dart' show Script;
+import '../../core/utils/pali_text_utils.dart' show convertPaliToScriptPreservingHtml;
 export 'copy_types.dart';
 
 class ReadingClipboard {
@@ -31,6 +33,7 @@ class ReadingClipboard {
     Color paliCssColor = const Color(0xFF7A2E1D),
     String pageNumberingSystem = 'VRI',
     Set<String>? enabledLangCodes,
+    Script script = Script.roman,
   }) async {
     if (paragraphs.isEmpty) return;
 
@@ -70,6 +73,7 @@ class ReadingClipboard {
       htmlColor: htmlColor,
       paliCssColor: paliCssColor,
       enabledLangCodes: enabledLangCodes,
+      script: script,
     );
   }
 
@@ -86,6 +90,7 @@ class ReadingClipboard {
     Color htmlColor = const Color(0xFF33312E),
     Color paliCssColor = const Color(0xFF7A2E1D),
     Set<String>? enabledLangCodes,
+    Script script = Script.roman,
   }) async {
     if (paragraphs.isEmpty) return;
 
@@ -96,6 +101,7 @@ class ReadingClipboard {
       htmlColor: htmlColor,
       paliCssColor: paliCssColor,
       enabledLangCodes: enabledLangCodes,
+      script: script,
     );
   }
 
@@ -107,6 +113,7 @@ class ReadingClipboard {
     required Color htmlColor,
     required Color paliCssColor,
     Set<String>? enabledLangCodes,
+    Script script = Script.roman,
   }) async {
     final plain = StringBuffer();
     final html = StringBuffer(
@@ -127,8 +134,10 @@ class ReadingClipboard {
         if (scope != CopyScope.translation) {
           final pali = line.paliText?.trim() ?? '';
           if (pali.isNotEmpty) {
-            final formatted = _htmlFromTaggedText(pali);
-            plain.writeln(_stripTags(pali));
+            // Convert Pāli text to the user's selected script
+            final convertedPali = convertPaliToScriptPreservingHtml(pali, script);
+            final formatted = _htmlFromTaggedText(convertedPali);
+            plain.writeln(_stripTags(convertedPali));
             html.writeln(
               '<p style="${paliStyle}margin:0 0 4px 0;"><i>$formatted</i></p>',
             );
@@ -175,13 +184,24 @@ class ReadingClipboard {
 
     html.writeln('</div>');
 
-    final clipboard = SystemClipboard.instance;
-    if (clipboard == null) return;
+    final plainText = plain.toString().trim();
+    final htmlDoc = _wrapHtmlDocument(html.toString());
 
-    final item = DataWriterItem();
-    item.add(Formats.plainText(plain.toString().trim()));
-    item.add(Formats.htmlText(_wrapHtmlDocument(html.toString())));
-    await clipboard.write([item]);
+    final clipboard = SystemClipboard.instance;
+    if (clipboard != null) {
+      // Prefer rich clipboard (HTML + plain text fallback) via super_clipboard
+      final item = DataWriterItem();
+      item.add(Formats.plainText(plainText));
+      item.add(Formats.htmlText(htmlDoc));
+      await clipboard.write([item]);
+      return;
+    }
+
+    // Fallback: super_clipboard not available on this platform.
+    // Write plain text only via the Flutter system clipboard.
+    if (plainText.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: plainText));
+    }
   }
 
   /// Convert tagged text (with <b>, <i>, <u>, <br>) to clipboard-safe HTML.
@@ -237,11 +257,17 @@ class ReadingClipboard {
   static String _escape(String s) =>
       s.replaceAll('&', '&').replaceAll('<', '<').replaceAll('>', '>');
 
-  /// Strip all HTML tags from a string.
+  /// Strip all HTML tags from a string while preserving newlines.
+  /// First replaces <br> with \n, then removes remaining tags, and
+  /// collapses inline whitespace without eating line breaks.
   static String _stripTags(String s) => s
+      .replaceAll('<br>', '\n')
+      .replaceAll('<br/>', '\n')
       .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+      .split('\n')
+      .map((line) => line.replaceAll(RegExp(r'\s+'), ' ').trim())
+      .where((line) => line.isNotEmpty)
+      .join('\n');
 
   /// Build a range string like "12–14" or just "12" for the citation.
   static String _pageRange(ParagraphData first, ParagraphData last) {

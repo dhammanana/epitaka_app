@@ -31,6 +31,23 @@ const Set<String> kAllNikayas = {'sutta', 'vinaya', 'abhidhamma', 'aññā'};
 
 // ── Model types ─────────────────────────────────────────────────────────
 
+/// A heading match from the search.
+class HeadingResult {
+  final String bookId;
+  final int paraId;
+  final String title;
+  final int? level;
+  final String? bookName;
+
+  const HeadingResult({
+    required this.bookId,
+    required this.paraId,
+    required this.title,
+    this.level,
+    this.bookName,
+  });
+}
+
 /// A single line within a search result paragraph.
 class SearchResultLine {
   final int lineId;
@@ -137,10 +154,14 @@ class SearchResults extends SearchState {
   /// Per-book summaries.
   final List<BookResultSummary> bookSummaries;
 
+  /// Heading matches found in the headings table.
+  final List<HeadingResult> headings;
+
   const SearchResults({
     required this.query,
     required this.totalResults,
     required this.bookSummaries,
+    this.headings = const [],
     this.fuzzy = false,
     this.distance = 0,
     this.enabledCategories = kAllCategories,
@@ -384,11 +405,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
         }
       }
 
-      if (combinedCounts.isEmpty) {
+      // ── Search headings ───────────────────────────────────────────
+      final epitakaDb = await _epitakaDb();
+      final headingResults = await _searchHeadings(
+        epitakaDb,
+        normalized,
+        bookMap,
+      );
+
+      if (combinedCounts.isEmpty && headingResults.isEmpty) {
         state = SearchResults(
           query: normalized,
           totalResults: 0,
           bookSummaries: [],
+          headings: headingResults,
           fuzzy: fuzzy,
           distance: distance,
           enabledCategories: _enabledCategories,
@@ -432,6 +462,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query: normalized,
         totalResults: totalResults,
         bookSummaries: summaries,
+        headings: headingResults,
         fuzzy: fuzzy,
         distance: distance,
         enabledCategories: _enabledCategories,
@@ -633,6 +664,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query: current.query,
         totalResults: current.totalResults,
         bookSummaries: summaries,
+        headings: current.headings,
         fuzzy: current.fuzzy,
         distance: current.distance,
         enabledCategories: _enabledCategories,
@@ -665,6 +697,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       query: current.query,
       totalResults: current.totalResults,
       bookSummaries: summaries,
+      headings: current.headings,
       fuzzy: current.fuzzy,
       distance: current.distance,
       enabledCategories: _enabledCategories,
@@ -692,6 +725,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       query: current.query,
       totalResults: current.totalResults,
       bookSummaries: summaries,
+      headings: current.headings,
       fuzzy: current.fuzzy,
       distance: current.distance,
       enabledCategories: _enabledCategories,
@@ -707,6 +741,53 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Load all remaining results for a book.
   Future<void> loadAllForBook(int summaryIndex) async {
     await _loadBookPage(summaryIndex, fetchAll: true);
+  }
+
+  /// Search the headings table for matching titles.
+  Future<List<HeadingResult>> _searchHeadings(
+    EpitakaDatabase epitakaDb,
+    String normalized,
+    Map<String, BookInfo> bookMap,
+  ) async {
+    try {
+      final likePattern = '%$normalized%';
+      final rows = await epitakaDb.customSelect(
+        'SELECT book_id, para_id, title, level '
+        'FROM headings '
+        'WHERE title LIKE ? '
+        'ORDER BY book_id, para_id '
+        'LIMIT 10',
+        variables: [Variable.withString(likePattern)],
+      ).get();
+
+      final results = <HeadingResult>[];
+      final seen = <String>{};
+      for (final row in rows) {
+        final bookId = row.data['book_id'] as String;
+        final paraId = row.data['para_id'] as int;
+        final title = (row.data['title'] as String?) ?? '';
+        final level = row.data['level'] as int?;
+
+        // Deduplicate by book_id + title to avoid showing the same
+        // heading multiple times (e.g. when multiple para_ids match).
+        final key = '$bookId:$title';
+        if (seen.contains(key)) continue;
+        seen.add(key);
+
+        final book = bookMap[bookId];
+        results.add(HeadingResult(
+          bookId: bookId,
+          paraId: paraId,
+          title: title,
+          level: level,
+          bookName: book?.bookName,
+        ));
+      }
+      return results;
+    } catch (e) {
+      debugPrint('[SEARCH] Headings search failed: $e');
+      return [];
+    }
   }
 
   /// Get suggestions for autocomplete.

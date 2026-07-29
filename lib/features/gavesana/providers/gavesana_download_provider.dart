@@ -9,11 +9,10 @@ final gavesanaDownloadServiceProvider = Provider<GavesanaDownloadService>((ref) 
 });
 
 /// Provider that exposes whether Gavesana assets are ready for use.
+/// Simply checks if all three asset files exist in the gavesana/ directory.
+/// No longer tries to copy from the asset bundle — that bloats the APK.
 final gavesanaAssetsReadyProvider = FutureProvider<bool>((ref) async {
   final service = ref.watch(gavesanaDownloadServiceProvider);
-  // Try bundled assets first, then check if previously downloaded
-  final fromAssets = await service.tryCopyFromAssets();
-  if (fromAssets) return true;
   return await service.areAssetsReady();
 });
 

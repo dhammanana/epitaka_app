@@ -3,9 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/translation_version.dart';
 import '../../core/providers/translation_manifest_provider.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
-import 'index_controller.dart';
-
-/// Provider that returns true if the FTS index is built and ready.
+import 'index_controller.dart';/// Provider that returns true if the FTS index is built and ready.
 final isIndexReadyProvider = Provider<bool>((ref) {
   return ref.watch(indexControllerProvider.select((s) => s.isBuilt));
 });

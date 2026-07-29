@@ -6,6 +6,7 @@ import '../../core/models/app_models.dart';
 import '../../core/providers/app_db_provider.dart';
 import '../../core/providers/database_provider.dart';
 import '../../core/providers/translation_manifest_provider.dart';
+import '../ai_qa/services/mention_service.dart';
 
 // ── Result types used by IndexController ───────────────────────────────
 
@@ -14,11 +15,13 @@ class IndexCheckStatus {
   final bool healthy;
   final bool isComplete;
   final bool paliBuilt;
+  final bool mentionBuilt;
 
   const IndexCheckStatus({
     required this.healthy,
     required this.isComplete,
     required this.paliBuilt,
+    this.mentionBuilt = false,
   });
 }
 
@@ -37,9 +40,6 @@ class IndexService {
   IndexService(this._ref);
 
   /// Build the FTS5 index for the given translation language.
-  ///
-  /// [translationLang] is the language code (e.g. 'en', 'si', 'th').
-  /// [onProgress] receives progress updates (0.0-1.0) with status message.
   Future<void> buildIndex({
     required String translationLang,
     void Function(double progress, String status)? onProgress,
@@ -59,8 +59,6 @@ class IndexService {
       throw Exception('Translation database not found for $translationLang');
     }
 
-    debugPrint('[INDEX_SVC] buildIndex: databases loaded, starting FTS build');
-
     // Build the Pali index if not already built
     final paliBuilt = await appDb.isSearchIndexBuilt();
     if (!paliBuilt) {
@@ -79,36 +77,41 @@ class IndexService {
     debugPrint('[INDEX_SVC] buildIndex: completed');
   }
 
-  /// Check the current status of the FTS indexes (Pali + translations).
+  /// Check the current status of the FTS indexes (Pali + translations)
+  /// and the mention index.
   Future<IndexCheckStatus> checkStatus() async {
     debugPrint('[INDEX_SVC] checkStatus: checking index status');
     try {
       final appDb = await _ref.read(appDbProvider.future);
       final paliBuilt = await appDb.isSearchIndexBuilt();
+      final mentionService = _ref.read(mentionServiceProvider);
+      final mentionBuilt = await mentionService.isIndexBuilt();
 
       if (paliBuilt) {
-        return const IndexCheckStatus(
+        return IndexCheckStatus(
           healthy: true,
           isComplete: true,
           paliBuilt: true,
+          mentionBuilt: mentionBuilt,
         );
       }
 
-      return const IndexCheckStatus(
+      return IndexCheckStatus(
         healthy: true,
         isComplete: false,
         paliBuilt: false,
+        mentionBuilt: mentionBuilt,
       );
     } on AppDatabaseCorruptedException catch (e) {
       debugPrint('[INDEX_SVC] checkStatus: database corrupted: $e');
-      return IndexCheckStatus(
+      return const IndexCheckStatus(
         healthy: false,
         isComplete: false,
         paliBuilt: false,
       );
     } catch (e) {
       debugPrint('[INDEX_SVC] checkStatus: unexpected error: $e');
-      return IndexCheckStatus(
+      return const IndexCheckStatus(
         healthy: false,
         isComplete: false,
         paliBuilt: false,
@@ -116,8 +119,8 @@ class IndexService {
     }
   }
 
-  /// Build FTS indexes for Pāli + all available translation databases.
-  /// Returns a result indicating any languages that could not be indexed.
+  /// Build FTS indexes for Pāli + all available translation databases,
+  /// then build the mention index for @ heading suggestions.
   Future<IndexBuildResult> build(
     IndexCheckStatus status, {
     void Function(double progress, String status)? onProgress,
@@ -128,9 +131,10 @@ class IndexService {
 
     // Build Pali index if not yet built
     if (!status.paliBuilt) {
+      onProgress?.call(0.05, 'Building Pāli search index…');
       await appDb.buildSearchIndex(
         epitakaDb,
-        onProgress: onProgress,
+        onProgress: (p, msg) => onProgress?.call(0.05 + p * 0.7, msg),
       );
     }
 
@@ -156,7 +160,8 @@ class IndexService {
             await appDb.buildTranslationSearchIndex(
               version.languageCode,
               transDb,
-              onProgress: onProgress,
+              onProgress: (p, msg) =>
+                  onProgress?.call(0.75 + p * 0.15, msg),
             );
           } else {
             debugPrint(
@@ -171,6 +176,15 @@ class IndexService {
         pending.add(version.languageCode);
       }
     }
+
+    // Build mention index for @ heading suggestions
+    if (!status.mentionBuilt) {
+      onProgress?.call(0.92, 'Building heading index…');
+      final mentionService = _ref.read(mentionServiceProvider);
+      final count = await mentionService.buildIndex();
+      debugPrint('[INDEX_SVC] Mention index built: $count entries');
+    }
+    onProgress?.call(1.0, 'Index complete');
 
     return IndexBuildResult(pendingLanguages: pending);
   }
@@ -205,7 +219,7 @@ class IndexService {
 
   /// Get which translation language was indexed.
   Future<String?> getIndexedTranslationLang() async {
-    return null; // No longer tracked in a single config
+    return null;
   }
 
   /// Clear the FTS index (Pali only).

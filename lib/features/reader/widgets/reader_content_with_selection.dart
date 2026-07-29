@@ -11,10 +11,6 @@ import 'reader_content_list.dart';
 /// Wraps a [ReaderContentList] in a [Listener] for hit-testing,
 /// an [AnimatedBuilder] for tab swipe animation, and a [SelectionArea]
 /// for native text selection (long-press + drag handles).
-///
-/// The [SelectionArea] can be disabled via [selectionDisabled] (which wraps
-/// the content in [SelectionContainer.disabled]) — used while a dictionary
-/// sheet is open to avoid framework assertion crashes.
 class ReaderContentWithSelection extends StatelessWidget {
   const ReaderContentWithSelection({
     super.key,
@@ -39,7 +35,6 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.scrollOffsetController,
     required this.onSelectionChanged,
     required this.contextMenuBuilder,
-    required this.selectionDisabled,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.ttsTargetParaId,
@@ -79,7 +74,6 @@ class ReaderContentWithSelection extends StatelessWidget {
   final GlobalKey<SelectableRegionState> selectableRegionKey;
   final void Function(SelectedContent?) onSelectionChanged;
   final Widget Function(BuildContext, SelectableRegionState) contextMenuBuilder;
-  final bool selectionDisabled;
 
   // TTS
   final int? ttsHighlightLineId;
@@ -141,9 +135,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       key: selectableRegionKey,
       onSelectionChanged: onSelectionChanged,
       contextMenuBuilder: contextMenuBuilder,
-      child: selectionDisabled
-          ? SelectionContainer.disabled(child: content)
-          : content,
+      child: content,
     );
   }
 }

@@ -95,7 +95,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (effectiveValue.trim().isNotEmpty) {
         // Use the LAST word as the suggestion prefix, so multi-word queries
         // continue to show suggestions for the word being typed right now.
-        final words = effectiveValue.trim().split(RegExp(r'\\s+'));
+        // NOT using trim() before split ensures that a trailing space makes
+        // lastWord empty, clearing suggestions and starting fresh for the
+        // next word the user types.
+        final words = effectiveValue.split(RegExp(r'\s+'));
         final lastWord = words.isNotEmpty ? words.last : '';
         if (lastWord.isNotEmpty) {
           final suggestions = await ref
@@ -170,6 +173,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             bookName: summary.book.bookName ?? item.bookId,
             initialParaId: item.paraId,
             initialLineId: initialLineId,
+            searchQuery: query,
+          ),
+        );
+    context.push('/reader');
+  }
+
+  void _onHeadingResultTap(HeadingResult heading) {
+    final currentState = ref.read(searchProvider);
+    final query = currentState is SearchResults ? currentState.query : null;
+
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
+          ReaderTabInfo(
+            bookId: heading.bookId,
+            bookName: heading.bookName ?? heading.bookId,
+            initialParaId: heading.paraId,
             searchQuery: query,
           ),
         );
@@ -807,8 +827,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         :final bookSummaries,
         :final query,
         :final totalResults,
+        :final headings,
       ):
-        return _buildResultList(colors, bookSummaries, query, totalResults);
+        return _buildResultList(
+          colors, bookSummaries, query, totalResults, headings,
+        );
       case SearchError(:final message):
         return _buildErrorState(colors, message);
     }
@@ -938,8 +961,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     List<BookResultSummary> summaries,
     String query,
     int totalResults,
+    List<HeadingResult> headings,
   ) {
-    if (summaries.isEmpty) {
+    if (summaries.isEmpty && headings.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -969,6 +993,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
+    final totalItems = summaries.length + (headings.isNotEmpty ? 1 : 0);
+
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -976,9 +1002,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         AppDimensions.marginMobile,
         AppDimensions.bottomToolbarHeight + AppDimensions.lg,
       ),
-      itemCount: summaries.length,
+      itemCount: totalItems,
       itemBuilder: (context, index) {
-        final summary = summaries[index];
+        // Show heading results card first (if any)
+        if (headings.isNotEmpty && index == 0) {
+          return _HeadingResultsCard(
+            headings: headings,
+            colors: colors,
+            onTap: (heading) => _onHeadingResultTap(heading),
+          );
+        }
+
+        // Then show book summary cards
+        final summaryIndex = headings.isNotEmpty ? index - 1 : index;
+        if (summaryIndex >= summaries.length) return const SizedBox.shrink();
+
+        final summary = summaries[summaryIndex];
         return _BookResultCard(
           summary: summary,
           colors: colors,
@@ -986,13 +1025,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onLongPressResult: (item) => _onResultLongPress(summary, item),
           onToggleExpanded: () {
             if (summary.isExpanded) {
-              ref.read(searchProvider.notifier).collapseBook(index);
+              ref.read(searchProvider.notifier).collapseBook(summaryIndex);
             } else {
-              ref.read(searchProvider.notifier).expandBook(index);
+              ref.read(searchProvider.notifier).expandBook(summaryIndex);
             }
           },
           onLoadMore: () {
-            ref.read(searchProvider.notifier).loadMoreForBook(index);
+            ref.read(searchProvider.notifier).loadMoreForBook(summaryIndex);
           },
         );
       },
@@ -1256,6 +1295,135 @@ class _BookResultCard extends StatelessWidget {
 
   String _displayBookName(BookInfo book) {
     return book.displayName;
+  }
+}
+
+// ── Heading Results Card ──────────────────────────────────────────────────
+
+class _HeadingResultsCard extends StatelessWidget {
+  final List<HeadingResult> headings;
+  final ColorScheme colors;
+  final void Function(HeadingResult heading) onTap;
+
+  const _HeadingResultsCard({
+    required this.headings,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppDimensions.sm),
+      elevation: 0,
+      color: colors.tertiaryContainer.withValues(alpha: 0.2),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        side: BorderSide(
+          color: colors.tertiary.withValues(alpha: 0.4),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ───────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimensions.md, 10, AppDimensions.md, 6,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.toc,
+                  size: 16,
+                  color: colors.tertiary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Section headings',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${headings.length} found',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onTertiaryContainer,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, indent: 12, endIndent: 12),
+          // ── Heading items ─────────────────────────────────────────
+          ...headings.map((heading) => InkWell(
+            onTap: () => onTap(heading),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.md,
+                vertical: 10,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.subdirectory_arrow_right,
+                    size: 14,
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          heading.title,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (heading.bookName != null &&
+                            heading.bookName!.isNotEmpty)
+                          Text(
+                            heading.bookName!,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          )),
+        ],
+      ),
+    );
   }
 }
 

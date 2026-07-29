@@ -6,6 +6,7 @@ import '../providers/reader_provider.dart';
 /// - `{book_id}` — the book's ID (e.g. "dn1")
 /// - `{book_name}` — the full book name (e.g. "Brahmajāla Sutta")
 /// - `{heading}` — the nearest section heading (e.g. "1. The Net of Views")
+/// - `{para_id}` — the paragraph ID of the first selected paragraph
 /// - `{vri_page}` — VRI edition page number
 /// - `{pts_page}` — PTS edition page number
 /// - `{thai_page}` — Thai edition page number
@@ -14,6 +15,7 @@ import '../providers/reader_provider.dart';
 /// Both `{book_id}` and `{book_name}` are replaced regardless — the user
 /// controls which one to use by typing the placeholder they want.
 /// `{heading}` is replaced with the heading title if available, or removed.
+/// `{para_id}` is replaced with the paraId string representation.
 /// Each page placeholder is replaced with the correct value from
 /// [pageNumbers] (keyed by system code: 'vri', 'pts', 'thai', 'my').
 /// If a page number is missing for a system, the placeholder becomes empty.
@@ -22,8 +24,9 @@ String buildCitationFromTemplate(
   String bookId,
   String? bookName,
   ParagraphHeading? heading,
-  Map<String, String> pageNumbers,
-) {
+  Map<String, String> pageNumbers, {
+  int? paraId,
+}) {
   String result = template;
 
   // Always replace both book_id and book_name — user picks which to use
@@ -35,6 +38,13 @@ String buildCitationFromTemplate(
     result = result.replaceAll('{heading}', heading.title);
   } else {
     result = result.replaceAll('{heading}', '');
+  }
+
+  // Replace para_id placeholder with the paragraph ID
+  if (paraId != null) {
+    result = result.replaceAll('{para_id}', paraId.toString());
+  } else {
+    result = result.replaceAll('{para_id}', '');
   }
 
   // Replace each page placeholder with the correct value from the map

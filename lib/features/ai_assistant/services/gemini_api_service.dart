@@ -246,6 +246,72 @@ class GeminiApiService {
     }
   }
 
+  // ── Translate text using the lite model ───────────────────────────
+
+  /// Translate [text] to English using the lite model.
+  ///
+  /// Returns the translated text, or the original text on failure.
+  Future<String> translateToEnglish({
+    required String text,
+    required String apiKey,
+    required String liteModel,
+  }) async {
+    if (text.trim().isEmpty) return text;
+
+    final prompt = '''Translate the following text to English.
+Return ONLY the translation, no explanations, no quotes.
+
+Text to translate:
+$text''';
+
+    try {
+      final response = await _generateLite(
+        prompt: prompt,
+        apiKey: apiKey,
+        liteModel: liteModel,
+      );
+      final translated = response.text.trim();
+      if (translated.isNotEmpty) return translated;
+      return text;
+    } catch (e) {
+      debugPrint('[AI_GEMINI] Translation failed: $e');
+      return text;
+    }
+  }
+
+  /// Detect the language of [text] using the lite model.
+  ///
+  /// Returns the language name (e.g., "Burmese", "Thai", "Sinhala").
+  /// Returns "English" if text appears to be English.
+  Future<String> detectLanguage({
+    required String text,
+    required String apiKey,
+    required String liteModel,
+  }) async {
+    if (text.trim().isEmpty) return 'English';
+
+    final prompt = '''Identify the language of the following text.
+Return ONLY the language name in English (e.g., "English", "Burmese", "Thai", "Lao", "Sinhala", "Vietnamese", "Khmer", "Hindi").
+Do NOT return anything else.
+
+Text:
+$text''';
+
+    try {
+      final response = await _generateLite(
+        prompt: prompt,
+        apiKey: apiKey,
+        liteModel: liteModel,
+      );
+      final lang = response.text.trim();
+      if (lang.isNotEmpty) return lang;
+      return 'English';
+    } catch (e) {
+      debugPrint('[AI_GEMINI] Language detection failed: $e');
+      return 'English';
+    }
+  }
+
   // ── Internal: call the lite model ───────────────────────────────────
 
   Future<_GeminiResponse> _generateLite({

@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../features/ai_qa/models/ai_qa_models.dart' show ChatThread, ChatMessageRecord;
 import '../utils/pali_search_utils.dart';
 import 'epitaka_database.dart';
 import 'translation_database.dart';
@@ -77,10 +78,203 @@ class ReadingHistory extends Table {
 // ---------------------------------------------------------------------------
 @DriftDatabase(tables: [Bookmarks, ReadingHistory, TtsReplacements])
 class AppDatabase extends _$AppDatabase {
+  // ── Chat Threads & Messages (raw SQL tables) ──────────────────────────
+
+  /// Ensure chat_* tables exist (called on first use).
+  Future<void> _ensureChatTables() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS chat_threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        message_count INTEGER NOT NULL DEFAULT 0,
+        max_messages INTEGER NOT NULL DEFAULT 8
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        metadata TEXT
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_thread
+      ON chat_messages(thread_id, created_at ASC)
+    ''');
+  }
+
+  // ── Thread CRUD ───────────────────────────────────────────────────────
+
+  /// Create a new chat thread.
+  Future<ChatThread> createChatThread({
+    required String id,
+    required String title,
+    int maxMessages = 8,
+  }) async {
+    await _ensureChatTables();
+    final now = DateTime.now().toIso8601String();
+    await customStatement(
+      'INSERT INTO chat_threads(id, title, created_at, updated_at, message_count, max_messages) '
+      'VALUES (?, ?, ?, ?, 0, ?)',
+      [id, title, now, now, maxMessages],
+    );
+    return ChatThread(
+      id: id,
+      title: title,
+      createdAt: DateTime.parse(now),
+      updatedAt: DateTime.parse(now),
+      messageCount: 0,
+      maxMessages: maxMessages,
+    );
+  }
+
+  /// Get all chat threads ordered by most recent first.
+  Future<List<ChatThread>> getAllChatThreads() async {
+    await _ensureChatTables();
+    final rows = await customSelect(
+      'SELECT * FROM chat_threads ORDER BY updated_at DESC',
+    ).get();
+    return rows.map((r) => ChatThread.fromJson({
+          'id': r.data['id'] as String,
+          'title': r.data['title'] as String,
+          'created_at': r.data['created_at'] as String,
+          'updated_at': r.data['updated_at'] as String,
+          'message_count': r.data['message_count'] as int,
+          'max_messages': r.data['max_messages'] as int,
+        })).toList();
+  }
+
+  /// Get a single thread by ID.
+  Future<ChatThread?> getChatThread(String id) async {
+    await _ensureChatTables();
+    final rows = await customSelect(
+      'SELECT * FROM chat_threads WHERE id = ?',
+      variables: [Variable.withString(id)],
+    ).get();
+    if (rows.isEmpty) return null;
+    final r = rows.first.data;
+    return ChatThread.fromJson({
+      'id': r['id'] as String,
+      'title': r['title'] as String,
+      'created_at': r['created_at'] as String,
+      'updated_at': r['updated_at'] as String,
+      'message_count': r['message_count'] as int,
+      'max_messages': r['max_messages'] as int,
+    });
+  }
+
+  /// Update thread title.
+  Future<void> updateChatThreadTitle(String id, String title) async {
+    await _ensureChatTables();
+    await customStatement(
+      'UPDATE chat_threads SET title = ?, updated_at = ? WHERE id = ?',
+      [title, DateTime.now().toIso8601String(), id],
+    );
+  }
+
+  /// Increment message count and update timestamp.
+  Future<void> incrementChatThreadMessageCount(String id) async {
+    await _ensureChatTables();
+    await customStatement(
+      'UPDATE chat_threads SET message_count = message_count + 1, '
+      'updated_at = ? WHERE id = ?',
+      [DateTime.now().toIso8601String(), id],
+    );
+  }
+
+  /// Delete a chat thread and all its messages.
+  Future<void> deleteChatThread(String id) async {
+    await _ensureChatTables();
+    await customStatement('DELETE FROM chat_messages WHERE thread_id = ?', [id]);
+    await customStatement('DELETE FROM chat_threads WHERE id = ?', [id]);
+  }
+
+  /// Delete all chat threads and messages.
+  Future<void> deleteAllChatThreads() async {
+    await _ensureChatTables();
+    await customStatement('DELETE FROM chat_messages');
+    await customStatement('DELETE FROM chat_threads');
+  }
+
+  // ── Message CRUD ───────────────────────────────────────────────────────
+
+  /// Save a user message to the database.
+  Future<void> saveUserMessage({
+    required String threadId,
+    required String content,
+    String? metadata,
+  }) async {
+    await _ensureChatTables();
+    await customStatement(
+      'INSERT INTO chat_messages(thread_id, role, content, created_at, metadata) '
+      'VALUES (?, ?, ?, ?, ?)',
+      [
+        threadId,
+        'user',
+        content,
+        DateTime.now().toIso8601String(),
+        metadata ?? '{}',
+      ],
+    );
+  }
+
+  /// Save an assistant message to the database.
+  Future<void> saveAssistantMessage({
+    required String threadId,
+    required String content,
+    String? metadata,
+  }) async {
+    await _ensureChatTables();
+    await customStatement(
+      'INSERT INTO chat_messages(thread_id, role, content, created_at, metadata) '
+      'VALUES (?, ?, ?, ?, ?)',
+      [
+        threadId,
+        'assistant',
+        content,
+        DateTime.now().toIso8601String(),
+        metadata ?? '{}',
+      ],
+    );
+  }
+
+  /// Get all messages for a thread, ordered chronologically.
+  Future<List<ChatMessageRecord>> getChatMessages(String threadId) async {
+    await _ensureChatTables();
+    final rows = await customSelect(
+      'SELECT * FROM chat_messages WHERE thread_id = ? ORDER BY created_at ASC, id ASC',
+      variables: [Variable.withString(threadId)],
+    ).get();
+    return rows.map((r) {
+      final d = r.data;
+      return ChatMessageRecord(
+        id: d['id'] as int,
+        threadId: d['thread_id'] as String,
+        role: d['role'] as String,
+        content: d['content'] as String,
+        createdAt: DateTime.parse(d['created_at'] as String),
+        metadata: d['metadata'] as String?,
+      );
+    }).toList();
+  }
+
+  /// Update an assistant message's content (for stream finalization).
+  Future<void> updateAssistantMessage(int messageId, String content, String metadata) async {
+    await _ensureChatTables();
+    await customStatement(
+      'UPDATE chat_messages SET content = ?, metadata = ? WHERE id = ?',
+      [content, metadata, messageId],
+    );
+  }
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -91,6 +285,9 @@ class AppDatabase extends _$AppDatabase {
       onUpgrade: (Migrator m, int from, int to) async {
         if (from < 2) {
           await m.createTable(ttsReplacements);
+        }
+        if (from < 3) {
+          // Chat tables are created lazily via _ensureChatTables()
         }
       },
       beforeOpen: (details) async {

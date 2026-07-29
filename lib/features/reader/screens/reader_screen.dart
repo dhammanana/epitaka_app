@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/providers/app_db_provider.dart';
@@ -20,6 +21,7 @@ import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
+import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 
 import '../../settings/widgets/settings_dialog.dart';
 import '../../library/screens/library_screen.dart';
@@ -36,10 +38,14 @@ import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
 import '../widgets/reader_context_menu.dart';
 import '../widgets/reader_drag_thumb.dart';
+import '../widgets/display_layout_popup.dart';
 import '../widgets/reader_in_book_search_bar.dart';
 import '../widgets/reader_tts_widgets.dart';
 import '../widgets/reader_content_with_selection.dart';
 import '../widgets/tab_strip.dart';
+import '../services/reader_copy_service.dart';
+import '../providers/reader_search_notifier.dart';
+import '../providers/reader_selection_notifier.dart';
 
 /// Reader screen with multiple tabs, showing Pāli text with translations.
 /// Each tab has its own scroll position stored in [ReaderTabInfo].
@@ -115,18 +121,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// re-triggering the dictionary for the same word.
   String? _lastLookedUpWord;
 
-  /// When true, the reader content is wrapped in a [SelectionContainer.disabled]
-  /// so its paragraphs stop participating in the ancestor [SelectionArea]'s
-  /// selection. We toggle this (instead of unmounting [SelectionArea] itself)
-  /// while the dictionary sheet is open: [SelectionContainer.disabled]
-  /// unregisters the paragraphs' selectables from the root registrar without
-  /// disposing the [SelectionArea]/[SelectableRegion] itself, which is the
-  /// state Flutter's selection system can't tolerate mid-focus-shift (that
-  /// caused the '_SelectionKeepAliveState.remove' null crash and the
-  /// '!conflict' / 'parentDataDirty' assertions). The root registrar stays
-  /// mounted the whole time; only the content underneath stops participating.
-  bool _selectionDisabled = false;
-
   /// Key for the [SelectionArea]'s [SelectableRegionState] so we can clear
   /// any selection it created after our own double-tap detector looks up a
   /// word (keeping the region in a clean state for the next tap).
@@ -193,14 +187,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // request racing each other.
   final Map<String, int> _pendingJumpParaId = {};
 
-  /// Visible paragraph indices for the active tab (used for copying fallback).
-  int _visibleStartIndex = 0;
-  int _visibleEndIndex = 0;
-
-  /// Cached selection content from [SelectionArea.onSelectionChanged] for
-  /// Ctrl+C and context-menu copy buttons.
-  SelectedContent? _lastSelectedContent;
-
   // App lifecycle state for background TTS optimization
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
@@ -246,212 +232,34 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Throttle: only update scroll state once per distinct paraId per book.
   final Map<String, int> _lastScrollParaId = {};
 
-  /// Cached system voices loaded from flutter_tts API.
-  List<Map<String, String>>? _cachedSystemVoices;
-  bool _voicesLoading = false;
+  // ── In-book search state lives in [inBookSearchProvider] ─────────────
 
-  // ── In-book search ───────────────────────────────────────────────────
-
-  /// Whether the in-book search bar is visible.
-  bool _showInBookSearch = false;
-
-  /// The current in-book search query.
-  String _inBookQuery = '';
-
-  /// ParaIds that match the current query (diacritic-insensitive, all terms
-  /// in the same line).
-  List<int> _inBookMatchParaIds = [];
-
-  /// Corresponding lineIds for each match (same index as [_inBookMatchParaIds]).
-  List<int> _inBookMatchLineIds = [];
-
-  /// Index into [_inBookMatchParaIds] / [_inBookMatchLineIds] for the
-  /// currently selected match.
-  int _inBookMatchIndex = -1;
-
-  /// Text editing controller for the in-book search field.
-  final _inBookSearchController = TextEditingController();
-
-  /// Focus node for the in-book search field.
-  final _inBookSearchFocusNode = FocusNode();
-
-  /// Get the query currently applied to ReadingParagraph for highlighting.
-  String? get _effectiveSearchQuery {
-    if (_showInBookSearch && _inBookQuery.isNotEmpty) return _inBookQuery;
-    return null;
-  }
-
-  /// Debounce timer for in-book search.
-  Timer? _inBookSearchTimer;
-
-  /// Most recent in-book search query, used to ignore stale async results.
-  String _lastInBookSearchQuery = '';
-
-  /// Run an in-book search on the `sentences` table with a `book_id`
-  /// b-tree filter.  Returns `(para_id, line_id)` pairs so the jump can
-  /// scroll to the exact matching sentence (not just the paragraph start).
-  /// Searches both Pāli text (epitaka.db) and enabled translation texts.
+  /// Delegate in-book search to [ReaderSearchNotifier].
   Future<void> _runInBookSearch(String query) async {
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    _lastInBookSearchQuery = query;
-
-    if (query.trim().isEmpty) {
-      setState(() {
-        _inBookQuery = '';
-        _inBookMatchParaIds = [];
-        _inBookMatchLineIds = [];
-        _inBookMatchIndex = -1;
-      });
-      return;
-    }
-
-    try {
-      final words = query
-          .trim()
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-
-      if (words.isEmpty) {
-        setState(() {
-          _inBookQuery = '';
-          _inBookMatchParaIds = [];
-          _inBookMatchLineIds = [];
-          _inBookMatchIndex = -1;
-        });
-        return;
-      }
-
-      // ── Collect matching (paraId, lineId) pairs ────────────────────
-      // Search uses pre-computed diacritic-normalized text cache
-      // (LineData.normalizedText) instead of DB LIKE queries, making it
-      // fast and diacritic-insensitive (ā→a, ṭ→t, ṃ→m, etc.).
-
-      final seenKeys = <int>{};
-      final matchParas = <int>[];
-      final matchLines = <int>[];
-
-      void addMatch(int paraId, int lineId) {
-        // Encode (paraId, lineId) into a single int for dedup
-        final key = paraId * 1000000 + lineId;
-        if (seenKeys.add(key)) {
-          matchParas.add(paraId);
-          matchLines.add(lineId);
-        }
-      }
-
-      // Normalize query terms using same functions as _normalizeLineText
-      // in reader_provider.dart (cleanPaliForIndexing + normalizePaliFuzzy).
-      final normalizedTerms = words
-          .map((w) => normalizePaliFuzzy(cleanPaliForIndexing(w)))
-          .where((n) => n.isNotEmpty)
-          .toList();
-
-      if (normalizedTerms.isEmpty) {
-        setState(() {
-          _inBookQuery = '';
-          _inBookMatchParaIds = [];
-          _inBookMatchLineIds = [];
-          _inBookMatchIndex = -1;
-        });
-        return;
-      }
-
-      final readerState = ref.read(readerDataProvider(activeTab.bookId));
-      if (readerState.paragraphs.isEmpty) {
-        setState(() {
-          _inBookQuery = '';
-          _inBookMatchParaIds = [];
-          _inBookMatchLineIds = [];
-          _inBookMatchIndex = -1;
-        });
-        return;
-      }
-
-      // Search using pre-computed normalized text cache — no DB queries
-      for (final para in readerState.paragraphs) {
-        for (final line in para.lines) {
-          final normalized = line.normalizedText;
-          if (normalized.isEmpty) continue;
-
-          // All normalized terms must be present in the cached text
-          bool allMatch = true;
-          for (final term in normalizedTerms) {
-            if (!normalized.contains(term)) {
-              allMatch = false;
-              break;
-            }
-          }
-          if (allMatch) {
-            addMatch(para.paraId, line.lineId);
-          }
-        }
-      }
-
-      // Guard
-      if (_lastInBookSearchQuery != query) return;
-
-      setState(() {
-        _inBookQuery = query;
-        _inBookMatchParaIds = matchParas;
-        _inBookMatchLineIds = matchLines;
-        _inBookMatchIndex = matchParas.isEmpty ? -1 : 0;
-      });
-
-      if (matchParas.isNotEmpty) {
-        _jumpToInBookMatch(0);
-      }
-    } catch (e) {
-      debugPrint('[IN-BOOK SEARCH] Error: $e');
-      if (_lastInBookSearchQuery == query) {
-        setState(() {
-          _inBookQuery = '';
-          _inBookMatchParaIds = [];
-          _inBookMatchLineIds = [];
-          _inBookMatchIndex = -1;
-        });
-      }
-    }
+    ref.read(inBookSearchProvider.notifier).onQueryChanged(query);
   }
 
-  /// Jump to the [_inBookMatchParaIds] at [index].
-  /// `lineId: 1` scrolls the paragraph to the top of the viewport
-  /// (alignment 0.0) and fine-scrolls to the first line.
+  /// Jump to the [index]th in-book search match.
   void _jumpToInBookMatch(int index) {
+    final searchState = ref.read(inBookSearchProvider);
     final activeTab = ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
-    if (index < 0 || index >= _inBookMatchParaIds.length) return;
+    if (index < 0 || index >= searchState.matchParaIds.length) return;
 
-    setState(() => _inBookMatchIndex = index);
-    final lineId = index < _inBookMatchLineIds.length
-        ? _inBookMatchLineIds[index]
+    final lineId = index < searchState.matchLineIds.length
+        ? searchState.matchLineIds[index]
         : 1;
     _jumpToParagraph(
       activeTab.bookId,
-      _inBookMatchParaIds[index],
+      searchState.matchParaIds[index],
       animate: true,
       lineId: lineId,
     );
   }
 
+  /// Toggle the in-book search bar.
   void _toggleInBookSearch() {
-    setState(() {
-      _showInBookSearch = !_showInBookSearch;
-      if (!_showInBookSearch) {
-        _inBookQuery = '';
-        _inBookMatchParaIds = [];
-        _inBookMatchLineIds = [];
-        _inBookMatchIndex = -1;
-        _inBookSearchController.clear();
-      } else {
-        // Focus the search field after it appears
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _inBookSearchFocusNode.requestFocus();
-        });
-      }
-    });
+    ref.read(inBookSearchProvider.notifier).toggleSearchBar();
   }
 
   @override
@@ -714,8 +522,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     // Track visible range for copy operations
     if (visible.isNotEmpty) {
-      _visibleStartIndex = visible.first.index;
-      _visibleEndIndex = visible.last.index;
+      ref.read(readerSelectionProvider.notifier).updateVisibleRange(
+        visible.first.index,
+        visible.last.index,
+      );
     }
 
     // Always force-expand at the very top of the document.
@@ -925,7 +735,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         // When the in-book search bar is visible, use a slightly lower
         // alignment (0.38 instead of 0.3) so the line doesn't end up
         // directly behind the search bar at the top of the content area.
-        final lineAlignment = _showInBookSearch ? 0.38 : 0.3;
+        final lineAlignment = _searchBarVisible ? 0.38 : 0.3;
         Scrollable.ensureVisible(
           lineContext,
           alignment: lineAlignment, // show line in upper third of viewport
@@ -968,6 +778,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _suppressAppBarScroll = true;
     WidgetsBinding.instance.addPostFrameCallback((_) => attemptScroll());
   }
+
+  /// Read whether the in-book search bar is currently visible.
+  bool get _searchBarVisible =>
+      ref.read(inBookSearchProvider).showSearchBar;
+
+  /// TTS voices cache for the controls dialog (loaded on demand).
+  List<Map<String, String>>? _cachedSystemVoices;
+  bool _voicesLoading = false;
 
   // ── Swipe between tabs (finger-following) ─────────────────────────────
   //
@@ -1196,24 +1014,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     // Default: show as a bottom sheet on all platforms. The user can pin it
     // (via the toolbar pin button) to dock it in the right side panel.
-    //
-    // Disable selection (via SelectionContainer.disabled, NOT by unmounting
-    // SelectionArea) before the sheet opens. We commit the disable on its own
-    // frame first so every paragraph's selectable unregisters from the root
-    // registrar *before* the modal steals focus; only then does the sheet
-    // mount on the next frame. By the time focus shifts, the registrar has
-    // nothing left to reconcile, so there's no teardown race or O(n) walk.
-    // SelectionArea itself stays mounted the whole time.
-    setState(() => _selectionDisabled = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDictionarySheet(context, word.trim()).whenComplete(() {
-        if (mounted) setState(() => _selectionDisabled = false);
-      });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await showDictionarySheet(context, word.trim());
+      } finally {
+        if (mounted) {
+          _lastLookedUpWord = null;
+          // Clear any text selection that SelectionArea may have made
+          // during the double-tap, so the user can start a fresh
+          // long-press selection after dismissing the sheet.
+          _selectableRegionKey.currentState?.clearSelection();
+        }
+      }
     });
   }
 
   void _handleSelectionChanged(SelectedContent? selection) {
-    _lastSelectedContent = selection;
+    ref.read(readerSelectionProvider.notifier).onSelectionChanged(selection);
     developer.log(
       '[DBG] onSelectionChanged plain="${selection?.plainText}" '
       'hasSelection=${selection != null}',
@@ -1237,10 +1054,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [GestureDetector]. When a double-tap is detected we look up the word
   /// at the tap point ourselves and open the dictionary.
   void _handlePointerDown(PointerDownEvent event) {
-    // Record start position for potential tab-swipe
-    _swipeStartPos = event.localPosition;
-    _isSwiping = false;
-    _lastSwipeDx = 0;
+    // Record start position for potential tab-swipe (mobile/tablet only)
+    if (!PlatformInfo.isDesktop) {
+      _swipeStartPos = event.localPosition;
+      _isSwiping = false;
+      _lastSwipeDx = 0;
+    }
 
     final now = event.timeStamp.inMilliseconds;
     final lastTime = _lastTapDownTime;
@@ -1369,7 +1188,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       name: 'epitaka.dict',
     );
 
-    final word = _cleanPali(rawWord);
+    // Convert from any Pali script to Roman for dictionary lookup.
+    final romanWord = convertToRomanPali(rawWord);
+    final word = _cleanPali(romanWord);
     if (word.length >= 2 &&
         word.length <= 50 &&
         !word.contains(' ') &&
@@ -1401,13 +1222,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// list's internal Scrollable, so we handle it manually.
   void _handlePointerMoveForTabSwipe(PointerMoveEvent event) {
     // ── Auto-scroll when dragging selection handle near viewport edge ──
-    if (_lastSelectedContent != null) {
+    if (ref.read(readerSelectionProvider).hasSelection) {
       _checkAutoScrollEdge(event);
     } else {
       _stopAutoScroll();
     }
 
-    // ── Tab-swipe detection ──
+    // ── Tab-swipe detection (mobile/tablet only, and not while selecting text) ──
+    if (PlatformInfo.isDesktop) return;
+    if (ref.read(readerSelectionProvider).hasSelection) return;
     if (_swipeStartPos == null) return;
 
     final dx = event.localPosition.dx - _swipeStartPos!.dx;
@@ -1571,111 +1394,33 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     BuildContext context,
     SelectableRegionState selectableRegionState,
   ) {
-    final anchors = selectableRegionState.contextMenuAnchors;
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    final selectionState = ref.read(readerSelectionProvider);
     final colors = Theme.of(context).colorScheme;
 
-    return AdaptiveTextSelectionToolbar(
-      anchors: anchors,
-      children: [
-        ContextMenuButton(
-          icon: Icons.copy,
-          label: 'Copy Plain Text',
-          onTap: () {
-            _copyPlainText();
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.copy_all,
-          label: 'Copy with Style',
-          onTap: () {
-            _copySelectedContent(CopyScope.both, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.text_fields,
-          label: 'Pāli Only',
-          onTap: () {
-            _copySelectedContent(CopyScope.pali, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.translate,
-          label: 'Translation Only',
-          onTap: () {
-            _copySelectedContent(CopyScope.translation, addQuote: false);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.format_quote,
-          label: 'Copy with Quote',
-          onTap: () {
-            _copySelectedContent(CopyScope.both, addQuote: true);
-            selectableRegionState.clearSelection();
-          },
-          colors: colors,
-        ),
-        ContextMenuButton(
-          icon: Icons.select_all,
-          label: 'Select All',
-          onTap: () => selectableRegionState.selectAll(),
-          colors: colors,
-        ),
-      ],
+    final selectedText = selectionState.lastSelectedContent?.plainText.trim();
+
+    return ReaderCopyService.buildContextMenu(
+      context: context,
+      selectableRegionState: selectableRegionState,
+      colors: colors,
+      lastSelectedContent: selectionState.lastSelectedContent,
+      ref: ref,
+      visibleStartIndex: selectionState.visibleStartIndex,
+      visibleEndIndex: selectionState.visibleEndIndex,
+      bookId: activeTab?.bookId ?? '',
+      currentParaId: activeTab?.currentParaId,
+      currentLineId: activeTab?.currentLineId,
+      selectedText: selectedText,
     );
   }
 
-  /// Copy the selected text as plain text.
-  /// Uses Flutter's [SelectedContent.plainText] directly (the actual text the
-  /// user selected), without trying to reconstruct paragraph/line structure.
-  /// This is simpler and more reliable — it works for partial line selections
-  /// and different scripts, but loses line-break formatting.
+  /// Copy using the rich HTML mechanism (preserves bold, italic, newlines).
+  /// Delegates to [ReaderCopyService] which builds HTML from visible
+  /// paragraphs and writes both rich HTML and newline-preserving plain
+  /// text to the clipboard.
   void _copyPlainText() {
-    final selectedContent = _lastSelectedContent;
-    if (selectedContent == null || selectedContent.plainText.trim().isEmpty) {
-      return;
-    }
-    Clipboard.setData(ClipboardData(text: selectedContent.plainText));
-  }
-
-  void _onCopyShortcut() {
-    _copySelectedContent(CopyScope.both, addQuote: false);
-  }
-
-  Future<void> _copySelectedContent(
-    CopyScope scope, {
-    required bool addQuote,
-  }) async {
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    if (readerState.paragraphs.isEmpty) return;
-
-    final selectedContent = _lastSelectedContent;
-    if (selectedContent == null || selectedContent.plainText.trim().isEmpty) {
-      await _copyVisibleContent(scope, addQuote: addQuote);
-      return;
-    }
-
-    // Fallback to visible content since paragraph-level selection is removed
-    await _copyVisibleContent(scope, addQuote: addQuote);
-    return;
-  }
-
-
-
-  Future<void> _copyVisibleContent(
-    CopyScope scope, {
-    required bool addQuote,
-  }) async {
+    final selectionState = ref.read(readerSelectionProvider);
     final activeTab = ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
 
@@ -1683,53 +1428,79 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (readerState.paragraphs.isEmpty) return;
 
     final settings = ref.read(settingsProvider);
-    final bufferBefore = 5;
-    final bufferAfter = 5;
-    final start = (_visibleStartIndex - bufferBefore).clamp(
-      0,
-      readerState.paragraphs.length - 1,
+    ReaderCopyService.copySelectedContent(
+      ref: ref,
+      context: context,
+      scope: CopyScope.both,
+      addQuote: false,
+      lastSelectedContent: selectionState.lastSelectedContent,
+      visibleStartIndex: selectionState.visibleStartIndex,
+      visibleEndIndex: selectionState.visibleEndIndex,
+      script: settings.paliScript,
     );
-    final end = (_visibleEndIndex + bufferAfter).clamp(
-      0,
-      readerState.paragraphs.length - 1,
+  }
+
+  void _onCopyShortcut() {
+    final selectionState = ref.read(readerSelectionProvider);
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    if (readerState.paragraphs.isEmpty) return;
+
+    final settings = ref.read(settingsProvider);
+    ReaderCopyService.copySelectedContent(
+      ref: ref,
+      context: context,
+      scope: CopyScope.both,
+      addQuote: false,
+      lastSelectedContent: selectionState.lastSelectedContent,
+      visibleStartIndex: selectionState.visibleStartIndex,
+      visibleEndIndex: selectionState.visibleEndIndex,
+      script: settings.paliScript,
     );
-    final paragraphs = readerState.paragraphs.sublist(start, end + 1);
+  }
 
-    final brightness = Theme.of(context).brightness;
-    final paliColor = settings.paliColorPair.resolve(brightness);
-    final transColor = settings.translationColorPair.resolve(brightness);
+  Future<void> _copySelectedContent(
+    CopyScope scope, {
+    required bool addQuote,
+  }) async {
+    final selectionState = ref.read(readerSelectionProvider);
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
 
-    final enabledLangs = settings.enabledTranslations.isNotEmpty
-        ? settings.enabledTranslations.toList()
-        : (settings.showTranslation
-              ? [settings.primaryTranslationLang]
-              : <String>[]);
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    if (readerState.paragraphs.isEmpty) return;
 
-    // Build citation from template if addQuote is true
-    String citation = '';
-    if (addQuote) {
-      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
-      final firstPara = paragraphs.first;
-      final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
-      citation = buildCitationFromTemplate(
-        settings.quoteTemplate,
-        activeTab.bookId,
-        readerState.bookName,
-        nearbyHeading,
-        firstPara.pageNumbers,
-      );
-    }
-
-    await ReadingClipboard.copyWithTemplate(
-      paragraphs,
+    final settings = ref.read(settingsProvider);
+    await ReaderCopyService.copySelectedContent(
+      ref: ref,
+      context: context,
       scope: scope,
-      template: settings.quoteTemplate,
-      citation: citation,
-      bookId: activeTab.bookId,
-      bookName: readerState.bookName,
-      htmlColor: transColor,
-      paliCssColor: paliColor,
-      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+      addQuote: addQuote,
+      lastSelectedContent: selectionState.lastSelectedContent,
+      visibleStartIndex: selectionState.visibleStartIndex,
+      visibleEndIndex: selectionState.visibleEndIndex,
+      script: settings.paliScript,
+    );
+  }
+
+  Future<void> _copyVisibleContent(
+    CopyScope scope, {
+    required bool addQuote,
+  }) async {
+    final selectionState = ref.read(readerSelectionProvider);
+    final settings = ref.read(settingsProvider);
+
+    await ReaderCopyService.copySelectedContent(
+      ref: ref,
+      context: context,
+      scope: scope,
+      addQuote: addQuote,
+      lastSelectedContent: selectionState.lastSelectedContent,
+      visibleStartIndex: selectionState.visibleStartIndex,
+      visibleEndIndex: selectionState.visibleEndIndex,
+      script: settings.paliScript,
     );
   }
 
@@ -1847,9 +1618,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _settleController.dispose();
     _dragDxNotifier.dispose();
     _saveHistoryTimer?.cancel();
-    _inBookSearchTimer?.cancel();
-    _inBookSearchController.dispose();
-    _inBookSearchFocusNode.dispose();
+    // In-book search state is managed by [inBookSearchProvider] (auto-disposed)
     for (final entry in _itemPositionsListeners.entries) {
       final listener = _positionsListenerRefs[entry.key];
       if (listener != null) {
@@ -2197,10 +1966,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   // ── Swipeable tab content with finger-following slide ──
                   CallbackShortcuts(
                     bindings: {
-                      SingleActivator(LogicalKeyboardKey.keyC, control: true):
-                          _onCopyShortcut,
-                      SingleActivator(LogicalKeyboardKey.keyC, meta: true):
-                          _onCopyShortcut,
+                    SingleActivator(LogicalKeyboardKey.keyC, control: true):
+                        _onCopyShortcut,
+                    SingleActivator(LogicalKeyboardKey.keyC, meta: true):
+                        _onCopyShortcut,
                     },
                     child: Focus(
                       autofocus: true,
@@ -2239,7 +2008,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         : const SizedBox.shrink(),
                   ),
                   // In-book search bar overlay
-                  if (_showInBookSearch)
+                  if (ref.watch(inBookSearchProvider).showSearchBar)
                     Positioned(
                       top: 0,
                       left: 0,
@@ -2288,16 +2057,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         displayMode: settings.translationDisplayMode,
                         showTranslation: settings.showTranslation,
                         ttsPlayback: ttsPlaybackStateForTab,
-                        onJumpTap: () => _onJumpTap(activeTab, readerState),
-                        onCycleDisplayMode: () {
-                          final newMode =
-                              settings.translationDisplayMode ==
-                                  TranslationDisplayMode.lineByLine
-                              ? TranslationDisplayMode.sideBySide
-                              : TranslationDisplayMode.lineByLine;
-                          ref
-                              .read(settingsProvider.notifier)
-                              .setTranslationDisplayMode(newMode);
+                        onJumpTap: () => _onJumpTap(activeTab, readerState),                        onDisplayLayoutTap: () {
+                          showDialog(
+                            context: context,
+                            barrierColor: Colors.transparent,
+                            barrierDismissible: true,
+                            builder: (_) => const Align(
+                              alignment: Alignment(0, 0.88),
+                              child: DisplayLayoutPopup(),
+                            ),
+                          );
                         },
                         onContentsTap: () {
                           final currentParaId = activeTab.currentParaId;
@@ -2426,10 +2195,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Builds the reader content wrapped in a permanently-mounted [SelectionArea]
   /// (used for long-press/drag text selection). The [SelectionArea] is never
   /// added/removed from the tree — doing so mid-focus-shift crashes the
-  /// selection system. Instead, while [_selectionDisabled] is true the content
-  /// is wrapped in [SelectionContainer.disabled], which unregisters the
-  /// paragraphs' selectables from the root registrar without disposing the
-  /// [SelectionArea] itself.
+  /// selection system.
   Widget _buildReaderContentWithSelection(
     BuildContext context,
     ReaderDataState data,
@@ -2443,7 +2209,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
   ) {
-    return ReaderContentWithSelection(
+    final dictSheetOpen = ref.watch(dictionarySheetOpenProvider);
+
+    Widget content = ReaderContentWithSelection(
       bookId: activeTab.bookId,
       data: data,
       settings: settings,
@@ -2465,49 +2233,60 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       scrollOffsetController: _autoScrollOffsetController,
       onSelectionChanged: _handleSelectionChanged,
       contextMenuBuilder: _buildCopyContextMenu,
-      selectionDisabled: _selectionDisabled,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
       ttsTargetParaId: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetParaId,
       ttsTargetLineKeys: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetLineKeys,
-      searchQuery: _effectiveSearchQuery ?? activeTab.searchQuery,
+      searchQuery: ref.watch(inBookSearchProvider).effectiveQuery ?? activeTab.searchQuery,
     );
+
+    // When the dictionary sheet is open, Flutter adds bottom padding to the
+    // underlying route's MediaQuery (the "sheet's inset"), which can cause
+    // ScrollablePositionedList to re-layout and change its scroll position.
+    // Removing this padding prevents the reader behind the sheet from
+    // scrolling/jumping while the sheet appears.
+    if (dictSheetOpen) {
+      content = MediaQuery.removePadding(
+        context: context,
+        removeBottom: true,
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   /// Build the in-book search bar shown as an overlay at the top of the reader.
   Widget _buildInBookSearchBar(ColorScheme colors) {
     return ReaderInBookSearchBar(
       colors: colors,
-      controller: _inBookSearchController,
-      focusNode: _inBookSearchFocusNode,
-      matchCount: _inBookMatchParaIds.length,
-      currentMatchIndex: _inBookMatchIndex,
-      query: _inBookQuery,
+      controller: ref.read(inBookSearchProvider.notifier).searchController,
+      focusNode: ref.read(inBookSearchProvider.notifier).searchFocusNode,
+      matchCount: ref.watch(inBookSearchProvider).matchCount,
+      currentMatchIndex: ref.watch(inBookSearchProvider).matchIndex,
+      query: ref.watch(inBookSearchProvider).query,
       onClose: _toggleInBookSearch,
       onQueryChanged: (v) {
-        _inBookSearchTimer?.cancel();
-        _inBookSearchTimer = Timer(
-          const Duration(milliseconds: 200),
-          () => _runInBookSearch(v),
-        );
+        ref.read(inBookSearchProvider.notifier).onQueryChanged(v);
       },
       onSubmitted: (v) {
-        _inBookSearchTimer?.cancel();
-        _runInBookSearch(v);
+        ref.read(inBookSearchProvider.notifier).onSubmitted(v);
       },
       onPrevious: () {
-        if (_inBookMatchParaIds.isEmpty) return;
-        final newIdx = (_inBookMatchIndex - 1).clamp(
+        final searchState = ref.read(inBookSearchProvider);
+        if (!searchState.hasMatches) return;
+        final newIdx = (searchState.matchIndex - 1).clamp(
           0,
-          _inBookMatchParaIds.length - 1,
+          searchState.matchCount - 1,
         );
         _jumpToInBookMatch(newIdx);
       },
       onNext: () {
-        if (_inBookMatchParaIds.isEmpty) return;
-        final newIdx = (_inBookMatchIndex + 1).clamp(
+        final searchState = ref.read(inBookSearchProvider);
+        if (!searchState.hasMatches) return;
+        final newIdx = (searchState.matchIndex + 1).clamp(
           0,
-          _inBookMatchParaIds.length - 1,
+          searchState.matchCount - 1,
         );
         _jumpToInBookMatch(newIdx);
       },

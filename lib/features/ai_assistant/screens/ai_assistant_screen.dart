@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../models/ai_assistant_models.dart';
 import '../providers/ai_chat_provider.dart';
 import '../providers/ai_settings_provider.dart';
@@ -298,7 +299,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
   }
 
   Widget _buildMessageList(AiChatState state, ColorScheme colors) {
-    return ListView.builder(
+    final listContent = ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: state.messages.length,
@@ -329,6 +330,18 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
         );
       },
     );
+
+    // On desktop, center the chat in a narrower column for readability.
+    final isDesktop = ResponsiveBreakpoint.isDesktop(context);
+    if (isDesktop) {
+      return Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: listContent,
+        ),
+      );
+    }
+    return listContent;
   }
 
   Widget _buildTimestampDivider(DateTime timestamp, ColorScheme colors) {

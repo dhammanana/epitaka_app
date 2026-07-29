@@ -1887,3 +1887,36 @@ class TextProcessor {
     return output;
   }
 }
+
+/// Returns true if [text] contains characters from a non-Latin Pali script
+/// (e.g., Devanagari, Sinhala, Thai, Myanmar, Khmer, etc.).
+bool isNonLatinScript(String text) {
+  for (var i = 0; i < text.length; i++) {
+    final code = text.codeUnitAt(i);
+    final isLatin =
+        (code >= 0x0020 && code <= 0x007E) || // Basic Latin
+        (code >= 0x00A0 && code <= 0x00FF) || // Latin-1 Supplement
+        (code >= 0x0100 && code <= 0x017F) || // Latin Extended-A
+        (code >= 0x1E00 && code <= 0x1EFF);   // Latin Extended Additional
+    if (!isLatin) return true;
+  }
+  return false;
+}
+
+/// Converts Pali text from any script to Roman (IAST).
+/// Falls back to the original text if conversion fails.
+String convertToRomanPali(String text) {
+  if (text.isEmpty) return text;
+  // Only convert if the text contains non-Latin characters.
+  if (isNonLatinScript(text)) {
+    try {
+      return TextProcessor.convert(
+        TextProcessor.convertFromMixed(text),
+        Script.roman,
+      );
+    } catch (_) {
+      return text;
+    }
+  }
+  return text;
+}

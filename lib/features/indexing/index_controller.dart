@@ -59,7 +59,12 @@ class IndexController extends StateNotifier<IndexState> {
       }
 
       if (status.isComplete) {
-        debugPrint('[INDEX] controller: status complete, nothing to build');
+        // If FTS is built but mention isn't, we're still "ready" for
+        // the main search — mention will auto-build on first use.
+        if (!status.mentionBuilt) {
+          debugPrint('[INDEX] controller: FTS ready, mention not built yet');
+          _lastStatus = status;
+        }
         state = IndexState.ready();
         return;
       }

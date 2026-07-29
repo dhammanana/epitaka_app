@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite_vector/sqlite_vector.dart';
 
+import 'package:path/path.dart' as p;
+
 import '../../../core/utils/pali_search_utils.dart';
 
 /// A single search result from vector similarity search.
@@ -366,9 +368,23 @@ class GavesanaVectorSearchService {
             chunk_id UNINDEXED,
             book_id   UNINDEXED,
             pali_text,
+            english_text,
             tokenize='unicode61 remove_diacritics 1'
           )
         ''');
+
+        // Open English DB for enriched indexing
+        final epiDbDir = p.dirname(epitakaDbPath);
+        final enDbPath = p.join(epiDbDir, 'epitaka_en.db');
+        final enDbFile = File(enDbPath);
+        final hasEnDb = await enDbFile.exists();
+        Database? enDb;
+        if (hasEnDb) {
+          enDb = sqlite3.open(enDbPath, mode: OpenMode.readOnly);
+          print('[VEC] ✅ epitaka_en.db opened for enriched index');
+        } else {
+          print('[VEC] ⚠ epitaka_en.db not found at $enDbPath — indexing Pāli only');
+        }
 
         final chunks = _db!.select(
           'SELECT chunk_id, book_id, start_para, start_line, '
@@ -382,18 +398,26 @@ class GavesanaVectorSearchService {
         int inserted = 0;
         int processed = 0;
         for (final c in chunks) {
-          final raw = _fetchChunkPali(epi, c);
-          if (raw.isNotEmpty) {
-            final cleaned = cleanPaliForIndexing(raw);
-            if (cleaned.isNotEmpty) {
-              _db!.execute(
-                'INSERT INTO chunks_fts(chunk_id, book_id, pali_text) '
-                'VALUES (?, ?, ?)',
-                [c['chunk_id'], c['book_id'], cleaned],
-              );
-              inserted++;
-            }
+          final texts = _fetchChunkTexts(epi, enDb, c);
+
+          // Skip if both texts are empty
+          if (texts['pali']!.isEmpty && texts['english']!.isEmpty) {
+            processed++;
+            continue;
           }
+
+          final paliCleaned = cleanPaliForIndexing(texts['pali']!);
+          final englishCleaned = cleanPaliForIndexing(texts['english']!);
+
+          if (paliCleaned.isNotEmpty || englishCleaned.isNotEmpty) {
+            _db!.execute(
+              'INSERT INTO chunks_fts(chunk_id, book_id, pali_text, english_text) '
+              'VALUES (?, ?, ?, ?)',
+              [c['chunk_id'], c['book_id'], paliCleaned, englishCleaned],
+            );
+            inserted++;
+          }
+
           processed++;
           // Yield to the event loop every 200 chunks so Flutter can repaint
           // the progress dialog. Without this the synchronous loop blocks the
@@ -406,8 +430,10 @@ class GavesanaVectorSearchService {
             await Future.delayed(Duration.zero);
           }
         }
+
+        enDb?.close();
         _db!.execute('COMMIT');
-        print('[VEC] ✅ chunks_fts built: $inserted rows');
+        print('[VEC] ✅ chunks_fts built: $inserted rows (enriched: pali + english + headings + book names)');
         onProgress?.call(1.0, 'BM25 index ready');
         return true;
       } catch (e, stack) {
@@ -430,23 +456,176 @@ class GavesanaVectorSearchService {
     }
   }
 
-  /// Fetch the concatenated Pāli text for a chunk's paragraph/line range
-  /// directly from `epitaka.db` (used while building the chunk FTS index).
-  String _fetchChunkPali(Database epi, Map<String, Object?> c) {
+  /// Fetch the concatenated Pāli and English texts for a chunk's
+  /// paragraph/line range, enriched with book hierarchy, full heading
+  /// chain (all ancestor headings via recursive CTE), and heading English
+  /// translations — matching the Python chunking script's approach.
+  ///
+  /// Returns a map with keys: 'pali', 'english'. Both columns include:
+  ///   category > nikaya > sub_nikaya > book_name
+  ///   heading_1
+  ///   heading_2
+  ///   ...
+  ///   (body text)
+  ///
+  /// The English column additionally uses English translations for headings
+  /// (when available from epitaka_en.db), so English keyword searches like
+  /// "mindfulness" match even if Pāli uses "sati".
+  Map<String, String> _fetchChunkTexts(
+    Database epi,
+    Database? enDb,
+    Map<String, Object?> c,
+  ) {
     final bookId = c['book_id'] as String;
     final startPara = c['start_para'] as int;
     final startLine = c['start_line'] as int;
     final endPara = c['end_para'] as int;
     final endLine = c['end_line'] as int;
+
     try {
-      final rows = epi.select(
-        '''
-        SELECT group_concat(pali, ' ') as text FROM sentences
-        WHERE book_id = ? AND
-          ((para_id = ? AND line_id >= ?) OR
-           (para_id > ? AND para_id < ?) OR
-           (para_id = ? AND line_id <= ?))
-      ''',
+      // ── 1. Pāli body text ──────────────────────────────────────
+      final paliBody = _fetchBodyText(
+        'pali', epi, null,
+        bookId, startPara, startLine, endPara, endLine,
+      );
+
+      // ── 2. English body text (if enDb available) ──────────────
+      final enBody = _fetchBodyText(
+        'translation', null, enDb,
+        bookId, startPara, startLine, endPara, endLine,
+      );
+
+      // ── 3. Book hierarchy: category > nikaya > sub_nikaya > name ─
+      String bookHeader = '';
+      try {
+        final rows = epi.select(
+          'SELECT book_name, category, nikaya, sub_nikaya '
+          'FROM books WHERE book_id = ?',
+          [bookId],
+        );
+        if (rows.isNotEmpty) {
+          final r = rows.first;
+          final parts = [
+            r['category'] as String?,
+            r['nikaya'] as String?,
+            r['sub_nikaya'] as String?,
+            r['book_name'] as String?,
+          ];
+          bookHeader = parts
+              .where((p) => p != null && p.trim().isNotEmpty)
+              .join(' > ');
+        }
+      } catch (_) {}
+
+      // ── 4. Full heading chain via recursive CTE ────────────────
+      // Matches the Python script's get_heading_chain() logic.
+      // Traverses up parent references to get ALL ancestor headings.
+      final paliTitles = <String>[];
+      final headingParaIds = <int>[];
+      try {
+        final headRows = epi.select('''
+          WITH RECURSIVE hc(para_id, title, parent) AS (
+            SELECT para_id, title, parent FROM headings
+            WHERE book_id = ? AND para_id <= ?
+            ORDER BY para_id DESC LIMIT 1
+            UNION ALL
+            SELECT h.para_id, h.title, h.parent
+            FROM headings h
+            INNER JOIN hc ON h.para_id = hc.parent
+          )
+          SELECT para_id, title FROM hc ORDER BY para_id ASC
+        ''', [bookId, startPara]);
+
+        for (final row in headRows) {
+          paliTitles.add(row['title'] as String);
+          headingParaIds.add(row['para_id'] as int);
+        }
+      } catch (_) {}
+
+      // ── 5. Heading English translations (from epitaka_en.db) ───
+      // Matches the Python script's get_heading_translation() logic.
+      final enTitles = <String>[];
+      if (enDb != null && headingParaIds.isNotEmpty) {
+        for (final hid in headingParaIds) {
+          try {
+            final transRows = enDb.select(
+              'SELECT translation FROM sentences '
+              'WHERE book_id = ? AND para_id = ? '
+              'ORDER BY line_id ASC LIMIT 1',
+              [bookId, hid],
+            );
+            if (transRows.isNotEmpty) {
+              final t = (transRows.first['translation'] as String?) ?? '';
+              enTitles.add(t.trim());
+            } else {
+              enTitles.add('');
+            }
+          } catch (_) {
+            enTitles.add('');
+          }
+        }
+      }
+
+      // ── 6. Assemble enriched pali_text ─────────────────────────
+      // Format:
+      //   category > nikaya > sub_nikaya > book_name
+      //   heading_1
+      //   heading_2
+      //   (pāli body)
+      final paliLines = <String>[];
+      if (bookHeader.isNotEmpty) paliLines.add(bookHeader);
+      paliLines.addAll(paliTitles.where((t) => t.trim().isNotEmpty));
+      final paliHeader = paliLines.join('\n');
+      final paliText = paliHeader.isNotEmpty
+          ? '$paliHeader\n\n$paliBody'
+          : paliBody;
+
+      // ── 7. Assemble enriched english_text ──────────────────────
+      // Format:
+      //   category > nikaya > sub_nikaya > book_name
+      //   heading_1 (English translation or Pāli fallback)
+      //   heading_2 (English translation or Pāli fallback)
+      //   (english body)
+      final enLines = <String>[];
+      if (bookHeader.isNotEmpty) enLines.add(bookHeader);
+      for (int i = 0; i < paliTitles.length; i++) {
+        final enTitle = (i < enTitles.length && enTitles[i].isNotEmpty)
+            ? enTitles[i]
+            : paliTitles[i];
+        if (enTitle.trim().isNotEmpty) enLines.add(enTitle);
+      }
+      final enHeader = enLines.join('\n');
+      final englishText = enHeader.isNotEmpty
+          ? '$enHeader\n\n$enBody'
+          : enBody;
+
+      return {'pali': paliText, 'english': englishText};
+    } catch (_) {
+      return {'pali': '', 'english': ''};
+    }
+  }
+
+  /// Fetch the concatenated body text (Pāli or English translation) for
+  /// a chunk's paragraph/line range from the appropriate database.
+  String _fetchBodyText(
+    String column,      // 'pali' or 'translation'
+    Database? epi,      // non-null for Pāli
+    Database? enDb,     // non-null for English
+    String bookId,
+    int startPara,
+    int startLine,
+    int endPara,
+    int endLine,
+  ) {
+    final db = (column == 'pali') ? epi : enDb;
+    if (db == null) return '';
+    try {
+      final rows = db.select(
+        'SELECT group_concat($column, \' \') as text FROM sentences '
+        'WHERE book_id = ? AND '
+        '((para_id = ? AND line_id >= ?) OR '
+        '(para_id > ? AND para_id < ?) OR '
+        '(para_id = ? AND line_id <= ?))',
         [bookId, startPara, startLine, startPara, endPara, endPara, endLine],
       );
       if (rows.isEmpty) return '';
@@ -480,7 +659,7 @@ class GavesanaVectorSearchService {
       final rows = _db!.select(
         'SELECT chunk_id, book_id, bm25(chunks_fts) AS bm25_score '
         'FROM chunks_fts '
-        'WHERE pali_text MATCH ? '
+        'WHERE chunks_fts MATCH ? '
         'ORDER BY bm25_score ASC '
         'LIMIT ?',
         [ftsQuery, limit],

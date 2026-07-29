@@ -31,10 +31,15 @@ class AiAssistantSettings {
   /// Should be fast/cheap (e.g. gemini-2.0-flash-lite).
   final String liteModel;
 
+  /// Whether the AI must strictly follow provided sources (true) or
+  /// can answer freely using its own knowledge (false).
+  final bool strictMode;
+
   const AiAssistantSettings({
     this.apiKey = '',
     this.renderModel = 'gemini-2.0-flash',
     this.liteModel = 'gemini-2.0-flash-lite',
+    this.strictMode = true,
   });
 
   /// Whether the settings are valid enough to make API calls.
@@ -44,11 +49,13 @@ class AiAssistantSettings {
     String? apiKey,
     String? renderModel,
     String? liteModel,
+    bool? strictMode,
   }) {
     return AiAssistantSettings(
       apiKey: apiKey ?? this.apiKey,
       renderModel: renderModel ?? this.renderModel,
       liteModel: liteModel ?? this.liteModel,
+      strictMode: strictMode ?? this.strictMode,
     );
   }
 
@@ -56,6 +63,7 @@ class AiAssistantSettings {
         'apiKey': apiKey,
         'renderModel': renderModel,
         'liteModel': liteModel,
+        'strictMode': strictMode,
       };
 
   factory AiAssistantSettings.fromJson(Map<String, dynamic> json) {
@@ -63,6 +71,7 @@ class AiAssistantSettings {
       apiKey: json['apiKey'] as String? ?? '',
       renderModel: json['renderModel'] as String? ?? 'gemini-2.0-flash',
       liteModel: json['liteModel'] as String? ?? 'gemini-2.0-flash-lite',
+      strictMode: json['strictMode'] as bool? ?? true,
     );
   }
 }
@@ -143,6 +152,13 @@ class AiChatMessage {
   /// Whether the answer is still being streamed (typing indicator).
   final bool isStreaming;
 
+  /// English translation of the message text (for user messages in
+  /// non-English languages). Null if the message is already in English.
+  final String? translation;
+
+  /// Detected language of the message (e.g. "Burmese", "Thai").
+  final String? detectedLanguage;
+
   const AiChatMessage({
     required this.id,
     required this.text,
@@ -151,6 +167,8 @@ class AiChatMessage {
     required this.mode,
     this.sources = const [],
     this.isStreaming = false,
+    this.translation,
+    this.detectedLanguage,
   });
 
   AiChatMessage copyWith({
@@ -161,6 +179,10 @@ class AiChatMessage {
     AiChatMode? mode,
     List<SourceReference>? sources,
     bool? isStreaming,
+    String? translation,
+    String? detectedLanguage,
+    bool clearTranslation = false,
+    bool clearDetectedLanguage = false,
   }) {
     return AiChatMessage(
       id: id ?? this.id,
@@ -170,6 +192,8 @@ class AiChatMessage {
       mode: mode ?? this.mode,
       sources: sources ?? this.sources,
       isStreaming: isStreaming ?? this.isStreaming,
+      translation: clearTranslation ? null : (translation ?? this.translation),
+      detectedLanguage: clearDetectedLanguage ? null : (detectedLanguage ?? this.detectedLanguage),
     );
   }
 }

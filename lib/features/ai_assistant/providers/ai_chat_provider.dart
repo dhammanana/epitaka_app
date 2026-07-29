@@ -21,6 +21,7 @@ import '../models/ai_assistant_models.dart';
 import '../services/ai_prompt_templates.dart';
 import '../services/gemini_api_service.dart';
 import '../services/tipitaka_search_service.dart';
+import '../utils/language_utils.dart';
 import 'ai_settings_provider.dart';
 
 /// UUID generator for message IDs.
@@ -68,13 +69,38 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
     await _streamSubscription?.cancel();
     _finalized = false;
 
-    // ── 1. Add user message ─────────────────────────────────────────
+    // ── 1. Detect language & translate ──────────────────────────────
+    final detectedLang = detectLanguage(trimmed);
+    String searchQuery = trimmed;
+    String? englishTranslation;
+
+    if (detectedLang != DetectedLanguage.english) {
+      // Translate to English for more effective DB search
+      final geminiService = _ref.read(geminiApiServiceProvider);
+      final settings = _ref.read(aiSettingsProvider);
+      try {
+        englishTranslation = await geminiService.translateToEnglish(
+          text: trimmed,
+          apiKey: settings.apiKey,
+          liteModel: settings.liteModel,
+        );
+        if (englishTranslation.trim().isNotEmpty) {
+          searchQuery = englishTranslation;
+        }
+      } catch (e) {
+        debugPrint('[AI_CHAT] Translation failed, using original: $e');
+      }
+    }
+
+    // ── 2. Add user message ─────────────────────────────────────────
     final userMessage = AiChatMessage(
       id: _uuid.v4(),
       text: trimmed,
       isUser: true,
       timestamp: DateTime.now(),
       mode: state.mode,
+      translation: englishTranslation,
+      detectedLanguage: detectedLang.nativeName,
     );
 
     state = state.copyWith(
@@ -86,7 +112,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
     );
 
     try {
-      // ── 2. Validate settings ──────────────────────────────────────
+      // ── 3. Validate settings ──────────────────────────────────────
       final settings = _ref.read(aiSettingsProvider);
       if (!settings.isValid) {
         state = state.copyWith(
@@ -96,10 +122,10 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
         return;
       }
 
-      // ── 3. Search Tipitaka DB ─────────────────────────────────────
+      // ── 4. Search Tipitaka DB ─────────────────────────────────────
       final searchService = _ref.read(tipitakaSearchServiceProvider);
       final searchResults = await searchService.search(
-        query: trimmed,
+        query: searchQuery,
         limit: 20,
       );
 
@@ -148,12 +174,22 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       // ── 5. Build context + insert placeholder streaming message ───
       final contextBlock = AiPromptTemplates.buildContextBlock(topCandidates);
 
-      final systemPrompt = state.mode == AiChatMode.literalReview
-          ? AiPromptTemplates.literalReviewSystem
-          : AiPromptTemplates.answerQuestionSystem;
+      // Use original question text in prompt so the AI sees the
+      // user's actual language, but search was done with English.
+      final questionForPrompt = englishTranslation != null
+          ? '$trimmed\n\n(English: $englishTranslation)'
+          : trimmed;
+
+      final systemPrompt = AiPromptTemplates.systemPrompt(
+        mode: state.mode,
+        strictMode: settings.strictMode,
+        languageCode: detectedLang == DetectedLanguage.english
+            ? null
+            : detectedLang.nativeName,
+      );
 
       final userPrompt = AiPromptTemplates.buildUserPrompt(
-        question: trimmed,
+        question: questionForPrompt,
         contextBlock: contextBlock,
       );
 

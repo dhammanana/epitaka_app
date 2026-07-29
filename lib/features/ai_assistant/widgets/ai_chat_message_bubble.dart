@@ -1,10 +1,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../models/ai_assistant_models.dart';
 import '../services/ai_prompt_templates.dart';
 import 'ai_source_excerpt_popup.dart';
@@ -23,13 +25,19 @@ class AiChatMessageBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
+    final isPhone = ResponsiveBreakpoint.isPhone(context);
+
+    // On phones: minimal margins, near-full width to maximize content.
+    // On tablet/desktop: more generous margins and max-width for a nicer look.
+    final horizontalMargin = isPhone ? 4.0 : AppDimensions.marginMobile;
+    final oppositeMargin = isPhone ? 4.0 : AppDimensions.marginMobile + 20;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        isUser ? AppDimensions.marginMobile + 20 : AppDimensions.marginMobile,
-        4,
-        isUser ? AppDimensions.marginMobile : AppDimensions.marginMobile + 20,
-        4,
+        isUser ? oppositeMargin : horizontalMargin,
+        isPhone ? 2 : 4,
+        isUser ? horizontalMargin : oppositeMargin,
+        isPhone ? 2 : 4,
       ),
       child: Column(
         crossAxisAlignment:
@@ -39,7 +47,7 @@ class AiChatMessageBubble extends ConsumerWidget {
           if (!isUser) _buildModeBadge(colors),
           // Message bubble
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: EdgeInsets.all(isPhone ? 10 : 14),
             decoration: BoxDecoration(
               color: isUser
                   ? colors.primary.withValues(alpha: 0.12)
@@ -50,7 +58,9 @@ class AiChatMessageBubble extends ConsumerWidget {
               ),
             ),
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.85,
+              maxWidth: isPhone
+                  ? MediaQuery.of(context).size.width * 0.97
+                  : MediaQuery.of(context).size.width * 0.85,
             ),
             child: isUser
                 ? _buildUserText(colors)
@@ -95,14 +105,62 @@ class AiChatMessageBubble extends ConsumerWidget {
   }
 
   Widget _buildUserText(ColorScheme colors) {
-    return Text(
-      message.text,
-      style: AppTypography.bodyTranslation.copyWith(
-        color: colors.onSurface,
-        fontSize: 15,
-        height: 1.5,
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // User's original message
+        Text(
+          message.text,
+          style: AppTypography.bodyTranslation.copyWith(
+            color: colors.onSurface,
+            fontSize: 15,
+            height: 1.5,
+          ),
+        ),
+        // English translation (if different from original)
+        if (message.translation != null && message.translation!.trim().isNotEmpty && message.translation != message.text) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.translate, size: 12, color: colors.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    message.translation!,
+                    style: AppTypography.bodyTranslation.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
+  }
+
+  void _copyText(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Answer copied to clipboard'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Widget _buildAssistantContent(
@@ -127,10 +185,49 @@ class AiChatMessageBubble extends ConsumerWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ),
-        if (message.sources.isNotEmpty && !message.isStreaming) ...[
-          const SizedBox(height: 12),
-          _buildSourcesBar(context, ref, colors),
+        if (!message.isStreaming && displayText.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _buildMessageActions(context, colors, displayText),
+          if (message.sources.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildSourcesBar(context, ref, colors),
+          ],
         ],
+      ],
+    );
+  }
+
+  /// Small action buttons row (copy, etc.) shown below each assistant message.
+  Widget _buildMessageActions(
+    BuildContext context,
+    ColorScheme colors,
+    String fullText,
+  ) {
+    return OverflowBar(
+      spacing: 4,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: () => _copyText(context, fullText),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.copy, size: 13, color: colors.onSurfaceVariant.withValues(alpha: 0.6)),
+                const SizedBox(width: 4),
+                Text(
+                  'Copy',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -157,37 +254,18 @@ class AiChatMessageBubble extends ConsumerWidget {
       }
 
       final sourceNum = match.group(1) ?? '';
-      final sourceIndex = int.tryParse(sourceNum) ?? 0;
-      final source = sourceIndex > 0 && sourceIndex <= message.sources.length
-          ? message.sources[sourceIndex - 1]
-          : null;
 
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: GestureDetector(
-          onTap: source != null
-              ? () => showSourceExcerptPopup(context, source)
-              : null,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              color: colors.primary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: colors.primary.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Text(
-              '[Source $sourceNum]',
-              style: TextStyle(
-                color: colors.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
+      // Render [Source N] as a plain styled TextSpan (no GestureDetector)
+      // to avoid any gesture competition with the parent ListView scroll.
+      // The source popup is accessible via source chips below the message.
+      spans.add(TextSpan(
+        text: '[Source $sourceNum]',
+        style: TextStyle(
+          color: colors.primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+          backgroundColor: colors.primary.withValues(alpha: 0.15),
         ),
       ));
 
@@ -205,8 +283,17 @@ class AiChatMessageBubble extends ConsumerWidget {
       ));
     }
 
-    return SelectableText.rich(
-      TextSpan(children: spans),
+    // IgnorePointer + Text.rich — the text renders visually but is
+    // completely transparent to pointer events. All gestures (drag to
+    // scroll, tap) pass through to the parent ListView.
+    // Copy via the "Copy" button below; source popup via chips below.
+    // ignoringSemantics: false preserves screen reader accessibility.
+    return IgnorePointer(
+      ignoring: true,
+      ignoringSemantics: false,
+      child: Text.rich(
+        TextSpan(children: spans),
+      ),
     );
   }
 

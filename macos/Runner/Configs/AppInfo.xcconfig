@@ -8,7 +8,7 @@
 PRODUCT_NAME = epitaka_app
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.epitaka.epitakaApp
+PRODUCT_BUNDLE_IDENTIFIER = com.dn.epitaka
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.epitaka. All rights reserved.

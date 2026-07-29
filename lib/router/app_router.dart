@@ -2,6 +2,7 @@ import 'package:flutter/src/widgets/framework.dart';
 import 'package:flutter/src/widgets/navigator.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/ai_qa/screens/ai_qa_screen.dart';
 import '../features/gavesana/screens/gavesana_screen.dart';
 import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
@@ -34,6 +35,7 @@ class AppRoutes {
   static const help = '/settings/help';
   static const contents = '/contents/:bookId';
   static const gavesana = '/gavesana';
+  static const aiQa = '/ai-qa';
 }
 
 /// The `_buildRouter()` function is called from `app.dart`.
@@ -109,6 +111,14 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
         path: AppRoutes.gavesana,
         name: 'gavesana',
         builder: (context, state) => const GavesanaScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.aiQa,
+        name: 'aiQa',
+        builder: (context, state) {
+          final threadId = state.uri.queryParameters['thread'];
+          return VimamsaScreen(initialThreadId: threadId);
+        },
       ),
       GoRoute(
         path: '/contents/:bookId',

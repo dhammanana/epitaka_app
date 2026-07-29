@@ -196,10 +196,15 @@ class ReaderDictionaryLookupController {
     // nothing left to reconcile, so there's no teardown race or O(n) walk.
     // SelectionArea itself stays mounted the whole time.
     onSelectionDisabled();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDictionarySheet(context, word.trim()).whenComplete(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await showDictionarySheet(context, word.trim());
+      } finally {
+        // Re-enable selection after the dictionary sheet closes,
+        // clearing dedup so the user can look up the same word again.
+        _lastLookedUpWord = null;
         onSelectionEnabled();
-      });
+      }
     });
   }
 
