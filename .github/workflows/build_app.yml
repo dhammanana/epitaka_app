@@ -1,4 +1,4 @@
-name: Build Multi-Platform (Android, Windows, macOS, Linux)
+name: Build Multi-Platform (Android, iOS, Windows, macOS, Linux)
 
 on:
   push:
@@ -59,7 +59,41 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk
 
   # -------------------------------------------------------------
-  # 2. WINDOWS BUILD
+  # 2. iOS BUILD
+  # -------------------------------------------------------------
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Create iOS Platform Files (if missing)
+        run: |
+          if [ ! -d "ios/Runner.xcodeproj" ]; then
+            flutter create --platforms=ios .
+          fi
+
+      - name: Build iOS Release (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS Artifact (app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: build/ios/iphoneos/Runner.app
+
+  # -------------------------------------------------------------
+  # 3. WINDOWS BUILD
   # -------------------------------------------------------------
   build-windows:
     name: Build Windows
@@ -74,15 +108,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      # ADD THIS STEP BEFORE PUB GET
       - name: Create Windows Platform Files
-        run: flutter create --platforms=windows .
+        run: |
+          if (-not (Test-Path "windows")) {
+            flutter create --platforms=windows .
+          }
 
       - name: Install Dependencies
         run: flutter pub get
@@ -103,8 +133,8 @@ jobs:
           name: windows-release
           path: build/windows/epitaka-windows-x64.zip
 
-# -------------------------------------------------------------
-  # 3. MACOS BUILD
+  # -------------------------------------------------------------
+  # 4. MACOS BUILD
   # -------------------------------------------------------------
   build-macos:
     name: Build macOS
@@ -120,16 +150,13 @@ jobs:
           cache: true
 
       - name: Create macOS Platform Files (if not in git)
-        run: flutter create --platforms=macos .
+        run: |
+          if [ ! -d "macos/Runner.xcodeproj" ]; then
+            flutter create --platforms=macos .
+          fi
 
       - name: Install Flutter Dependencies
         run: flutter pub get
-
-      # ADD THIS: Ensure CocoaPods dependency repo is updated & Pods installed
-      - name: Install CocoaPods
-        run: |
-          cd macos
-          pod install --repo-update
 
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
@@ -149,7 +176,7 @@ jobs:
           path: build/macos/Build/Products/Release/epitaka-macos.zip
 
   # -------------------------------------------------------------
-  # 4. LINUX BUILD
+  # 5. LINUX BUILD
   # -------------------------------------------------------------
   build-linux:
     name: Build Linux
@@ -161,7 +188,12 @@ jobs:
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libglib2.0-dev
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev libglib2.0-dev \
+            liblzma-dev libstdc++-12-dev \
+            libasound2-dev libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -169,9 +201,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # ADD THIS STEP BEFORE PUB GET
       - name: Create Linux Platform Files
-        run: flutter create --platforms=linux .
+        run: |
+          if [ ! -d "linux" ]; then
+            flutter create --platforms=linux .
+          fi
 
       - name: Install Dependencies
         run: flutter pub get

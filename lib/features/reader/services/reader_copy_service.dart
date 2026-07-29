@@ -80,7 +80,18 @@ class ReaderCopyService {
     required int? currentLineId,
     required String? selectedText,
   }) {
-    final anchors = selectableRegionState.contextMenuAnchors;
+    TextSelectionToolbarAnchors anchors;
+    try {
+      anchors = selectableRegionState.contextMenuAnchors;
+    } catch (_) {
+      // Flutter bug: SelectableRegionState.startGlyphHeight does a null check
+      // on internal state that can be null when selecting very long content on
+      // Android. Fall back to a zero anchor so the toolbar still shows up
+      // instead of crashing the app.
+      anchors = const TextSelectionToolbarAnchors(
+        primaryAnchor: Offset.zero,
+      );
+    }
     final settings = ref.read(settingsProvider);
     final script = settings.paliScript;
 

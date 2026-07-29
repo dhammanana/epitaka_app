@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
@@ -40,20 +41,6 @@ class TranslationDownloadState {
   }
 }
 
-/// Maps version keys to download URLs.
-/// A version key is `langCode_suffix` (e.g. `my`, `my_nissaya`, `en`).
-///
-/// Legacy static URL map for the standard translations.
-/// New versioned translations use the manifest-based URL system.
-const Map<String, String> _legacyDownloadUrls = {
-  'en':
-      'https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_en.db.zip',
-  'si':
-      'https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_si.db.zip',
-  'th':
-      'https://github.com/dhammanana/epitaka_release/releases/download/v1.0.1/epitaka_th.db.zip',
-};
-
 /// Provider that manages downloading translation database files.
 ///
 /// State is a map of version key (langCode[_suffix]) → download state,
@@ -69,20 +56,28 @@ class TranslationDownloadNotifier
     return state[versionKey] ?? const TranslationDownloadState();
   }
 
-  /// Returns true if a download URL is available for this version key.
-  static bool hasDownloadUrl(String versionKey) =>
-      _legacyDownloadUrls.containsKey(versionKey);
-
   /// Get the download URL for a translation version.
+  /// Returns null if no URL is available from the manifest.
   static String? getDownloadUrl(TranslationVersion version) {
-    // First check if the version itself has a download URL
-    if (version.hasDownloadUrl) return version.downloadUrl;
+    return version.hasDownloadUrl ? version.downloadUrl : null;
+  }
 
-    // Fall back to legacy URL map
-    final key = version.suffix != null && version.suffix!.isNotEmpty
+  /// Check if an update is available for a locally installed version.
+  /// Returns true when the manifest's updatedAt is different from what was
+  /// saved when the version was last downloaded.
+  static Future<bool> isUpdateAvailable(TranslationVersion version) async {
+    if (!version.isAvailable || !version.hasDownloadUrl) return false;
+    if (version.updatedAt == null || version.updatedAt!.isEmpty) return false;
+
+    final versionKey = version.suffix != null && version.suffix!.isNotEmpty
         ? '${version.languageCode}_${version.suffix}'
         : version.languageCode;
-    return _legacyDownloadUrls[key];
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('version_updated_$versionKey');
+    // If nothing saved locally, treat as not available for update
+    if (saved == null || saved.isEmpty) return false;
+    // Compare dates — different means a newer version is available
+    return saved != version.updatedAt;
   }
 
   /// Cancel an in-progress download for a version key.
@@ -233,6 +228,15 @@ class TranslationDownloadNotifier
         flush: true,
       );
 
+      // Save the updatedAt metadata for update-checking
+      if (version.updatedAt != null && version.updatedAt!.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          'version_updated_$versionKey',
+          version.updatedAt!,
+        );
+      }
+
       // Invalidate providers
       ref.invalidate(translationRegistryProvider);
       ref.invalidate(mergedTranslationVersionsProvider);
@@ -288,6 +292,119 @@ class TranslationDownloadNotifier
       displayName: 'Default',
     );
     await downloadVersion(version, ref);
+  }
+
+  /// Download a core asset (epitaka, dpd_dictionary) from the given URL
+  /// and save the extracted .db file to the database directory.
+  Future<bool> downloadCoreAsset({
+    required String url,
+    required String filename,
+    required String displayName,
+    required WidgetRef ref,
+    String? versionKey,
+  }) async {
+    final key = versionKey ?? filename.replaceAll('.db', '');
+
+    state = {
+      ...state,
+      key: const TranslationDownloadState(
+        status: DownloadStatus.downloading,
+        progress: 0.0,
+      ),
+    };
+
+    try {
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
+        state = {
+          ...state,
+          key: TranslationDownloadState(
+            status: DownloadStatus.error,
+            errorMessage: 'Download failed (HTTP ${response.statusCode})',
+          ),
+        };
+        return false;
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      final bytes = <int>[];
+      int received = 0;
+
+      await for (final chunk in response.stream) {
+        bytes.addAll(chunk);
+        received += chunk.length;
+        if (contentLength > 0) {
+          state = {
+            ...state,
+            key: TranslationDownloadState(
+              status: DownloadStatus.downloading,
+              progress: received / contentLength,
+            ),
+          };
+        }
+      }
+      client.close();
+
+      state = {
+        ...state,
+        key: const TranslationDownloadState(status: DownloadStatus.extracting),
+      };
+
+      final dbDir = await getDatabaseDirectory();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      ArchiveFile? dbEntry;
+      for (final entry in archive) {
+        if (entry.isFile && entry.name.endsWith('.db')) {
+          dbEntry = entry;
+          break;
+        }
+      }
+
+      if (dbEntry == null) {
+        state = {
+          ...state,
+          key: TranslationDownloadState(
+            status: DownloadStatus.error,
+            errorMessage: 'No database file found in the archive',
+          ),
+        };
+        return false;
+      }
+
+      final destPath = p.join(dbDir.path, filename);
+      await File(destPath).writeAsBytes(
+        dbEntry.content as List<int>,
+        flush: true,
+      );
+
+      state = {
+        ...state,
+        key: const TranslationDownloadState(
+          status: DownloadStatus.completed,
+          progress: 1.0,
+        ),
+      };
+
+      // Invalidate FTS required-asset providers so the startup wizard
+      // updates the continue button state after a core download finishes.
+      ref.invalidate(translationRegistryProvider);
+      ref.invalidate(localTranslationVersionsProvider);
+
+      return true;
+    } catch (e) {
+      state = {
+        ...state,
+        key: TranslationDownloadState(
+          status: DownloadStatus.error,
+          errorMessage: e.toString(),
+        ),
+      };
+      return false;
+    }
   }
 
   /// Delete a translation database file from disk.

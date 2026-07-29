@@ -187,9 +187,14 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final settings = ref.watch(settingsProvider);
     final availableAsync = ref.watch(ftsAvailableVersionsProvider);
     final downloadableAsync = ref.watch(ftsDownloadableVersionsProvider);
+    final downloadStates = ref.watch(translationDownloadProvider);
+    final requiredCoreAsync = ref.watch(ftsRequiredCoreAssetsProvider);
+    final requiredTransAsync = ref.watch(ftsRequiredTranslationsProvider);
+    final allRequiredReady = ref.watch(ftsAllRequiredReadyProvider);
 
     // Show loading while manifest is being fetched
-    final isLoading = availableAsync.isLoading || downloadableAsync.isLoading;
+    final isLoading = availableAsync.isLoading || downloadableAsync.isLoading ||
+        requiredCoreAsync.isLoading || requiredTransAsync.isLoading;
     if (isLoading) {
       return _buildWizardLoading(colors);
     }
@@ -206,7 +211,40 @@ class _IndexGateState extends ConsumerState<IndexGate>
       return (a.displayName).compareTo(b.displayName);
     });
 
-    final hasAnyDownloaded = versions.any((v) => v.isAvailable);
+    // Gather required core assets that are not yet installed
+    final requiredCoreAssets = <CoreAsset>[];
+    requiredCoreAsync.whenData((v) => requiredCoreAssets.addAll(v));
+
+    // Gather required translations that are not yet installed
+    final requiredTranslations = <TranslationVersion>[];
+    requiredTransAsync.whenData((v) => requiredTranslations.addAll(v));
+
+    // Remove required (compulsory) translations from the optional list
+    // so they don't appear twice (once in Required + once in Optional).
+    final requiredCodes = requiredTranslations
+        .map((v) => '${v.languageCode}_${v.suffix ?? ''}')
+        .toSet();
+    final optionalVersions = versions
+        .where((v) => !requiredCodes
+            .contains('${v.languageCode}_${v.suffix ?? ''}'))
+        .toList();
+
+    // Compute all-ready from download states as well — the FutureProvider
+    // caches its result and won't re-run until invalidated, but download
+    // state updates instantly via the StateNotifier.
+    bool coreAllComplete(List<CoreAsset> assets) => assets.every((a) {
+      final s = downloadStates[a.slug] ?? const TranslationDownloadState();
+      return s.status == DownloadStatus.completed;
+    });
+    bool transAllComplete(List<TranslationVersion> versions) =>
+        versions.every((v) {
+      final key = '${v.languageCode}_${v.suffix ?? ''}';
+      final s = downloadStates[key] ?? const TranslationDownloadState();
+      return s.status == DownloadStatus.completed;
+    });
+    final allReady = (allRequiredReady.valueOrNull ?? false) ||
+        (coreAllComplete(requiredCoreAssets) &&
+         transAllComplete(requiredTranslations));
 
     // Determine current Pāli and translation colors
     final paliColor = settings.paliColorFor(brightness);
@@ -252,13 +290,13 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Set up your translations to get started.',
+                      'Download the required databases to get started.',
                       style: AppTypography.labelMedium
                           .copyWith(color: colors.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'You can change these settings later.',
+                      'You can add more translations later.',
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
@@ -275,23 +313,61 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     horizontal: AppDimensions.marginMobile,
                   ),
                   children: [
-                    // ── Version cards ────────────────────────────
+                    // ── Required Core Assets ──────────────────────
+                    if (requiredCoreAssets.isNotEmpty) ...[
+                      _buildRequiredSectionLabel(
+                        'Required Databases',
+                        'These are needed for the app to function.',
+                        colors,
+                      ),
+                      const SizedBox(height: AppDimensions.sm),
+                      ...requiredCoreAssets.map((asset) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _buildCoreAssetCard(
+                              asset: asset,
+                              colors: colors,
+                            ),
+                          )),
+                      const SizedBox(height: AppDimensions.md),
+                    ],
+
+                    // ── Required Translations ─────────────────────
+                    if (requiredTranslations.isNotEmpty) ...[
+                      _buildRequiredSectionLabel(
+                        'Required Translations',
+                        'An English translation is needed for AI search features.',
+                        colors,
+                      ),
+                      const SizedBox(height: AppDimensions.sm),
+                      ...requiredTranslations.map((v) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _buildVersionCard(
+                              version: v,
+                              colors: colors,
+                              isRequired: true,
+                            ),
+                          )),
+                      const SizedBox(height: AppDimensions.md),
+                    ],
+
+                    // ── Optional translations ─────────────────────
                     Text(
-                      'Translations',
+                      'Optional Translations',
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: AppDimensions.sm),
-                    if (versions.isEmpty)
+                    if (optionalVersions.isEmpty)
                       _buildNoVersions(colors)
                     else
-                      ...versions.map((v) => Padding(
+                      ...optionalVersions.map((v) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _buildVersionCard(
                               version: v,
                               colors: colors,
+                              isRequired: false,
                             ),
                           )),
 
@@ -416,11 +492,12 @@ class _IndexGateState extends ConsumerState<IndexGate>
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: hasAnyDownloaded ? () => _startBuild() : null,
+                      onPressed: allReady ? () => _startBuild() : null,
                       icon: const Icon(Icons.arrow_forward),
-                      label: Text(hasAnyDownloaded
-                          ? 'Build Search Index'
-                          : 'Download a translation first'),
+                      label: Text(
+                        allReady
+                            ? 'Build Search Index'
+                            : 'Download required items first'),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -436,6 +513,27 @@ class _IndexGateState extends ConsumerState<IndexGate>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRequiredSectionLabel(String title, String subtitle, ColorScheme colors) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.error,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          subtitle,
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 
@@ -491,9 +589,173 @@ class _IndexGateState extends ConsumerState<IndexGate>
     );
   }
 
+  /// Build a card for a core asset that needs to be downloaded.
+  Widget _buildCoreAssetCard({
+    required CoreAsset asset,
+    required ColorScheme colors,
+  }) {
+    final downloadStates = ref.watch(translationDownloadProvider);
+    final assetKey = asset.slug;
+    final downloadState = downloadStates[assetKey] ??
+        const TranslationDownloadState();
+
+    final isActive = downloadState.status == DownloadStatus.downloading ||
+        downloadState.status == DownloadStatus.extracting;
+    final isComplete = downloadState.status == DownloadStatus.completed;
+
+    return Container(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        border: Border.all(
+          color: isComplete
+              ? AppColors.successGreen.withValues(alpha: 0.3)
+              : colors.error.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              // Asset icon
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: isComplete
+                      ? AppColors.successGreen.withValues(alpha: 0.15)
+                      : colors.errorContainer,
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                ),
+                child: Center(
+                  child: isComplete
+                      ? Icon(Icons.check_circle,
+                          size: 22, color: AppColors.successGreen)
+                      : Icon(Icons.storage,
+                          size: 22, color: colors.error),
+                ),
+              ),
+              const SizedBox(width: AppDimensions.md),
+              // Name + status
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          asset.displayName,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: colors.error.withValues(alpha: 0.12),
+                            borderRadius:
+                                BorderRadius.circular(AppDimensions.radiusSm),
+                          ),
+                          child: Text(
+                            'Required',
+                            style: AppTypography.labelSmall.copyWith(
+                              fontSize: 10,
+                              color: colors.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isComplete
+                          ? 'Installed'
+                          : 'Not installed',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isComplete
+                            ? AppColors.successGreen
+                            : isActive
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Action button / spinner
+              if (isActive)
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: colors.primary,
+                    value: downloadState.status == DownloadStatus.extracting
+                        ? null
+                        : downloadState.progress,
+                  ),
+                )
+              else if (!isComplete)
+                FilledButton.tonal(
+                  onPressed: () {
+                    final filename = asset.filename ??
+                        '${asset.slug.replaceAll('_', '-')}.db';
+                    ref
+                        .read(translationDownloadProvider.notifier)
+                        .downloadCoreAsset(
+                          url: asset.url,
+                          filename: filename,
+                          displayName: asset.displayName,
+                          ref: ref,
+                          versionKey: assetKey,
+                        );
+                  },
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    textStyle: AppTypography.labelSmall
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  child: const Text('Download'),
+                ),
+            ],
+          ),
+          // File size
+          if (asset.size != null && !isComplete)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _formatSize(asset.size!),
+                style: AppTypography.labelSmall
+                    .copyWith(color: colors.onSurfaceVariant, fontSize: 11),
+              ),
+            ),
+          // Progress bar
+          if (isActive && downloadState.progress > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(
+                value: downloadState.progress,
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(2),
+                backgroundColor: colors.surfaceContainerHighest,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildVersionCard({
     required TranslationVersion version,
     required ColorScheme colors,
+    bool isRequired = false,
   }) {
     // Build version key for download state lookup
     final versionKey = version.suffix != null && version.suffix!.isNotEmpty
@@ -553,12 +815,36 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      version.englishName,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          version.englishName,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (isRequired && !isComplete) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: colors.error.withValues(alpha: 0.12),
+                              borderRadius:
+                                  BorderRadius.circular(AppDimensions.radiusSm),
+                            ),
+                            child: Text(
+                              'Required',
+                              style: AppTypography.labelSmall.copyWith(
+                                fontSize: 10,
+                                color: colors.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Row(
                       children: [

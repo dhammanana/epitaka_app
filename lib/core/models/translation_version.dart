@@ -37,6 +37,9 @@ class TranslationVersion {
   /// Checksum (SHA-256 hex) for integrity verification.
   final String? checksum;
 
+  /// Whether this version is required for the app to function.
+  final bool compulsory;
+
   const TranslationVersion({
     required this.languageCode,
     this.suffix,
@@ -48,6 +51,7 @@ class TranslationVersion {
     this.fileSize,
     this.updatedAt,
     this.checksum,
+    this.compulsory = false,
   });
 
   /// The language's English name.
@@ -76,6 +80,7 @@ class TranslationVersion {
     int? fileSize,
     String? updatedAt,
     String? checksum,
+    bool? compulsory,
     bool clearDownloadUrl = false,
   }) {
     return TranslationVersion(
@@ -89,6 +94,7 @@ class TranslationVersion {
       fileSize: fileSize ?? this.fileSize,
       updatedAt: updatedAt ?? this.updatedAt,
       checksum: checksum ?? this.checksum,
+      compulsory: compulsory ?? this.compulsory,
     );
   }
 
@@ -100,6 +106,7 @@ class TranslationVersion {
     if (updatedAt != null) 'updated': updatedAt,
     if (checksum != null) 'checksum': checksum,
     if (isNissaya) 'type': 'nissaya',
+    if (compulsory) 'compulsory': true,
   };
 
   factory TranslationVersion.fromJson(
@@ -124,6 +131,7 @@ class TranslationVersion {
       fileSize: json['size'] as int?,
       updatedAt: json['updated'] as String?,
       checksum: json['checksum'] as String?,
+      compulsory: json['compulsory'] as bool? ?? false,
     );
   }
 
@@ -178,12 +186,48 @@ class LangInfo {
   const LangInfo(this.code, this.nativeName, this.englishName);
 }
 
+/// A core asset (epitaka, dpd_dictionary, embeddings) from the manifest.
+class CoreAsset {
+  final String slug;
+  final String displayName;
+  final String? description;
+  final String url;
+  final int? size;
+  final String? filename;
+  final bool compulsory;
+
+  const CoreAsset({
+    required this.slug,
+    required this.displayName,
+    this.description,
+    required this.url,
+    this.size,
+    this.filename,
+    this.compulsory = false,
+  });
+
+  factory CoreAsset.fromJson(String slug, Map<String, dynamic> json) {
+    return CoreAsset(
+      slug: slug,
+      displayName: json['displayName'] as String? ?? slug,
+      description: json['description'] as String?,
+      url: json['url'] as String,
+      size: json['size'] as int?,
+      filename: json['filename'] as String?,
+      compulsory: json['compulsory'] as bool? ?? false,
+    );
+  }
+}
+
 /// The manifest JSON structure hosted on GitHub.
 ///
 /// Example:
 /// ```json
 /// {
 ///   "version": 1,
+///   "core": {
+///     "embeddings": { "url": "...", "displayName": "..." }
+///   },
 ///   "languages": {
 ///     "my": {
 ///       "englishName": "Myanmar",
@@ -212,6 +256,9 @@ class TranslationManifest {
   final int version;
   final Map<String, List<TranslationVersion>> languages;
 
+  /// Core assets (epitaka, dpd_dictionary, embeddings).
+  final Map<String, CoreAsset> core;
+
   /// Per-language display metadata (english + native names) parsed from the
   /// manifest. This is the source of truth for language names — there is no
   /// separate hardcoded list.
@@ -220,6 +267,7 @@ class TranslationManifest {
   const TranslationManifest({
     this.version = 1,
     this.languages = const {},
+    this.core = const {},
     this.languageNames = const {},
   });
 
@@ -230,6 +278,10 @@ class TranslationManifest {
   /// Get versions for a specific language code.
   List<TranslationVersion> versionsFor(String languageCode) =>
       languages[languageCode] ?? [];
+
+  /// Convenience getter for the embeddings core asset URL.
+  String? get embeddingsUrl =>
+      core['embeddings']?.url;
 
   factory TranslationManifest.fromJson(Map<String, dynamic> json) {
     final version = json['version'] as int? ?? 1;
@@ -260,9 +312,19 @@ class TranslationManifest {
       }
     }
 
+    // Parse core assets
+    final coreData = json['core'] as Map<String, dynamic>? ?? {};
+    final core = <String, CoreAsset>{};
+    for (final entry in coreData.entries) {
+      final slug = entry.key;
+      final data = entry.value as Map<String, dynamic>;
+      core[slug] = CoreAsset.fromJson(slug, data);
+    }
+
     return TranslationManifest(
       version: version,
       languages: languages,
+      core: core,
       languageNames: languageNames,
     );
   }

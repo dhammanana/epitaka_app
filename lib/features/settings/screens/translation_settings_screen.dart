@@ -639,6 +639,22 @@ class _TranslationVersionTile extends StatefulWidget {
 
 class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   bool _expanded = false;
+  bool _hasUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUpdate();
+  }
+
+  Future<void> _checkUpdate() async {
+    final hasUpdate = await TranslationDownloadNotifier.isUpdateAvailable(
+      widget.version,
+    );
+    if (mounted && hasUpdate != _hasUpdate) {
+      setState(() => _hasUpdate = hasUpdate);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -771,6 +787,14 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (_hasUpdate && v.hasDownloadUrl)
+                    _SmallButton(
+                      label: 'Update',
+                      icon: Icons.system_update,
+                      onTap: widget.onDownload,
+                      colors: colors,
+                    ),
+                  if (_hasUpdate) const SizedBox(width: 6),
                   InkWell(
                     onTap: widget.onDelete,
                     borderRadius: BorderRadius.circular(999),
@@ -789,9 +813,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                   ),
                 ],
               )
-            else if (!isInstalled &&
-                (v.hasDownloadUrl ||
-                    TranslationDownloadNotifier.hasDownloadUrl(v.languageCode)))
+            else if (!isInstalled && v.hasDownloadUrl)
               _SmallButton(
                 label: 'Download',
                 icon: Icons.download,

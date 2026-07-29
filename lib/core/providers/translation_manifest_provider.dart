@@ -8,7 +8,7 @@ import '../utils/database_initializer.dart';
 
 /// Default URL for the translation manifest JSON.
 const String defaultManifestUrl =
-    'https://raw.githubusercontent.com/dhammanana/epitaka_release/refs/heads/main/translations_manifest.json';
+    'https://raw.githubusercontent.com/dhammanana/epitaka_app/refs/heads/main/assets/translations_manifest.json';
 
 /// Provider that fetches and caches the translation manifest.
 final translationManifestProvider = FutureProvider<TranslationManifest>((

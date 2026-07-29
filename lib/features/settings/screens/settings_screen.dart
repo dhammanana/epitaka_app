@@ -6,6 +6,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../gavesana/providers/gavesana_download_provider.dart';
 import '../../search/providers/search_provider.dart';
@@ -434,8 +435,22 @@ class _GavesanaDownloadTileState extends ConsumerState<_GavesanaDownloadTile> {
 
     setState(() => _isDownloading = true);
     try {
+      final manifest = await ref.read(translationManifestProvider.future);
+      final url = manifest.embeddingsUrl;
+      if (url == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No download URL available for AI search assets'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() => _isDownloading = false);
+        return;
+      }
       final service = ref.read(gavesanaDownloadServiceProvider);
-      final success = await service.downloadAssets();
+      final success = await service.downloadAssets(url: url);
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

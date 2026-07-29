@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../../core/models/translation_version.dart';
 import '../../core/providers/translation_manifest_provider.dart';
+import '../../core/utils/database_initializer.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
 import 'index_controller.dart';/// Provider that returns true if the FTS index is built and ready.
 final isIndexReadyProvider = Provider<bool>((ref) {
@@ -49,4 +53,63 @@ final ftsDownloadStateProvider =
     Provider.family<TranslationDownloadState, String>((ref, versionKey) {
   final downloadStates = ref.watch(translationDownloadProvider);
   return downloadStates[versionKey] ?? const TranslationDownloadState();
+});
+
+/// Helper to check if a core database file exists on disk.
+Future<bool> coreAssetExists(String filename) async {
+  final dir = await getDatabaseDirectory();
+  return File(p.join(dir.path, filename)).exists();
+}
+
+/// Provider that returns a list of core assets (epitaka, dpd_dictionary,
+/// embeddings) that are compulsory but not yet installed on disk.
+///
+/// This is used by the startup wizard to require downloading these before
+/// the index can be built.
+final ftsRequiredCoreAssetsProvider =
+    FutureProvider<List<CoreAsset>>((ref) async {
+  final manifest = await ref.watch(translationManifestProvider.future);
+  final required = <CoreAsset>[];
+
+  for (final entry in manifest.core.entries) {
+    final asset = entry.value;
+    if (!asset.compulsory) continue;
+    final filename = asset.filename ?? '${entry.key}.db';
+    final exists = await coreAssetExists(filename);
+    if (!exists) {
+      required.add(asset);
+    }
+  }
+
+  return required;
+});
+
+/// Provider that returns translations that are compulsory (marked
+/// `compulsory: true` in the manifest) but not yet installed on disk.
+/// Uses the merged provider so already-installed versions are correctly
+/// excluded even though the manifest version object has isAvailable=false.
+final ftsRequiredTranslationsProvider =
+    FutureProvider<List<TranslationVersion>>((ref) async {
+  final merged = await ref.watch(mergedTranslationVersionsProvider.future);
+  final required = <TranslationVersion>[];
+
+  for (final v in merged) {
+    if (v.isAvailable || !v.compulsory) continue;
+    if (v.hasDownloadUrl) required.add(v);
+  }
+
+  return required;
+});
+
+/// Combined provider: true if all compulsory items are installed (core +
+/// translations needed for the FTS index).
+final ftsAllRequiredReadyProvider = FutureProvider<bool>((ref) async {
+  final coreRequired = await ref.watch(ftsRequiredCoreAssetsProvider.future);
+  if (coreRequired.isNotEmpty) return false;
+
+  final transRequired =
+      await ref.watch(ftsRequiredTranslationsProvider.future);
+  if (transRequired.isNotEmpty) return false;
+
+  return true;
 });

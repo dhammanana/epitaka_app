@@ -37,9 +37,6 @@ class GavesanaDownloadService {
       StreamController<GavesanaDownloadStatus>.broadcast();
   Stream<GavesanaDownloadStatus> get statusStream => _statusCtrl.stream;
 
-  static const String _downloadUrl =
-      'https://github.com/dhammanana/epitaka_app/releases/download/latest/embeddings.zip';
-
   static const Map<String, int> _minFileSizes = {
     'model_quantized.onnx': 100_000_000,
     'tokenizer.json': 1_000_000,
@@ -117,9 +114,12 @@ class GavesanaDownloadService {
     }
   }
 
-  /// Download embeddings.zip from the release server and extract it into
-  /// the gavesana/ directory.
-  Future<bool> downloadAssets({String? customUrl}) async {
+  /// Download the Gavesana AI asset archive and extract it into the
+  /// gavesana/ directory.
+  ///
+  /// [url] is the download URL for the assets zip, normally obtained from
+  /// the translation manifest (TranslationManifest.embeddingsUrl).
+  Future<bool> downloadAssets({required String url}) async {
     _status = GavesanaDownloadStatus.downloading;
     _progress = 0.0;
     _error = null;
@@ -127,7 +127,6 @@ class GavesanaDownloadService {
 
     try {
       final dir = await _appDir;
-      final url = customUrl ?? _downloadUrl;
 
       final response = await http.Client().send(
         http.Request('GET', Uri.parse(url)),
