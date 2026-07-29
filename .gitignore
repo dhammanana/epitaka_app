@@ -1,6 +1,8 @@
 # big files
 assets/db/*
+!assets/db/.gitkeep
 assets/models/*
+!assets/models/.gitkeep
 docs/*
 
 # Miscellaneous

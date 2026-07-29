@@ -108,7 +108,17 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Install Rust (required by super_native_extensions)
+        run: rustup default stable
+
+      - name: Ensure AppData directory exists (fix cargokit symlink resolution)
+        run: |
+          if (-not (Test-Path "C:\Users\runneradmin\AppData")) {
+            New-Item -Path "C:\Users\runneradmin\AppData" -ItemType Directory -Force
+          }
+
       - name: Create Windows Platform Files
+        # windows/ directory checked into git so this is a no-op fallback
         run: |
           if (-not (Test-Path "windows")) {
             flutter create --platforms=windows .
