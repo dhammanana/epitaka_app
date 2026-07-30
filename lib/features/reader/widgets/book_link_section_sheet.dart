@@ -49,6 +49,14 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   final GlobalKey _targetLineKey = GlobalKey();
   bool _didScrollToTarget = false;
 
+  // ── _buildBody memoization ────────────────────────────────────────
+  // Avoid rebuilding PreviewContent on every DraggableScrollableSheet
+  // builder call triggered by keyboard viewInsets animation frames.
+  Widget? _cachedBody;
+  LinkedParagraphContent? _cachedBodyContent;
+  bool _cachedBodyIsLoading = true;
+  String? _cachedBodyError;
+
   @override
   void initState() {
     super.initState();
@@ -242,12 +250,24 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   }
 
   Widget _buildBody(ColorScheme colors) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+    // Memoization: return cached widget if data hasn't changed.
+    // This prevents PreviewContent from being rebuilt on every
+    // keyboard viewInsets animation frame while the sheet is open.
+    // Must check _cachedBody != null — on the very first call all
+    // state fields match the initial (null/true) values but the
+    // body hasn't been built yet.
+    if (_cachedBody != null &&
+        identical(_cachedBodyContent, _content) &&
+        _cachedBodyIsLoading == _isLoading &&
+        _cachedBodyError == _error) {
+      return _cachedBody!;
     }
 
-    if (_error != null) {
-      return Center(
+    Widget body;
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_error != null) {
+      body = Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
@@ -257,11 +277,8 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           ),
         ),
       );
-    }
-
-    final content = _content;
-    if (content == null) {
-      return Center(
+    } else if (_content == null) {
+      body = Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
@@ -273,89 +290,94 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
           ),
         ),
       );
-    }
+    } else {
+      final content = _content!;
+      // Convert linked content lines to PreviewLineData.
+      final previewLines = content.lines.map((line) {
+        return PreviewLineData(
+          paraId: line.paraId,
+          lineId: line.lineId,
+          pali: line.paliText,
+          translations: line.translations,
+        );
+      }).toList();
 
-    // Convert linked content lines to PreviewLineData. Use each line's own
-    // paraId so PreviewContent renders paragraph breaks and highlights the
-    // linked paragraph (content.paraId) within the full section.
-    final previewLines = content.lines.map((line) {
-      return PreviewLineData(
-        paraId: line.paraId,
-        lineId: line.lineId,
-        pali: line.paliText,
-        translations: line.translations,
-      );
-    }).toList();
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        AppDimensions.sm,
-        AppDimensions.marginMobile,
-        32,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Heading ──────────────────────────────────────────
-          if (content.headingTitle != null) ...[
-            Container(
-              width: 32,
-              height: 2,
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(1),
+      body = SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          AppDimensions.marginMobile,
+          AppDimensions.sm,
+          AppDimensions.marginMobile,
+          32,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Heading ──────────────────────────────────────
+            if (content.headingTitle != null) ...[
+              Container(
+                width: 32,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(1),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            PaliTextStatic(
-              content.headingTitle!,
-              null,
-              style: content.headingLevel != null && content.headingLevel! <= 2
-                  ? AppTypography.headlineSmall.copyWith(color: colors.primary)
-                  : AppTypography.bodyPali.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colors.primary,
-                    ),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // ── Preview lines with reader typography ────────────
-          PreviewContent(
-            lines: previewLines,
-            highlightParaId: content.paraId,
-            firstSnippetIndex: 0,
-            scrollToParaId: widget.link.linkedParaId,
-            scrollToLineId: widget.link.linkedLineId,
-            targetLineKey: _targetLineKey,
-            onPaliWordTap: (word) {
-              // Import and use dictionary lookup
-              _showDictionary(context, word);
-            },
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Line ref badge ──────────────────────────────────
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 6),
+              PaliTextStatic(
+                content.headingTitle!,
+                null,
+                style: content.headingLevel != null && content.headingLevel! <= 2
+                    ? AppTypography.headlineSmall.copyWith(color: colors.primary)
+                    : AppTypography.bodyPali.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.primary,
+                      ),
               ),
-              child: Text(
-                'para ${content.paraId} · line ${widget.link.linkedLineId}',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
+              const SizedBox(height: 16),
+            ],
+
+            // ── Preview lines with reader typography ────────
+            PreviewContent(
+              lines: previewLines,
+              highlightParaId: content.paraId,
+              firstSnippetIndex: 0,
+              scrollToParaId: widget.link.linkedParaId,
+              scrollToLineId: widget.link.linkedLineId,
+              targetLineKey: _targetLineKey,
+              onPaliWordTap: (word) {
+                _showDictionary(context, word);
+              },
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Line ref badge ──────────────────────────────
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'para ${content.paraId} · line ${widget.link.linkedLineId}',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
+
+    // Cache for next time.
+    _cachedBody = body;
+    _cachedBodyContent = _content;
+    _cachedBodyIsLoading = _isLoading;
+    _cachedBodyError = _error;
+    return body;
   }
 
   void _showDictionary(BuildContext context, String word) {

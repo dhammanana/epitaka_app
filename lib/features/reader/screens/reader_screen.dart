@@ -233,6 +233,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Throttle: only update scroll state once per distinct paraId per book.
   final Map<String, int> _lastScrollParaId = {};
 
+  /// Last known viewInsets.bottom — used to detect keyboard-triggered
+  /// layout changes (which fire _onPositionsChanged but are not real
+  /// user scrolls). When the keyboard shows/hides while a modal bottom
+  /// sheet is open, the viewport shrinks/grows and the scrollable list
+  /// reports new positions — we skip those to avoid unwanted scroll saves
+  /// and TTS-auto-scroll disabling.
+  double _lastViewInsets = 0;
+
   /// Throttle: skip _onPositionsChanged heavy work if called too frequently.
   DateTime? _lastPositionThrottle;
   static const Duration _kPositionThrottleDuration = Duration(milliseconds: 50);
@@ -417,6 +425,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // Driven by ItemPositionsListener, which reports the *actual* visible
   // item indices from the layout.
   void _onPositionsChanged(String bookId) {
+    // ── Sheet-open guard: skip provider writes when a modal bottom sheet
+    // is open. The dictionary sheet sets dictionarySheetOpenProvider to true.
+    final dictSheetOpen = ref.read(dictionarySheetOpenProvider);
+    if (dictSheetOpen) {
+      return;
+    }
+
+    // ── ViewInsets guard: keyboard show/hide changes the viewport size,
+    // which can trigger position callbacks that look like user scrolls.
+    // Track the last known value and skip when it changes.
+    final insetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    if (insetsBottom != _lastViewInsets) {
+      _lastViewInsets = insetsBottom;
+      // Also force-expand app bar when keyboard dismisses (sheet closed)
+      if (insetsBottom == 0 && _appBarCollapsed.value) {
+        _appBarCollapsed.value = false;
+        _scrollAccum[bookId] = 0;
+      }
+      return;
+    }
+
     // Throttle: skip heavy work if called too frequently (e.g. every scroll frame)
     final now = DateTime.now();
     final shouldThrottle = _lastPositionThrottle != null &&
