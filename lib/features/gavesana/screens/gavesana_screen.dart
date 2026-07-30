@@ -67,6 +67,10 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     }
   }
 
+  void _navigateToSettings(BuildContext context) {
+    context.push('/settings');
+  }
+
   @override
   void dispose() {
     _queryController.dispose();
@@ -124,16 +128,22 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
           ],
         ),
         actions: [
-          // Assets status indicator
+          // Assets status indicator — clickable when not ready
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: assetsReady.when(
               data: (ready) => ready
                   ? Icon(Icons.check_circle, size: 16, color: colors.tertiary)
-                  : Icon(
-                      Icons.cloud_download,
-                      size: 16,
-                      color: colors.onSurfaceVariant,
+                  : GestureDetector(
+                      onTap: () => _navigateToSettings(context),
+                      child: Tooltip(
+                        message: 'Download AI assets in Settings',
+                        child: Icon(
+                          Icons.cloud_download,
+                          size: 16,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
                     ),
               loading: () => const SizedBox(
                 width: 16,

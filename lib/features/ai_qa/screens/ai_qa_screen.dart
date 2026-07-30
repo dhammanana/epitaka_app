@@ -23,6 +23,7 @@ import '../services/mention_service.dart';
 import '../widgets/ai_qa_chat_bubble.dart';
 import '../widgets/ai_qa_settings_sheet.dart';
 import '../widgets/attachment_bar.dart';
+import '../widgets/mention_index_build_dialog.dart';
 import '../widgets/mention_overlay.dart';
 
 const _featureName = 'Vimaṃsa';
@@ -100,7 +101,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   }
 
   Future<void> _checkMentionIndex() async {
-    final ready = await ref.read(isMentionIndexReadyProvider.future);
+    await ref.read(isMentionIndexReadyProvider.future);
     if (mounted) {
       setState(() => _mentionIndexChecked = true);
     }
@@ -109,8 +110,8 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   Future<void> _buildMentionIndex() async {
     setState(() => _mentionIndexBuilding = true);
     try {
-      final service = ref.read(mentionServiceProvider);
-      final count = await service.buildIndex();
+      if (!mounted) return;
+      final count = await showMentionIndexBuildDialog(context);
       debugPrint('[VIMAṂSA] Mention index built: $count entries');
       // Invalidate the cached FutureProvider so the banner re-checks.
       ref.invalidate(isMentionIndexReadyProvider);
@@ -551,16 +552,14 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   ) {
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 72,
-                height: 72,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -608,16 +607,6 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Example prompts
-              _buildExamplePrompt(
-                colors,
-                'What does the Buddha say about mindfulness (sati)?',
-              ),
-              const SizedBox(height: 8),
-              _buildExamplePrompt(
-                colors,
-                'Explain the concept of anattā with sutta references',
-              ),
               const SizedBox(height: 8),
               _buildExamplePrompt(
                 colors,

@@ -74,8 +74,10 @@ class AiModelService {
           return name.startsWith('models/') ? name.substring(7) : name;
         })
         .where((n) => n.isNotEmpty)
+        // Only include gemini-NNN models (skip embedding, aqa, imagen, etc.)
+        .where((n) => RegExp(r'^gemini-\d+').hasMatch(n))
         .toList()
-      ..sort();
+      ..sort((a, b) => b.compareTo(a));
 
     if (models.isEmpty) {
       return AiModelFetchResult(

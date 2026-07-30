@@ -40,13 +40,13 @@ class ChatThread {
   bool get isFull => messageCount >= maxMessages;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'created_at': createdAt.toIso8601String(),
-        'updated_at': updatedAt.toIso8601String(),
-        'message_count': messageCount,
-        'max_messages': maxMessages,
-      };
+    'id': id,
+    'title': title,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+    'message_count': messageCount,
+    'max_messages': maxMessages,
+  };
 
   factory ChatThread.fromJson(Map<String, dynamic> json) {
     return ChatThread(
@@ -136,8 +136,8 @@ class AiQaSettings {
     this.apiKey = '',
     this.provider = AiProvider.gemini,
     this.baseUrl = '',
-    this.toolModel = 'gemini-2.0-flash-lite',
-    this.answerModel = 'gemini-2.0-flash',
+    this.toolModel = 'gemini-flash-lite-latest',
+    this.answerModel = 'gemini-flash-latest',
     this.customSystemPrompt = '',
     this.maxToolResultChars = 200000,
     this.answerMaxTokens = 64000,
@@ -175,26 +175,27 @@ class AiQaSettings {
   }
 
   Map<String, dynamic> toJson() => {
-        'apiKey': apiKey,
-        'provider': provider.serialise,
-        'baseUrl': baseUrl,
-        'toolModel': toolModel,
-        'answerModel': answerModel,
-        'customSystemPrompt': customSystemPrompt,
-        'maxToolResultChars': maxToolResultChars,
-        'answerMaxTokens': answerMaxTokens,
-        'maxQueriesPerChat': maxQueriesPerChat,
-      };
+    'apiKey': apiKey,
+    'provider': provider.serialise,
+    'baseUrl': baseUrl,
+    'toolModel': toolModel,
+    'answerModel': answerModel,
+    'customSystemPrompt': customSystemPrompt,
+    'maxToolResultChars': maxToolResultChars,
+    'answerMaxTokens': answerMaxTokens,
+    'maxQueriesPerChat': maxQueriesPerChat,
+  };
 
   factory AiQaSettings.fromJson(Map<String, dynamic> json) {
     return AiQaSettings(
       apiKey: json['apiKey'] as String? ?? '',
       provider: AiProvider.fromString(json['provider'] as String? ?? ''),
       baseUrl: json['baseUrl'] as String? ?? '',
-      toolModel: json['toolModel'] as String? ?? 'gemini-2.0-flash-lite',
-      answerModel: json['answerModel'] as String? ?? 'gemini-2.0-flash',
+      toolModel: json['toolModel'] as String? ?? 'gemini-flash-lite-latest',
+      answerModel: json['answerModel'] as String? ?? 'gemini-flash-latest',
       customSystemPrompt: json['customSystemPrompt'] as String? ?? '',
-      maxToolResultChars: (json['maxToolResultChars'] as num?)?.toInt() ?? 200000,
+      maxToolResultChars:
+          (json['maxToolResultChars'] as num?)?.toInt() ?? 200000,
       answerMaxTokens: (json['answerMaxTokens'] as num?)?.toInt() ?? 64000,
       maxQueriesPerChat: (json['maxQueriesPerChat'] as num?)?.toInt() ?? 8,
     );
@@ -228,12 +229,12 @@ class SourceCitation {
   String get displayRef => '$bookId §$paraId:$lineId';
 
   Map<String, dynamic> toJson() => {
-        'bookId': bookId,
-        'bookName': bookName,
-        'paraId': paraId,
-        'lineId': lineId,
-        'excerpt': excerpt,
-      };
+    'bookId': bookId,
+    'bookName': bookName,
+    'paraId': paraId,
+    'lineId': lineId,
+    'excerpt': excerpt,
+  };
 
   factory SourceCitation.fromJson(Map<String, dynamic> json) {
     return SourceCitation(
@@ -335,10 +336,10 @@ class ToolCallLog {
   });
 
   Map<String, dynamic> toJson() => {
-        'toolName': toolName,
-        'arguments': arguments,
-        'resultSummary': resultSummary,
-      };
+    'toolName': toolName,
+    'arguments': arguments,
+    'resultSummary': resultSummary,
+  };
 
   factory ToolCallLog.fromJson(Map<String, dynamic> json) {
     return ToolCallLog(

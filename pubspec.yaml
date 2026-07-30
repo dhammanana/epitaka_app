@@ -67,6 +67,9 @@ dependencies:
   # BPE tokenizer for HuggingFace tokenizer.json
   dart_sentencepiece_tokenizer: ^1.3.2
 
+  # Fuzzy matching for @ mention heading suggestions
+  ffuzzy: ^0.6.2
+
   # Vector search (sqlite-vec via pub — no manual .so/.dylib)
   sqlite_vector: ^1.0.0
   share_plus: ^12.0.2

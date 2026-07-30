@@ -5,9 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/theme/app_dimensions.dart';
-import '../../../core/theme/app_typography.dart';
-import '../../../core/utils/app_localizations.dart';
 import '../../settings/providers/tts_provider.dart';
 import 'reader_tts_widgets.dart';
 
@@ -20,10 +17,8 @@ Future<void> showTtsControlsDialog(
 }) {
   return showDialog(
     context: context,
-    builder: (_) => _TtsControlsDialog(
-      bookId: bookId,
-      onFollowTts: onFollowTts,
-    ),
+    builder: (_) =>
+        _TtsControlsDialog(bookId: bookId, onFollowTts: onFollowTts),
   );
 }
 
@@ -31,14 +26,10 @@ class _TtsControlsDialog extends ConsumerStatefulWidget {
   final String bookId;
   final VoidCallback onFollowTts;
 
-  const _TtsControlsDialog({
-    required this.bookId,
-    required this.onFollowTts,
-  });
+  const _TtsControlsDialog({required this.bookId, required this.onFollowTts});
 
   @override
-  ConsumerState<_TtsControlsDialog> createState() =>
-      _TtsControlsDialogState();
+  ConsumerState<_TtsControlsDialog> createState() => _TtsControlsDialogState();
 }
 
 class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
@@ -87,19 +78,13 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
                   widget.onFollowTts();
                 },
                 onSpeedChanged: (v) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setTtsSpeed(v);
+                  ref.read(settingsProvider.notifier).setTtsSpeed(v);
                 },
                 onPitchChanged: (v) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setTtsPitch(v);
+                  ref.read(settingsProvider.notifier).setTtsPitch(v);
                 },
                 onVoiceChanged: (voice) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setTtsVoice(voice);
+                  ref.read(settingsProvider.notifier).setTtsVoice(voice);
                 },
                 onSystemConfigTap: () {
                   Navigator.of(ctx).pop();

@@ -23,6 +23,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
+import 'package:ffuzzy/ffuzzy.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
@@ -151,20 +152,29 @@ class MentionService {
 
   // ── Build index ───────────────────────────────────────────────────────
 
-  Future<int> buildIndex() async {
+  /// Build the mention index.
+  ///
+  /// [onProgress] is called with a value 0.0–1.0 and a human-readable label
+  /// so the UI can show a progress bar.  The method also yields to the
+  /// Flutter event loop between books so the UI stays responsive.
+  Future<int> buildIndex({
+    void Function(double progress, String label)? onProgress,
+  }) async {
     if (_isBuilding) {
       debugPrint('[MENTION] buildIndex: already building, skipping');
       return 0;
     }
     _isBuilding = true;
     try {
-      return await _buildIndexInternal();
+      return await _buildIndexInternal(onProgress: onProgress);
     } finally {
       _isBuilding = false;
     }
   }
 
-  Future<int> _buildIndexInternal() async {
+  Future<int> _buildIndexInternal({
+    void Function(double progress, String label)? onProgress,
+  }) async {
     final appDb = await _ref.read(appDbProvider.future);
     final epiDb = await _ref.read(epitakaDbProvider.future);
 
@@ -185,11 +195,15 @@ class MentionService {
         id
     ''').get();
 
-    debugPrint('[MENTION] ${books.length} books found');
+    final totalBooks = books.length;
+    debugPrint('[MENTION] $totalBooks books found');
+
+    onProgress?.call(0.0, 'Preparing…');
 
     int totalEntries = 0;
 
-    for (final book in books) {
+    for (int i = 0; i < totalBooks; i++) {
+      final book = books[i];
       final bookId = book.data['book_id'] as String;
       final bookName = book.data['book_name'] as String? ?? '';
       final bookOrderId = book.data['id'] as int;
@@ -199,13 +213,13 @@ class MentionService {
       final chapterLen = (book.data['chapter_len'] as int?) ?? 0;
       final isMula = mulaRef == null ? 1 : 0;
 
+      // Report progress for this book
+      final progress = (i + 1) / totalBooks;
+      onProgress?.call(progress, '$bookId ($bookName)');
+
       // ── Add a BOOK-level entry (para_id = 0) ─────────────────────────
-      // This makes the book searchable by name: @cankisutta → matches
-      // books whose name contains "cankisutta".
       if (bookName.isNotEmpty) {
-        final bookPath = '@$bookId/$bookName';
-        // FZF-style search text: path-like with / separator
-        // e.g. "m-i/dhammacakkappavattanasuttam"
+        final bookPath = '$bookId/$bookName';
         final bookSearchText = _normalizeSearchText('$bookId/$bookName');
         await appDb.customStatement(
           '''
@@ -239,7 +253,7 @@ class MentionService {
             '''
         SELECT para_id, title, level, parent
         FROM headings
-        WHERE book_id = ? and level < 19
+        WHERE book_id = ? AND level < 19 AND level != 10
         ORDER BY para_id ASC
       ''',
             variables: [Variable.withString(bookId)],
@@ -248,7 +262,6 @@ class MentionService {
 
       if (headings.isEmpty) continue;
 
-      // Map parent chain for hierarchy building
       final titleMap = <int, String>{};
       final parentMap = <int, int>{};
       for (final h in headings) {
@@ -257,12 +270,12 @@ class MentionService {
         parentMap[pid] = (h.data['parent'] as int?) ?? 0;
       }
 
-      for (final h in headings) {
+      for (int hi = 0; hi < headings.length; hi++) {
+        final h = headings[hi];
         final paraId = h.data['para_id'] as int;
         final title = (h.data['title'] as String?) ?? '';
         if (title.isEmpty) continue;
 
-        // Walk up the parent chain
         final hierarchy = <String>[title];
         int? currentParent = parentMap[paraId];
         final seen = <int>{paraId};
@@ -277,9 +290,7 @@ class MentionService {
           currentParent = parentMap[currentParent];
         }
 
-        final path = '@$bookId/${hierarchy.join('/')}';
-        // FZF-style search text: full path with / separators
-        // e.g. "m-ii/bhikkhuvaggo/ambalatthika-suttam/1-sila"
+        final path = '$bookId/${hierarchy.join('/')}';
         final searchParts = <String>[bookId, ...hierarchy];
         final searchText = _normalizeSearchText(searchParts.join('/'));
         final hierarchyJson = jsonEncode(hierarchy);
@@ -309,6 +320,18 @@ class MentionService {
           ],
         );
         totalEntries++;
+
+        // Yield inside large heading loops too so the UI stays
+        // responsive even for books with hundreds of headings.
+        if (hi % 30 == 0 && hi < headings.length - 1) {
+          await Future.delayed(Duration.zero);
+        }
+      }
+
+      // Yield to the event loop between books so the progress bar
+      // updates smoothly and the app doesn't freeze.
+      if (i % 5 == 0 && i < totalBooks - 1) {
+        await Future.delayed(Duration.zero);
       }
     }
 
@@ -321,15 +344,7 @@ class MentionService {
 
   // ── Search index ──────────────────────────────────────────────────────
 
-  /// Search the mention index using FZF-style fuzzy matching.
-  ///
-  /// The user can type arbitrary character sequences and they will be
-  /// matched **in order** against the full path stored in `search_text`.
-  ///
-  /// Examples:
-  ///   `Mbhi/ambasutta` → matches `m-ii/bhikkhuvaggo/ambalatthika-suttam`
-  ///   `dn1`            → matches book `dn1` and its headings
-  ///   `ambasutta`      → matches any path containing `ambalatthika-suttam`
+  /// Search the mention index using ffuzzy (FZF-style) fuzzy matching.
   Future<List<MentionSearchResult>> search(
     String query, {
     int limit = 20,
@@ -343,19 +358,14 @@ class MentionService {
     final normalized = _normalizeSearchText(trimmed.toLowerCase());
     if (normalized.isEmpty) return [];
 
-    // Stage 1: Broad SQL pre-filter using the first few characters.
-    // This keeps DB query fast (uses the LIKE index) while the fuzzy
-    // matching in Stage 2 does the fine-grained filtering in Dart.
     final firstChars = normalized.replaceAll('/', '').replaceAll('-', '');
     final prefixLen = firstChars.length >= 2 ? 2 : firstChars.length;
     if (prefixLen == 0) return [];
     final prefix = firstChars.substring(0, prefixLen);
-    // Allow one wildcard between each character: "mb" → "%m%b%"
     final likePattern = prefix.split('').join('%');
     final broadPattern = '%$likePattern%';
 
     try {
-      // Fetch a generous batch of candidates via SQL
       var rows = await appDb
           .customSelect(
             '''
@@ -371,7 +381,6 @@ class MentionService {
           )
           .get();
 
-      // Fallback: if the interleaved pattern was too narrow, try a simpler one
       if (rows.isEmpty) {
         final fallbackPattern = '%${firstChars.substring(0, prefixLen)}%';
         rows = await appDb
@@ -392,42 +401,142 @@ class MentionService {
 
       if (rows.isEmpty) return [];
 
-      // Stage 2: Fuzzy filter + score in Dart
-      final candidates = _filterAndScore(rows, normalized);
-      return candidates.take(limit).toList();
+      return _filterWithFfuzzy(rows, normalized, limit: limit);
     } catch (e) {
       debugPrint('[MENTION] Search error: $e');
       return [];
     }
   }
 
-  /// Convert SQL rows to results, apply fuzzy filter, and sort by score.
-  List<MentionSearchResult> _filterAndScore(
+  /// Filter and rank SQL rows using ffuzzy FZF-style matching.
+  ///
+  /// Falls back to pure-Dart matching (character-by-character FZF-style)
+  /// when the ffuzzy native library (`libffz.so`) is unavailable.  This
+  /// happens on some devices/emulators or in debug mode on certain
+  /// platforms where the native .so isn't bundled.
+  List<MentionSearchResult> _filterWithFfuzzy(
     List<QueryRow> rows,
-    String normalized,
-  ) {
-    final candidates = rows
-        .map((r) => _rowToResult(r.data))
-        .where((r) => _fuzzyMatch(normalized, r.searchText))
+    String normalized, {
+    int limit = 20,
+  }) {
+    final candidates = rows.map((r) => _rowToResult(r.data)).toList();
+
+    try {
+      // Try ffuzzy native engine first.
+      final corpus = FuzzyCorpus<MentionSearchResult>(
+        candidates,
+        stringOf: (r) => r.searchText,
+        matchPaths: true,
+      );
+      try {
+        final hits = corpus.fuzzy(normalized, limit: limit);
+        return hits.map((h) => h.raw).toList();
+      } finally {
+        corpus.dispose();
+      }
+    } on FuzzyException catch (e) {
+      // ffuzzy native library not available — fall back to pure Dart.
+      debugPrint('[MENTION] ffuzzy native lib unavailable ($e) — using Dart fallback');
+      return _filterWithDart(candidates, normalized, limit: limit);
+    }
+  }
+
+  /// Pure-Dart FZF-style fuzzy filter + score fallback.
+  ///
+  /// Used when the ffuzzy native library is not available on the device.
+  /// Implements the same character-by-character matching algorithm:
+  /// all query characters must appear **in order** within the search text.
+  List<MentionSearchResult> _filterWithDart(
+    List<MentionSearchResult> candidates,
+    String normalized, {
+    int limit = 20,
+  }) {
+    final filtered = candidates
+        .where((c) => _fuzzyMatch(normalized, c.searchText))
         .toList();
 
-    candidates.sort((a, b) {
-      return _fuzzyScore(
-        normalized,
-        b.searchText,
-      ).compareTo(_fuzzyScore(normalized, a.searchText));
+    filtered.sort((a, b) {
+      return _fuzzyScore(normalized, b.searchText)
+          .compareTo(_fuzzyScore(normalized, a.searchText));
     });
 
-    return candidates;
+    return filtered.take(limit).toList();
+  }
+
+  /// FZF-style fuzzy match: check whether all characters of [query] appear
+  /// **in order** within [text].  Characters need not be consecutive.
+  static bool _fuzzyMatch(String query, String text) {
+    if (query.isEmpty) return true;
+    if (text.isEmpty) return false;
+
+    int ti = 0;
+    for (int qi = 0; qi < query.length; qi++) {
+      final qc = query[qi];
+      if (qc == ' ') continue;
+
+      while (ti < text.length && text[ti] != qc) {
+        ti++;
+      }
+      if (ti >= text.length) return false;
+      ti++;
+    }
+    return true;
+  }
+
+  /// Score a fuzzy match result — higher is better.
+  ///
+  /// Bonus points for:
+  ///   - Consecutive character matches (gaps penalise)
+  ///   - Matches after a `/` (path segment boundary)
+  ///   - Matches at word start
+  ///   - Shorter overall text
+  static int _fuzzyScore(String query, String text) {
+    if (query.isEmpty) return 0;
+
+    int score = 0;
+    int ti = 0;
+    int prevMatchEnd = -10;
+
+    for (int qi = 0; qi < query.length; qi++) {
+      final qc = query[qi];
+      if (qc == ' ') continue;
+
+      while (ti < text.length && text[ti] != qc) {
+        ti++;
+      }
+      if (ti >= text.length) break;
+
+      final gap = ti - prevMatchEnd - 1;
+      if (gap > 0) {
+        score -= gap;
+      }
+
+      if (ti == 0 || text[ti - 1] == '/') {
+        score += 10;
+      }
+
+      if (ti > 0) {
+        final prev = text[ti - 1];
+        if (prev == '-' || prev == ' ' || prev == '_') {
+          score += 5;
+        }
+      }
+
+      if (gap == 0) {
+        score += 3;
+      }
+
+      prevMatchEnd = ti;
+      ti++;
+    }
+
+    score += (100 - text.length).clamp(0, 100);
+
+    return score;
   }
 
   // ── Fetch full Pāli text ──────────────────────────────────────────────
 
-  /// Fetch the Pāli text for a book/sutta, trimmed to [kMaxAttachmentChars].
-  ///
-  /// Called AFTER the user selects a book-level attachment, NOT during
-  /// keystroke search.  The text is stored in [HeadingAttachment.fullText]
-  /// and included in the AI context when the message is sent.
   Future<String> fetchPaliText(String bookId, {int? maxChars}) async {
     final epiDb = await _ref.read(epitakaDbProvider.future);
     final limit = maxChars ?? kMaxAttachmentChars;
@@ -456,7 +565,6 @@ class MentionService {
 
         final line = '§$paraId $paraText\n';
         if (buffer.length + line.length > limit) {
-          // Truncate at the paragraph level
           buffer.write('… (truncated at $limit characters)');
           break;
         }
@@ -513,7 +621,7 @@ class MentionService {
     final paraId = row['para_id'] as int;
     final title = row['title'] as String? ?? '';
     final bookName = row['book_name'] as String? ?? '';
-    final path = row['path'] as String? ?? '@$bookId/$title';
+    final path = row['path'] as String? ?? '$bookId/$title';
     final isMula = (row['is_mula'] as int?) == 1;
     final chapterLen = (row['chapter_len'] as int?) ?? 0;
     final mulaRef = row['mula_ref'] as String?;
@@ -549,8 +657,6 @@ class MentionService {
   }
 
   /// Normalise text for search: lowercase, strip Pāli diacritics.
-  /// Preserves `/` and `-` so the FZF-like fuzzy search can match
-  /// path-like queries such as `Mbhi/ambasutta`.
   static String _normalizeSearchText(String text) {
     return text
         .toLowerCase()
@@ -566,91 +672,6 @@ class MentionService {
         .replaceAll('ḷ', 'l')
         .replaceAll(RegExp(r'[^a-z0-9\s/@-]'), '')
         .replaceAll(RegExp(r'\s+'), ' ');
-  }
-
-  /// FZF-style fuzzy match: check whether all characters of [query] appear
-  /// **in order** within [text].  Characters need not be consecutive.
-  ///
-  /// This is the core algorithm behind fuzzy-finder tools like FZF.  It
-  /// allows the user to type `Mbhi/ambasutta` and still match a path like
-  /// `m-ii/bhikkhuvaggo/ambalatthika-suttam` because every character of
-  /// the query appears somewhere in the target text in the right order.
-  static bool _fuzzyMatch(String query, String text) {
-    if (query.isEmpty) return true;
-    if (text.isEmpty) return false;
-
-    int ti = 0;
-    for (int qi = 0; qi < query.length; qi++) {
-      final qc = query[qi];
-      // Skip spaces in query (the user may type them but they're noise)
-      if (qc == ' ') continue;
-
-      // Find this character in the text starting from current position
-      while (ti < text.length && text[ti] != qc) {
-        ti++;
-      }
-      if (ti >= text.length) return false;
-      ti++; // Move past the matched character
-    }
-    return true;
-  }
-
-  /// Score a fuzzy match result — higher is better.
-  ///
-  /// Bonus points for:
-  ///   - Consecutive character matches (gaps penalise)
-  ///   - Matches after a `/` (path segment boundary)
-  ///   - Matches at word start
-  ///   - Shorter overall text
-  static int _fuzzyScore(String query, String text) {
-    if (query.isEmpty) return 0;
-
-    int score = 0;
-    int ti = 0;
-    int prevMatchEnd = -10; // Tracks the last match position for gap penalty
-
-    for (int qi = 0; qi < query.length; qi++) {
-      final qc = query[qi];
-      if (qc == ' ') continue;
-
-      // Find the earliest match position for this character
-      while (ti < text.length && text[ti] != qc) {
-        ti++;
-      }
-      if (ti >= text.length) break;
-
-      // Gap penalty: each position between consecutive matches reduces score
-      final gap = ti - prevMatchEnd - 1;
-      if (gap > 0) {
-        score -= gap; // Penalty for gaps
-      }
-
-      // Bonus: match at start of text or after a path separator
-      if (ti == 0 || text[ti - 1] == '/') {
-        score += 10;
-      }
-
-      // Bonus: match at start of a word (preceded by non-letter)
-      if (ti > 0) {
-        final prev = text[ti - 1];
-        if (prev == '-' || prev == ' ' || prev == '_') {
-          score += 5;
-        }
-      }
-
-      // Bonus: consecutive matches (no gap)
-      if (gap == 0) {
-        score += 3;
-      }
-
-      prevMatchEnd = ti;
-      ti++; // Advance past matched char
-    }
-
-    // Bonus: shorter text length (prefer more compact results)
-    score += (100 - text.length).clamp(0, 100);
-
-    return score;
   }
 }
 

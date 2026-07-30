@@ -83,10 +83,10 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
   /// *displayed* score badge; ranking always uses RRF.
   double vectorWeight = 0.5;
 
-  /// Whether the chunk-level BM25 FTS index (`chunks_fts`) has been built
-  /// inside the vector database. Checked before a search so the UI can
-  /// prompt the user to build it via a dialog (never lazily in the
-  /// background, which would jank the app).
+  /// Whether the chunk-level BM25 FTS index (`vec_chunks_fts`) has been built
+  /// inside epitaka.db. Checked before a search so the UI can prompt the
+  /// user to build it via a dialog (never lazily in the background, which
+  /// would jank the app).
   bool get isBm25IndexBuilt => _bm25IndexBuilt;
   bool _bm25IndexBuilt = false;
 
@@ -140,7 +140,7 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
       _onnx = GavesanaOnnxService();
       await _onnx!.init(modelPath);
 
-      // ── Step 5: Open vector DB ───────────────────────────────
+      // ── Step 5: Open vector DB + epitaka.db ───────────────────
       final vecDbPath = await downloadService.getVectorDbPath();
       if (vecDbPath == null) {
         _errorMessage = 'Vector database not found.';
@@ -148,8 +148,11 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
         return;
       }
 
+      final dbDir = await getDatabaseDirectory();
+      final epiPath = p.join(dbDir.path, 'epitaka.db');
+
       _vectorSearch = GavesanaVectorSearchService();
-      final opened = await _vectorSearch!.open(vecDbPath);
+      final opened = await _vectorSearch!.open(vecDbPath, epitakaDbPath: epiPath);
       if (!opened) {
         _errorMessage =
             'Failed to open vector database. '
@@ -332,8 +335,8 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
     }
   }
 
-  /// Build the chunk-level BM25 FTS index (`chunks_fts`) inside the vector
-  /// database, reporting progress so a dialog can show it. This is always
+  /// Build the chunk-level BM25 FTS index (`vec_chunks_fts`) inside
+  /// epitaka.db, reporting progress so a dialog can show it. This is always
   /// triggered by an explicit user action (a dialog), never lazily.
   ///
   /// [onProgress] receives (0.0–1.0, status message). Returns true on
@@ -343,7 +346,22 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
     void Function(double progress, String status)? onProgress,
     void Function(String message)? onError,
   }) async {
-    if (_vectorSearch == null) return false;
+    // If the vector search service was never created (init failed), create a
+    // lightweight instance that only opens epitaka.db for BM25 operations.
+    if (_vectorSearch == null) {
+      onProgress?.call(0.0, 'Preparing BM25 index…');
+      _vectorSearch = GavesanaVectorSearchService();
+      final dbDir = await getDatabaseDirectory();
+      final epiPath = p.join(dbDir.path, 'epitaka.db');
+      final opened = await _vectorSearch!.openBm25Only(epiPath);
+      if (!opened) {
+        onError?.call(
+          'Cannot build BM25 index — could not open epitaka.db.',
+        );
+        return false;
+      }
+    }
+
     onProgress?.call(0.0, 'Preparing BM25 index…');
     try {
       final dbDir = await getDatabaseDirectory();
@@ -369,9 +387,9 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
   }
 
   /// Rebuild the chunk-level BM25 FTS index from scratch. Drops any existing
-  /// `chunks_fts` first (e.g. a half-built one left behind when the app was
-  /// killed mid-build), then builds fresh. Same progress/error reporting as
-  /// [ensureBm25Index].
+  /// `vec_chunks_fts` first (e.g. a half-built one left behind when the app
+  /// was killed mid-build), then builds fresh. Same progress/error reporting
+  /// as [ensureBm25Index].
   Future<bool> rebuildBm25Index({
     void Function(double progress, String status)? onProgress,
     void Function(String message)? onError,

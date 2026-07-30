@@ -101,6 +101,26 @@ class EpitakaDatabase extends _$EpitakaDatabase {
     return rows.first.data['title'] as String?;
   }
 
+  /// Get the nearest heading (title and para_id) at or before [paraId] for a [bookId].
+  ///
+  /// When [includeLevel10] is true, headings with level=10 are included in
+  /// the search (useful for commentary annotations). The default is `false`.
+  /// Returns the heading title and its para_id, or null if no heading found.
+  Future<({String? title, int? paraId})?> getHeadingAtPara(
+    String bookId,
+    int paraId, {
+    bool includeLevel10 = false,
+  }) async {
+    final levelClause = includeLevel10 ? '' : 'and level<10';
+    final rows = await customSelect(
+      'SELECT title, para_id FROM headings WHERE book_id = ? AND para_id <= ? $levelClause ORDER BY para_id DESC LIMIT 1',
+      variables: [Variable.withString(bookId), Variable.withInt(paraId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    final row = rows.first.data;
+    return (title: row['title'] as String?, paraId: row['para_id'] as int?);
+  }
+
   /// Open an existing SQLite database at [dbPath].
   static Future<EpitakaDatabase> open(String dbPath) async {
     final file = File(dbPath);

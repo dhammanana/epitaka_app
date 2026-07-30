@@ -54,27 +54,35 @@ class _AudioServiceInitializerState extends State<AudioServiceInitializer>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    developer.log(
+      '[TTS_LIFECYCLE] AudioServiceInitializer.dispose() called',
+      name: 'epitaka.tts',
+    );
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When the app is fully killed (swiped from recents), stop the
-    // Android foreground service so the process can terminate cleanly.
-    // Without this, the AudioService keeps the process alive even after
-    // the user explicitly kills the app, preventing a fresh start on
-    // next launch.
-    if (state == AppLifecycleState.detached) {
-      developer.log(
-        '[AUDIO_SVC] App detached → stopping AudioService',
-        name: 'epitaka.tts',
-      );
-      try {
-        AudioService.stop();
-      } catch (_) {
-        // Service may already be stopped — ignore.
-      }
-    }
+    developer.log(
+      '[TTS_LIFECYCLE] App lifecycle: $state',
+      name: 'epitaka.tts',
+    );
+    // NOTE: We deliberately do NOT stop AudioService on AppLifecycleState.detached.
+    // Why? Because on Android, `detached` fires NOT only when the process is about
+    // to be killed, but ALSO during normal backgrounding (e.g. user presses Home,
+    // the Activity is destroyed and recreated when they come back).
+    //
+    // Calling AudioService.stop() here would:
+    //   1. Kill the notification while TTS may still be playing
+    //   2. Prevent AudioService.init() from working in the next TTS session
+    //      (it asserts with '_cacheManager == null' after stop)
+    //
+    // If the process is truly killed by Android, the foreground service and
+    // notification are automatically cleaned up by the OS. If it's a transient
+    // detached, AudioService remains available for the next TTS session.
+    //
+    // AudioService.init() is called once at app startup in [_init] and never
+    // stopped until the process actually terminates.
   }
 
   Future<void> _init() async {

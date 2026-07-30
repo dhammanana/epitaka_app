@@ -5,8 +5,8 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../providers/gavesana_provider.dart';
 
-/// Modal dialog that builds the chunk-level BM25 FTS index (`chunks_fts`)
-/// inside the vector database.
+/// Modal dialog that builds the chunk-level BM25 FTS index (`vec_chunks_fts`)
+/// inside epitaka.db.
 ///
 /// This is always triggered by an explicit user action (never lazily in the
 /// background, which would jank the app). Shows live progress, a completion

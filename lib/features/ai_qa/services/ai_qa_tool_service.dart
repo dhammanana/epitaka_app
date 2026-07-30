@@ -63,44 +63,45 @@ class AiQaToolService {
 
   AiQaToolService(this._ref);
 
-  /// Cached sqlite3 connection to the Gavesana vector DB (read-only).
-  sqlite.Database? _vecDb;
+  /// Cached sqlite3 connection to epitaka.db (read-only) for BM25.
+  sqlite.Database? _epiDb;
 
-  /// Lazily open the Gavesana vector DB for BM25 search.
+  /// Lazily open epitaka.db for BM25 search using `vec_chunks_fts`.
   ///
-  /// Returns `null` if the DB does not exist or does not have a `chunks_fts`
-  /// FTS5 index (the user must build it via Gavesana first).
-  Future<sqlite.Database?> _getVecDb() async {
-    if (_vecDb != null) return _vecDb;
+  /// Returns `null` if the DB does not exist or does not have a
+  /// `vec_chunks_fts` FTS5 index (the user must build it via Gavesana
+  /// first — or the Gavesana screen will prompt to build it).
+  Future<sqlite.Database?> _getEpiDbForBm25() async {
+    if (_epiDb != null) return _epiDb;
 
     try {
       final appDocDir = await getApplicationDocumentsDirectory();
-      final vecDbPath = p.join(appDocDir.path, 'gavesana', 'epitaka_vec.db');
-      final vecDbFile = File(vecDbPath);
+      final epiDbPath = p.join(appDocDir.path, 'epitaka.db');
+      final epiDbFile = File(epiDbPath);
 
-      if (!await vecDbFile.exists()) {
-        debugPrint('[AI_QA] Vector DB not found at: $vecDbPath');
+      if (!await epiDbFile.exists()) {
+        debugPrint('[AI_QA] epitaka.db not found at: $epiDbPath');
         return null;
       }
 
-      final db = sqlite.sqlite3.open(vecDbPath);
+      final db = sqlite.sqlite3.open(epiDbPath);
 
-      // Verify chunks_fts exists
+      // Verify vec_chunks_fts exists
       final tables = db.select(
         "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name='chunks_fts'",
+        "WHERE type='table' AND name='vec_chunks_fts'",
       );
       if (tables.isEmpty) {
-        debugPrint('[AI_QA] chunks_fts not found in vec DB');
+        debugPrint('[AI_QA] vec_chunks_fts not found in epitaka.db');
         db.close();
         return null;
       }
 
-      debugPrint('[AI_QA] ✅ Vector DB opened with chunks_fts');
-      _vecDb = db;
-      return _vecDb;
+      debugPrint('[AI_QA] ✅ epitaka.db opened with vec_chunks_fts');
+      _epiDb = db;
+      return _epiDb;
     } catch (e) {
-      debugPrint('[AI_QA] Failed to open vec DB: $e');
+      debugPrint('[AI_QA] Failed to open epitaka.db: $e');
       return null;
     }
   }
@@ -144,17 +145,18 @@ class AiQaToolService {
     return _searchLike(query);
   }
 
-  /// BM25 search using the Gavesana vector DB's `chunks_fts` FTS5 table.
+  /// BM25 search using epitaka.db's `vec_chunks_fts` FTS5 table.
   ///
   /// Returns results with `book_id`, `para_id`, `line_id`, `text` and
   /// `book_name`, ordered by BM25 relevance (best first).
   Future<ToolResult> _searchBm25(String query) async {
     try {
-      final vecDb = await _getVecDb();
-      if (vecDb == null) {
-        debugPrint('[AI_QA] _searchBm25: vec DB not available');
+      final epiDb = await _getEpiDbForBm25();
+      if (epiDb == null) {
+        debugPrint('[AI_QA] _searchBm25: epitaka.db with vec_chunks_fts not available');
         return const ToolResult(
-            success: false, data: '[]', errorMessage: 'Vec DB not available');
+            success: false, data: '[]',
+            errorMessage: 'BM25 index not available. Please build it from Gavesana.');
       }
 
       // Build FTS5 MATCH query: quote each term, add prefix wildcard,
@@ -177,16 +179,14 @@ class AiQaToolService {
       }
 
       // Search across ALL FTS5 columns (pali_text, english_text) via
-      // table-level MATCH (no column prefix). This means an English query
-      // like "mindfulness" will match english_text even if pali_text doesn't
-      // contain that term.
-      final rows = vecDb.select(
-        'SELECT c.chunk_id, c.book_id, c.start_para, c.end_para, '
-        'c.start_line, c.end_line, '
-        'bm25(chunks_fts) AS bm25_score '
-        'FROM chunks_fts '
-        'JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id '
-        'WHERE chunks_fts MATCH ? '
+      // table-level MATCH joined with vec_chunks for metadata.
+      final rows = epiDb.select(
+        'SELECT vc.chunk_id, vc.book_id, vc.start_para, vc.end_para, '
+        'vc.start_line, vc.end_line, '
+        'bm25(vec_chunks_fts) AS bm25_score '
+        'FROM vec_chunks_fts '
+        'JOIN vec_chunks vc ON vc.chunk_id = vec_chunks_fts.chunk_id '
+        'WHERE vec_chunks_fts MATCH ? '
         'ORDER BY bm25_score ASC '
         'LIMIT 50',
         [terms],

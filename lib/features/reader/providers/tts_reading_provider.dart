@@ -99,9 +99,19 @@ Future<void> startReading(
     _pendingSynth = null;
     _pendingSynthIndex = null;
 
+    developer.log(
+      '[TTS_LIFECYCLE] startReading() called: bookId=$bookId '
+      'lines=${lines.length} startIndex=$startIndex sessionId=$sessionId',
+      name: 'epitaka.tts',
+    );
+
     await _ref.read(ttsProvider.notifier).stop();
 
     if (lines.isEmpty) {
+      developer.log(
+        '[TTS_LIFECYCLE] startReading(): lines empty, no-op',
+        name: 'epitaka.tts',
+      );
       state = const TtsReadingState();
       return;
     }
@@ -114,31 +124,13 @@ Future<void> startReading(
     );
 
     // ── AudioService integration ───────────────────────────────────
-    // Re-initialise the audio service in case it was stopped after
-    // a previous reading session (see stopReading / _finishReading).
-    // Without this, the notification won't show because the service
-    // was fully stopped to prevent TTS from persisting after the app
-    // is killed.
-    try {
-      await AudioService.init(
-        builder: () => ttsAudioHandler,
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.dn.epitaka.tts',
-          androidNotificationChannelName: 'TTS Playback',
-          androidStopForegroundOnPause: false,
-          androidNotificationIcon: 'mipmap/ic_launcher',
-        ),
-      );
-      developer.log(
-        '[TTS_AUDIO_SVC] AudioService re-init succeeded',
-        name: 'epitaka.tts',
-      );
-    } catch (e) {
-      developer.log(
-        '[TTS_AUDIO_SVC] AudioService re-init failed: $e',
-        name: 'epitaka.tts',
-      );
-    }
+    // NOTE: AudioService.init() is intentionally NOT called here.
+    // It was already initialized at app startup by [AudioServiceInitializer]
+    // in app.dart. Calling init() again causes an assertion error:
+    //   '_cacheManager == null': is not true.
+    // The ttsAudioHandler singleton registered during that init is still
+    // active, so setMediaItem(), setPlaybackState(), and notification
+    // controls all work without re-initializing.
 
     // Register notification-button callbacks so the lock screen /
     // notification controls work throughout this reading session.
@@ -233,17 +225,44 @@ Future<void> startReading(
   /// notification. If the user wants to keep the notification available
   /// for quick resume they should use [pauseReading] instead.
   Future<void> stopReading() async {
+    developer.log(
+      '[TTS_LIFECYCLE] stopReading() called: '
+      'isActive=${state.isActive} isPaused=${state.isPaused} '
+      'currentIndex=${state.currentIndex}/${state.lines.length} '
+      'sessionId=$_currentSessionId',
+      name: 'epitaka.tts',
+    );
     _currentSessionId++;
     _pendingSynth = null;
     _pendingSynthIndex = null;
     await _ref.read(ttsProvider.notifier).stop();
     state = const TtsReadingState();
-    // Stop the media service and dismiss the notification.
-    // If the user wants to resume later they should use pause, not stop.
     _cleanupHandlerCallbacks();
-    try {
-      await AudioService.stop();
-    } catch (_) {}
+    // Stop the AudioService foreground service by transitioning to 'idle'
+    // state. When processingState becomes 'idle', audio_service internally
+    // calls AudioService._stop() which shuts down the Android background
+    // service, allowing the process to be killed.
+    //
+    // NOTE: AudioService.stop() (deprecated) does NOT actually stop
+    // the service — it only calls through the handler chain to
+    // onStopPressed which we already nulled above.
+    //
+    // Trade-off: Once the service is stopped ('idle'), showing the
+    // notification again requires restarting the service. If the platform
+    // can auto-restart it via the method channel, subsequent TTS sessions
+    // will still show a notification. Otherwise they won't (TTS audio
+    // works independently via flutter_tts either way).
+    developer.log(
+      '[TTS_LIFECYCLE] stopReading: setting state to idle to trigger service stop...',
+      name: 'epitaka.tts',
+    );
+    ttsAudioHandler.setPlaybackState(
+      playing: false,
+      paused: false,
+      hasPrev: false,
+      hasNext: false,
+      processingState: AudioProcessingState.idle,
+    );
   }
 
   /// Pause reading.
@@ -429,13 +448,26 @@ Future<void> startReading(
   }
 
   void _finishReading() {
+    developer.log(
+      '[TTS_LIFECYCLE] _finishReading() called: '
+      'state was isActive=${state.isActive} '
+      'lastIndex=${state.currentIndex}/${state.lines.length}',
+      name: 'epitaka.tts',
+    );
     state = const TtsReadingState();
-    // Stop the media service and dismiss the notification — reading
-    // has finished naturally (all lines spoken).
     _cleanupHandlerCallbacks();
-    try {
-      AudioService.stop();
-    } catch (_) {}
+    // Same as stopReading(): use 'idle' state to trigger internal service stop.
+    developer.log(
+      '[TTS_LIFECYCLE] _finishReading: setting state to idle to trigger service stop...',
+      name: 'epitaka.tts',
+    );
+    ttsAudioHandler.setPlaybackState(
+      playing: false,
+      paused: false,
+      hasPrev: false,
+      hasNext: false,
+      processingState: AudioProcessingState.idle,
+    );
   }
 
   /// Cancel the audio-becoming-noisy listener subscription and clear all
@@ -453,8 +485,41 @@ Future<void> startReading(
 
   @override
   void dispose() {
+    developer.log(
+      '[TTS_LIFECYCLE] TtsReadingNotifier.dispose() called '
+      'isActive=${state.isActive} isPaused=${state.isPaused} '
+      'hasNoisySubscription=${_noisySubscription != null} '
+      'hasPendingSynth=${_pendingSynth != null} '
+      'hasBookNameCache=${_bookNameCache.isNotEmpty}',
+      name: 'epitaka.tts',
+    );
     _currentSessionId++;
+    _pendingSynth = null;
+    _pendingSynthIndex = null;
+    _noisySubscription?.cancel();
+    _noisySubscription = null;
+    // Stop the TTS engine and kill the AudioService background isolate so
+    // the process can be terminated by the system.
+    try {
+      _ref.read(ttsProvider.notifier).stop();
+    } catch (_) {}
     _cleanupHandlerCallbacks();
+    // Same as stopReading / _finishReading: trigger internal service stop via idle.
+    developer.log(
+      '[TTS_LIFECYCLE] dispose: setting state to idle to trigger service stop...',
+      name: 'epitaka.tts',
+    );
+    ttsAudioHandler.setPlaybackState(
+      playing: false,
+      paused: false,
+      hasPrev: false,
+      hasNext: false,
+      processingState: AudioProcessingState.idle,
+    );
+    developer.log(
+      '[TTS_LIFECYCLE] TtsReadingNotifier.dispose() completed',
+      name: 'epitaka.tts',
+    );
     super.dispose();
   }
 }

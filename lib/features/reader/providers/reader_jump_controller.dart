@@ -99,15 +99,36 @@ class ReaderJumpController {
       onTtsLineKeyCreated(lineId, GlobalKey());
     }
 
+    // ── Calculate alignment from line position ─────────────────────
+    // When a lineId is provided, estimate the paragraph scroll
+    // alignment so the target line appears at ~30% from the viewport
+    // top. This way, even if the async fine-scroll fails (e.g. TTS
+    // advances to the next line before Scrollable.ensureVisible's
+    // retry loop completes), the paragraph-level scroll already
+    // placed the correct line at a reasonable position instead of
+    // snapping to alignment 0.0 (beginning of paragraph).
+    final effectiveAlignment = () {
+      if (lineId != null) {
+        if (index >= 0 && index < state.paragraphs.length) {
+          final para = state.paragraphs[index];
+          final lineIndex = para.lines.indexWhere((l) => l.lineId == lineId);
+          if (lineIndex >= 0 && para.lines.length > 1) {
+            return ((lineIndex / (para.lines.length - 1)) * 0.3).clamp(0.0, 0.3);
+          }
+        }
+      }
+      return alignment;
+    }();
+
     if (animate) {
       await controller.scrollTo(
         index: index,
-        alignment: alignment,
+        alignment: effectiveAlignment,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     } else {
-      controller.jumpTo(index: index, alignment: alignment);
+      controller.jumpTo(index: index, alignment: effectiveAlignment);
     }
 
     if (lineId != null) {

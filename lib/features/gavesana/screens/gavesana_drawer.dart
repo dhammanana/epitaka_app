@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_typography.dart';
 
@@ -97,9 +98,7 @@ class _MainDrawerState extends State<MainDrawer> {
                   icon: Icons.menu_book,
                   title: 'Tipitaka',
                   trailing: Icon(
-                    _tipitakaExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
+                    _tipitakaExpanded ? Icons.expand_less : Icons.expand_more,
                     size: 18,
                     color: colors.onSurfaceVariant,
                   ),
@@ -161,13 +160,13 @@ class _MainDrawerState extends State<MainDrawer> {
                 ),
                 const SizedBox(height: 4),
 
-                // ── Vimaṃsa ───────────────────────────────────
+                // ── Gavesana ─────────────────────────────────
                 _DrawerItem(
-                  icon: Icons.auto_awesome,
-                  title: 'Vimaṃsa',
-                  subtitle: 'Investigation & exploration',
-                  onTap: () => _closeAndGo(context, '/ai-qa'),
-                  selected: _isRouteActive(context, '/ai-qa'),
+                  icon: Icons.psychology,
+                  title: 'Gavesana',
+                  subtitle: 'Semantic search',
+                  onTap: () => _closeAndGo(context, '/gavesana'),
+                  selected: _isRouteActive(context, '/gavesana'),
                 ),
 
                 const SizedBox(height: 4),
@@ -179,13 +178,13 @@ class _MainDrawerState extends State<MainDrawer> {
                 ),
                 const SizedBox(height: 4),
 
-                // ── Gavesana ─────────────────────────────────
+                // ── Vimaṃsa ───────────────────────────────────
                 _DrawerItem(
-                  icon: Icons.psychology,
-                  title: 'Gavesana',
-                  subtitle: 'Semantic search',
-                  onTap: () => _closeAndGo(context, '/gavesana'),
-                  selected: _isRouteActive(context, '/gavesana'),
+                  icon: Icons.auto_awesome,
+                  title: 'Vimaṃsa',
+                  subtitle: 'Investigation & exploration',
+                  onTap: () => _closeAndGo(context, '/ai-qa'),
+                  selected: _isRouteActive(context, '/ai-qa'),
                 ),
               ],
             ),
@@ -206,19 +205,59 @@ class _MainDrawerState extends State<MainDrawer> {
                 ),
               ),
             ),
-            child: TextButton.icon(
-              onPressed: () => _closeAndGo(context, '/settings'),
-              icon: Icon(
-                Icons.settings,
-                size: 16,
-                color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
-              label: Text(
-                'Settings',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Feedback
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop(); // close drawer
+                      launchUrl(
+                        Uri(
+                          scheme: 'mailto',
+                          path: 'epitaka.org@gmail.com',
+                          queryParameters: {
+                            'subject': 'ePitaka Feedback',
+                            'body': '',
+                          },
+                        ),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    },
+                    icon: Icon(
+                      Icons.feedback_outlined,
+                      size: 16,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                    label: Text(
+                      'Feedback',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                // Settings
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => _closeAndGo(context, '/settings'),
+                    icon: Icon(
+                      Icons.settings,
+                      size: 16,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                    label: Text(
+                      'Settings',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -280,10 +319,7 @@ class _DrawerItem extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 Container(
@@ -309,17 +345,19 @@ class _DrawerItem extends StatelessWidget {
                       Text(
                         title,
                         style: AppTypography.labelMedium.copyWith(
-                          color: selected
-                              ? colors.primary
-                              : colors.onSurface,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          color: selected ? colors.primary : colors.onSurface,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                         ),
                       ),
                       if (subtitle != null)
                         Text(
                           subtitle!,
                           style: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                            color: colors.onSurfaceVariant.withValues(
+                              alpha: 0.6,
+                            ),
                             fontSize: 10,
                           ),
                         ),
@@ -362,18 +400,11 @@ class _DrawerChildItem extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
                 const SizedBox(width: 44), // icon area alignment
-                Icon(
-                  icon,
-                  size: 14,
-                  color: colors.onSurfaceVariant,
-                ),
+                Icon(icon, size: 14, color: colors.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Text(
                   title,

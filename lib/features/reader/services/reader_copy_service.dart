@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/pali_script_converter.dart' show Script;
 import '../../../core/utils/pali_text_utils.dart'
@@ -168,6 +169,7 @@ class ReaderCopyService {
           onTap: () async {
             try {
               await copyLink(
+                ref: ref,
                 bookId: bookId,
                 paraId: currentParaId,
                 lineId: currentLineId,
@@ -176,9 +178,11 @@ class ReaderCopyService {
               _showSnackBar(context, 'Link copied!');
             } catch (_) {
               // Fallback: copy just the URL
+              final settings = ref.read(settingsProvider);
+              final lang = settings.primaryTranslationLang;
               final url = currentParaId != null
-                  ? 'https://epitaka.org/app/$bookId/${currentParaId}'
-                  : 'https://epitaka.org/app/$bookId';
+                  ? 'https://epitaka.org/$lang/book/$bookId#$currentParaId'
+                  : 'https://epitaka.org/$lang/book/$bookId';
               await Clipboard.setData(ClipboardData(text: url));
               _showSnackBar(context, 'Link copied!');
             } finally {
@@ -1077,17 +1081,51 @@ class ReaderCopyService {
     await SharePlus.instance.share(ShareParams(text: textToShare));
   }
 
-  /// Copy a deep link to the current position (paragraph + optional line)
+  /// Copy a share link to the current position (paragraph + optional line)
   /// to the clipboard, optionally including the selected text.
+  ///
+  /// Generates a URL matching the website's canonical format:
+  ///   https://epitaka.org/{lang}/book/{bookId}/{heading-slug}#{paraId}-{lineId}
+  ///
+  /// The heading slug is built from the nearest section heading's lowercased
+  /// title (spaces → hyphens) plus its para_id, e.g. "the-net-of-views-123".
   static Future<void> copyLink({
+    required WidgetRef ref,
     required String bookId,
     required int? paraId,
     int? lineId,
     String? text,
   }) async {
-    final paraFragment = paraId != null ? '/$paraId' : '';
-    final lineFragment = (lineId != null && paraId != null) ? '/$lineId' : '';
-    final url = 'https://epitaka.org/app/$bookId$paraFragment$lineFragment';
+    final settings = ref.read(settingsProvider);
+    final lang = settings.primaryTranslationLang;
+
+    // Build the heading slug from the nearest section heading
+    String slug = '';
+    if (paraId != null) {
+      try {
+        final db = await ref.read(epitakaDbProvider.future);
+        final headingInfo = await db.getHeadingAtPara(bookId, paraId);
+        if (headingInfo != null &&
+            headingInfo.title != null &&
+            headingInfo.title!.isNotEmpty &&
+            headingInfo.paraId != null) {
+          slug =
+              '${headingInfo.title!.toLowerCase().replaceAll(' ', '-')}-${headingInfo.paraId}';
+        }
+      } catch (e) {
+        developer.log(
+          '[COPY_LINK] Heading query failed: $e',
+          name: 'epitaka.copy',
+        );
+      }
+    }
+
+    // Build URL: https://epitaka.org/{lang}/book/{bookId}/{slug}#{paraId}-{lineId}
+    final baseUri = 'https://epitaka.org/$lang/book/$bookId';
+    final path = slug.isNotEmpty ? '$baseUri/$slug' : baseUri;
+    final fragment =
+        paraId != null ? '#$paraId${lineId != null ? '-$lineId' : ''}' : '';
+    final url = '$path$fragment';
 
     final String shareText;
     if (text != null && text.trim().isNotEmpty) {

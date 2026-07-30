@@ -104,10 +104,13 @@ class GavesanaDownloadService {
     try {
       final db = sqlite3.open(dbPath);
       try {
-        return db
-            .select(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'")
-            .isNotEmpty;
+        // Accept either the new slim table (chunk_vectors) or the old full table
+        // (chunks) for backward compatibility during migration.
+        final tables = db.select(
+          "SELECT name FROM sqlite_master "
+          "WHERE type='table' AND (name='chunk_vectors' OR name='chunks')",
+        );
+        return tables.isNotEmpty;
       } finally {
         db.close();
       }

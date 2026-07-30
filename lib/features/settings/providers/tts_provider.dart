@@ -544,6 +544,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
   @override
   void dispose() {
+    developer.log(
+      '[TTS_LIFECYCLE] TtsNotifier.dispose() called '
+      'state=$state _disposed=$_disposed '
+      'hasFlutterTts=${_flutterTts != null} '
+      'hasSupertonic=${_supertonicTts != null} '
+      'hasPlayer=${_player != null} '
+      '_audioSessionConfigured=$_audioSessionConfigured',
+      name: 'epitaka.tts',
+    );
     _disposed = true;
     _completeSpeech();
     _noisySubscription?.cancel();
@@ -558,6 +567,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _player = null;
     _supertonicInitialized = false;
     _audioSessionConfigured = false;
+    developer.log(
+      '[TTS_LIFECYCLE] TtsNotifier.dispose() completed',
+      name: 'epitaka.tts',
+    );
     super.dispose();
   }
 

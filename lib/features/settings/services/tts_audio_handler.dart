@@ -156,12 +156,21 @@ class TtsAudioHandler extends BaseAudioHandler {
     required bool paused,
     bool hasPrev = false,
     bool hasNext = false,
+    AudioProcessingState? processingState,
   }) {
+    final procState = processingState ??
+        (playing
+            ? AudioProcessingState.ready
+            : (paused ? AudioProcessingState.ready : AudioProcessingState.completed));
+    developer.log(
+      '[TTS_LIFECYCLE] setPlaybackState: '
+      'playing=$playing paused=$paused procState=$procState '
+      'hasPrev=$hasPrev hasNext=$hasNext',
+      name: 'epitaka.tts',
+    );
     playbackState.add(PlaybackState(
       playing: playing,
-      processingState: playing
-          ? AudioProcessingState.ready
-          : (paused ? AudioProcessingState.ready : AudioProcessingState.completed),
+      processingState: procState,
       controls: [
         if (hasPrev) MediaControl.skipToPrevious,
         if (playing) MediaControl.pause else MediaControl.play,

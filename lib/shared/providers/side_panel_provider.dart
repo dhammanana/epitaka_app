@@ -209,7 +209,6 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
   }
 
   void _setPinned(PanelSlot slot, bool pinned) {
-    final current = slot == PanelSlot.left ? state.left : state.right;
     _updateSlot(slot, isPinned: pinned);
   }
 

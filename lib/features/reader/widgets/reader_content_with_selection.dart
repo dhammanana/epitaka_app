@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/theme/app_typography.dart';
 import '../providers/reader_provider.dart';
 import 'reader_content_list.dart';
 
@@ -41,6 +40,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.ttsTargetLineKeys = const {},
     this.searchQuery,
     this.onFirstContentFrame,
+    this.initialScrollIndex,
   });
 
   final String bookId;
@@ -84,6 +84,9 @@ class ReaderContentWithSelection extends StatelessWidget {
   // Search
   final String? searchQuery;
 
+  // Starting scroll index (prevents flash-to-top on tab restore)
+  final int? initialScrollIndex;
+
   // Misc
   final VoidCallback? onFirstContentFrame;
 
@@ -108,6 +111,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       ttsTargetLineKeys: ttsTargetLineKeys,
       searchQuery: searchQuery,
       onFirstContentFrame: onFirstContentFrame,
+      initialScrollIndex: initialScrollIndex,
     );
 
     // The Listener provides a stable hit-test anchor for
@@ -124,10 +128,7 @@ class ReaderContentWithSelection extends StatelessWidget {
           offset: Offset(dragDxNotifier.value, 0),
           child: child,
         ),
-        child: KeyedSubtree(
-          key: ValueKey('tab-$bookId'),
-          child: readerContent,
-        ),
+        child: KeyedSubtree(key: ValueKey('tab-$bookId'), child: readerContent),
       ),
     );
 

@@ -2,11 +2,9 @@
 ///
 /// Shows a scrollable list of matching headings and books from the
 /// pre-built mention index.  Each item displays:
-///   - The title (bold)
-///   - The book name and hierarchy path (dimmed, smaller)
-///   - An icon: auto_stories for mūla, menu_book for commentary,
-///     article for heading
-///   - Chapter length for book-level entries
+///   - Line 1: The last heading title (2 lines max, wrapping)
+///   - Line 2: The full path (wrapping, not ellipsised)
+///   - Leading icon indicating Mūla, Aṭṭhakathā, or Ṭīkā
 ///
 /// Supports keyboard navigation (up/down arrows + enter to select).
 /// Disappears when the user taps outside, presses Escape, or selects an item.
@@ -19,7 +17,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/heading_attachment.dart';
 import '../providers/mention_provider.dart';
-import '../services/mention_service.dart';
+import 'mention_index_build_dialog.dart';
 
 /// Overlay that shows @ mention search results anchored near the text field.
 ///
@@ -195,6 +193,11 @@ class MentionOverlay extends ConsumerWidget {
 }
 
 /// A single result item in the mention dropdown.
+///
+/// Displays 2 lines:
+///   1. The last/current heading title (wraps, max 2 lines)
+///   2. The full path (wraps, not stripped)
+/// With a leading icon indicating Mūla, Aṭṭhakathā, or Ṭīkā.
 class _ResultItem extends ConsumerWidget {
   final MentionSearchResult result;
   final bool isSelected;
@@ -208,6 +211,13 @@ class _ResultItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final isBook = result.entryType == AttachmentEntryType.book;
+
+    // Determine the text type icon configuration
+    final (IconData icon, Color iconColor) = switch (result.textType) {
+      TextType.mula => (Icons.auto_stories, colors.primary),
+      TextType.attha => (Icons.forum_outlined, colors.tertiary),
+      TextType.tika => (Icons.layers_outlined, colors.secondary),
+    };
 
     return InkWell(
       onTap: () => _select(ref),
@@ -225,94 +235,73 @@ class _ResultItem extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Type indicator
+            // Text type indicator icon
             Container(
               width: 28,
               height: 28,
               margin: const EdgeInsets.only(top: 1),
               decoration: BoxDecoration(
-                color: isBook
-                    ? (result.isMula ? colors.primary : colors.tertiary).withValues(alpha: 0.1)
-                    : colors.secondaryContainer.withValues(alpha: 0.3),
+                color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Icon(
-                isBook
-                    ? (result.isMula ? Icons.auto_stories : Icons.menu_book)
-                    : Icons.article_outlined,
+                icon,
                 size: 14,
-                color: isBook
-                    ? (result.isMula ? colors.primary : colors.tertiary)
-                    : colors.onSecondaryContainer.withValues(alpha: 0.7),
+                color: iconColor,
               ),
             ),
             const SizedBox(width: 10),
 
-            // Text content
+            // Text content: 2 lines only
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title + chapter length badge
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          result.title,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: isBook ? FontWeight.w700 : FontWeight.w600,
-                            fontSize: isBook ? 14 : 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (isBook && result.chapterLen > 0)
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            result.chapterLenLabel,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                    ],
+                  // Line 1: Last heading title (max 2 lines, wrapping)
+                  Text(
+                    result.lastHeading,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: isBook ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
 
-                  // Subtitle: book name or hierarchy
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
+
+                  // Line 2: Full path (wrapping, not ellipsised)
                   Text(
-                    result.subtitle,
+                    result.path,
                     style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                       fontSize: 11,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-
-                  // Type label (compact)
-                  const SizedBox(height: 1),
-                  Text(
-                    isBook ? 'Sutta — ${result.bookId}' : result.path,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.4),
-                      fontSize: 9,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    // Allow wrapping — no maxLines, no overflow ellipsis.
+                    // The overlay container's maxHeight constraint will
+                    // naturally clip if needed.
                   ),
                 ],
               ),
             ),
+
+            // Chapter length badge for book entries
+            if (isBook && result.chapterLen > 0)
+              Container(
+                margin: const EdgeInsets.only(left: 6, top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  result.chapterLenLabel,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    fontSize: 8,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -340,34 +329,8 @@ class _RebuildIndexButton extends ConsumerStatefulWidget {
 }
 
 class _RebuildIndexButtonState extends ConsumerState<_RebuildIndexButton> {
-  bool _rebuilding = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_rebuilding) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: widget.colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Rebuilding index…',
-            style: AppTypography.labelSmall.copyWith(
-              color: widget.colors.onSurfaceVariant.withValues(alpha: 0.6),
-              fontSize: 11,
-            ),
-          ),
-        ],
-      );
-    }
-
     return InkWell(
       borderRadius: BorderRadius.circular(6),
       onTap: _rebuildIndex,
@@ -404,20 +367,14 @@ class _RebuildIndexButtonState extends ConsumerState<_RebuildIndexButton> {
   }
 
   Future<void> _rebuildIndex() async {
-    setState(() => _rebuilding = true);
-    try {
-      final service = ref.read(mentionServiceProvider);
-      await service.buildIndex();
-      // Refresh the search results after rebuild
-      if (mounted) {
-        final notifier = ref.read(mentionSearchProvider.notifier);
-        notifier.deactivate();
-        notifier.activate();
-      }
-    } catch (e) {
-      debugPrint('[MENTION] Rebuild error: $e');
-    } finally {
-      if (mounted) setState(() => _rebuilding = false);
+    if (!mounted) return;
+    final count = await showMentionIndexBuildDialog(context);
+    debugPrint('[MENTION] Rebuild complete: $count entries');
+    // Refresh the search results after rebuild
+    if (mounted) {
+      final notifier = ref.read(mentionSearchProvider.notifier);
+      notifier.deactivate();
+      notifier.activate();
     }
   }
 }

@@ -171,6 +171,9 @@ class HeadingAttachment {
   }
 }
 
+/// The type of text: Mūla (root), Aṭṭhakathā (commentary), or Ṭīkā (sub-commentary).
+enum TextType { mula, attha, tika }
+
 /// Search result from the mention index, used in the dropdown.
 class MentionSearchResult {
   final String bookId;
@@ -179,8 +182,8 @@ class MentionSearchResult {
   final String bookName;
   final AttachmentEntryType entryType;
 
-  /// The full @-path for display.
-  /// e.g. "@dn1/brahmajālasuttaṃ/1. Sīla" or "@mn95/cūḷakammavibhaṅgasuttaṃ"
+  /// The full path for display.
+  /// e.g. "dn1/brahmajālasuttaṃ/1. Sīla" or "mn95/cūḷakammavibhaṅgasuttaṃ"
   final String path;
 
   /// Hierarchy breadcrumb for the result display.
@@ -188,6 +191,16 @@ class MentionSearchResult {
 
   /// Whether this book is a mūla (root) text.
   final bool isMula;
+
+  /// Classifies the text type: Mula, Attha, or Tīka.
+  /// - Mula: root text (isMula == true)
+  /// - Attha: commentary (has mula_ref but no attha_ref)
+  /// - Tīka: sub-commentary (has attha_ref)
+  TextType get textType {
+    if (isMula) return TextType.mula;
+    if (atthaRef != null && atthaRef!.isNotEmpty) return TextType.tika;
+    return TextType.attha;
+  }
 
   /// Total paragraph count (from books.chapter_len), shown for book entries.
   final int chapterLen;
@@ -237,18 +250,12 @@ class MentionSearchResult {
     );
   }
 
-  /// Short hierarchy preview for the dropdown item subtitle.
-  /// For book entries, shows the book name.
-  /// For heading entries, shows the hierarchy path.
-  String get subtitle {
+  /// The last heading title (the most specific heading).
+  String get lastHeading {
     if (entryType == AttachmentEntryType.book) {
       return bookName.isNotEmpty ? bookName : bookId;
     }
-    final book = bookName.isNotEmpty ? bookName : bookId;
-    if (hierarchy.length > 1) {
-      return '$book › ${hierarchy.sublist(0, hierarchy.length - 1).join(' › ')}';
-    }
-    return book;
+    return title;
   }
 
   /// Formatted chapter length for display, e.g. "142 paragraphs".

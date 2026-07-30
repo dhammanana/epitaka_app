@@ -8,44 +8,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../../core/utils/pali_search_utils.dart';
-import '../../../core/utils/pali_script_converter.dart';
-import '../../../core/utils/platform_info.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../shared/utils/reading_clipboard.dart';
-import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
-import '../../../shared/utils/app_shortcuts.dart';
+import '../../../core/utils/pali_script_converter.dart';
+import '../../../core/utils/platform_info.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/providers/side_panel_provider.dart';
-import '../../dictionary/widgets/dictionary_sheet.dart';
+import '../../../shared/utils/app_shortcuts.dart';
+import '../../../shared/utils/reading_clipboard.dart';
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
-
-import '../../settings/widgets/settings_dialog.dart';
+import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../library/screens/library_screen.dart';
 import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
-import '../providers/tts_reading_provider.dart';
-import '../providers/reader_tts_sync_provider.dart';
+import '../../settings/widgets/settings_dialog.dart';
 import '../providers/reader_provider.dart';
+import '../providers/reader_search_notifier.dart';
+import '../providers/reader_selection_notifier.dart';
 import '../providers/reader_tabs_provider.dart';
+import '../providers/reader_tts_sync_provider.dart';
+import '../providers/tts_reading_provider.dart';
+import '../services/reader_copy_service.dart';
 import '../widgets/bookmark_dialog.dart';
+import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
 import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
-import '../widgets/reader_context_menu.dart';
+import '../widgets/reader_content_with_selection.dart';
 import '../widgets/reader_drag_thumb.dart';
-import '../widgets/display_layout_popup.dart';
 import '../widgets/reader_in_book_search_bar.dart';
 import '../widgets/reader_tts_widgets.dart';
-import '../widgets/reader_content_with_selection.dart';
 import '../widgets/tab_strip.dart';
-import '../services/reader_copy_service.dart';
-import '../providers/reader_search_notifier.dart';
-import '../providers/reader_selection_notifier.dart';
 
 /// Reader screen with multiple tabs, showing Pāli text with translations.
 /// Each tab has its own scroll position stored in [ReaderTabInfo].
@@ -177,8 +173,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// persistent timer on each tick. This avoids recreating the timer.
   double _autoScrollSpeed = 0;
 
-
-
   // Track the last paraId we've jumped to per book, so we don't re-jump
   // every time the tab rebuilds (e.g. on unrelated provider changes).
   final Map<String, int> _lastJumpedParaId = {};
@@ -245,12 +239,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   DateTime? _lastPositionThrottle;
   static const Duration _kPositionThrottleDuration = Duration(milliseconds: 50);
 
-  // ── In-book search state lives in [inBookSearchProvider] ─────────────
+  /// Millis counter for tab-switch timing breakdown.
+  /// Reset at the start of build() when a different tab becomes active.
+  int? _tabSwitchStartMs;
 
-  /// Delegate in-book search to [ReaderSearchNotifier].
-  Future<void> _runInBookSearch(String query) async {
-    ref.read(inBookSearchProvider.notifier).onQueryChanged(query);
-  }
+  /// The bookId of the active tab at the previous build().
+  /// Used to detect tab switches and start _tabSwitchStartMs.
+  String? _lastBuildBookId;
+
+  // ── In-book search state lives in [inBookSearchProvider] ─────────────
 
   /// Jump to the [index]th in-book search match.
   void _jumpToInBookMatch(int index) {
@@ -448,7 +445,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     // Throttle: skip heavy work if called too frequently (e.g. every scroll frame)
     final now = DateTime.now();
-    final shouldThrottle = _lastPositionThrottle != null &&
+    final shouldThrottle =
+        _lastPositionThrottle != null &&
         now.difference(_lastPositionThrottle!) < _kPositionThrottleDuration;
 
     // Only process positions for the active tab
@@ -479,10 +477,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (shouldThrottle && _lastScrollParaId[bookId] != null) {
       // Still update visible range for selection auto-scroll
       if (visible.isNotEmpty) {
-        ref.read(readerSelectionProvider.notifier).updateVisibleRange(
-          visible.first.index,
-          visible.last.index,
-        );
+        ref
+            .read(readerSelectionProvider.notifier)
+            .updateVisibleRange(visible.first.index, visible.last.index);
       }
       if (topIndex == 0 && _appBarCollapsed.value) {
         _appBarCollapsed.value = false;
@@ -505,6 +502,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
         if (_lastScrollParaId[bookId] != visibleParaId) {
           final posSw = Stopwatch()..start();
+          if (_tabSwitchStartMs != null) {
+            final posElapsed =
+                DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
+            developer.log(
+              '[TAB_SW] book=$bookId FIRST visible position in ${posElapsed}ms '
+              'topIndex=$topIndex paraId=$visibleParaId',
+              name: 'epitaka.reader.ui',
+            );
+            _tabSwitchStartMs = null; // one-shot
+          }
           developer.log(
             '[UI_POS] book=$bookId topIndex=$topIndex paraId=$visibleParaId',
             name: 'epitaka.reader.ui',
@@ -550,7 +557,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     'ttsIndex=$ttsIndex visible=${visible.map((p) => p.index).toList()}',
                     name: 'epitaka.reader.ui',
                   );
-                  ref.read(ttsSyncProvider(bookId).notifier).disableAutoScroll();
+                  ref
+                      .read(ttsSyncProvider(bookId).notifier)
+                      .disableAutoScroll();
                 }
               }
             }
@@ -574,10 +583,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     // Track visible range for copy operations
     if (visible.isNotEmpty) {
-      ref.read(readerSelectionProvider.notifier).updateVisibleRange(
-        visible.first.index,
-        visible.last.index,
-      );
+      ref
+          .read(readerSelectionProvider.notifier)
+          .updateVisibleRange(visible.first.index, visible.last.index);
     }
 
     // Always force-expand at the very top of the document.
@@ -675,21 +683,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       name: 'epitaka.reader.ui',
     );
 
-    // ── Intra-paragraph line change: skip paragraph-level scroll ──
-    // When TTS advances to a new line within the same paragraph, we
-    // must NOT scroll the paragraph to alignment 0.0 (top of viewport)
-    // first — that would cause a jarring snap to the paragraph start.
-    // Instead, only fine-scroll to the specific line below.
-    //
-    // NOTE: isSameParagraph must be checked BEFORE updating
-    // _lastJumpedParaId, otherwise the comparison is always true.
-    // The lineId != null guard ensures we only skip the paragraph
-    // scroll when a fine-scroll (Scrollable.ensureVisible) follows.
-    // Non-TTS callers (tab restoration, TOC, search) without a lineId
-    // will always scroll the paragraph even if it matches the last
-    // TTS jump, which is correct since they set their own alignment.
-    final isSameParagraph =
-        _lastJumpedParaId[bookId] == paraId && lineId != null;
+    // Always update the last-jumped paraId so that the next
+    // _jumpToParagraph call has fresh state.
     _lastJumpedParaId[bookId] = paraId;
 
     // Issue 4: Create a GlobalKey for the target line so
@@ -708,33 +703,38 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) setState(() {});
     }
 
-
-    if (!isSameParagraph) {
-      // Scroll the paragraph into view using the caller's [alignment]
-      // value (default 0.0 = top of viewport).
-      if (animate) {
-        await controller.scrollTo(
-          index: index,
-          alignment: alignment,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      } else {
-        controller.jumpTo(index: index, alignment: alignment);
+    // ── Paragraph-level scroll ────────────────────────────────────
+    // When a lineId is provided, compute alignment from the line's
+    // position within the paragraph so the target line appears at or
+    // near the center of the viewport — not just the paragraph start.
+    final useAlignment = () {
+      if (lineId != null && index >= 0 && index < state.paragraphs.length) {
+        final para = state.paragraphs[index];
+        final lineIndex = para.lines.indexWhere((l) => l.lineId == lineId);
+        if (lineIndex >= 0 && para.lines.length > 1) {
+          // Invert: early lines (top of paragraph) need HIGHER
+          // alignment to push the paragraph down so the first line
+          // appears in the upper portion of the viewport, not at
+          // center. Late lines need LOWER alignment to push the
+          // paragraph up so the last line stays visible.
+          //   first line → 0.65 (upper ~third)
+          //   middle     → 0.50 (centered)
+          //   last line  → 0.35 (lower ~third)
+          final lineFraction = lineIndex / (para.lines.length - 1);
+          return (0.65 - lineFraction * 0.3).clamp(0.0, 1.0);
+        }
       }
-    } else {
-      developer.log(
-        '[JUMP] book=$bookId same paragraph paraId=$paraId — '
-        'skipping paragraph-level scroll, fine-scroll only',
-        name: 'epitaka.reader.ui',
+      return alignment;
+    }();
+    if (animate) {
+      await controller.scrollTo(
+        index: index,
+        alignment: useAlignment,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
       );
-    }
-
-    // Issue 4: After the paragraph is visible, fine-scroll to the
-    // specific line using Scrollable.ensureVisible on the line's
-    // GlobalKey context.
-    if (lineId != null && mounted) {
-      _scrollToLine(bookId, lineId);
+    } else {
+      controller.jumpTo(index: index, alignment: useAlignment);
     }
 
     // Clear initialParaId / initialLineId
@@ -757,182 +757,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Use addPostFrameCallback so any in-flight scroll offset
     // notifications from this jump's paragraph scroll are still
     // suppressed.
-    //
-    // When lineId is set, _scrollToLine handles the
-    // _suppressAppBarScroll lifecycle (because Scrollable
-    // .ensureVisible's 100ms animation generates scroll events
-    // that arrive after this postFrameCallback fires).
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           developer.log(
             '[JUMP] book=$bookId clearing _isInitialJumpPending '
-            '(lineId=$lineId → _suppressAppBarScroll handled by _scrollToLine)',
+            '(lineId=$lineId)',
             name: 'epitaka.reader.ui',
           );
           _isInitialJumpPending = false;
-          // When there's a fine-scroll, _scrollToLine manages
-          // _suppressAppBarScroll (set before ensureVisible,
-          // cleared in .then() or retry-exhaustion).
-          if (lineId == null) {
-            _suppressAppBarScroll = false;
-          }
+          _suppressAppBarScroll = false;
         }
       });
     }
   }
-
-  /// Issue 4: After a paragraph has been scrolled into view, fine-scroll
-  /// to the specific line using Scrollable.ensureVisible on the line's
-  /// GlobalKey context (the precise, non-guess-based way).
-  /// Uses a local retry counter in the closure so concurrent retry loops
-  /// from rapid TTS advances don't interfere with each other.
-  ///
-  /// Fallback: When the GlobalKey context is not found (e.g. in
-  /// non-lineByLine display modes where individual line widgets don't
-  /// exist), estimate the line position using the line index within the
-  /// paragraph and scroll via alignment.
-  static const int _kMaxTtsScrollRetries = 15;
-
-  void _scrollToLine(String bookId, int lineId) {
-    final ttsSync = ref.read(ttsSyncProvider(bookId));
-    final key = ttsSync.ttsTargetLineKeys[lineId];
-    final targetParaId = ttsSync.ttsTargetParaId;
-    if (key == null) {
-      // No key — fall back to estimated alignment immediately
-      _scrollToEstimatedLine(bookId, lineId, targetParaId);
-      return;
-    }
-    // Capture the GlobalKey instance so a subsequent TTS jump that
-    // replaces the map entry doesn't affect this retry loop.
-    final capturedKey = key;
-    var retries = 0; // local to this call — not shared across calls
-
-    void attemptScroll() {
-      if (!mounted) return;
-      final lineContext = capturedKey.currentContext;
-      if (lineContext != null && lineContext.mounted) {
-        developer.log(
-          '[TTS_LINE] Scrollable.ensureVisible line=$lineId',
-          name: 'epitaka.tts',
-        );
-        _suppressAppBarScroll = true;
-        // When the in-book search bar is visible, use a slightly lower
-        // alignment (0.38 instead of 0.3) so the line doesn't end up
-        // directly behind the search bar at the top of the content area.
-        final lineAlignment = _searchBarVisible ? 0.38 : 0.3;
-        Scrollable.ensureVisible(
-          lineContext,
-          alignment: lineAlignment, // show line in upper third of viewport
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-        ).then((_) {
-          if (mounted) {
-            ref
-                .read(ttsSyncProvider(bookId).notifier)
-                .removeTargetLineKey(lineId);
-            ref
-                .read(ttsSyncProvider(bookId).notifier)
-                .clearTargetParaId();
-            _suppressAppBarScroll = false;
-          }
-        });
-      } else {
-        retries++;
-        if (retries >= _kMaxTtsScrollRetries) {
-          ref
-              .read(ttsSyncProvider(bookId).notifier)
-              .removeTargetLineKey(lineId);
-          ref
-              .read(ttsSyncProvider(bookId).notifier)
-              .clearTargetParaId();
-          _suppressAppBarScroll = false;
-          developer.log(
-            '[TTS_LINE] line=$lineId scroll retries exhausted, '
-            'falling back to estimated alignment',
-            name: 'epitaka.tts',
-          );
-          _scrollToEstimatedLine(bookId, lineId, targetParaId);
-          return;
-        }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) attemptScroll();
-        });
-      }
-    }
-
-    // Set suppression before the post-frame callback fires
-    _suppressAppBarScroll = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) => attemptScroll());
-  }
-
-  /// Fallback: estimate the line position using the line index within the
-  /// paragraph and scroll via alignment.  Handles all display modes
-  /// (lineByLine, hideJoinLines, sideBySide) where individual line widgets
-  /// may not exist.
-  ///
-  /// Re-reads the current TTS state to avoid scrolling to a stale lineId
-  /// when this fallback runs long after the original lineId was captured
-  /// (e.g. after retry exhaustion ~250ms later — TTS may have advanced).
-  void _scrollToEstimatedLine(
-    String bookId,
-    int lineId,
-    int? targetParaId,
-  ) {
-    if (!mounted) {
-      _suppressAppBarScroll = false;
-      return;
-    }
-    // Re-read current TTS state: if TTS has moved past the captured
-    // lineId, don't scroll to a stale position — the next jump will
-    // handle it. Only scroll if the state still matches.
-    final ttsState = ref.read(ttsReadingProvider);
-    if (ttsState.bookId != bookId ||
-        ttsState.currentParaId != targetParaId ||
-        ttsState.currentLineId != lineId) {
-      _suppressAppBarScroll = false;
-      return;
-    }
-
-    final readerState = ref.read(readerDataProvider(bookId));
-    final paraIndex =
-        readerState.paragraphs.indexWhere((p) => p.paraId == targetParaId);
-    if (paraIndex < 0) {
-      _suppressAppBarScroll = false;
-      return;
-    }
-    final para = readerState.paragraphs[paraIndex];
-    final lineIndex = para.lines.indexWhere((l) => l.lineId == lineId);
-    if (lineIndex < 0) {
-      _suppressAppBarScroll = false;
-      return;
-    }
-    // Estimate: show line at ~30% of viewport from top.  The first line
-    // gets alignment 0.0 (top of paragraph flush with top of viewport),
-    // subsequent lines get progressively higher alignment but capped at
-    // 0.5 so we don't push it past the middle of the screen.  This is a
-    // rough heuristic — exact positioning depends on varying line heights
-    // (Pali-only vs Pali + N translations).
-    final totalLines = para.lines.length;
-    final estimatedAlignment =
-        totalLines > 1
-            ? ((lineIndex / (totalLines - 1)) * 0.3).clamp(0.0, 0.3)
-            : 0.0;
-    developer.log(
-      '[TTS_LINE] estimated alignment: paraIdx=$paraIndex '
-      'lineIdx=$lineIndex/$totalLines align=$estimatedAlignment',
-      name: 'epitaka.tts',
-    );
-    final controller = _itemScrollControllers[bookId];
-    if (controller != null && controller.isAttached) {
-      controller.jumpTo(index: paraIndex, alignment: estimatedAlignment);
-    }
-    _suppressAppBarScroll = false;
-  }
-
-  /// Read whether the in-book search bar is currently visible.
-  bool get _searchBarVisible =>
-      ref.read(inBookSearchProvider).showSearchBar;
 
   /// TTS voices cache for the controls dialog (loaded on demand).
   List<Map<String, String>>? _cachedSystemVoices;
@@ -1401,10 +1239,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (dx.abs() < 10 || dx.abs() < dy) return;
       _isSwiping = true;
       _lastSwipeDx = dx;
-      _onDragStart(DragStartDetails(
-        globalPosition: event.position,
-        localPosition: event.localPosition,
-      ));
+      _onDragStart(
+        DragStartDetails(
+          globalPosition: event.position,
+          localPosition: event.localPosition,
+        ),
+      );
       return;
     }
 
@@ -1412,11 +1252,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _lastSwipeDx = dx;
 
     if (deltaDx != 0) {
-      _onDragUpdate(DragUpdateDetails(
-        delta: Offset(deltaDx, 0),
-        globalPosition: event.position,
-        localPosition: event.localPosition,
-      ));
+      _onDragUpdate(
+        DragUpdateDetails(
+          delta: Offset(deltaDx, 0),
+          globalPosition: event.position,
+          localPosition: event.localPosition,
+        ),
+      );
     }
   }
 
@@ -1442,14 +1284,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     double speed;
     if (clampedY < _kAutoScrollEdgeThreshold) {
       // Near top edge — scroll backward (up)
-      final intensity =
-          1.0 - (clampedY / _kAutoScrollEdgeThreshold);
+      final intensity = 1.0 - (clampedY / _kAutoScrollEdgeThreshold);
       speed = -_kAutoScrollBaseSpeed * (0.5 + 0.5 * intensity);
     } else if (clampedY > viewportHeight - _kAutoScrollEdgeThreshold) {
       // Near bottom edge — scroll forward (down)
       final intensity =
           ((clampedY - (viewportHeight - _kAutoScrollEdgeThreshold)) /
-              _kAutoScrollEdgeThreshold);
+          _kAutoScrollEdgeThreshold);
       speed = _kAutoScrollBaseSpeed * (0.5 + 0.5 * intensity);
     } else {
       speed = 0;
@@ -1473,31 +1314,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return;
     }
     // Start the persistent timer (only when transitioning from stopped)
-    _autoScrollTimer ??= Timer.periodic(
-        const Duration(milliseconds: 16),
-        (_) {
-          if (!mounted) {
-            _autoScrollTimer?.cancel();
-            _autoScrollTimer = null;
-            _autoScrollSpeed = 0;
-            return;
-          }
-          final currentSpeed = _autoScrollSpeed;
-          if (currentSpeed == 0) return;
-          try {
-            _autoScrollOffsetController.animateScroll(
-              offset: currentSpeed,
-              duration: const Duration(milliseconds: 16),
-              curve: Curves.linear,
-            );
-          } catch (e) {
-            developer.log(
-              '[AUTO_SCROLL] animateScroll error: $e',
-              name: 'epitaka.reader.ui',
-            );
-          }
-        },
-      );
+    _autoScrollTimer ??= Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!mounted) {
+        _autoScrollTimer?.cancel();
+        _autoScrollTimer = null;
+        _autoScrollSpeed = 0;
+        return;
+      }
+      final currentSpeed = _autoScrollSpeed;
+      if (currentSpeed == 0) return;
+      try {
+        _autoScrollOffsetController.animateScroll(
+          offset: currentSpeed,
+          duration: const Duration(milliseconds: 16),
+          curve: Curves.linear,
+        );
+      } catch (e) {
+        developer.log(
+          '[AUTO_SCROLL] animateScroll error: $e',
+          name: 'epitaka.reader.ui',
+        );
+      }
+    });
     // If timer is already running, it will pick up the new speed
     // on the next tick automatically.
   }
@@ -1525,10 +1363,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _finishTabSwipe() {
     _stopAutoScroll();
     if (_isSwiping) {
-      _onDragEnd(DragEndDetails(
-        velocity: Velocity.zero,
-        primaryVelocity: 0,
-      ));
+      _onDragEnd(DragEndDetails(velocity: Velocity.zero, primaryVelocity: 0));
     }
     _swipeStartPos = null;
     _isSwiping = false;
@@ -1566,31 +1401,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  /// Copy using the rich HTML mechanism (preserves bold, italic, newlines).
-  /// Delegates to [ReaderCopyService] which builds HTML from visible
-  /// paragraphs and writes both rich HTML and newline-preserving plain
-  /// text to the clipboard.
-  void _copyPlainText() {
-    final selectionState = ref.read(readerSelectionProvider);
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    if (readerState.paragraphs.isEmpty) return;
-
-    final settings = ref.read(settingsProvider);
-    ReaderCopyService.copySelectedContent(
-      ref: ref,
-      context: context,
-      scope: CopyScope.both,
-      addQuote: false,
-      lastSelectedContent: selectionState.lastSelectedContent,
-      visibleStartIndex: selectionState.visibleStartIndex,
-      visibleEndIndex: selectionState.visibleEndIndex,
-      script: settings.paliScript,
-    );
-  }
-
   void _onCopyShortcut() {
     final selectionState = ref.read(readerSelectionProvider);
     final activeTab = ref.read(readerTabsProvider).activeTab;
@@ -1611,51 +1421,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       script: settings.paliScript,
     );
   }
-
-  Future<void> _copySelectedContent(
-    CopyScope scope, {
-    required bool addQuote,
-  }) async {
-    final selectionState = ref.read(readerSelectionProvider);
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    if (readerState.paragraphs.isEmpty) return;
-
-    final settings = ref.read(settingsProvider);
-    await ReaderCopyService.copySelectedContent(
-      ref: ref,
-      context: context,
-      scope: scope,
-      addQuote: addQuote,
-      lastSelectedContent: selectionState.lastSelectedContent,
-      visibleStartIndex: selectionState.visibleStartIndex,
-      visibleEndIndex: selectionState.visibleEndIndex,
-      script: settings.paliScript,
-    );
-  }
-
-  Future<void> _copyVisibleContent(
-    CopyScope scope, {
-    required bool addQuote,
-  }) async {
-    final selectionState = ref.read(readerSelectionProvider);
-    final settings = ref.read(settingsProvider);
-
-    await ReaderCopyService.copySelectedContent(
-      ref: ref,
-      context: context,
-      scope: scope,
-      addQuote: addQuote,
-      lastSelectedContent: selectionState.lastSelectedContent,
-      visibleStartIndex: selectionState.visibleStartIndex,
-      visibleEndIndex: selectionState.visibleEndIndex,
-      script: settings.paliScript,
-    );
-  }
-
-
 
   // ── TTS Floating Controls ────────────────────────────────────────────
 
@@ -1787,6 +1552,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final tabsState = ref.watch(readerTabsProvider);
 
+    // ── Detect tab switch and start timing ───────────────────────────
+    final tabSwitchBookId = tabsState.activeTab?.bookId;
+    if (tabSwitchBookId != null && _lastBuildBookId != tabSwitchBookId) {
+      _tabSwitchStartMs = DateTime.now().millisecondsSinceEpoch;
+      _lastBuildBookId = tabSwitchBookId;
+      developer.log(
+        '[TAB_SW] Switch → book=$tabSwitchBookId '
+        'totalTabs=${tabsState.tabs.length} activeIdx=${tabsState.activeIndex}',
+        name: 'epitaka.reader.ui',
+      );
+    }
+
     // Apply a pending external tab-switch slide-in. Setting the notifier
     // value here (before the AnimatedBuilder reads it) means the incoming
     // tab is painted off-screen on its very first frame, then animates in.
@@ -1844,6 +1621,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final activeTab = tabsState.activeTab!;
     final readerState = ref.watch(readerDataProvider(activeTab.bookId));
+    if (_tabSwitchStartMs != null) {
+      final elapsed =
+          DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
+      developer.log(
+        '[TAB_SW] book=${activeTab.bookId} readerData available in ${elapsed}ms '
+        'isLoaded=${readerState.isLoaded} paras=${readerState.paragraphs.length}',
+        name: 'epitaka.reader.ui',
+      );
+    }
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
 
@@ -1884,8 +1670,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ' line=$targetLineId (isInitialJumpPending=$_isInitialJumpPending)',
         name: 'epitaka.reader.ui',
       );
+      final frameTime = DateTime.now().millisecondsSinceEpoch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        final frameElapsed = DateTime.now().millisecondsSinceEpoch - frameTime;
+        if (_tabSwitchStartMs != null) {
+          final totalElapsed =
+              DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
+          developer.log(
+            '[TAB_SW] book=${activeTab.bookId} isNewInitialParaId '
+            'postFrameCallback fired in ${frameElapsed}ms '
+            '(total from tab switch: ${totalElapsed}ms)',
+            name: 'epitaka.reader.ui',
+          );
+        }
         // When a lineId is available, the fine-scroll in _scrollToLine will
         // position the line at 30% of the viewport. Without a lineId, use a
         // small alignment (5%) so the paragraph isn't flush with the top and
@@ -1919,8 +1717,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         'alignment=$alignment (isInitialJumpPending=$_isInitialJumpPending)',
         name: 'epitaka.reader.ui',
       );
+      final frameTime = DateTime.now().millisecondsSinceEpoch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        final frameElapsed = DateTime.now().millisecondsSinceEpoch - frameTime;
+        if (_tabSwitchStartMs != null) {
+          final totalElapsed =
+              DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
+          developer.log(
+            '[TAB_SW] book=${activeTab.bookId} isTabRestore '
+            'postFrameCallback fired in ${frameElapsed}ms '
+            '(total from tab switch: ${totalElapsed}ms) '
+            'targetPara=$targetParaId alignment=${alignment.toStringAsFixed(3)}',
+            name: 'epitaka.reader.ui',
+          );
+        }
         _jumpToParagraph(
           activeTab.bookId,
           targetParaId,
@@ -2059,6 +1870,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    // On tab restore, compute an initial scroll index so the list starts
+    // near the saved position instead of flashing to the top of the book
+    // before the post-frame jump correction.
+    final initialScrollIdx = () {
+      if (readerState.paragraphs.isEmpty) return 0;
+      final restoreParaId = activeTab.initialParaId ?? activeTab.currentParaId;
+      if (restoreParaId == null) return 0;
+      final idx = readerState.paragraphs.indexWhere(
+        (p) => p.paraId == restoreParaId,
+      );
+      return idx >= 0 ? idx : 0;
+    }();
+
     return Scaffold(
       body: Padding(
         padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
@@ -2068,48 +1893,48 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             ValueListenableBuilder<bool>(
               valueListenable: _appBarCollapsed,
               builder: (context, collapsed, _) => ReaderAppBar(
-              bookId: activeTab.bookId,
-              bookName: readerState.bookName ?? activeTab.bookId,
-              colors: colors,
-              showCollapsed: collapsed,
-              onSettingsTap: () {
-                if (ResponsiveBreakpoint.isDesktop(context)) {
-                  showSettingsDialog(context);
-                } else {
-                  context.push('/settings');
-                }
-              },
-              actions: ResponsiveBreakpoint.isDesktop(context)
-                  ? [
-                      IconButton(
-                        icon: const Icon(Icons.menu_book_outlined),
-                        color: colors.onSurfaceVariant,
-                        tooltip: 'Library',
-                        onPressed: () => showLibraryDialog(context),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        color: colors.onSurfaceVariant,
-                        tooltip: 'Search',
-                        onPressed: () => ref
-                            .read(sidePanelProvider.notifier)
-                            .toggle(SidePanelType.search),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.settings),
-                        color: colors.onSurfaceVariant,
-                        tooltip: 'Settings',
-                        onPressed: () {
-                          if (ResponsiveBreakpoint.isDesktop(context)) {
-                            showSettingsDialog(context);
-                          } else {
-                            context.push('/settings');
-                          }
-                        },
-                      ),
-                    ]
-                  : null,
-            ),
+                bookId: activeTab.bookId,
+                bookName: readerState.bookName ?? activeTab.bookId,
+                colors: colors,
+                showCollapsed: collapsed,
+                onSettingsTap: () {
+                  if (ResponsiveBreakpoint.isDesktop(context)) {
+                    showSettingsDialog(context);
+                  } else {
+                    context.push('/settings');
+                  }
+                },
+                actions: ResponsiveBreakpoint.isDesktop(context)
+                    ? [
+                        IconButton(
+                          icon: const Icon(Icons.menu_book_outlined),
+                          color: colors.onSurfaceVariant,
+                          tooltip: 'Library',
+                          onPressed: () => showLibraryDialog(context),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.search),
+                          color: colors.onSurfaceVariant,
+                          tooltip: 'Search',
+                          onPressed: () => ref
+                              .read(sidePanelProvider.notifier)
+                              .toggle(SidePanelType.search),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.settings),
+                          color: colors.onSurfaceVariant,
+                          tooltip: 'Settings',
+                          onPressed: () {
+                            if (ResponsiveBreakpoint.isDesktop(context)) {
+                              showSettingsDialog(context);
+                            } else {
+                              context.push('/settings');
+                            }
+                          },
+                        ),
+                      ]
+                    : null,
+              ),
             ),
             const TabStrip(),
             Expanded(
@@ -2118,25 +1943,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   // ── Swipeable tab content with finger-following slide ──
                   CallbackShortcuts(
                     bindings: {
-                    SingleActivator(LogicalKeyboardKey.keyC, control: true):
-                        _onCopyShortcut,
-                    SingleActivator(LogicalKeyboardKey.keyC, meta: true):
-                        _onCopyShortcut,
+                      SingleActivator(LogicalKeyboardKey.keyC, control: true):
+                          _onCopyShortcut,
+                      SingleActivator(LogicalKeyboardKey.keyC, meta: true):
+                          _onCopyShortcut,
                     },
                     child: Focus(
                       autofocus: true,
                       child: _buildReaderContentWithSelection(
-                          context,
-                          readerState,
-                          settings,
-                          colors,
-                          activeTab,
-                          resolvedPaliColor,
-                          resolvedTransColor,
-                          enabledLangs,
-                          langTypographies,
-                          ttsCurrentLineId,
-                          ttsCurrentParaId,
+                        context,
+                        readerState,
+                        settings,
+                        colors,
+                        activeTab,
+                        resolvedPaliColor,
+                        resolvedTransColor,
+                        enabledLangs,
+                        langTypographies,
+                        ttsCurrentLineId,
+                        ttsCurrentParaId,
+                        initialScrollIdx,
                       ),
                     ),
                   ),
@@ -2184,8 +2010,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       bottom: 84,
                       child: TtsFloatingChip(
                         colors: colors,
-                        isAutoScroll: ref.read(ttsSyncProvider(activeTab.bookId)).ttsAutoScroll,
-                        isJumpPending: ref.read(ttsSyncProvider(activeTab.bookId)).ttsJumpInProgress,
+                        isAutoScroll: ref
+                            .read(ttsSyncProvider(activeTab.bookId))
+                            .ttsAutoScroll,
+                        isJumpPending: ref
+                            .read(ttsSyncProvider(activeTab.bookId))
+                            .ttsJumpInProgress,
                         isTtsLineVisible: _isTtsLineVisible(
                           activeTab.bookId,
                           ttsReadingState.currentParaId,
@@ -2200,143 +2030,146 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ValueListenableBuilder<bool>(
                     valueListenable: _appBarCollapsed,
                     builder: (context, collapsed, _) => AnimatedPositioned(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    bottom: collapsed ? -80.0 : 24.0,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: ReaderBottomToolbar(
-                        colors: colors,
-                        displayMode: settings.translationDisplayMode,
-                        showTranslation: settings.showTranslation,
-                        ttsPlayback: ttsPlaybackStateForTab,
-                        onJumpTap: () => _onJumpTap(activeTab, readerState),                        onDisplayLayoutTap: () {
-                          showDialog(
-                            context: context,
-                            barrierColor: Colors.transparent,
-                            barrierDismissible: true,
-                            builder: (_) => const Align(
-                              alignment: Alignment(0, 0.88),
-                              child: DisplayLayoutPopup(),
-                            ),
-                          );
-                        },
-                        onContentsTap: () {
-                          final currentParaId = activeTab.currentParaId;
-                          var url =
-                              '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
-                          if (currentParaId != null) {
-                            url += '&currentParaId=$currentParaId';
-                          }
-                          context.push(url);
-                        },
-                        onDictionaryTap: () {
-                          showDictionarySheet(context, '');
-                        },
-                        onSearchTap: _toggleInBookSearch,
-                        onListenTap: () async {
-                          final positions =
-                              _itemPositionsListeners[activeTab.bookId]
-                                  ?.itemPositions
-                                  .value;
-                          int startParaIndex = 0;
-                          if (positions != null && positions.isNotEmpty) {
-                            final visible =
-                                positions
-                                    .where((p) => p.itemTrailingEdge > 0)
-                                    .toList()
-                                  ..sort(
-                                    (a, b) => a.itemLeadingEdge.compareTo(
-                                      b.itemLeadingEdge,
-                                    ),
-                                  );
-                            if (visible.isNotEmpty) {
-                              startParaIndex = visible.first.index.clamp(
-                                0,
-                                readerState.paragraphs.isEmpty
-                                    ? 0
-                                    : readerState.paragraphs.length - 1,
-                              );
-                            }
-                          }
-
-                          final lines = <TtsLineItem>[];
-                          final lang = enabledLangs.isNotEmpty
-                              ? enabledLangs.first
-                              : null;
-                          if (lang == null) return;
-
-                          // Load TTS replacements
-                          final replaceAsyncState = ref.read(
-                            ttsReplacementsNotifierProvider,
-                          );
-                          if (replaceAsyncState is AsyncLoading ||
-                              replaceAsyncState is AsyncError) {
-                            await ref
-                                .read(ttsReplacementsNotifierProvider.notifier)
-                                .load();
-                          }
-                          final activeReplacements = ref.read(
-                            activeTtsReplacementsProvider,
-                          );
-
-                          for (
-                            int i = startParaIndex;
-                            i < readerState.paragraphs.length;
-                            i++
-                          ) {
-                            final para = readerState.paragraphs[i];
-                            for (final line in para.lines) {
-                              final rawText = line.translations[lang] ?? '';
-                              final stripped = stripHtmlForTts(rawText);
-                              var text = stripped;
-                              for (final rule in activeReplacements) {
-                                try {
-                                  if (rule.isRegex) {
-                                    text = text.replaceAll(
-                                      RegExp(rule.pattern),
-                                      rule.replacement,
-                                    );
-                                  } else {
-                                    text = text.replaceAll(
-                                      rule.pattern,
-                                      rule.replacement,
-                                    );
-                                  }
-                                } catch (_) {}
-                              }
-                              lines.add(
-                                TtsLineItem(
-                                  paraId: para.paraId,
-                                  lineId: line.lineId,
-                                  text: text,
-                                ),
-                              );
-                            }
-                          }
-
-                          if (lines.isNotEmpty) {
-                            // Cache the book name so the Android
-                            // notification shows a human-readable
-                            // title instead of the raw bookId.
-                            TtsReadingNotifier.cacheBookName(
-                              activeTab.bookId,
-                              readerState.bookName ?? activeTab.bookId,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      bottom: collapsed ? -80.0 : 24.0,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: ReaderBottomToolbar(
+                          colors: colors,
+                          displayMode: settings.translationDisplayMode,
+                          showTranslation: settings.showTranslation,
+                          ttsPlayback: ttsPlaybackStateForTab,
+                          onJumpTap: () => _onJumpTap(activeTab, readerState),
+                          onDisplayLayoutTap: () {
+                            showDialog(
+                              context: context,
+                              barrierColor: Colors.transparent,
+                              barrierDismissible: true,
+                              builder: (_) => const Align(
+                                alignment: Alignment(0, 0.88),
+                                child: DisplayLayoutPopup(),
+                              ),
                             );
-                            ref
-                                .read(ttsReadingProvider.notifier)
-                                .startReading(activeTab.bookId, lines);
-                          }
-                        },
-                        onStopTap: () {
-                          ref.read(ttsReadingProvider.notifier).stopReading();
-                        },
-                        onBookmarkTap: () =>
-                            _onBookmarkTap(activeTab, readerState),
+                          },
+                          onContentsTap: () {
+                            final currentParaId = activeTab.currentParaId;
+                            var url =
+                                '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
+                            if (currentParaId != null) {
+                              url += '&currentParaId=$currentParaId';
+                            }
+                            context.push(url);
+                          },
+                          onDictionaryTap: () {
+                            showDictionarySheet(context, '');
+                          },
+                          onSearchTap: _toggleInBookSearch,
+                          onListenTap: () async {
+                            final positions =
+                                _itemPositionsListeners[activeTab.bookId]
+                                    ?.itemPositions
+                                    .value;
+                            int startParaIndex = 0;
+                            if (positions != null && positions.isNotEmpty) {
+                              final visible =
+                                  positions
+                                      .where((p) => p.itemTrailingEdge > 0)
+                                      .toList()
+                                    ..sort(
+                                      (a, b) => a.itemLeadingEdge.compareTo(
+                                        b.itemLeadingEdge,
+                                      ),
+                                    );
+                              if (visible.isNotEmpty) {
+                                startParaIndex = visible.first.index.clamp(
+                                  0,
+                                  readerState.paragraphs.isEmpty
+                                      ? 0
+                                      : readerState.paragraphs.length - 1,
+                                );
+                              }
+                            }
+
+                            final lines = <TtsLineItem>[];
+                            final lang = enabledLangs.isNotEmpty
+                                ? enabledLangs.first
+                                : null;
+                            if (lang == null) return;
+
+                            // Load TTS replacements
+                            final replaceAsyncState = ref.read(
+                              ttsReplacementsNotifierProvider,
+                            );
+                            if (replaceAsyncState is AsyncLoading ||
+                                replaceAsyncState is AsyncError) {
+                              await ref
+                                  .read(
+                                    ttsReplacementsNotifierProvider.notifier,
+                                  )
+                                  .load();
+                            }
+                            final activeReplacements = ref.read(
+                              activeTtsReplacementsProvider,
+                            );
+
+                            for (
+                              int i = startParaIndex;
+                              i < readerState.paragraphs.length;
+                              i++
+                            ) {
+                              final para = readerState.paragraphs[i];
+                              for (final line in para.lines) {
+                                final rawText = line.translations[lang] ?? '';
+                                final stripped = stripHtmlForTts(rawText);
+                                var text = stripped;
+                                for (final rule in activeReplacements) {
+                                  try {
+                                    if (rule.isRegex) {
+                                      text = text.replaceAll(
+                                        RegExp(rule.pattern),
+                                        rule.replacement,
+                                      );
+                                    } else {
+                                      text = text.replaceAll(
+                                        rule.pattern,
+                                        rule.replacement,
+                                      );
+                                    }
+                                  } catch (_) {}
+                                }
+                                lines.add(
+                                  TtsLineItem(
+                                    paraId: para.paraId,
+                                    lineId: line.lineId,
+                                    text: text,
+                                  ),
+                                );
+                              }
+                            }
+
+                            if (lines.isNotEmpty) {
+                              // Cache the book name so the Android
+                              // notification shows a human-readable
+                              // title instead of the raw bookId.
+                              TtsReadingNotifier.cacheBookName(
+                                activeTab.bookId,
+                                readerState.bookName ?? activeTab.bookId,
+                              );
+                              ref
+                                  .read(ttsReadingProvider.notifier)
+                                  .startReading(activeTab.bookId, lines);
+                            }
+                          },
+                          onStopTap: () {
+                            ref.read(ttsReadingProvider.notifier).stopReading();
+                          },
+                          onBookmarkTap: () =>
+                              _onBookmarkTap(activeTab, readerState),
+                        ),
                       ),
                     ),
-                  ),
                   ),
                 ],
               ),
@@ -2363,6 +2196,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     Map<String, LanguageTypography> langTypographies,
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
+    int initialScrollIndex,
   ) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider);
 
@@ -2378,6 +2212,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       itemScrollController: _scrollControllerFor(activeTab.bookId),
       itemPositionsListener: _positionsListenerFor(activeTab.bookId),
       scrollOffsetListener: _scrollOffsetListenerFor(activeTab.bookId),
+      initialScrollIndex: initialScrollIndex,
       contentHitTestKey: _contentHitTestKey,
       dragDxNotifier: _dragDxNotifier,
       selectableRegionKey: _selectableRegionKey,
@@ -2390,9 +2225,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       contextMenuBuilder: _buildCopyContextMenu,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
-      ttsTargetParaId: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetParaId,
-      ttsTargetLineKeys: ref.read(ttsSyncProvider(activeTab.bookId)).ttsTargetLineKeys,
-      searchQuery: ref.watch(inBookSearchProvider).effectiveQuery ?? activeTab.searchQuery,
+      ttsTargetParaId: ref
+          .read(ttsSyncProvider(activeTab.bookId))
+          .ttsTargetParaId,
+      ttsTargetLineKeys: ref
+          .read(ttsSyncProvider(activeTab.bookId))
+          .ttsTargetLineKeys,
+      searchQuery:
+          ref.watch(inBookSearchProvider).effectiveQuery ??
+          activeTab.searchQuery,
     );
 
     // When the dictionary sheet is open, Flutter adds bottom padding to the
@@ -2450,6 +2291,5 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       },
     );
-  }}
-
-
+  }
+}

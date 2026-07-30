@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../../core/models/app_models.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../utils/reader_position_utils.dart' show getCurrentParaId;
@@ -45,16 +44,15 @@ class ReaderActionController {
   ) {
     final pageNumber =
         readerState.paragraphs.isNotEmpty &&
-                readerState.paragraphs.first.pageNumber != null
-            ? readerState.paragraphs.first.pageNumber
-            : null;
+            readerState.paragraphs.first.pageNumber != null
+        ? readerState.paragraphs.first.pageNumber
+        : null;
 
     // Find nearby heading to suggest as bookmark name
     final currentParaId = activeTab.currentParaId;
     String? suggestedHeading;
     if (currentParaId != null) {
-      final notifier =
-          ref.read(readerDataProvider(activeTab.bookId).notifier);
+      final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
       final nearby = notifier.findNearbyHeading(currentParaId);
       if (nearby != null) {
         suggestedHeading = nearby.title;
@@ -73,7 +71,6 @@ class ReaderActionController {
 
 /// Plain [Provider] so the controller is a singleton — it holds no mutable
 /// state, only provides methods that take [WidgetRef] and [BuildContext].
-final readerActionControllerProvider =
-    Provider<ReaderActionController>((ref) {
+final readerActionControllerProvider = Provider<ReaderActionController>((ref) {
   return ReaderActionController();
 });

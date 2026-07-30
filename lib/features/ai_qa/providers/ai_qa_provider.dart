@@ -88,226 +88,222 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
   // ── Tool definitions (Gemini function declarations) ───────────────────
 
   static List<Map<String, dynamic>> get _toolDeclarations => [
-        {
-          'name': 'search_tipitaka',
-          'description':
-              'Search the Tipitaka database for relevant passages using full-text search. '
-              'Use this when you need to find passages related to a specific topic, term, '
-              'or concept in the Pāli Canon.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'query': {
-                'type': 'STRING',
-                'description':
-                    'Search query — a phrase or keywords to search for in the Pāli text.',
-              },
-            },
-            'required': ['query'],
+    {
+      'name': 'search_tipitaka',
+      'description':
+          'Search the Tipitaka database for relevant passages using full-text search. '
+          'Use this when you need to find passages related to a specific topic, term, '
+          'or concept in the Pāli Canon.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'query': {
+            'type': 'STRING',
+            'description':
+                'Search query — a phrase or keywords to search for in the Pāli text.',
           },
         },
-        {
-          'name': 'search_tipitaka_batch',
-          'description':
-              'Search the Tipitaka using MULTIPLE different search terms in one call. '
-              'Use this to search for a concept using several synonyms or related terms '
-              'simultaneously. All queries are executed in parallel for speed.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'queries': {
-                'type': 'ARRAY',
-                'description':
-                    'Array of search queries to run in parallel. '
-                    'Include different phrasings, synonyms, and related terms '
-                    'to maximize coverage.',
-                'items': {
+        'required': ['query'],
+      },
+    },
+    {
+      'name': 'search_tipitaka_batch',
+      'description':
+          'Search the Tipitaka using MULTIPLE different search terms in one call. '
+          'Use this to search for a concept using several synonyms or related terms '
+          'simultaneously. All queries are executed in parallel for speed.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'queries': {
+            'type': 'ARRAY',
+            'description':
+                'Array of search queries to run in parallel. '
+                'Include different phrasings, synonyms, and related terms '
+                'to maximize coverage.',
+            'items': {'type': 'STRING'},
+            'minItems': 2,
+            'maxItems': 5,
+          },
+        },
+        'required': ['queries'],
+      },
+    },
+    {
+      'name': 'search_by_category',
+      'description':
+          'Search the Tipitaka within specific book categories or nikayas. '
+          'Use this when you know which part of the canon the answer is likely in. '
+          'Categories: "vinaya", "sutta", "abhidhamma". '
+          'Nikaya prefixes: "dn", "mn", "sn", "an", "khp", "dhp", "ud", "it", "snp", '
+          '"vv", "pv", "thag", "thig", "ja", "bi", "patis", "nm", "ne", "pk". '
+          'Combine with queries to find specific passages within those books.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'queries': {
+            'type': 'ARRAY',
+            'description':
+                'Array of search queries. Include 2-3 specific terms '
+                '(Pāli keywords, English phrases) to find within the target books.',
+            'items': {'type': 'STRING'},
+            'minItems': 2,
+            'maxItems': 5,
+          },
+          'categories': {
+            'type': 'ARRAY',
+            'description':
+                'Book categories to search within. '
+                'Choose from: "vinaya", "sutta", or "abhidhamma". '
+                'Can be combined with nikayas. Leave empty to search all categories.',
+            'items': {'type': 'STRING'},
+          },
+          'nikayas': {
+            'type': 'ARRAY',
+            'description':
+                'Nikāya book prefixes to narrow the search further. '
+                'E.g. ["dn"] for Dīgha Nikāya, ["an"] for Aṅguttara Nikāya, '
+                '["dhp"] for Dhammapada. Can be combined with categories.',
+            'items': {'type': 'STRING'},
+          },
+        },
+        'required': ['queries', 'categories'],
+      },
+    },
+    {
+      'name': 'get_headings',
+      'description':
+          'Get the table of contents / section headings for a specific book. '
+          'Use this to understand the structure of a book, find specific sections, '
+          'or navigate to a particular topic within a book.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'book_id': {
+            'type': 'STRING',
+            'description':
+                'Book ID (e.g. "dn1", "mn141", "sn12.2", "an3.1", "dhp").',
+          },
+        },
+        'required': ['book_id'],
+      },
+    },
+    {
+      'name': 'get_books',
+      'description':
+          'Get a list of all available books in the Tipitaka database. '
+          'Use this when you need to know which books are available, their categories, '
+          'or to find the correct book_id for a specific text.',
+      'parameters': {'type': 'OBJECT', 'properties': {}},
+    },
+    {
+      'name': 'get_paragraph_content',
+      'description':
+          'Get the full Pāli content of a range of paragraphs from a specific book. '
+          'Use this to read the actual text of a passage after you have identified '
+          'the relevant book and paragraph range (e.g. from search results or headings).',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'book_id': {
+            'type': 'STRING',
+            'description': 'Book ID (e.g. "dn1", "mn141").',
+          },
+          'para_start': {
+            'type': 'INTEGER',
+            'description': 'Starting paragraph number (inclusive).',
+          },
+          'para_end': {
+            'type': 'INTEGER',
+            'description':
+                'Ending paragraph number (inclusive). Can be the same as para_start for a single paragraph.',
+          },
+        },
+        'required': ['book_id', 'para_start', 'para_end'],
+      },
+    },
+    {
+      'name': 'get_paragraph_content_batch',
+      'description':
+          'Get Pāli content from MULTIPLE book/paragraph ranges in ONE call. '
+          'Use this to read several passages at once after you have identified '
+          'the relevant locations (e.g. from search results or headings). '
+          'All ranges are fetched in parallel for speed.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'ranges': {
+            'type': 'ARRAY',
+            'description':
+                'Array of paragraph ranges to fetch. Each range is an object '
+                'with book_id, para_start, para_end.',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'book_id': {
                   'type': 'STRING',
+                  'description': 'Book ID (e.g. "dn1", "mn141").',
                 },
-                'minItems': 2,
-                'maxItems': 5,
-              },
-            },
-            'required': ['queries'],
-          },
-        },
-        {
-          'name': 'search_by_category',
-          'description':
-              'Search the Tipitaka within specific book categories or nikayas. '
-              'Use this when you know which part of the canon the answer is likely in. '
-              'Categories: "vinaya", "sutta", "abhidhamma". '
-              'Nikaya prefixes: "dn", "mn", "sn", "an", "khp", "dhp", "ud", "it", "snp", '
-              '"vv", "pv", "thag", "thig", "ja", "bi", "patis", "nm", "ne", "pk". '
-              'Combine with queries to find specific passages within those books.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'queries': {
-                'type': 'ARRAY',
-                'description':
-                    'Array of search queries. Include 2-3 specific terms '
-                    '(Pāli keywords, English phrases) to find within the target books.',
-                'items': {'type': 'STRING'},
-                'minItems': 2,
-                'maxItems': 5,
-              },
-              'categories': {
-                'type': 'ARRAY',
-                'description':
-                    'Book categories to search within. '
-                    'Choose from: "vinaya", "sutta", or "abhidhamma". '
-                    'Can be combined with nikayas. Leave empty to search all categories.',
-                'items': {'type': 'STRING'},
-              },
-              'nikayas': {
-                'type': 'ARRAY',
-                'description':
-                    'Nikāya book prefixes to narrow the search further. '
-                    'E.g. ["dn"] for Dīgha Nikāya, ["an"] for Aṅguttara Nikāya, '
-                    '["dhp"] for Dhammapada. Can be combined with categories.',
-                'items': {'type': 'STRING'},
-              },
-            },
-            'required': ['queries', 'categories'],
-          },
-        },
-        {
-          'name': 'get_headings',
-          'description':
-              'Get the table of contents / section headings for a specific book. '
-              'Use this to understand the structure of a book, find specific sections, '
-              'or navigate to a particular topic within a book.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'book_id': {
-                'type': 'STRING',
-                'description':
-                    'Book ID (e.g. "dn1", "mn141", "sn12.2", "an3.1", "dhp").',
-              },
-            },
-            'required': ['book_id'],
-          },
-        },
-        {
-          'name': 'get_books',
-          'description':
-              'Get a list of all available books in the Tipitaka database. '
-              'Use this when you need to know which books are available, their categories, '
-              'or to find the correct book_id for a specific text.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {},
-          },
-        },
-        {
-          'name': 'get_paragraph_content',
-          'description':
-              'Get the full Pāli content of a range of paragraphs from a specific book. '
-              'Use this to read the actual text of a passage after you have identified '
-              'the relevant book and paragraph range (e.g. from search results or headings).',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'book_id': {
-                'type': 'STRING',
-                'description': 'Book ID (e.g. "dn1", "mn141").',
-              },
-              'para_start': {
-                'type': 'INTEGER',
-                'description': 'Starting paragraph number (inclusive).',
-              },
-              'para_end': {
-                'type': 'INTEGER',
-                'description':
-                    'Ending paragraph number (inclusive). Can be the same as para_start for a single paragraph.',
-              },
-            },
-            'required': ['book_id', 'para_start', 'para_end'],
-          },
-        },
-        {
-          'name': 'get_paragraph_content_batch',
-          'description':
-              'Get Pāli content from MULTIPLE book/paragraph ranges in ONE call. '
-              'Use this to read several passages at once after you have identified '
-              'the relevant locations (e.g. from search results or headings). '
-              'All ranges are fetched in parallel for speed.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'ranges': {
-                'type': 'ARRAY',
-                'description':
-                    'Array of paragraph ranges to fetch. Each range is an object '
-                    'with book_id, para_start, para_end.',
-                'items': {
-                  'type': 'OBJECT',
-                  'properties': {
-                    'book_id': {
-                      'type': 'STRING',
-                      'description': 'Book ID (e.g. "dn1", "mn141").',
-                    },
-                    'para_start': {
-                      'type': 'INTEGER',
-                      'description': 'Starting paragraph number (inclusive).',
-                    },
-                    'para_end': {
-                      'type': 'INTEGER',
-                      'description': 'Ending paragraph number (inclusive).',
-                    },
-                  },
-                  'required': ['book_id', 'para_start', 'para_end'],
+                'para_start': {
+                  'type': 'INTEGER',
+                  'description': 'Starting paragraph number (inclusive).',
                 },
-                'minItems': 2,
-                'maxItems': 10,
+                'para_end': {
+                  'type': 'INTEGER',
+                  'description': 'Ending paragraph number (inclusive).',
+                },
               },
+              'required': ['book_id', 'para_start', 'para_end'],
             },
-            'required': ['ranges'],
+            'minItems': 2,
+            'maxItems': 10,
           },
         },
-        {
-          'name': 'get_commentaries',
-          'description':
-              'Get related commentary (Aṭṭhakathā) and sub-commentary (Ṭīkā) passages '
-              'for a given Mūla (root text) paragraph. Use this when a user asks about '
-              'commentarial explanations of a specific passage in the Tipitaka.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'mula_book_id': {
-                'type': 'STRING',
-                'description':
-                    'Book ID of the Mūla (root) text (e.g. "dn1", "mn141").',
-              },
-              'mula_para_id': {
-                'type': 'INTEGER',
-                'description':
-                    'Paragraph number in the Mūla text to find commentaries for.',
-              },
-            },
-            'required': ['mula_book_id', 'mula_para_id'],
+        'required': ['ranges'],
+      },
+    },
+    {
+      'name': 'get_commentaries',
+      'description':
+          'Get related commentary (Aṭṭhakathā) and sub-commentary (Ṭīkā) passages '
+          'for a given Mūla (root text) paragraph. Use this when a user asks about '
+          'commentarial explanations of a specific passage in the Tipitaka.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'mula_book_id': {
+            'type': 'STRING',
+            'description':
+                'Book ID of the Mūla (root) text (e.g. "dn1", "mn141").',
+          },
+          'mula_para_id': {
+            'type': 'INTEGER',
+            'description':
+                'Paragraph number in the Mūla text to find commentaries for.',
           },
         },
-        {
-          'name': 'final_answer',
-          'description':
-              'Call this when you have collected all the information needed to answer the user\'s question. '
-              'The results will be passed to a more capable model to write the final answer. '
-              'Use the args to summarize what you found.',
-          'parameters': {
-            'type': 'OBJECT',
-            'properties': {
-              'summary': {
-                'type': 'STRING',
-                'description': 'Brief summary of what you found and what sources you collected.',
-              },
-            },
-            'required': ['summary'],
+        'required': ['mula_book_id', 'mula_para_id'],
+      },
+    },
+    {
+      'name': 'final_answer',
+      'description':
+          'Call this when you have collected all the information needed to answer the user\'s question. '
+          'The results will be passed to a more capable model to write the final answer. '
+          'Use the args to summarize what you found.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'summary': {
+            'type': 'STRING',
+            'description':
+                'Brief summary of what you found and what sources you collected.',
           },
         },
-      ];
+        'required': ['summary'],
+      },
+    },
+  ];
 
   // ── Debug log ──────────────────────────────────────────────────────────
 
@@ -333,7 +329,8 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
 
   // ── Default system prompts ────────────────────────────────────────────
 
-  static const String _defaultToolSystemPrompt = '''You are an expert research assistant for the Pāli Canon (Tipitaka).
+  static const String _defaultToolSystemPrompt =
+      '''You are an expert research assistant for the Pāli Canon (Tipitaka).
 
 ## Available tools
 1. **search_tipitaka(query)** — Full-text search across the Tipitaka.
@@ -386,19 +383,20 @@ After each search batch, evaluate:
 - Pāli terms: try compounds (e.g. "sammāsambuddha" not just "buddha").
 - If search_by_category returns nothing, fall back to search_tipitaka_batch across all books.
 - For commentaries, use get_commentaries with the specific passage.
-- Include precise citations [book_id:para_id:line_id] for every quoted passage.''' ;
+- Include precise citations [book_id:para_id:line_id] for every quoted passage.''';
 
-  static const String _defaultAnswerSystemPrompt = '''You are a knowledgeable scholar of the Pāli Canon and Theravāda Buddhism. You have been provided with tool results from the database containing specific passages from the Tipitaka and/or commentaries.
+  static const String _defaultAnswerSystemPrompt =
+      '''You are a knowledgeable scholar of the Pāli Canon and Theravāda Buddhism. You have been provided with tool results from the database containing specific passages from the Tipitaka and/or commentaries.
 
 ## Your task
-Write a clear, well-structured answer to the user's original question using ONLY the provided passages. 
+Write a clear, well-structured answer to the user's original question using ONLY the provided passages.
 
 ## Citation format
 Every citation MUST be formatted as a **quote button** that users can click:
   `[book_id:para_id:line_id]`
 
 For example:
-  > \"Yato kho bhikkhave ariyasāvako evaṃ kusalañca abhijānāti ...\" [dn1:100:1]
+  > "Yato kho bhikkhave ariyasāvako evaṃ kusalañca abhijānāti ..." [dn1:100:1]
 
 The citation format [book_id:para_id:line_id] will be rendered as an interactive button in the UI that opens the passage when clicked.
 
@@ -409,7 +407,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 4. If the provided passages are insufficient, say so honestly rather than speculating.
 5. Explain Pāli technical terms briefly on first use.
 6. Use Markdown for structure (## headings, **bold**, *italic*, > blockquotes).
-7. [book_id:para_id:line_id] citations will be rendered as interactive buttons — the user can click them to open the passage in the reader. Ensure every citation includes all three components.''' ;
+7. [book_id:para_id:line_id] citations will be rendered as interactive buttons — the user can click them to open the passage in the reader. Ensure every citation includes all three components.''';
 
   // ── Thread management ─────────────────────────────────────────────────
 
@@ -456,24 +454,28 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
         } catch (_) {}
       }
 
-      final citations = (metadata?['citations'] as List<dynamic>?)
+      final citations =
+          (metadata?['citations'] as List<dynamic>?)
               ?.map((c) => SourceCitation.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [];
 
-      final toolCalls = (metadata?['toolCalls'] as List<dynamic>?)
+      final toolCalls =
+          (metadata?['toolCalls'] as List<dynamic>?)
               ?.map((t) => ToolCallLog.fromJson(t as Map<String, dynamic>))
               .toList() ??
           [];
 
-      messages.add(AiQaMessage(
-        id: 'db_${record.id}',
-        text: record.content,
-        isUser: record.role == 'user',
-        timestamp: record.createdAt,
-        citations: record.role == 'assistant' ? citations : [],
-        toolCalls: toolCalls,
-      ));
+      messages.add(
+        AiQaMessage(
+          id: 'db_${record.id}',
+          text: record.content,
+          isUser: record.role == 'user',
+          timestamp: record.createdAt,
+          citations: record.role == 'assistant' ? citations : [],
+          toolCalls: toolCalls,
+        ),
+      );
     }
 
     _ref.read(currentThreadIdProvider.notifier).state = thread.id;
@@ -498,7 +500,9 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 
     // Build attachment context block
     final buffer = StringBuffer();
-    buffer.writeln('The user has attached the following Tipitaka headings as context for their question:');
+    buffer.writeln(
+      'The user has attached the following Tipitaka headings as context for their question:',
+    );
     buffer.writeln();
     for (final attachment in attachments) {
       buffer.writeln(attachment.contextBlock);
@@ -507,7 +511,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
     buffer.writeln(
       'When answering, you should read the content of these sections using the get_paragraph_content '
       'tool if the attached heading is relevant to the question. '
-      'The attachments are:'
+      'The attachments are:',
     );
     final attachmentContext = buffer.toString();
 
@@ -535,17 +539,23 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 
     // Fetch the latest thread info from DB
     if (threadId == null) {
-      state = state.copyWith(isLoading: false, error: 'Failed to create thread');
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to create thread',
+      );
       return;
     }
 
     final notifier = _ref.read(chatHistoryNotifierProvider);
-    final thread = await notifier.getThread(threadId!);
+    final thread = await notifier.getThread(threadId);
     if (thread == null) {
       await startNewThread();
       final newId = _ref.read(currentThreadIdProvider);
       if (newId == null) {
-        state = state.copyWith(isLoading: false, error: 'Failed to create thread');
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Failed to create thread',
+        );
         return;
       }
       threadId = newId;
@@ -577,7 +587,9 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
     debugPrint('╔══════════════════════════════════════════════════════════');
     debugPrint('║  VIMAṂSA PIPELINE START');
     debugPrint('╠══════════════════════════════════════════════════════════');
-    debugPrint('║  Thread: ${_ref.read(currentThreadTitleProvider)} ($threadId)');
+    debugPrint(
+      '║  Thread: ${_ref.read(currentThreadTitleProvider)} ($threadId)',
+    );
     debugPrint('║  User: ${trimmed.substring(0, min(120, trimmed.length))}');
     debugPrint('╚══════════════════════════════════════════════════════════');
     _finalized = false;
@@ -593,10 +605,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 
     // Save user message to DB
     try {
-      await notifier.saveUserMessage(
-        threadId: threadId,
-        content: trimmed,
-      );
+      await notifier.saveUserMessage(threadId: threadId, content: trimmed);
 
       // Auto-generate thread title from the first user query.
       // If the title is still the default, update it with the query.
@@ -614,8 +623,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       if (!settings.isValid) {
         state = state.copyWith(
           isLoading: false,
-          error:
-              'Please configure your API key in the Vimaṃsa settings first.',
+          error: 'Please configure your API key in the Vimaṃsa settings first.',
         );
         return;
       }
@@ -626,7 +634,9 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       debugPrint('╠══════════════════════════════════════════════════════════');
       debugPrint('║  Tool model:  ${settings.toolModel}');
       debugPrint('║  Answer model: ${settings.answerModel}');
-      debugPrint('║  Custom prompt: ${settings.customSystemPrompt.isNotEmpty ? "YES (${settings.customSystemPrompt.length} chars)" : "NO (using default)"}');
+      debugPrint(
+        '║  Custom prompt: ${settings.customSystemPrompt.isNotEmpty ? "YES (${settings.customSystemPrompt.length} chars)" : "NO (using default)"}',
+      );
       debugPrint('╚══════════════════════════════════════════════════════════');
 
       // ── 2. Start tool loop (small model + function calling) ─────
@@ -637,14 +647,16 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       // Build conversation from DB history + current user message
       // Load the thread's past messages for full context
       final db = await _ref.read(appDbProvider.future);
-      final pastMessages = await db.getChatMessages(threadId!);
+      final pastMessages = await db.getChatMessages(threadId);
 
       // Add ALL past messages (user + assistant) for full context.
       // Gemini uses 'model' role for AI responses (not 'assistant').
       for (final msg in pastMessages) {
         conversation.add({
           'role': msg.role == 'user' ? 'user' : 'model',
-          'parts': [{'text': msg.content}],
+          'parts': [
+            {'text': msg.content},
+          ],
         });
       }
 
@@ -654,7 +666,9 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       if (attachmentContext != null && attachmentContext.isNotEmpty) {
         conversation.add({
           'role': 'user',
-          'parts': [{'text': attachmentContext}],
+          'parts': [
+            {'text': attachmentContext},
+          ],
         });
         _debugLog['attachment_context'] = attachmentContext;
       }
@@ -662,7 +676,9 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       // Add current user message to conversation
       conversation.add({
         'role': 'user',
-        'parts': [{'text': userMessage.text}],
+        'parts': [
+          {'text': userMessage.text},
+        ],
       });
 
       final toolLogs = <ToolCallLog>[];
@@ -674,12 +690,10 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       // Tool loop
       bool toolsDone = false;
       int toolIterations = 0;
-      int totalToolResults = 0;
 
       while (!toolsDone && toolIterations < _maxToolIterations) {
         toolIterations++;
 
-        final stopwatch = Stopwatch()..start();
         final toolResponse = await _callToolModel(
           provider: settings.provider,
           baseUrl: settings.baseUrl,
@@ -736,13 +750,15 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
         // ── PHASE 2: Execute all collected tools in PARALLEL ──────
         if (callSpecs.isNotEmpty) {
           for (final spec in callSpecs) {
-            toolLogs.add(ToolCallLog(
-              toolName: spec.name,
-              arguments: spec.args,
-              resultSummary: spec.name.contains('search')
-                  ? '🔍 ${spec.args['query'] ?? spec.args['queries'] ?? "..."}'
-                  : 'Calling ${spec.name}...',
-            ));
+            toolLogs.add(
+              ToolCallLog(
+                toolName: spec.name,
+                arguments: spec.args,
+                resultSummary: spec.name.contains('search')
+                    ? '🔍 ${spec.args['query'] ?? spec.args['queries'] ?? "..."}'
+                    : 'Calling ${spec.name}...',
+              ),
+            );
           }
 
           state = state.copyWith(
@@ -793,7 +809,6 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
                 ? '${resultData.substring(0, maxChars)}\n... (truncated to $maxChars chars)'
                 : resultData;
 
-            totalToolResults++;
             allToolResults.add({
               'tool': spec.name,
               'args': spec.args,
@@ -839,7 +854,8 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
             'functionResponse': {
               'name': 'final_answer',
               'response': {
-                'content': 'Proceeding to generate final answer with collected data.',
+                'content':
+                    'Proceeding to generate final answer with collected data.',
               },
             },
           });
@@ -849,10 +865,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
         }
 
         if (functionResponses.isNotEmpty) {
-          conversation.add({
-            'role': 'user',
-            'parts': functionResponses,
-          });
+          conversation.add({'role': 'user', 'parts': functionResponses});
         }
 
         if (!hasFunctionCall) {
@@ -880,7 +893,8 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 
       final contextBlock = _buildContextBlock(allToolResults);
 
-      final answerPrompt = '''
+      final answerPrompt =
+          '''
 ═══════════════════════════════════════════
 USER'S ORIGINAL QUESTION:
 ═══════════════════════════════════════════
@@ -988,7 +1002,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       debugPrint('╠══════════════════════════════════════════════════════════');
       debugPrint('║  Total tokens received: ${accumulatedText.length} chars');
       debugPrint('╚══════════════════════════════════════════════════════════');
-    } catch (e, stack) {      _debugLog['error'] = '$e';
+    } catch (e, stack) {
+      _debugLog['error'] = '$e';
       _saveDebugLog();
       debugPrint('[VIMAṂSA] Error: $e\n$stack');
       if (state.isLoading) {
@@ -1005,7 +1020,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
   // ── Tool execution ─────────────────────────────────────────────────────
 
   Future<ToolResult> _executeTool(
-      String name, Map<String, dynamic> args) async {
+    String name,
+    Map<String, dynamic> args,
+  ) async {
     final service = _ref.read(aiQaToolServiceProvider);
 
     switch (name) {
@@ -1051,9 +1068,11 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     );
 
     final payloadSize = utf8.encode(jsonEncode(payload)).length;
-    debugPrint('[VIMAṂSA] _callToolModel: $toolModel | '
-        'contents=${conversation.length} | '
-        'payload=~${(payloadSize / 1024).toStringAsFixed(1)}KB');
+    debugPrint(
+      '[VIMAṂSA] _callToolModel: $toolModel | '
+      'contents=${conversation.length} | '
+      'payload=~${(payloadSize / 1024).toStringAsFixed(1)}KB',
+    );
 
     switch (provider) {
       case AiProvider.gemini:
@@ -1084,18 +1103,15 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       case AiProvider.gemini:
         return {
           'system_instruction': {
-            'parts': [{'text': systemPrompt}],
+            'parts': [
+              {'text': systemPrompt},
+            ],
           },
           'contents': conversation,
           'tools': [
-            {
-              'functionDeclarations': _toolDeclarations,
-            },
+            {'functionDeclarations': _toolDeclarations},
           ],
-          'generationConfig': {
-            'maxOutputTokens': 2048,
-            'temperature': 0.3,
-          },
+          'generationConfig': {'maxOutputTokens': 2048, 'temperature': 0.3},
         };
       case AiProvider.openai:
         // Convert Gemini-style conversation to OpenAI messages format
@@ -1104,14 +1120,16 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         for (final msg in conversation) {
           final role = msg['role'] as String? ?? 'user';
           final parts = msg['parts'] as List<dynamic>? ?? [];
-          final text = parts.map((p) {
-            if (p is Map && p['text'] is String) return p['text'] as String;
-            if (p is Map && p['functionResponse'] is Map) {
-              final fr = p['functionResponse'] as Map;
-              return '[Tool result: ${fr['name']}]';
-            }
-            return '';
-          }).join('\n');
+          final text = parts
+              .map((p) {
+                if (p is Map && p['text'] is String) return p['text'] as String;
+                if (p is Map && p['functionResponse'] is Map) {
+                  final fr = p['functionResponse'] as Map;
+                  return '[Tool result: ${fr['name']}]';
+                }
+                return '';
+              })
+              .join('\n');
           if (text.isNotEmpty) {
             messages.add({
               'role': role == 'model' ? 'assistant' : role,
@@ -1173,7 +1191,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         }
         return '🔍 "$queryShort" (${result.data.length} chars)';
       case 'search_tipitaka_batch':
-        final queries = (args['queries'] as List<dynamic>?)
+        final queries =
+            (args['queries'] as List<dynamic>?)
                 ?.map((q) => q.toString())
                 .toList() ??
             [];
@@ -1182,11 +1201,13 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
             .join(', ');
         return '🔍 Batch[$resultCount results] ($queriesStr)';
       case 'search_by_category':
-        final cats = (args['categories'] as List<dynamic>?)
+        final cats =
+            (args['categories'] as List<dynamic>?)
                 ?.map((c) => c.toString())
                 .toList() ??
             [];
-        final niks = (args['nikayas'] as List<dynamic>?)
+        final niks =
+            (args['nikayas'] as List<dynamic>?)
                 ?.map((n) => n.toString())
                 .toList() ??
             [];
@@ -1253,10 +1274,16 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
   }) async* {
     final payload = {
       'system_instruction': {
-        'parts': [{'text': systemPrompt}],
+        'parts': [
+          {'text': systemPrompt},
+        ],
       },
       'contents': [
-        {'parts': [{'text': userPrompt}]},
+        {
+          'parts': [
+            {'text': userPrompt},
+          ],
+        },
       ],
       'generationConfig': {
         'maxOutputTokens': maxTokens,
@@ -1339,8 +1366,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       'temperature': 0.3,
     };
 
-    final effectiveBase =
-        baseUrl.isNotEmpty ? baseUrl : 'https://api.openai.com/v1';
+    final effectiveBase = baseUrl.isNotEmpty
+        ? baseUrl
+        : 'https://api.openai.com/v1';
     final url = Uri.parse('$effectiveBase/chat/completions');
 
     final request = http.Request('POST', url)
@@ -1396,8 +1424,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     required String apiKey,
     required Map<String, dynamic> payload,
   }) async {
-    final url =
-        Uri.parse('$_geminiBaseUrl/$model:generateContent?key=$apiKey');
+    final url = Uri.parse('$_geminiBaseUrl/$model:generateContent?key=$apiKey');
 
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
       try {
@@ -1410,13 +1437,14 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         final apiDuration = apiStopwatch.elapsedMilliseconds;
 
         if (httpResponse.statusCode == 200) {
-          debugPrint('[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
-              '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)');
+          debugPrint(
+            '[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
+            '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)',
+          );
           return httpResponse.body;
         } else if (httpResponse.statusCode == 429) {
           if (attempt < _maxRetries) {
-            final wait =
-                Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
+            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
             await Future.delayed(wait);
             continue;
           }
@@ -1427,7 +1455,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
             continue;
           }
           throw Exception(
-              'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}');
+            'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}',
+          );
         }
       } on http.ClientException {
         if (attempt < _maxRetries) {
@@ -1448,8 +1477,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     required String baseUrl,
     required Map<String, dynamic> payload,
   }) async {
-    final effectiveBase =
-        baseUrl.isNotEmpty ? baseUrl : 'https://api.openai.com/v1';
+    final effectiveBase = baseUrl.isNotEmpty
+        ? baseUrl
+        : 'https://api.openai.com/v1';
     final url = Uri.parse('$effectiveBase/chat/completions');
 
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
@@ -1466,8 +1496,10 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         final apiDuration = apiStopwatch.elapsedMilliseconds;
 
         if (httpResponse.statusCode == 200) {
-          debugPrint('[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
-              '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)');
+          debugPrint(
+            '[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
+            '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)',
+          );
           // Parse the OpenAI response and wrap it in a format compatible
           // with the tool pipeline (which expects Gemini-like structure).
           final data = jsonDecode(httpResponse.body) as Map<String, dynamic>;
@@ -1489,7 +1521,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
                 parts.add({
                   'functionCall': {
                     'name': tcMap['function']['name'],
-                    'args': jsonDecode(tcMap['function']['arguments'] as String),
+                    'args': jsonDecode(
+                      tcMap['function']['arguments'] as String,
+                    ),
                   },
                 });
               }
@@ -1498,10 +1532,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
             final adaptedResponse = {
               'candidates': [
                 {
-                  'content': {
-                    'parts': parts,
-                    'role': 'model',
-                  },
+                  'content': {'parts': parts, 'role': 'model'},
                   'finishReason': message['finish_reason'] ?? 'STOP',
                 },
               ],
@@ -1511,8 +1542,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
           return httpResponse.body;
         } else if (httpResponse.statusCode == 429) {
           if (attempt < _maxRetries) {
-            final wait =
-                Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
+            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
             await Future.delayed(wait);
             continue;
           }
@@ -1523,7 +1553,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
             continue;
           }
           throw Exception(
-              'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}');
+            'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}',
+          );
         }
       } on http.ClientException {
         if (attempt < _maxRetries) {
@@ -1542,7 +1573,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       final data = jsonDecode(body) as Map<String, dynamic>;
       final error = data['error'] as Map<String, dynamic>?;
       if (error != null) {
-        return error['message'] as String? ?? error['status'] as String? ?? body;
+        return error['message'] as String? ??
+            error['status'] as String? ??
+            body;
       }
       return body;
     } on FormatException {
@@ -1571,7 +1604,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       }
       final maxChars = _ref.read(aiQaSettingsProvider).maxToolResultChars;
       if (maxChars > 0 && resultStr.length > maxChars) {
-        resultStr = '${resultStr.substring(0, maxChars)}\n... (truncated to $maxChars chars)';
+        resultStr =
+            '${resultStr.substring(0, maxChars)}\n... (truncated to $maxChars chars)';
       }
       parts.add(resultStr);
       parts.add('');
@@ -1592,12 +1626,14 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       final key = '$bookId:$paraId:$lineId';
 
       if (seen.add(key)) {
-        citations.add(SourceCitation(
-          bookId: bookId,
-          paraId: paraId,
-          lineId: lineId,
-          excerpt: '',
-        ));
+        citations.add(
+          SourceCitation(
+            bookId: bookId,
+            paraId: paraId,
+            lineId: lineId,
+            excerpt: '',
+          ),
+        );
       }
     }
 
@@ -1623,10 +1659,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       }
     }
 
-    state = state.copyWith(
-      messages: messages,
-      isLoading: false,
-    );
+    state = state.copyWith(messages: messages, isLoading: false);
     _ref.read(streamingTextProvider.notifier).state = '';
     _ref.read(streamingMessageIdProvider.notifier).state = null;
   }
@@ -1651,10 +1684,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
 
     _ref.read(currentThreadTitleProvider.notifier).state = title;
     try {
-      await _ref.read(chatHistoryNotifierProvider).updateThreadTitle(
-        threadId,
-        title,
-      );
+      await _ref
+          .read(chatHistoryNotifierProvider)
+          .updateThreadTitle(threadId, title);
     } catch (e) {
       debugPrint('[VIMAṂSA] Failed to update thread title: $e');
     }

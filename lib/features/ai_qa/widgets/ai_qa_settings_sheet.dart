@@ -9,7 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
 import '../providers/ai_qa_settings_provider.dart';
-import '../services/mention_service.dart';
+import 'mention_index_build_dialog.dart';
 
 /// Show the AI Q&A settings bottom sheet.
 void showAiQaSettingsSheet(BuildContext context) {
@@ -25,8 +25,7 @@ class _AiQaSettingsSheet extends ConsumerStatefulWidget {
   const _AiQaSettingsSheet();
 
   @override
-  ConsumerState<_AiQaSettingsSheet> createState() =>
-      _AiQaSettingsSheetState();
+  ConsumerState<_AiQaSettingsSheet> createState() => _AiQaSettingsSheetState();
 }
 
 class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
@@ -55,8 +54,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     _toolModelController = TextEditingController(text: settings.toolModel);
     _answerModelController = TextEditingController(text: settings.answerModel);
     _baseUrlController = TextEditingController(text: settings.baseUrl);
-    _systemPromptController =
-        TextEditingController(text: settings.customSystemPrompt);
+    _systemPromptController = TextEditingController(
+      text: settings.customSystemPrompt,
+    );
     _maxResultCharsController = TextEditingController(
       text: settings.maxToolResultChars > 0
           ? settings.maxToolResultChars.toString()
@@ -118,8 +118,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       await notifier.setAnswerModel(_answerModelController.text.trim());
       await notifier.setCustomSystemPrompt(_systemPromptController.text.trim());
       final maxCharsText = _maxResultCharsController.text.trim();
-      final maxChars =
-          maxCharsText.isEmpty ? 0 : int.tryParse(maxCharsText) ?? 0;
+      final maxChars = maxCharsText.isEmpty
+          ? 0
+          : int.tryParse(maxCharsText) ?? 0;
       await notifier.setMaxToolResultChars(maxChars);
       final answerTokensText = _answerMaxTokensController.text.trim();
       final answerTokens = int.tryParse(answerTokensText) ?? 64000;
@@ -200,8 +201,11 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.question_answer,
-                        size: 18, color: Colors.white),
+                    child: const Icon(
+                      Icons.question_answer,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Text(
@@ -232,7 +236,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                           ? Icons.check_circle
                           : Icons.warning_amber,
                       size: 18,
-                      color: settings.isValid ? Colors.green : Colors.orange[700],
+                      color: settings.isValid
+                          ? Colors.green
+                          : Colors.orange[700],
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -297,8 +303,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor:
-                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor: colors.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -312,9 +319,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     children: [
                       IconButton(
                         icon: Icon(
-                          _obscureKey
-                              ? Icons.visibility_off
-                              : Icons.visibility,
+                          _obscureKey ? Icons.visibility_off : Icons.visibility,
                           size: 18,
                         ),
                         onPressed: () =>
@@ -354,10 +359,13 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                     ),
                     filled: true,
-                    fillColor:
-                        colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                    fillColor: colors.surfaceContainerHighest.withValues(
+                      alpha: 0.3,
+                    ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                      borderRadius: BorderRadius.circular(
+                        AppDimensions.radiusSm,
+                      ),
                       borderSide: BorderSide(color: colors.outlineVariant),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -436,16 +444,19 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Tool Model ──────────────────────────────────────
-              _sectionLabel(colors, 'Tool Model (for search & function calling)'),
+              _sectionLabel(
+                colors,
+                'Tool Model (for search & function calling)',
+              ),
               const SizedBox(height: 6),
               _buildModelField(
                 controller: _toolModelController,
                 colors: colors,
-                hintText: 'gemini-2.0-flash-lite',
+                hintText: 'gemini-flash-latest-latest',
               ),
               const SizedBox(height: 4),
               Text(
-                'Fast/cheap model for tool orchestration (e.g. gemini-2.0-flash-lite)',
+                'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -454,12 +465,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Answer Model ────────────────────────────────────
-              _sectionLabel(colors, 'Answer Model (for final answer generation)'),
+              _sectionLabel(
+                colors,
+                'Answer Model (for final answer generation)',
+              ),
               const SizedBox(height: 6),
               _buildModelField(
                 controller: _answerModelController,
                 colors: colors,
-                hintText: 'gemini-2.0-flash',
+                hintText: 'gemini-flash-latest',
               ),
               const SizedBox(height: 4),
               Text(
@@ -497,8 +511,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor:
-                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor: colors.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -547,8 +562,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor:
-                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor: colors.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -597,8 +613,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor:
-                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor: colors.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -653,8 +670,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     fontSize: 12,
                   ),
                   filled: true,
-                  fillColor:
-                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor: colors.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -722,7 +740,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     side: BorderSide(
-                        color: colors.primary.withValues(alpha: 0.3)),
+                      color: colors.primary.withValues(alpha: 0.3),
+                    ),
                   ),
                 ),
               ),
@@ -745,10 +764,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     );
   }
 
-  InputDecoration _inputDecoration(
-    ColorScheme colors, {
-    String hintText = '',
-  }) {
+  InputDecoration _inputDecoration(ColorScheme colors, {String hintText = ''}) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: TextStyle(
@@ -761,8 +777,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
         borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
         borderSide: BorderSide(color: colors.outlineVariant),
       ),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
   }
 
@@ -795,16 +810,14 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       model,
                       style: TextStyle(
                         fontSize: 11,
-                        color:
-                            isSelected ? colors.onPrimary : colors.onSurface,
+                        color: isSelected ? colors.onPrimary : colors.onSurface,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     onPressed: () {
                       controller.text = model;
                       controller.selection = TextSelection.fromPosition(
-                        TextPosition(
-                            offset: controller.text.length),
+                        TextPosition(offset: controller.text.length),
                       );
                       setState(() {});
                     },
@@ -825,55 +838,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   }
 
   Future<void> _rebuildIndex(BuildContext context) async {
-    final colors = Theme.of(context).colorScheme;
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      messenger.clearSnackBars();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              ),
-              SizedBox(width: 12),
-              Text('Rebuilding suggestion index…'),
-            ],
-          ),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 30),
-        ),
-      );
-
-      final service = ref.read(mentionServiceProvider);
-      final count = await service.buildIndex();
-
-      if (context.mounted) {
-        messenger.clearSnackBars();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Index rebuilt: $count entries'),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        messenger.clearSnackBars();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Rebuild failed: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: colors.error,
-          ),
-        );
-      }
-    }
+    final count = await showMentionIndexBuildDialog(context);
+    debugPrint('[SETTINGS] Mention index rebuild: $count entries');
   }
 }
 
@@ -947,8 +913,11 @@ class _LinkTile extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(Icons.open_in_new,
-                size: 12, color: color.withValues(alpha: 0.5)),
+            Icon(
+              Icons.open_in_new,
+              size: 12,
+              color: color.withValues(alpha: 0.5),
+            ),
           ],
         ),
       ),
@@ -957,9 +926,10 @@ class _LinkTile extends StatelessWidget {
 
   Future<void> _openUrl(BuildContext context, String urlString) async {
     final uri = Uri.tryParse(urlString);
-    if (uri != null && await canLaunchUrl(uri)) {
+    if (uri == null) return;
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -37,6 +37,7 @@ class ReaderContentList extends StatelessWidget {
     this.ttsTargetLineKeys = const {},
     this.searchQuery,
     this.onFirstContentFrame,
+    this.initialScrollIndex,
   });
 
   /// Book ID for keying the list instance.
@@ -93,6 +94,11 @@ class ReaderContentList extends StatelessWidget {
   /// (for performance measurement).
   final VoidCallback? onFirstContentFrame;
 
+  /// Starting scroll index. When set, the list initially renders at this
+  /// index instead of 0, preventing a flash-to-top on tab switch before
+  /// the post-frame [_jumpToParagraph] correction.
+  final int? initialScrollIndex;
+
   /// Convert translation display mode settings into [ParagraphDisplayMode].
   static ParagraphDisplayMode _toParagraphDisplayMode(
     TranslationDisplayMode mode,
@@ -131,8 +137,17 @@ class ReaderContentList extends StatelessWidget {
     // Log the first time content is actually built for this book.
     onFirstContentFrame?.call();
 
+    // Use initialScrollIndex when available (tab restore) to start at the
+    // saved position instead of index 0, avoiding a flash-to-top before
+    // the post-frame [_jumpToParagraph] correction.
+    final scrollIndex =
+        initialScrollIndex != null
+            ? initialScrollIndex!.clamp(0, data.paragraphs.length - 1)
+            : 0;
+
     return ScrollablePositionedList.builder(
       key: ValueKey('reader-$bookId'),
+      initialScrollIndex: scrollIndex,
       itemScrollController: itemScrollController,
       itemPositionsListener: itemPositionsListener,
       scrollOffsetListener: scrollOffsetListener,

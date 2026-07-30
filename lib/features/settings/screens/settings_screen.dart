@@ -200,10 +200,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// AI Q&A settings section.
-  Widget _buildAiQaSection(
-    BuildContext context,
-    ColorScheme colors,
-  ) {
+  Widget _buildAiQaSection(BuildContext context, ColorScheme colors) {
     return SettingsSection(
       title: 'AI Q&A',
       colors: colors,
@@ -211,7 +208,7 @@ class SettingsScreen extends ConsumerWidget {
         _SettingsTile(
           icon: Icons.question_answer,
           title: 'AI Q&A Settings',
-          subtitle: 'Configure API key, models, system prompt',
+          subtitle: 'API key, models, etc.',
           onTap: () => showAiQaSettingsSheet(context),
         ),
       ],
