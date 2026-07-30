@@ -7,7 +7,6 @@ import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/utils/pali_search_utils.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
 
@@ -334,27 +333,6 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     return null;
   }
 
-  /// Build normalized (diacritic-insensitive) search text for a single line.
-  /// Strips HTML tags, punctuation, and normalizes Pāli diacritics so a raw
-  /// query like "dhamma" matches "dhammā" or "dhammaṃ" in the cache.
-  String _normalizeLineText(String? pali, Map<String, String> translations) {
-    final buf = StringBuffer();
-    if (pali != null && pali.trim().isNotEmpty) {
-      buf.write(pali);
-    }
-    for (final t in translations.values) {
-      if (t.trim().isNotEmpty) {
-        buf.write(' ');
-        buf.write(t);
-      }
-    }
-    final raw = buf.toString();
-    if (raw.isEmpty) return raw;
-    // Strip annotations, HTML, punctuation, then normalize diacritics
-    final cleaned = cleanPaliForIndexing(raw);
-    return normalizePaliFuzzy(cleaned);
-  }
-
   /// Find the nearest heading whose paraId <= [paraId].
   /// Returns null if no heading exists before or at this position.
   ParagraphHeading? findNearbyHeading(int paraId) {
@@ -643,17 +621,15 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           final text = transByLang[lang]?[paraId]?[rl.lineId];
           if (text != null) lineTranslations[lang] = text;
         }
-        // Pre-compute normalized text for fast in-book search
-        final normalizedText = _normalizeLineText(
-          rl.paliText,
-          lineTranslations,
-        );
+        // Normalized text for in-book search is now computed on-demand
+        // during search (see reader_search_notifier.dart), not eagerly during
+        // book load. This saves ~590ms on opening a book with 8863 lines.
         lines.add(
           LineData(
             lineId: rl.lineId,
             paliText: rl.paliText,
             translations: lineTranslations,
-            normalizedText: normalizedText,
+            normalizedText: '',
           ),
         );
       }

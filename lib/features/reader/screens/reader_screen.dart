@@ -2428,22 +2428,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ref.read(inBookSearchProvider.notifier).onSubmitted(v);
       },
       onPrevious: () {
+        final notifier = ref.read(inBookSearchProvider.notifier);
+        notifier.previousMatch();
         final searchState = ref.read(inBookSearchProvider);
         if (!searchState.hasMatches) return;
-        final newIdx = (searchState.matchIndex - 1).clamp(
-          0,
-          searchState.matchCount - 1,
-        );
-        _jumpToInBookMatch(newIdx);
+        _jumpToInBookMatch(searchState.matchIndex);
       },
       onNext: () {
+        final notifier = ref.read(inBookSearchProvider.notifier);
+        notifier.nextMatch();
         final searchState = ref.read(inBookSearchProvider);
         if (!searchState.hasMatches) return;
-        final newIdx = (searchState.matchIndex + 1).clamp(
-          0,
-          searchState.matchCount - 1,
-        );
-        _jumpToInBookMatch(newIdx);
+        _jumpToInBookMatch(searchState.matchIndex);
       },
       onSearchEntire: () {
         _toggleInBookSearch();
