@@ -17,7 +17,9 @@ import 'features/settings/services/tts_audio_handler.dart';
 import 'router/app_router.dart';
 import 'shared/utils/app_shortcuts.dart';
 
-/// Initializes the Android audio service for lock-screen TTS controls.
+/// Initializes the Android audio service for lock-screen TTS controls
+/// and listens for app lifecycle changes to properly stop the foreground
+/// service when the app is killed.
 ///
 /// Must be called AFTER [runApp] so the main FlutterEngine is already
 /// running. When called before [runApp], `audio_service` creates its own
@@ -40,11 +42,39 @@ class AudioServiceInitializer extends StatefulWidget {
       _AudioServiceInitializerState();
 }
 
-class _AudioServiceInitializerState extends State<AudioServiceInitializer> {
+class _AudioServiceInitializerState extends State<AudioServiceInitializer>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the app is fully killed (swiped from recents), stop the
+    // Android foreground service so the process can terminate cleanly.
+    // Without this, the AudioService keeps the process alive even after
+    // the user explicitly kills the app, preventing a fresh start on
+    // next launch.
+    if (state == AppLifecycleState.detached) {
+      developer.log(
+        '[AUDIO_SVC] App detached → stopping AudioService',
+        name: 'epitaka.tts',
+      );
+      try {
+        AudioService.stop();
+      } catch (_) {
+        // Service may already be stopped — ignore.
+      }
+    }
   }
 
   Future<void> _init() async {

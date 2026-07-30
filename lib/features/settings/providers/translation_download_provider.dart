@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/download_notification_service.dart';
+
 import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
@@ -129,6 +131,13 @@ class TranslationDownloadNotifier
         progress: 0.0,
       ),
     };
+    // Show notification
+    DownloadNotificationService.instance.showTranslationProgress(
+      versionKey: versionKey,
+      displayName: version.displayName,
+      progress: 0.0,
+      isIndeterminate: false,
+    );
 
     final cancelToken = CancelableCompleter();
     _cancelTokens[versionKey] = cancelToken;
@@ -140,6 +149,10 @@ class TranslationDownloadNotifier
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
+        DownloadNotificationService.instance.showTranslationError(
+          version.displayName,
+          'HTTP ${response.statusCode}',
+        );
         state = {
           ...state,
           versionKey: TranslationDownloadState(
@@ -157,6 +170,7 @@ class TranslationDownloadNotifier
       await for (final chunk in response.stream) {
         if (cancelToken.isCancelled) {
           client.close();
+          DownloadNotificationService.instance.dismissTranslation();
           state = {
             ...state,
             versionKey: const TranslationDownloadState(
@@ -170,13 +184,20 @@ class TranslationDownloadNotifier
         bytes.addAll(chunk);
         received += chunk.length;
         if (contentLength > 0) {
+          final progress = received / contentLength;
           state = {
             ...state,
             versionKey: TranslationDownloadState(
               status: DownloadStatus.downloading,
-              progress: received / contentLength,
+              progress: progress,
             ),
           };
+          DownloadNotificationService.instance.showTranslationProgress(
+            versionKey: versionKey,
+            displayName: version.displayName,
+            progress: progress,
+            isIndeterminate: false,
+          );
         }
       }
 
@@ -184,6 +205,7 @@ class TranslationDownloadNotifier
       _cancelTokens.remove(versionKey);
 
       if (cancelToken.isCancelled) {
+        DownloadNotificationService.instance.dismissTranslation();
         state = {
           ...state,
           versionKey: const TranslationDownloadState(
@@ -198,6 +220,12 @@ class TranslationDownloadNotifier
         ...state,
         versionKey: const TranslationDownloadState(status: DownloadStatus.extracting),
       };
+      DownloadNotificationService.instance.showTranslationProgress(
+        versionKey: versionKey,
+        displayName: version.displayName,
+        progress: 1.0,
+        isIndeterminate: true,
+      );
 
       final dbDir = await getDatabaseDirectory();
       final archive = ZipDecoder().decodeBytes(bytes);
@@ -211,6 +239,10 @@ class TranslationDownloadNotifier
       }
 
       if (dbEntry == null) {
+        DownloadNotificationService.instance.showTranslationError(
+          version.displayName,
+          'No database file found in archive',
+        );
         state = {
           ...state,
           versionKey: const TranslationDownloadState(
@@ -258,8 +290,12 @@ class TranslationDownloadNotifier
           progress: 1.0,
         ),
       };
+      DownloadNotificationService.instance.showTranslationComplete(
+        version.displayName,
+      );
     } catch (e) {
       if (cancelToken.isCancelled) {
+        DownloadNotificationService.instance.dismissTranslation();
         state = {
           ...state,
           versionKey: const TranslationDownloadState(
@@ -267,6 +303,10 @@ class TranslationDownloadNotifier
           ),
         };
       } else {
+        DownloadNotificationService.instance.showTranslationError(
+          version.displayName,
+          e.toString(),
+        );
         state = {
           ...state,
           versionKey: TranslationDownloadState(
@@ -389,7 +429,7 @@ class TranslationDownloadNotifier
         ),
       };
 
-      // Invalidate FTS required-asset providers so the startup wizard
+      // Invalidate translation-registry providers so the startup wizard
       // updates the continue button state after a core download finishes.
       ref.invalidate(translationRegistryProvider);
       ref.invalidate(localTranslationVersionsProvider);

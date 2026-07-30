@@ -1,0 +1,91 @@
+/// Supported AI provider types.
+///
+/// Each provider has its own API format, base URL, and authentication.
+enum AiProvider {
+  gemini,
+  openai;
+
+  String get displayName {
+    switch (this) {
+      case AiProvider.gemini:
+        return 'Google Gemini';
+      case AiProvider.openai:
+        return 'OpenAI-compatible';
+    }
+  }
+
+  String get defaultBaseUrl {
+    switch (this) {
+      case AiProvider.gemini:
+        return 'https://generativelanguage.googleapis.com/v1beta/models';
+      case AiProvider.openai:
+        return 'https://api.openai.com/v1';
+    }
+  }
+
+  /// URL with instructions on how to get an API key for this provider.
+  String get helpUrl {
+    switch (this) {
+      case AiProvider.gemini:
+        return 'https://ai.google.dev/gemini-api/docs/api-key';
+      case AiProvider.openai:
+        return 'https://platform.openai.com/api-keys';
+    }
+  }
+
+  /// A short label for the help link button.
+  String get helpLabel {
+    switch (this) {
+      case AiProvider.gemini:
+        return 'Get a Gemini API key';
+      case AiProvider.openai:
+        return 'Get an OpenAI API key';
+    }
+  }
+
+  /// Additional help URLs for related services that use the same format.
+  List<({String label, String url})> get additionalHelps {
+    switch (this) {
+      case AiProvider.gemini:
+        return [
+          (
+            label: 'OpenRouter (many models)',
+            url: 'https://openrouter.ai/keys',
+          ),
+          (
+            label: 'DeepSeek',
+            url: 'https://platform.deepseek.com/api_keys',
+          ),
+        ];
+      case AiProvider.openai:
+        return [
+          (
+            label: 'OpenRouter (many models)',
+            url: 'https://openrouter.ai/keys',
+          ),
+          (
+            label: 'DeepSeek',
+            url: 'https://platform.deepseek.com/api_keys',
+          ),
+          (
+            label: 'Google Gemini',
+            url: 'https://ai.google.dev/gemini-api/docs/api-key',
+          ),
+        ];
+    }
+  }
+
+  /// Deserialise from stored string.
+  static AiProvider fromString(String value) {
+    switch (value) {
+      case 'gemini':
+        return AiProvider.gemini;
+      case 'openai':
+        return AiProvider.openai;
+      default:
+        return AiProvider.gemini;
+    }
+  }
+
+  String get serialise => name;
+}

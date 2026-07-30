@@ -6,6 +6,8 @@
 ///   - **Answer Question**: general grounded Q&A
 library;
 
+import '../../shared/models/ai_provider.dart';
+
 /// The two chat modes the AI Assistant supports.
 enum AiChatMode {
   /// Deep literal review — search Tipitaka for a topic and produce a
@@ -31,28 +33,45 @@ class AiAssistantSettings {
   /// Should be fast/cheap (e.g. gemini-2.0-flash-lite).
   final String liteModel;
 
+  /// AI provider (Gemini or OpenAI-compatible).
+  final AiProvider provider;
+
+  /// Base URL for the API. Only used for OpenAI-compatible providers;
+  /// Gemini uses its own default base URL.
+  final String baseUrl;
+
   /// Whether the AI must strictly follow provided sources (true) or
   /// can answer freely using its own knowledge (false).
   final bool strictMode;
 
   const AiAssistantSettings({
     this.apiKey = '',
+    this.provider = AiProvider.gemini,
+    this.baseUrl = '',
     this.renderModel = 'gemini-2.0-flash',
     this.liteModel = 'gemini-2.0-flash-lite',
     this.strictMode = true,
   });
 
   /// Whether the settings are valid enough to make API calls.
-  bool get isValid => apiKey.isNotEmpty && apiKey.startsWith('AI');
+  bool get isValid {
+    if (apiKey.isEmpty) return false;
+    if (provider == AiProvider.gemini) return apiKey.startsWith('AI');
+    return apiKey.length >= 20;
+  }
 
   AiAssistantSettings copyWith({
     String? apiKey,
+    AiProvider? provider,
+    String? baseUrl,
     String? renderModel,
     String? liteModel,
     bool? strictMode,
   }) {
     return AiAssistantSettings(
       apiKey: apiKey ?? this.apiKey,
+      provider: provider ?? this.provider,
+      baseUrl: baseUrl ?? this.baseUrl,
       renderModel: renderModel ?? this.renderModel,
       liteModel: liteModel ?? this.liteModel,
       strictMode: strictMode ?? this.strictMode,
@@ -61,6 +80,8 @@ class AiAssistantSettings {
 
   Map<String, dynamic> toJson() => {
         'apiKey': apiKey,
+        'provider': provider.serialise,
+        'baseUrl': baseUrl,
         'renderModel': renderModel,
         'liteModel': liteModel,
         'strictMode': strictMode,
@@ -69,6 +90,8 @@ class AiAssistantSettings {
   factory AiAssistantSettings.fromJson(Map<String, dynamic> json) {
     return AiAssistantSettings(
       apiKey: json['apiKey'] as String? ?? '',
+      provider: AiProvider.fromString(json['provider'] as String? ?? ''),
+      baseUrl: json['baseUrl'] as String? ?? '',
       renderModel: json['renderModel'] as String? ?? 'gemini-2.0-flash',
       liteModel: json['liteModel'] as String? ?? 'gemini-2.0-flash-lite',
       strictMode: json['strictMode'] as bool? ?? true,

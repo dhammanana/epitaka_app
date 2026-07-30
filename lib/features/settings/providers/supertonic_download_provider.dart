@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supertonic_flutter/supertonic_flutter.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../services/download_notification_service.dart';
 
 /// Download state for Supertonic TTS models.
 enum SupertonicDownloadStatus { idle, downloading, completed, error }
@@ -75,6 +76,13 @@ class SupertonicDownloadNotifier
             filesDone: done,
             filesTotal: total,
           );
+          DownloadNotificationService.instance.showSupertonicProgress(
+            progress: progress,
+            isIndeterminate: false,
+            currentFile: file,
+            filesDone: done,
+            filesTotal: total,
+          );
         },
         cancelToken: _cancelToken,
       );
@@ -86,14 +94,17 @@ class SupertonicDownloadNotifier
         status: SupertonicDownloadStatus.completed,
         progress: 1.0,
       );
+      DownloadNotificationService.instance.showSupertonicComplete();
     } catch (e) {
       if (_cancelToken?.isCancelled ?? false) {
         state = const SupertonicDownloadState(status: SupertonicDownloadStatus.idle);
+        DownloadNotificationService.instance.dismissSupertonic();
       } else {
         state = SupertonicDownloadState(
           status: SupertonicDownloadStatus.error,
           errorMessage: e.toString(),
         );
+        DownloadNotificationService.instance.showSupertonicError(e.toString());
       }
     }
   }

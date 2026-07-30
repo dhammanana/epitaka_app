@@ -72,6 +72,15 @@ dependencies:
   share_plus: ^12.0.2
   app_links: ^7.2.1
 
+  # Color picker for settings & startup wizard
+  flutter_colorpicker: ^1.1.0
+
+  # URL launcher for help links
+  url_launcher: ^6.3.1
+
+  # Download progress notifications on Android
+  flutter_local_notifications: ^18.0.1
+
 flutter:
   uses-material-design: true
   assets:

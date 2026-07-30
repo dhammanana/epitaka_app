@@ -611,16 +611,46 @@ class AppDatabase extends _$AppDatabase {
   /// Check whether the search index has been built.
   Future<bool> isSearchIndexBuilt() async {
     try {
-      final rows = await customSelect(
+      // First, list ALL tables in the database for debugging
+      final allTables = await customSelect(
+        "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view', 'virtual') ORDER BY name",
+      ).get();
+      debugPrint('[INDEX_CHECK] Tables in app_data.db:');
+      for (final t in allTables) {
+        debugPrint('  - ${t.data['type']}: ${t.data['name']}');
+      }
+
+      // Check for search_fts FTS5 virtual table
+      // Note: FTS5 virtual tables appear with type='table' in sqlite_master
+      final ftsRows = await customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_fts'",
       ).get();
-      if (rows.isEmpty) return false;
+      if (ftsRows.isEmpty) {
+        debugPrint('[INDEX_CHECK] search_fts table NOT FOUND');
+        // Try without type filter as a fallback (some SQLite versions may differ)
+        final fallback = await customSelect(
+          "SELECT name, type FROM sqlite_master WHERE name='search_fts'",
+        ).get();
+        if (fallback.isNotEmpty) {
+          debugPrint('[INDEX_CHECK] search_fts found with type=${fallback.first.data['type']}');
+        }
+        return false;
+      }
+      debugPrint('[INDEX_CHECK] search_fts FOUND');
+
       // Also check that search_words exists
       final wordRows = await customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_words'",
       ).get();
-      return wordRows.isNotEmpty;
-    } catch (_) {
+      if (wordRows.isEmpty) {
+        debugPrint('[INDEX_CHECK] search_words table NOT FOUND');
+        return false;
+      }
+      debugPrint('[INDEX_CHECK] search_words FOUND');
+      debugPrint('[INDEX_CHECK] Index is BUILT and ready');
+      return true;
+    } catch (e) {
+      debugPrint('[INDEX_CHECK] SQL error in isSearchIndexBuilt: $e');
       return false;
     }
   }

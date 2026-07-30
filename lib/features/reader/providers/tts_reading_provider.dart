@@ -114,6 +114,32 @@ Future<void> startReading(
     );
 
     // ── AudioService integration ───────────────────────────────────
+    // Re-initialise the audio service in case it was stopped after
+    // a previous reading session (see stopReading / _finishReading).
+    // Without this, the notification won't show because the service
+    // was fully stopped to prevent TTS from persisting after the app
+    // is killed.
+    try {
+      await AudioService.init(
+        builder: () => ttsAudioHandler,
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.dn.epitaka.tts',
+          androidNotificationChannelName: 'TTS Playback',
+          androidStopForegroundOnPause: false,
+          androidNotificationIcon: 'mipmap/ic_launcher',
+        ),
+      );
+      developer.log(
+        '[TTS_AUDIO_SVC] AudioService re-init succeeded',
+        name: 'epitaka.tts',
+      );
+    } catch (e) {
+      developer.log(
+        '[TTS_AUDIO_SVC] AudioService re-init failed: $e',
+        name: 'epitaka.tts',
+      );
+    }
+
     // Register notification-button callbacks so the lock screen /
     // notification controls work throughout this reading session.
     ttsAudioHandler.onPlayPressed = () => resumeReading();
@@ -164,12 +190,16 @@ Future<void> startReading(
     // ── Audio Becoming Noisy (Bluetooth disconnect / jack removal) ──
     // Listen for ACTION_AUDIO_BECOMING_NOISY so we auto-pause TTS when
     // the user unplugs headphones or disconnects Bluetooth earbuds.
+    // The TtsNotifier also listens for this event for standalone TTS
+    // (e.g. settings preview), but we keep this reading-level listener
+    // too so it can update the TtsReadingState (isPaused flag) and
+    // notification state.
     try {
       final session = await AudioSession.instance;
       _noisySubscription?.cancel();
       _noisySubscription = session.becomingNoisyEventStream.listen((_) {
         developer.log(
-          '[TTS_BECOMING_NOISY] Audio route disconnected → pausing',
+          '[TTS_BECOMING_NOISY] Audio route disconnected → pausing reading',
           name: 'epitaka.tts',
         );
         pauseReading();
@@ -198,17 +228,22 @@ Future<void> startReading(
   }
 
   /// Stop reading and reset state.
+  ///
+  /// Completely stops the Android foreground service and removes the
+  /// notification. If the user wants to keep the notification available
+  /// for quick resume they should use [pauseReading] instead.
   Future<void> stopReading() async {
     _currentSessionId++;
     _pendingSynth = null;
     _pendingSynthIndex = null;
     await _ref.read(ttsProvider.notifier).stop();
-    if (state.isActive || state.isPaused) {
-      state = const TtsReadingState();
-    }
-    // Hide notification when reading stops.
-    ttsAudioHandler.reset();
+    state = const TtsReadingState();
+    // Stop the media service and dismiss the notification.
+    // If the user wants to resume later they should use pause, not stop.
     _cleanupHandlerCallbacks();
+    try {
+      await AudioService.stop();
+    } catch (_) {}
   }
 
   /// Pause reading.
@@ -395,8 +430,12 @@ Future<void> startReading(
 
   void _finishReading() {
     state = const TtsReadingState();
-    ttsAudioHandler.reset();
+    // Stop the media service and dismiss the notification — reading
+    // has finished naturally (all lines spoken).
     _cleanupHandlerCallbacks();
+    try {
+      AudioService.stop();
+    } catch (_) {}
   }
 
   /// Cancel the audio-becoming-noisy listener subscription and clear all

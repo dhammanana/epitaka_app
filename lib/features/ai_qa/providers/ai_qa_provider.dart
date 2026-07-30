@@ -34,6 +34,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/providers/app_db_provider.dart';
+import '../../shared/models/ai_provider.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
 import '../services/ai_qa_tool_service.dart';
@@ -75,9 +76,8 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
   /// DB ID of the last assistant message (for stream finalization updates).
   int? _dbMessageId;
 
-  // ── Gemini API constants ──────────────────────────────────────────────
-
-  static const String _baseUrl =
+  /// Gemini default base URL.
+  String get _geminiBaseUrl =>
       'https://generativelanguage.googleapis.com/v1beta/models';
 
   static const _encoder = JsonEncoder.withIndent('  ');
@@ -681,6 +681,8 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
 
         final stopwatch = Stopwatch()..start();
         final toolResponse = await _callToolModel(
+          provider: settings.provider,
+          baseUrl: settings.baseUrl,
           systemPrompt: systemPrompt,
           conversation: conversation,
           apiKey: settings.apiKey,
@@ -930,6 +932,8 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       final streamDone = Completer<void>();
       String accumulatedText = '';
       final stream = _streamAnswer(
+        provider: settings.provider,
+        baseUrl: settings.baseUrl,
         systemPrompt: answerSystemPrompt,
         userPrompt: answerPrompt,
         apiKey: settings.apiKey,
@@ -1033,39 +1037,108 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
   // ── API calls ─────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> _callToolModel({
+    required AiProvider provider,
+    String baseUrl = '',
     required String systemPrompt,
     required List<Map<String, dynamic>> conversation,
     required String apiKey,
     required String toolModel,
   }) async {
-    final payload = {
-      'system_instruction': {
-        'parts': [{'text': systemPrompt}],
-      },
-      'contents': conversation,
-      'tools': [
-        {
-          'functionDeclarations': _toolDeclarations,
-        },
-      ],
-      'generationConfig': {
-        'maxOutputTokens': 2048,
-        'temperature': 0.3,
-      },
-    };
+    final payload = _buildToolPayload(
+      provider: provider,
+      systemPrompt: systemPrompt,
+      conversation: conversation,
+    );
 
     final payloadSize = utf8.encode(jsonEncode(payload)).length;
     debugPrint('[VIMAṂSA] _callToolModel: $toolModel | '
         'contents=${conversation.length} | '
         'payload=~${(payloadSize / 1024).toStringAsFixed(1)}KB');
 
-    final response = await _callApi(
-      model: toolModel,
-      apiKey: apiKey,
-      payload: payload,
-    );
+    switch (provider) {
+      case AiProvider.gemini:
+        final response = await _callGeminiApi(
+          model: toolModel,
+          apiKey: apiKey,
+          payload: payload,
+        );
+        return jsonDecode(response) as Map<String, dynamic>;
+      case AiProvider.openai:
+        final response = await _callOpenAiApiRaw(
+          model: toolModel,
+          apiKey: apiKey,
+          baseUrl: baseUrl,
+          payload: payload,
+        );
+        return jsonDecode(response) as Map<String, dynamic>;
+    }
+  }
 
-    return jsonDecode(response) as Map<String, dynamic>;
+  /// Build the request payload for the tool model, adapting to the provider.
+  Map<String, dynamic> _buildToolPayload({
+    required AiProvider provider,
+    required String systemPrompt,
+    required List<Map<String, dynamic>> conversation,
+  }) {
+    switch (provider) {
+      case AiProvider.gemini:
+        return {
+          'system_instruction': {
+            'parts': [{'text': systemPrompt}],
+          },
+          'contents': conversation,
+          'tools': [
+            {
+              'functionDeclarations': _toolDeclarations,
+            },
+          ],
+          'generationConfig': {
+            'maxOutputTokens': 2048,
+            'temperature': 0.3,
+          },
+        };
+      case AiProvider.openai:
+        // Convert Gemini-style conversation to OpenAI messages format
+        final messages = <Map<String, dynamic>>[];
+        messages.add({'role': 'system', 'content': systemPrompt});
+        for (final msg in conversation) {
+          final role = msg['role'] as String? ?? 'user';
+          final parts = msg['parts'] as List<dynamic>? ?? [];
+          final text = parts.map((p) {
+            if (p is Map && p['text'] is String) return p['text'] as String;
+            if (p is Map && p['functionResponse'] is Map) {
+              final fr = p['functionResponse'] as Map;
+              return '[Tool result: ${fr['name']}]';
+            }
+            return '';
+          }).join('\n');
+          if (text.isNotEmpty) {
+            messages.add({
+              'role': role == 'model' ? 'assistant' : role,
+              'content': text,
+            });
+          }
+        }
+        // Convert Gemini function declarations to OpenAI tools format
+        final openaiTools = _toolDeclarations.map((d) {
+          return {
+            'type': 'function',
+            'function': {
+              'name': d['name'],
+              'description': d['description'],
+              'parameters': d['parameters'],
+            },
+          };
+        }).toList();
+
+        return {
+          'messages': messages,
+          'tools': openaiTools,
+          'tool_choice': 'auto',
+          'max_tokens': 2048,
+          'temperature': 0.3,
+        };
+    }
   }
 
   String _buildToolSummary(
@@ -1142,10 +1215,40 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
   }
 
   Stream<String> _streamAnswer({
+    required AiProvider provider,
+    String baseUrl = '',
     required String systemPrompt,
     required String userPrompt,
     required String apiKey,
     required String model,
+    required int maxTokens,
+  }) async* {
+    switch (provider) {
+      case AiProvider.gemini:
+        yield* _geminiStreamAnswer(
+          model: model,
+          apiKey: apiKey,
+          systemPrompt: systemPrompt,
+          userPrompt: userPrompt,
+          maxTokens: maxTokens,
+        );
+      case AiProvider.openai:
+        yield* _openaiStreamAnswer(
+          model: model,
+          apiKey: apiKey,
+          baseUrl: baseUrl,
+          systemPrompt: systemPrompt,
+          userPrompt: userPrompt,
+          maxTokens: maxTokens,
+        );
+    }
+  }
+
+  Stream<String> _geminiStreamAnswer({
+    required String model,
+    required String apiKey,
+    required String systemPrompt,
+    required String userPrompt,
     required int maxTokens,
   }) async* {
     final payload = {
@@ -1163,7 +1266,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     };
 
     final url = Uri.parse(
-      '$_baseUrl/$model:streamGenerateContent?alt=sse&key=$apiKey',
+      '$_geminiBaseUrl/$model:streamGenerateContent?alt=sse&key=$apiKey',
     );
 
     final request = http.Request('POST', url)
@@ -1215,12 +1318,86 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     }
   }
 
-  Future<String> _callApi({
+  Stream<String> _openaiStreamAnswer({
+    required String model,
+    required String apiKey,
+    required String baseUrl,
+    required String systemPrompt,
+    required String userPrompt,
+    required int maxTokens,
+  }) async* {
+    final messages = <Map<String, dynamic>>[
+      {'role': 'system', 'content': systemPrompt},
+      {'role': 'user', 'content': userPrompt},
+    ];
+
+    final payload = {
+      'model': model,
+      'messages': messages,
+      'stream': true,
+      'max_tokens': maxTokens,
+      'temperature': 0.3,
+    };
+
+    final effectiveBase =
+        baseUrl.isNotEmpty ? baseUrl : 'https://api.openai.com/v1';
+    final url = Uri.parse('$effectiveBase/chat/completions');
+
+    final request = http.Request('POST', url)
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Authorization'] = 'Bearer $apiKey'
+      ..body = jsonEncode(payload);
+
+    final httpClient = http.Client();
+    try {
+      final httpResponse = await httpClient.send(request);
+
+      if (httpResponse.statusCode != 200) {
+        final errorBody = await httpResponse.stream.bytesToString();
+        throw Exception(
+          'API error ${httpResponse.statusCode}: ${_parseApiError(errorBody)}',
+        );
+      }
+
+      await for (final line
+          in httpResponse.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        final data = trimmed.substring(6).trim();
+        if (data == '[DONE]' || data == '[done]') break;
+        if (data.isEmpty) continue;
+
+        try {
+          final json = jsonDecode(data) as Map<String, dynamic>;
+          final choices = json['choices'] as List<dynamic>?;
+          if (choices == null || choices.isEmpty) continue;
+
+          final delta = choices[0]['delta'] as Map<String, dynamic>?;
+          if (delta == null) continue;
+
+          final text = delta['content'] as String?;
+          if (text != null && text.isNotEmpty) {
+            yield text;
+          }
+        } catch (e) {
+          // Skip malformed chunks
+        }
+      }
+    } finally {
+      httpClient.close();
+    }
+  }
+
+  /// Gemini-style non-streaming API call.
+  Future<String> _callGeminiApi({
     required String model,
     required String apiKey,
     required Map<String, dynamic> payload,
   }) async {
-    final url = Uri.parse('$_baseUrl/$model:generateContent?key=$apiKey');
+    final url =
+        Uri.parse('$_geminiBaseUrl/$model:generateContent?key=$apiKey');
 
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
       try {
@@ -1237,26 +1414,118 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
               '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)');
           return httpResponse.body;
         } else if (httpResponse.statusCode == 429) {
-          debugPrint('[VIMAṂSA] API 429 rate limited (attempt ${attempt + 1})');
           if (attempt < _maxRetries) {
-            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
+            final wait =
+                Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
             await Future.delayed(wait);
             continue;
           }
           throw Exception('Rate limit exceeded. Try again later.');
         } else {
-          final body = httpResponse.body;
-          debugPrint('[VIMAṂSA] API $model: ${httpResponse.statusCode} '
-              '(attempt ${attempt + 1}, ${apiDuration}ms)');
           if (attempt < _maxRetries) {
             await Future.delayed(const Duration(seconds: 2));
             continue;
           }
           throw Exception(
-              'API error ${httpResponse.statusCode}: ${_parseApiError(body)}');
+              'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}');
         }
       } on http.ClientException {
-        debugPrint('[VIMAṂSA] API client exception (attempt ${attempt + 1})');
+        if (attempt < _maxRetries) {
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    throw Exception('API call failed after $_maxRetries retries');
+  }
+
+  /// OpenAI-compatible non-streaming API call (raw response for tool pipeline).
+  Future<String> _callOpenAiApiRaw({
+    required String model,
+    required String apiKey,
+    required String baseUrl,
+    required Map<String, dynamic> payload,
+  }) async {
+    final effectiveBase =
+        baseUrl.isNotEmpty ? baseUrl : 'https://api.openai.com/v1';
+    final url = Uri.parse('$effectiveBase/chat/completions');
+
+    for (int attempt = 0; attempt <= _maxRetries; attempt++) {
+      try {
+        final apiStopwatch = Stopwatch()..start();
+        final httpResponse = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode(payload),
+        );
+        final apiDuration = apiStopwatch.elapsedMilliseconds;
+
+        if (httpResponse.statusCode == 200) {
+          debugPrint('[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
+              '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)');
+          // Parse the OpenAI response and wrap it in a format compatible
+          // with the tool pipeline (which expects Gemini-like structure).
+          final data = jsonDecode(httpResponse.body) as Map<String, dynamic>;
+          final choices = data['choices'] as List<dynamic>? ?? [];
+          if (choices.isNotEmpty) {
+            final message =
+                choices[0]['message'] as Map<String, dynamic>? ?? {};
+            final content = message['content'] as String? ?? '';
+            final toolCalls = message['tool_calls'] as List<dynamic>?;
+
+            // Build a response that the tool pipeline can parse
+            final parts = <Map<String, dynamic>>[];
+            if (content.isNotEmpty) {
+              parts.add({'text': content});
+            }
+            if (toolCalls != null) {
+              for (final tc in toolCalls) {
+                final tcMap = tc as Map<String, dynamic>;
+                parts.add({
+                  'functionCall': {
+                    'name': tcMap['function']['name'],
+                    'args': jsonDecode(tcMap['function']['arguments'] as String),
+                  },
+                });
+              }
+            }
+
+            final adaptedResponse = {
+              'candidates': [
+                {
+                  'content': {
+                    'parts': parts,
+                    'role': 'model',
+                  },
+                  'finishReason': message['finish_reason'] ?? 'STOP',
+                },
+              ],
+            };
+            return jsonEncode(adaptedResponse);
+          }
+          return httpResponse.body;
+        } else if (httpResponse.statusCode == 429) {
+          if (attempt < _maxRetries) {
+            final wait =
+                Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
+            await Future.delayed(wait);
+            continue;
+          }
+          throw Exception('Rate limit exceeded. Try again later.');
+        } else {
+          if (attempt < _maxRetries) {
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
+          throw Exception(
+              'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}');
+        }
+      } on http.ClientException {
         if (attempt < _maxRetries) {
           await Future.delayed(const Duration(seconds: 2));
           continue;

@@ -180,13 +180,4 @@ class TtsAudioHandler extends BaseAudioHandler {
     ));
   }
 
-  /// Resets the handler to idle state (hides notification).
-  void reset() {
-    playbackState.add(PlaybackState(
-      playing: false,
-      processingState: AudioProcessingState.completed,
-      controls: [],
-      systemActions: {},
-    ));
-  }
 }

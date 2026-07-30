@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/translation_version.dart';
@@ -38,23 +39,31 @@ class _IndexGateState extends ConsumerState<IndexGate>
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeAnim;
 
-  /// Predefined color options for Pāli and translation text.
+  /// When set, the inline color picker is shown instead of the normal wizard.
+  _ColorPickerConfig? _colorPickerConfig;
+
+  /// Predefined color options for Pāli text.
   static const List<Color> _paliColors = [
     Color(0xFF7A2E1D), // Default warm brown
-    Color(0xFF1A1A2E), // Deep navy
-    Color(0xFF2D201A), // Dark sepia
-    Color(0xFF4A2C2A), // Mahogany
-    Color(0xFF5B3A29), // Dark amber
-    Color(0xFF1B3A2D), // Forest
+    Color(0xFF994532), // Rust red
+    Color(0xFFB5651D), // Golden amber
+    Color(0xFF8B1A1A), // Deep red
+    Color(0xFF3D3D8F), // Indigo
+    Color(0xFF2A6B6B), // Teal
+    Color(0xFF5D4037), // Coffee brown
+    Color(0xFF6A1B9A), // Purple
   ];
 
+  /// Predefined color options for translation text.
   static const List<Color> _transColors = [
     Color(0xFF33312E), // Default dark gray
-    Color(0xFF1E3A5F), // Slate blue
-    Color(0xFF2D3A3A), // Dark teal
-    Color(0xFF3A2D2D), // Warm gray
-    Color(0xFF1A2A3A), // Midnight
-    Color(0xFF3A2A2A), // Coffee
+    Color(0xFF221A14), // Espresso
+    Color(0xFF544338), // Warm taupe
+    Color(0xFF3C6E47), // Forest green
+    Color(0xFF4A6FA5), // Steel blue
+    Color(0xFF6B635A), // Charcoal
+    Color(0xFF2E7D32), // Green
+    Color(0xFF5D4037), // Brown
   ];
 
   @override
@@ -85,6 +94,19 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final state = ref.watch(indexControllerProvider);
     debugPrint(
         '[INDEX_GATE] build: status=${state.status}, built=${state.isBuilt}, building=${state.isBuilding}');
+
+    // Listen for download completions and invalidate FTS required-asset
+    // providers so the "all ready" check re-evaluates.
+    ref.listen(translationDownloadProvider, (prev, next) {
+      final completedNow = next.entries.any((e) =>
+          e.value.status == DownloadStatus.completed &&
+          (prev?[e.key]?.status != DownloadStatus.completed));
+      if (completedNow) {
+        ref.invalidate(ftsRequiredCoreAssetsProvider);
+        ref.invalidate(ftsRequiredTranslationsProvider);
+        ref.invalidate(ftsAllRequiredReadyProvider);
+      }
+    });
 
     if (state.isBuilt) {
       return widget.child;
@@ -182,6 +204,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
   // ── Step 1: Setup Wizard (Download + Colors) ────────────────────────
 
   Widget _buildSetupWizard(IndexState state) {
+    // Inline color picker takes over the full screen — no nested Scaffold.
+    if (_colorPickerConfig != null) {
+      return _buildInlineColorPicker();
+    }
+
     final colors = Theme.of(context).colorScheme;
     final brightness = Theme.of(context).brightness;
     final settings = ref.watch(settingsProvider);
@@ -238,23 +265,29 @@ class _IndexGateState extends ConsumerState<IndexGate>
     });
     bool transAllComplete(List<TranslationVersion> versions) =>
         versions.every((v) {
-      final key = '${v.languageCode}_${v.suffix ?? ''}';
+      // Must match the key format used in TranslationDownloadNotifier.downloadVersion
+      final key = v.suffix != null && v.suffix!.isNotEmpty
+          ? '${v.languageCode}_${v.suffix}'
+          : v.languageCode;
       final s = downloadStates[key] ?? const TranslationDownloadState();
       return s.status == DownloadStatus.completed;
     });
     final allReady = (allRequiredReady.valueOrNull ?? false) ||
         (coreAllComplete(requiredCoreAssets) &&
-         transAllComplete(requiredTranslations));
-
-    // Determine current Pāli and translation colors
+         transAllComplete(requiredTranslations));    // Determine current Pāli and translation colors
+    // For selection highlighting, we compare against the LIGHT color from
+    // the ColorPair (the user's chosen color), not the resolved
+    // brightness-specific color, which in dark mode is a derived variant
+    // that won't match any preset.
     final paliColor = settings.paliColorFor(brightness);
     final transColor = settings.translationColorFor(brightness);
+    final paliLightColor = settings.paliColorPair.light;
+    final transLightColor = settings.translationColorPair.light;
 
     return Scaffold(
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnim,
-          child: Column(
+      body: SafeArea(          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: Column(
             children: [
               // ── Header ──────────────────────────────────────────
               Padding(
@@ -384,94 +417,58 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     const SizedBox(height: AppDimensions.sm),
 
                     // Pāli color
-                    Container(
-                      padding: const EdgeInsets.all(AppDimensions.md),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceContainerHighest,
-                        borderRadius:
-                            BorderRadius.circular(AppDimensions.radiusMd),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.format_italic,
-                                  size: 18, color: colors.onSurfaceVariant),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Pāli Text Color',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: colors.onSurface,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppDimensions.sm),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: _paliColors.map((c) => swatch.ColorSwatch(
-                              color: c,
-                              isSelected: paliColor.value == c.value,
-                              size: 36,
-                              iconSize: 14,
-                              onTap: () {
-                                ref
-                                    .read(settingsProvider.notifier)
-                                    .setPaliColor(c);
-                              },
-                            )).toList(),
-                          ),
-                        ],
-                      ),
+                    _ColorPickerSection(
+                      title: 'Pāli Text Color',
+                      icon: Icons.format_italic,
+                      currentColor: paliColor,
+                      selectedColor: paliLightColor,
+                      presetColors: _paliColors,
+                      colors: colors,
+                      onColorSelected: (c) {
+                        ref.read(settingsProvider.notifier).setPaliColor(c);
+                      },
+                      onCustomColor: () {
+                        setState(() {
+                          _colorPickerConfig = _ColorPickerConfig(
+                            currentColor: paliLightColor,
+                            label: 'Pick Pāli Text Color',
+                            onColorPicked: (c) {
+                              ref
+                                  .read(settingsProvider.notifier)
+                                  .setPaliColor(c);
+                            },
+                          );
+                        });
+                      },
                     ),
                     const SizedBox(height: AppDimensions.sm),
 
                     // Translation color
-                    Container(
-                      padding: const EdgeInsets.all(AppDimensions.md),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceContainerHighest,
-                        borderRadius:
-                            BorderRadius.circular(AppDimensions.radiusMd),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.translate,
-                                  size: 18, color: colors.onSurfaceVariant),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Translation Text Color',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: colors.onSurface,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppDimensions.sm),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: _transColors.map((c) => swatch.ColorSwatch(
-                              color: c,
-                              isSelected: transColor.value == c.value,
-                              size: 36,
-                              iconSize: 14,
-                              onTap: () {
-                                ref
-                                    .read(settingsProvider.notifier)
-                                    .setTranslationColor(c);
-                              },
-                            )).toList(),
-                          ),
-                        ],
-                      ),
+                    _ColorPickerSection(
+                      title: 'Translation Text Color',
+                      icon: Icons.translate,
+                      currentColor: transColor,
+                      selectedColor: transLightColor,
+                      presetColors: _transColors,
+                      colors: colors,
+                      onColorSelected: (c) {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setTranslationColor(c);
+                      },
+                      onCustomColor: () {
+                        setState(() {
+                          _colorPickerConfig = _ColorPickerConfig(
+                            currentColor: transLightColor,
+                            label: 'Pick Translation Text Color',
+                            onColorPicked: (c) {
+                              ref
+                                  .read(settingsProvider.notifier)
+                                  .setTranslationColor(c);
+                            },
+                          );
+                        });
+                      },
                     ),
 
                     const SizedBox(height: AppDimensions.xl),
@@ -1128,5 +1125,206 @@ class _IndexGateState extends ConsumerState<IndexGate>
       count++;
     }
     return b.toString().split('').reversed.join();
+  }
+
+  // ── Inline Color Picker ──────────────────────────────────────────────
+
+  /// Replaces the wizard content with a full-screen color picker using the
+  /// [flutter_colorpicker](https://pub.dev/packages/flutter_colorpicker) package.
+  /// Rendered directly in the widget tree — no Navigator dependency needed.
+  Widget _buildInlineColorPicker() {
+    final config = _colorPickerConfig!;
+    Color pickedColor = config.currentColor;
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => setState(() => _colorPickerConfig = null),
+        ),
+        title: Text(config.label),
+        actions: [
+          TextButton(
+            onPressed: () {
+              config.onColorPicked(pickedColor);
+              setState(() => _colorPickerConfig = null);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+      body: StatefulBuilder(
+        builder: (context, setLocalState) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Color picker from flutter_colorpicker package
+                ColorPicker(
+                  pickerColor: pickedColor,
+                  onColorChanged: (color) {
+                    setLocalState(() => pickedColor = color);
+                  },
+                  enableAlpha: false,
+                  displayThumbColor: true,
+                  labelTypes: const [],
+                  pickerAreaHeightPercent: 0.7,
+                ),
+                const SizedBox(height: 16),
+                // Preview
+                Container(
+                  width: double.infinity,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: pickedColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Hex display
+                Center(
+                  child: Text(
+                    '#${pickedColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Configuration for the inline color picker.
+class _ColorPickerConfig {
+  final Color currentColor;
+  final String label;
+  final ValueChanged<Color> onColorPicked;
+
+  const _ColorPickerConfig({
+    required this.currentColor,
+    required this.label,
+    required this.onColorPicked,
+  });
+}
+
+// ── Color Picker Section Widget ───────────────────────────────────────────
+
+/// A reusable color picker section with preset swatches + a custom picker button.
+///
+/// [currentColor] is the resolved color (shown in the circle indicator),
+/// while [selectedColor] is used for comparing against presets to determine
+/// which swatch is selected. Usually [selectedColor] should be the light
+/// color from the ColorPair (the user's chosen color).
+class _ColorPickerSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color currentColor;
+  final Color selectedColor;
+  final List<Color> presetColors;
+  final ColorScheme colors;
+  final ValueChanged<Color> onColorSelected;
+  final VoidCallback onCustomColor;
+
+  const _ColorPickerSection({
+    required this.title,
+    required this.icon,
+    required this.currentColor,
+    required this.selectedColor,
+    required this.presetColors,
+    required this.colors,
+    required this.onColorSelected,
+    required this.onCustomColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: colors.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              // Current color indicator (shows the resolved brightness color)
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: currentColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: colors.outlineVariant),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimensions.sm),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              // Preset swatches — compare against selectedColor (light color)
+              ...presetColors.map((c) => swatch.ColorSwatch(
+                color: c,
+                isSelected: selectedColor.toARGB32() == c.toARGB32(),
+                size: 36,
+                iconSize: 14,
+                onTap: () => onColorSelected(c),
+              )),
+              // Custom color button
+              GestureDetector(
+                onTap: onCustomColor,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: colors.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: presetColors.any((c) => c.toARGB32() == selectedColor.toARGB32())
+                          ? colors.outlineVariant
+                          : colors.primary,
+                      width: 2,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.colorize,
+                    size: 16,
+                    color: presetColors.any((c) => c.toARGB32() == selectedColor.toARGB32())
+                        ? colors.onSurfaceVariant
+                        : colors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

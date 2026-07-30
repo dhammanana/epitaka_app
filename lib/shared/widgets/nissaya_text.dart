@@ -26,11 +26,18 @@ class NissayaTextParser {
     return text.contains(pairSeparator) && text.contains(wordSeparator);
   }
 
+  /// LRU cache for parsed nissaya text to avoid re-parsing on rebuilds.
+  static final Map<String, List<NissayaPair>> _parseCache = {};
+  static const int _parseCacheLimit = 1000;
+
   /// Parse nissaya-formatted [text] into a list of [NissayaPair]s.
   ///
   /// Returns an empty list if the text doesn't match nissaya format.
   static List<NissayaPair> parse(String text) {
     if (text.isEmpty || !isNissayaFormat(text)) return [];
+
+    final cached = _parseCache[text];
+    if (cached != null) return cached;
 
     final pairs = <NissayaPair>[];
     final parts = text.split(pairSeparator);
@@ -53,6 +60,10 @@ class NissayaTextParser {
       }
     }
 
+    if (_parseCache.length >= _parseCacheLimit) {
+      _parseCache.remove(_parseCache.keys.first);
+    }
+    _parseCache[text] = pairs;
     return pairs;
   }
 }

@@ -3,13 +3,32 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../providers/reader_provider.dart';
 
-/// A thin draggable handle on the right edge of the reader that the user can
-/// grab and drag to scroll through the book quickly. No scrollbar track is
-/// rendered — just the thumb (a small rounded pill).
+/// Data for a heading tick mark on the scrollbar track.
+class _HeadingMark {
+  final String title;
+  final int level;
+  final double ratio; // 0.0–1.0 position on the track
+  final int paraIndex; // paragraph index for scrolling
+
+  const _HeadingMark({
+    required this.title,
+    required this.level,
+    required this.ratio,
+    required this.paraIndex,
+  });
+}
+
+/// A very thin scrollbar on the right edge of the reader with tick marks at
+/// heading positions (chapter/section boundaries) and a floating tooltip that
+/// shows the heading name while the user drags the thumb.
 ///
-/// Position tracking: the thumb's vertical position follows the first visible
-/// item's index as a fraction of the total item count. When dragged, it
-/// jumps (or scrolls via [ItemScrollController]) to the corresponding index.
+/// The vertical position of the thumb follows the first visible item's index
+/// as a fraction of the total item count. When dragged, it jumps via
+/// [ItemScrollController] to the corresponding index.
+///
+/// Heading marks are computed from [readerState.paragraphs] — every paragraph
+/// with a non-null [ParagraphData.heading] gets a tick on the track, helping
+/// the user perceive chapter lengths and fast-scroll to a specific section.
 class ReaderDragThumb extends StatefulWidget {
   final ReaderDataState readerState;
   final ItemScrollController? itemScrollController;
@@ -27,8 +46,10 @@ class ReaderDragThumb extends StatefulWidget {
 }
 
 class _ReaderDragThumbState extends State<ReaderDragThumb> {
-  static const double _thumbHeight = 48.0;
-  static const double _thumbWidth = 20.0;
+  static const double _thumbHeight = 32.0;
+  static const double _trackWidth = 4.0;
+  static const double _thumbWidth = 8.0;
+  static const double _totalTrackWidth = 12.0; // hit area for gestures
 
   /// Scroll position ratio 0.0–1.0 computed from ItemPositionsListener.
   double _scrollRatio = 0.0;
@@ -39,10 +60,17 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
   /// Available height for thumb movement (parent height - thumb height).
   double _availableDragHeight = 0;
 
+  /// Cached heading marks computed from paragraphs.
+  List<_HeadingMark>? _cachedMarks;
+
+  /// The heading currently shown in the tooltip during drag.
+  String? _tooltipHeading;
+
   @override
   void initState() {
     super.initState();
-    widget.itemPositionsListener?.itemPositions.addListener(_onPositionsChanged);
+    widget.itemPositionsListener?.itemPositions
+        .addListener(_onPositionsChanged);
   }
 
   @override
@@ -56,6 +84,7 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     }
     if (oldWidget.readerState.paragraphs.length !=
         widget.readerState.paragraphs.length) {
+      _cachedMarks = null;
       final positions = widget.itemPositionsListener?.itemPositions.value;
       if (positions != null) {
         _updateScrollRatio(positions);
@@ -79,7 +108,9 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
   void _updateScrollRatio(Iterable<ItemPosition>? positions) {
     if (positions == null || positions.isEmpty) return;
 
-    final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
+    final visible = positions
+        .where((p) => p.itemTrailingEdge > 0)
+        .toList()
       ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
     if (visible.isEmpty) return;
 
@@ -95,9 +126,58 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     });
   }
 
+  /// Build heading marks from paragraphs (cached for performance).
+  List<_HeadingMark> _buildHeadingMarks() {
+    if (_cachedMarks != null) return _cachedMarks!;
+    final paragraphs = widget.readerState.paragraphs;
+    final total = paragraphs.length;
+    if (total <= 1) {
+      _cachedMarks = const [];
+      return _cachedMarks!;
+    }
+
+    final marks = <_HeadingMark>[];
+    for (int i = 0; i < total; i++) {
+      final heading = paragraphs[i].heading;
+      if (heading != null) {
+        marks.add(_HeadingMark(
+          title: heading.title,
+          level: heading.level,
+          ratio: i / (total - 1),
+          paraIndex: i,
+        ));
+      }
+    }
+    _cachedMarks = marks;
+    return marks;
+  }
+
+  /// Find the nearest heading mark to the given ratio.
+  _HeadingMark? _findNearestHeading(double ratio) {
+    final marks = _buildHeadingMarks();
+    if (marks.isEmpty) return null;
+
+    _HeadingMark? best;
+    double bestDist = double.infinity;
+    for (final m in marks) {
+      final dist = (m.ratio - ratio).abs();
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = m;
+      }
+    }
+    // Only show tooltip if within a reasonable proximity
+    return bestDist < 0.15 ? best : null;
+  }
+
   void _onDragStart(DragStartDetails details) {
     setState(() {
       _dragOffset = details.localPosition.dy - _thumbHeight / 2;
+      // Immediately update tooltip based on position
+      final ratio =
+          (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
+      final nearest = _findNearestHeading(ratio);
+      _tooltipHeading = nearest?.title;
     });
   }
 
@@ -106,12 +186,21 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     final newOffset = _dragOffset! + details.delta.dy;
     setState(() {
       _dragOffset = newOffset.clamp(0.0, _availableDragHeight);
+
+      // Update tooltip: show nearest heading at current position
+      final ratio = (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
+      final nearest = _findNearestHeading(ratio);
+      _tooltipHeading = nearest?.title;
     });
 
-    // Scroll in real-time while dragging
+    // Scroll in real-time while dragging.
+    // Also sync _scrollRatio so that on release (_dragOffset = null)
+    // the thumb snaps to the position we've already shown during drag,
+    // not back to the old position from before the drag started.
     final total = widget.readerState.paragraphs.length;
     if (total <= 1) return;
     final ratio = (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
+    _scrollRatio = ratio;
     final targetIndex = (ratio * (total - 1)).round();
 
     widget.itemScrollController?.jumpTo(
@@ -123,12 +212,14 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
   void _onDragEnd(DragEndDetails details) {
     setState(() {
       _dragOffset = null;
+      _tooltipHeading = null;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -138,61 +229,161 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
         final total = widget.readerState.paragraphs.length;
         if (total <= 1) return const SizedBox.shrink();
 
+        final marks = _buildHeadingMarks();
+
         // Compute thumb position
         final effectiveRatio = _dragOffset != null
             ? (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0)
             : _scrollRatio;
-        final top = effectiveRatio * _availableDragHeight;
+        final thumbTop = effectiveRatio * _availableDragHeight;
+
+        // Track edge positions
+        final trackLeft = (_totalTrackWidth - _trackWidth) / 2;
+        final trackTop = 0.0;
+        final trackBottom = constraints.maxHeight;
 
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onVerticalDragStart: _onDragStart,
           onVerticalDragUpdate: _onDragUpdate,
           onVerticalDragEnd: _onDragEnd,
-          child: Stack(
-            children: [
-              // Hit area extension (invisible) for easier grabbing
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: _totalTrackWidth,
+              child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // ── Track background ─────────────────────────────────
+                Positioned(
+                  left: trackLeft,
+                  top: trackTop,
+                  bottom: trackBottom,
+                  width: _trackWidth,
                   child: Container(
-                    color: Colors.transparent,
-                  ),
-                ),
-              ),
-              // The visible thumb
-              Positioned(
-                top: top,
-                left: 0,
-                right: 0,
-                height: _thumbHeight,
-                child: Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: _thumbWidth,
-                    height: _thumbHeight * 0.6,
                     decoration: BoxDecoration(
-                      color: colors.primary.withValues(
-                        alpha: _dragOffset != null ? 0.5 : 0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(9999),
-                      boxShadow: _dragOffset != null
-                          ? [
-                              BoxShadow(
-                                color: colors.primary.withValues(alpha: 0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
+                      color: colors.surfaceContainerHighest
+                          .withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
-              ),
-            ],
+
+                // ── Heading tick marks ───────────────────────────────
+                ...marks.map((mark) {
+                  final tickTop =
+                      mark.ratio * _availableDragHeight + _thumbHeight / 2;
+                  // Deeper heading levels get slightly shorter/dimmer ticks
+                  final opacity =
+                      (0.5 - (mark.level - 1) * 0.08).clamp(0.2, 0.5);
+                  final height = (4.0 - (mark.level - 1) * 0.4).clamp(2.0, 4.0);
+                  return Positioned(
+                    left: trackLeft - 1,
+                    top: tickTop - height / 2,
+                    width: _trackWidth + 2,
+                    height: height,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: colors.primary
+                            .withValues(alpha: opacity),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  );
+                }),
+
+                // ── Thumb ────────────────────────────────────────────
+                Positioned(
+                  top: thumbTop,
+                  left: 0,
+                  right: 0,
+                  height: _thumbHeight,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: _dragOffset != null ? _thumbWidth + 2 : _thumbWidth,
+                      height: _thumbHeight * 0.55,
+                      decoration: BoxDecoration(
+                        color: _dragOffset != null
+                            ? colors.primary.withValues(alpha: 0.7)
+                            : colors.primary.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(9999),
+                        boxShadow: _dragOffset != null
+                            ? [
+                                BoxShadow(
+                                  color: colors.primary
+                                      .withValues(alpha: 0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // ── Tooltip (shown during drag, to the left of track) ─
+                if (_dragOffset != null && _tooltipHeading != null)
+                  Positioned(
+                    top: (thumbTop + _thumbHeight / 2).clamp(
+                      0.0,
+                      constraints.maxHeight - 28,
+                    ),
+                    right: _totalTrackWidth + 4,
+                    child: _HeadingTooltip(
+                      title: _tooltipHeading!,
+                      isDark: isDark,
+                      colors: colors,
+                    ),
+                  ),
+              ],
+            ),
           ),
+        ),
         );
       },
+    );
+  }
+}
+
+/// A small floating card that displays the heading name during drag.
+class _HeadingTooltip extends StatelessWidget {
+  final String title;
+  final bool isDark;
+  final ColorScheme colors;
+
+  const _HeadingTooltip({
+    required this.title,
+    required this.isDark,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(8),
+      color: isDark
+          ? colors.surfaceContainerHigh
+          : colors.surfaceContainerLow,
+      surfaceTintColor: colors.primary,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: colors.onSurface,
+            height: 1.2,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+        ),
+      ),
     );
   }
 }

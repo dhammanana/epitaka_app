@@ -250,25 +250,18 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(left: 5, top: 4, bottom: 4),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
+      padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: colors.primary.withValues(alpha: 0.25),
               width: 3,
-              child: Container(
-                margin: const EdgeInsets.only(top: 4, bottom: 4),
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
             ),
-            const SizedBox(width: 6),
-            Expanded(child: _buildContentBlock(context, colors)),
-          ],
+          ),
         ),
+        padding: const EdgeInsets.only(left: 3, top: 4, bottom: 4),
+        child: _buildContentBlock(context, colors),
       ),
     );
   }
@@ -310,23 +303,15 @@ class ReadingParagraph extends StatelessWidget {
 
   Widget _buildLinesStacked(BuildContext context, ColorScheme colors) {
     final para = paragraph;
-    final ttsParaId = ttsHighlightParaId;
-    final ttsLineId = ttsHighlightLineId;
-    final paraId = para.paraId;
-    final lineKeys = this.lineKeys;
-    final showPali = this.showPali;
-    final showTranslation = this.showTranslation;
-    final bookLinks = this.bookLinks;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: para.lines.map((line) {
         final lineId = line.lineId;
         final isHighlighted =
-            ttsLineId != null &&
-            ttsParaId != null &&
-            paraId == ttsParaId &&
-            lineId == ttsLineId;
+            ttsHighlightLineId != null &&
+            ttsHighlightParaId != null &&
+            paragraph.paraId == ttsHighlightParaId &&
+            lineId == ttsHighlightLineId;
 
         final lineLinks = bookLinks[lineId];
 
@@ -760,7 +745,7 @@ class ReadingParagraph extends StatelessWidget {
   /// when the same text appears on multiple rebuilds.
   static final LinkedHashMap<String, List<InlineSpan>> _htmlParseCache =
       LinkedHashMap<String, List<InlineSpan>>();
-  static const int _htmlParseCacheLimit = 500;
+  static const int _htmlParseCacheLimit = 3000;
 
   List<InlineSpan> _parseHtml(String html, TextStyle base) {
     if (!html.contains('<')) return [TextSpan(text: html)];

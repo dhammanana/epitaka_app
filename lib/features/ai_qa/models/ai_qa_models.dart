@@ -11,6 +11,8 @@ library;
 
 import 'package:uuid/uuid.dart';
 
+import '../../shared/models/ai_provider.dart';
+
 const _uuid = Uuid();
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -121,11 +123,19 @@ class AiQaSettings {
   /// Max output tokens for the answer model.
   final int answerMaxTokens;
 
+  /// AI provider (Gemini or OpenAI-compatible).
+  final AiProvider provider;
+
+  /// Base URL for the API. Only used for OpenAI-compatible providers.
+  final String baseUrl;
+
   /// Max queries (user messages) allowed per chat thread.
   final int maxQueriesPerChat;
 
   const AiQaSettings({
     this.apiKey = '',
+    this.provider = AiProvider.gemini,
+    this.baseUrl = '',
     this.toolModel = 'gemini-2.0-flash-lite',
     this.answerModel = 'gemini-2.0-flash',
     this.customSystemPrompt = '',
@@ -134,10 +144,16 @@ class AiQaSettings {
     this.maxQueriesPerChat = 8,
   });
 
-  bool get isValid => apiKey.isNotEmpty && apiKey.startsWith('AI');
+  bool get isValid {
+    if (apiKey.isEmpty) return false;
+    if (provider == AiProvider.gemini) return apiKey.startsWith('AI');
+    return apiKey.length >= 20;
+  }
 
   AiQaSettings copyWith({
     String? apiKey,
+    AiProvider? provider,
+    String? baseUrl,
     String? toolModel,
     String? answerModel,
     String? customSystemPrompt,
@@ -147,6 +163,8 @@ class AiQaSettings {
   }) {
     return AiQaSettings(
       apiKey: apiKey ?? this.apiKey,
+      provider: provider ?? this.provider,
+      baseUrl: baseUrl ?? this.baseUrl,
       toolModel: toolModel ?? this.toolModel,
       answerModel: answerModel ?? this.answerModel,
       customSystemPrompt: customSystemPrompt ?? this.customSystemPrompt,
@@ -158,6 +176,8 @@ class AiQaSettings {
 
   Map<String, dynamic> toJson() => {
         'apiKey': apiKey,
+        'provider': provider.serialise,
+        'baseUrl': baseUrl,
         'toolModel': toolModel,
         'answerModel': answerModel,
         'customSystemPrompt': customSystemPrompt,
@@ -169,6 +189,8 @@ class AiQaSettings {
   factory AiQaSettings.fromJson(Map<String, dynamic> json) {
     return AiQaSettings(
       apiKey: json['apiKey'] as String? ?? '',
+      provider: AiProvider.fromString(json['provider'] as String? ?? ''),
+      baseUrl: json['baseUrl'] as String? ?? '',
       toolModel: json['toolModel'] as String? ?? 'gemini-2.0-flash-lite',
       answerModel: json['answerModel'] as String? ?? 'gemini-2.0-flash',
       customSystemPrompt: json['customSystemPrompt'] as String? ?? '',

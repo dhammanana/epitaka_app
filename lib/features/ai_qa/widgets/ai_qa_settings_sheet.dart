@@ -2,9 +2,12 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../shared/models/ai_provider.dart';
+import '../../shared/services/ai_model_service.dart';
 import '../providers/ai_qa_settings_provider.dart';
 import '../services/mention_service.dart';
 
@@ -22,19 +25,27 @@ class _AiQaSettingsSheet extends ConsumerStatefulWidget {
   const _AiQaSettingsSheet();
 
   @override
-  ConsumerState<_AiQaSettingsSheet> createState() => _AiQaSettingsSheetState();
+  ConsumerState<_AiQaSettingsSheet> createState() =>
+      _AiQaSettingsSheetState();
 }
 
 class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   late TextEditingController _apiKeyController;
   late TextEditingController _toolModelController;
   late TextEditingController _answerModelController;
+  late TextEditingController _baseUrlController;
   late TextEditingController _systemPromptController;
   late TextEditingController _maxResultCharsController;
   late TextEditingController _answerMaxTokensController;
   late TextEditingController _maxQueriesController;
   bool _obscureKey = true;
   bool _saving = false;
+
+  // Model fetching
+  bool _loadingModels = false;
+  List<String> _availableModels = [];
+  String? _modelsError;
+  late AiProvider _selectedProvider;
 
   @override
   void initState() {
@@ -43,6 +54,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     _apiKeyController = TextEditingController(text: settings.apiKey);
     _toolModelController = TextEditingController(text: settings.toolModel);
     _answerModelController = TextEditingController(text: settings.answerModel);
+    _baseUrlController = TextEditingController(text: settings.baseUrl);
     _systemPromptController =
         TextEditingController(text: settings.customSystemPrompt);
     _maxResultCharsController = TextEditingController(
@@ -56,6 +68,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     _maxQueriesController = TextEditingController(
       text: settings.maxQueriesPerChat.toString(),
     );
+    _selectedProvider = settings.provider;
   }
 
   @override
@@ -63,6 +76,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     _apiKeyController.dispose();
     _toolModelController.dispose();
     _answerModelController.dispose();
+    _baseUrlController.dispose();
     _systemPromptController.dispose();
     _maxResultCharsController.dispose();
     _answerMaxTokensController.dispose();
@@ -70,18 +84,42 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     super.dispose();
   }
 
+  Future<void> _fetchModels() async {
+    setState(() {
+      _loadingModels = true;
+      _modelsError = null;
+    });
+
+    final result = await AiModelService.fetchModels(
+      provider: _selectedProvider,
+      apiKey: _apiKeyController.text.trim(),
+      baseUrl: _baseUrlController.text.trim(),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _loadingModels = false;
+      if (result.isSuccess) {
+        _availableModels = result.models;
+      } else {
+        _modelsError = result.error;
+      }
+    });
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final notifier = ref.read(aiQaSettingsProvider.notifier);
       await notifier.setApiKey(_apiKeyController.text.trim());
+      await notifier.setProvider(_selectedProvider);
+      await notifier.setBaseUrl(_baseUrlController.text.trim());
       await notifier.setToolModel(_toolModelController.text.trim());
       await notifier.setAnswerModel(_answerModelController.text.trim());
       await notifier.setCustomSystemPrompt(_systemPromptController.text.trim());
       final maxCharsText = _maxResultCharsController.text.trim();
-      final maxChars = maxCharsText.isEmpty
-          ? 0
-          : int.tryParse(maxCharsText) ?? 0;
+      final maxChars =
+          maxCharsText.isEmpty ? 0 : int.tryParse(maxCharsText) ?? 0;
       await notifier.setMaxToolResultChars(maxChars);
       final answerTokensText = _answerMaxTokensController.text.trim();
       final answerTokens = int.tryParse(answerTokensText) ?? 64000;
@@ -119,7 +157,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     final settings = ref.watch(aiQaSettingsProvider);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
+      initialChildSize: 0.85,
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (ctx, scrollController) {
@@ -201,7 +239,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       child: Text(
                         settings.isValid
                             ? 'API key configured'
-                            : 'API key required — enter your Gemini API key below',
+                            : 'API key required — enter your key below',
                         style: AppTypography.labelSmall.copyWith(
                           color: settings.isValid
                               ? Colors.green[700]
@@ -215,14 +253,36 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 20),
 
-              // ── API Key ─────────────────────────────────────────
-              Text(
-                'API Key',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
+              // ── Provider ─────────────────────────────────────────
+              _sectionLabel(colors, 'AI Provider'),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<AiProvider>(
+                initialValue: _selectedProvider,
+                items: AiProvider.values
+                    .map(
+                      (p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p.displayName),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedProvider = value;
+                      _availableModels = [];
+                      _modelsError = null;
+                    });
+                  }
+                },
+                decoration: _inputDecoration(colors),
+                style: TextStyle(color: colors.onSurface, fontSize: 14),
+                dropdownColor: colors.surface,
               ),
+              const SizedBox(height: 20),
+
+              // ── API Key ─────────────────────────────────────────
+              _sectionLabel(colors, 'API Key'),
               const SizedBox(height: 6),
               TextField(
                 controller: _apiKeyController,
@@ -230,18 +290,22 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 maxLines: 1,
                 style: TextStyle(color: colors.onSurface, fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: 'AIza...',
+                  hintText: _selectedProvider == AiProvider.gemini
+                      ? 'AIza...'
+                      : 'sk-...',
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor:
+                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
+                    horizontal: 14,
+                    vertical: 12,
                   ),
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -270,46 +334,114 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   ),
                 ),
               ),
-              if (!settings.isValid) ...[
+              const SizedBox(height: 6),
+
+              // ── Help links ───────────────────────────────────────
+              _HelpLinks(provider: _selectedProvider),
+              const SizedBox(height: 20),
+
+              // ── Base URL (OpenAI only) ───────────────────────────
+              if (_selectedProvider == AiProvider.openai) ...[
+                _sectionLabel(colors, 'Base URL'),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _baseUrlController,
+                  maxLines: 1,
+                  style: TextStyle(color: colors.onSurface, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'https://api.openai.com/v1',
+                    hintStyle: TextStyle(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    filled: true,
+                    fillColor:
+                        colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                      borderSide: BorderSide(color: colors.outlineVariant),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  'Get a free API key at ai.google.dev',
+                  'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                     fontSize: 10,
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // ── Fetch Models ─────────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _apiKeyController.text.trim().isEmpty
+                      ? null
+                      : _fetchModels,
+                  icon: _loadingModels
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: Text(
+                    _loadingModels
+                        ? 'Fetching models...'
+                        : 'Fetch available models',
+                  ),
+                ),
+              ),
+              if (_modelsError != null) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, size: 14, color: colors.error),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _modelsError!,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.error,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_availableModels.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${_availableModels.length} models found',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: Colors.green[600],
+                    fontSize: 11,
                   ),
                 ),
               ],
               const SizedBox(height: 20),
 
               // ── Tool Model ──────────────────────────────────────
-              Text(
-                'Tool Model (for search & function calling)',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _sectionLabel(colors, 'Tool Model (for search & function calling)'),
               const SizedBox(height: 6),
-              TextField(
+              _buildModelField(
                 controller: _toolModelController,
-                maxLines: 1,
-                style: TextStyle(color: colors.onSurface, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'gemini-2.0-flash-lite',
-                  hintStyle: TextStyle(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                  filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                    borderSide: BorderSide(color: colors.outlineVariant),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
-                  ),
-                ),
+                colors: colors,
+                hintText: 'gemini-2.0-flash-lite',
               ),
               const SizedBox(height: 4),
               Text(
@@ -322,33 +454,12 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Answer Model ────────────────────────────────────
-              Text(
-                'Answer Model (for final answer generation)',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _sectionLabel(colors, 'Answer Model (for final answer generation)'),
               const SizedBox(height: 6),
-              TextField(
+              _buildModelField(
                 controller: _answerModelController,
-                maxLines: 1,
-                style: TextStyle(color: colors.onSurface, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'gemini-2.0-flash',
-                  hintStyle: TextStyle(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                  filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                    borderSide: BorderSide(color: colors.outlineVariant),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
-                  ),
-                ),
+                colors: colors,
+                hintText: 'gemini-2.0-flash',
               ),
               const SizedBox(height: 4),
               Text(
@@ -386,13 +497,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor:
+                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
+                    horizontal: 14,
+                    vertical: 12,
                   ),
                 ),
               ),
@@ -434,13 +547,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor:
+                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
+                    horizontal: 14,
+                    vertical: 12,
                   ),
                 ),
               ),
@@ -448,7 +563,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               Text(
                 'Max output tokens for the answer model. '
                 'Higher values allow longer answers. '
-                '(Default: 64000, max: 65536 for Gemini 2.0 Pro)',
+                '(Default: 64000)',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -482,13 +597,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                   filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor:
+                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12,
+                    horizontal: 14,
+                    vertical: 12,
                   ),
                 ),
               ),
@@ -536,7 +653,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     fontSize: 12,
                   ),
                   filled: true,
-                  fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+                  fillColor:
+                      colors.surfaceContainerHighest.withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     borderSide: BorderSide(color: colors.outlineVariant),
@@ -603,7 +721,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   label: const Text('Rebuild Suggestion Index'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: BorderSide(color: colors.primary.withValues(alpha: 0.3)),
+                    side: BorderSide(
+                        color: colors.primary.withValues(alpha: 0.3)),
                   ),
                 ),
               ),
@@ -612,6 +731,96 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
           ),
         );
       },
+    );
+  }
+
+  Widget _sectionLabel(ColorScheme colors, String label) {
+    return Text(
+      label,
+      style: AppTypography.labelMedium.copyWith(
+        color: colors.onSurface,
+        fontWeight: FontWeight.w600,
+        fontSize: 13,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(
+    ColorScheme colors, {
+    String hintText = '',
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(
+        color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+        fontSize: 14,
+      ),
+      filled: true,
+      fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+        borderSide: BorderSide(color: colors.outlineVariant),
+      ),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+
+  Widget _buildModelField({
+    required TextEditingController controller,
+    required ColorScheme colors,
+    String hintText = '',
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          maxLines: 1,
+          style: TextStyle(color: colors.onSurface, fontSize: 14),
+          decoration: _inputDecoration(colors, hintText: hintText),
+        ),
+        if (_availableModels.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 32,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _availableModels.take(15).map((model) {
+                final isSelected = controller.text == model;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    label: Text(
+                      model,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            isSelected ? colors.onPrimary : colors.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: () {
+                      controller.text = model;
+                      controller.selection = TextSelection.fromPosition(
+                        TextPosition(
+                            offset: controller.text.length),
+                      );
+                      setState(() {});
+                    },
+                    backgroundColor: isSelected
+                        ? colors.primary
+                        : colors.surfaceContainerHighest,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -626,8 +835,10 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
           content: const Row(
             children: [
               SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               ),
               SizedBox(width: 12),
               Text('Rebuilding suggestion index…'),
@@ -659,6 +870,101 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
             content: Text('Rebuild failed: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: colors.error,
+          ),
+        );
+      }
+    }
+  }
+}
+
+/// Widget that shows clickable help links for getting API keys.
+class _HelpLinks extends StatelessWidget {
+  final AiProvider provider;
+
+  const _HelpLinks({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _LinkTile(
+          icon: Icons.info_outline,
+          label: provider.helpLabel,
+          url: provider.helpUrl,
+          color: colors.primary,
+          iconColor: colors.primary.withValues(alpha: 0.8),
+        ),
+        ...provider.additionalHelps.map(
+          (help) => _LinkTile(
+            icon: Icons.link,
+            label: help.label,
+            url: help.url,
+            color: colors.onSurfaceVariant,
+            iconColor: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LinkTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String url;
+  final Color color;
+  final Color iconColor;
+
+  const _LinkTile({
+    required this.icon,
+    required this.label,
+    required this.url,
+    required this.color,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _openUrl(context, url),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            SizedBox(width: 14, child: Icon(icon, size: 14, color: iconColor)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: AppTypography.labelSmall.copyWith(
+                  color: color,
+                  decoration: TextDecoration.underline,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            Icon(Icons.open_in_new,
+                size: 12, color: color.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openUrl(BuildContext context, String urlString) async {
+    final uri = Uri.tryParse(urlString);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open: $urlString'),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }

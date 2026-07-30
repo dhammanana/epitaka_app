@@ -80,6 +80,8 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       final settings = _ref.read(aiSettingsProvider);
       try {
         englishTranslation = await geminiService.translateToEnglish(
+          provider: settings.provider,
+          baseUrl: settings.baseUrl,
           text: trimmed,
           apiKey: settings.apiKey,
           liteModel: settings.liteModel,
@@ -117,7 +119,7 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
       if (!settings.isValid) {
         state = state.copyWith(
           isLoading: false,
-          error: 'Please configure your Gemini API key in the AI Assistant settings first.',
+          error: 'Please configure your API key in the AI Assistant settings first.',
         );
         return;
       }
@@ -156,6 +158,8 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
       try {
         rankedIndices = await geminiService.rerankResults(
+          provider: settings.provider,
+          baseUrl: settings.baseUrl,
           question: trimmed,
           candidates: candidates,
           apiKey: settings.apiKey,
@@ -213,6 +217,8 @@ class AiChatNotifier extends StateNotifier<AiChatState> {
 
       // ── 6. Stream answer tokens ───────────────────────────────────
       final stream = geminiService.generateAnswerStream(
+        provider: settings.provider,
+        baseUrl: settings.baseUrl,
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
         apiKey: settings.apiKey,

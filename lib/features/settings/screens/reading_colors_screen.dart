@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide ColorSwatch;
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
@@ -36,7 +37,10 @@ class ReadingColorsScreen extends ConsumerWidget {
             Padding(padding: const EdgeInsets.all(AppDimensions.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _ColorRow(label: loc.lightModeLabel, color: settings.paliColorPair.light, colors: colors),
               const SizedBox(height: AppDimensions.sm),
-              Wrap(spacing: AppDimensions.sm, runSpacing: AppDimensions.sm, children: [..._paliColorPresets().map((c) => ColorSwatch(color: c, isSelected: settings.paliColorPair.light == c, onTap: () => ref.read(settingsProvider.notifier).setPaliColor(c)))]),
+              Wrap(spacing: AppDimensions.sm, runSpacing: AppDimensions.sm, children: [
+                ..._paliColorPresets().map((c) => ColorSwatch(color: c, isSelected: settings.paliColorPair.light == c, onTap: () => ref.read(settingsProvider.notifier).setPaliColor(c))),
+                _CustomColorButton(onTap: () => _showColorPicker(context, ref, settings.paliColorPair.light, (c) => ref.read(settingsProvider.notifier).setPaliColor(c))),
+              ]),
               const SizedBox(height: AppDimensions.sm), Divider(color: colors.outlineVariant.withValues(alpha: 0.4)), const SizedBox(height: AppDimensions.sm),
               _ColorRow(label: loc.darkModeAuto, color: settings.paliColorPair.dark, colors: colors),
             ])),
@@ -46,7 +50,10 @@ class ReadingColorsScreen extends ConsumerWidget {
             Padding(padding: const EdgeInsets.all(AppDimensions.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _ColorRow(label: loc.lightModeLabel, color: settings.translationColorPair.light, colors: colors),
               const SizedBox(height: AppDimensions.sm),
-              Wrap(spacing: AppDimensions.sm, runSpacing: AppDimensions.sm, children: [..._transColorPresets().map((c) => ColorSwatch(color: c, isSelected: settings.translationColorPair.light == c, onTap: () => ref.read(settingsProvider.notifier).setTranslationColor(c)))]),
+              Wrap(spacing: AppDimensions.sm, runSpacing: AppDimensions.sm, children: [
+                ..._transColorPresets().map((c) => ColorSwatch(color: c, isSelected: settings.translationColorPair.light == c, onTap: () => ref.read(settingsProvider.notifier).setTranslationColor(c))),
+                _CustomColorButton(onTap: () => _showColorPicker(context, ref, settings.translationColorPair.light, (c) => ref.read(settingsProvider.notifier).setTranslationColor(c))),
+              ]),
               const SizedBox(height: AppDimensions.sm), Divider(color: colors.outlineVariant.withValues(alpha: 0.4)), const SizedBox(height: AppDimensions.sm),
               _ColorRow(label: loc.darkModeAuto, color: settings.translationColorPair.dark, colors: colors),
             ])),
@@ -58,6 +65,55 @@ class ReadingColorsScreen extends ConsumerWidget {
 
   List<Color> _paliColorPresets() => [const Color(0xFF7A2E1D), const Color(0xFF994532), const Color(0xFFB5651D), const Color(0xFF8B1A1A), const Color(0xFF3D3D8F), const Color(0xFF2A6B6B), const Color(0xFF5D4037), const Color(0xFF6A1B9A)];
   List<Color> _transColorPresets() => [const Color(0xFF33312E), const Color(0xFF221A14), const Color(0xFF544338), const Color(0xFF3C6E47), const Color(0xFF4A6FA5), const Color(0xFF6B635A), const Color(0xFF2E7D32), const Color(0xFF5D4037)];
+
+  /// Show a color picker dialog using the flutter_colorpicker package.
+  static Future<void> _showColorPicker(BuildContext context, WidgetRef ref, Color current, ValueChanged<Color> onPicked) async {
+    Color picked = current;
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Pick a color'),
+          content: SingleChildScrollView(
+            child: ColorPicker(
+              pickerColor: picked,
+              onColorChanged: (c) => picked = c,
+              enableAlpha: false,
+              displayThumbColor: true,
+              labelTypes: const [],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () { onPicked(picked); Navigator.of(ctx).pop(); }, child: const Text('Apply')),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CustomColorButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CustomColorButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.outlineVariant, width: 2),
+        ),
+        child: Icon(Icons.colorize, size: 18, color: colors.onSurfaceVariant),
+      ),
+    );
+  }
 }
 
 class _ColorRow extends StatelessWidget {

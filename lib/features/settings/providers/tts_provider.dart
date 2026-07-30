@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:supertonic_flutter/supertonic_flutter.dart';
@@ -35,6 +36,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   // Speech completion tracking
   Completer<void>? _speechCompleter;
   String? _currentText;
+
+  /// Subscription to Android's ACTION_AUDIO_BECOMING_NOISY broadcast
+  /// (triggered when Bluetooth disconnects or the headphone jack is
+  /// removed). Set up when TTS starts speaking, cancelled on stop.
+  StreamSubscription<void>? _noisySubscription;
+
+  /// Whether the AudioSession has been configured for TTS playback.
+  bool _audioSessionConfigured = false;
 
   /// Monotonically increasing speech session ID. Incremented before
   /// each [speak()]/[stop()]/[pause()] call so that stale completion
@@ -140,6 +149,62 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       hasPrev: hasPrev,
       hasNext: hasNext,
     );
+  }
+
+  /// Configure the [AudioSession] for TTS playback and listen for
+  /// audio route changes (Bluetooth disconnect / headphone jack removal).
+  ///
+  /// When the audio route disconnects while TTS is playing, we auto-pause
+  /// so the user doesn't miss any content. Without this, TTS would
+  /// continue playing through the device speaker after unplugging
+  /// headphones, which is unwanted.
+  Future<void> _configureAudioSession() async {
+    if (_audioSessionConfigured) return;
+    _audioSessionConfigured = true;
+
+    // Configure the audio session for speech playback.
+    // Uses the built-in 'speech' recipe which sets:
+    //   - Android: speech content type, media usage, gain audio focus
+    //   - iOS:     playback category, spokenAudio mode
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.speech());
+      developer.log(
+        '[TTS_AUDIO_SESSION] AudioSession configured (speech recipe)',
+        name: 'epitaka.tts',
+      );
+    } catch (e) {
+      developer.log(
+        '[TTS_AUDIO_SESSION] Failed to configure: $e',
+        name: 'epitaka.tts',
+      );
+    }
+
+    // Set up becoming-noisy listener for auto-pause on earphone disconnect.
+    // When headphones are unplugged or Bluetooth disconnects, we auto-pause
+    // so the user doesn't miss content playing through the speaker.
+    try {
+      final session = await AudioSession.instance;
+      _noisySubscription?.cancel();
+      _noisySubscription = session.becomingNoisyEventStream.listen((_) {
+        developer.log(
+          '[TTS_BECOMING_NOISY] Audio route disconnected → pausing',
+          name: 'epitaka.tts',
+        );
+        if (state == TtsPlaybackState.playing) {
+          pause();
+        }
+      });
+      developer.log(
+        '[TTS_BECOMING_NOISY] Listener registered',
+        name: 'epitaka.tts',
+      );
+    } catch (e) {
+      developer.log(
+        '[TTS_BECOMING_NOISY] Failed to set up listener: $e',
+        name: 'epitaka.tts',
+      );
+    }
   }
 
   /// Lazily initialize the system TTS engine.
@@ -313,6 +378,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       }
     });
 
+    await _configureAudioSession();
     state = TtsPlaybackState.playing;
     _broadcastToAudioService();
     await tts.speak(text);
@@ -346,6 +412,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     if (_player == null) {
       throw Exception('Supertonic TTS not initialized');
     }
+    await _configureAudioSession();
     _currentText = null;
     _currentSpeechId++;
     state = TtsPlaybackState.playing;
@@ -375,6 +442,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       ),
     );
 
+    await _configureAudioSession();
     state = TtsPlaybackState.playing;
     _broadcastToAudioService();
     await _player!.play(result);
@@ -405,6 +473,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     try {
       if (_flutterTts != null) {
         await _flutterTts!.stop();
+        _flutterTts!.setCompletionHandler(() {});
+        _flutterTts!.setErrorHandler((_) {});
       }
       if (_player != null) {
         await _player!.stop();
@@ -412,6 +482,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     } catch (_) {
       // Ignore errors when stopping
     }
+    // Cancel the audio session listener when fully stopped
+    _noisySubscription?.cancel();
+    _noisySubscription = null;
+    _audioSessionConfigured = false;
+
     state = TtsPlaybackState.stopped;
     _broadcastToAudioService();
     _completeSpeech();
@@ -471,6 +546,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   void dispose() {
     _disposed = true;
     _completeSpeech();
+    _noisySubscription?.cancel();
+    _noisySubscription = null;
     _playerSubscription?.cancel();
     _playerSubscription = null;
     _flutterTts?.setCompletionHandler(() {});
@@ -480,6 +557,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _supertonicTts = null;
     _player = null;
     _supertonicInitialized = false;
+    _audioSessionConfigured = false;
     super.dispose();
   }
 

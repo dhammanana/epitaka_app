@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../settings/services/download_notification_service.dart';
+
 /// Represents the download status for Gavesana assets.
 enum GavesanaDownloadStatus {
   notDownloaded,
@@ -143,7 +145,14 @@ class GavesanaDownloadService {
       response.stream.listen(
         (chunk) {
           bytes.addAll(chunk);
-          if (contentLength > 0) _progress = bytes.length / contentLength;
+          if (contentLength > 0) {
+            _progress = bytes.length / contentLength;
+            DownloadNotificationService.instance.showGavesanaProgress(
+              progress: _progress,
+              isIndeterminate: false,
+              phase: 'downloading',
+            );
+          }
         },
         onDone: () => completer.complete(bytes),
         onError: (e) => completer.completeError(e),
@@ -153,17 +162,24 @@ class GavesanaDownloadService {
       _status = GavesanaDownloadStatus.extracting;
       _progress = 0.0;
       _statusCtrl.add(_status);
+      DownloadNotificationService.instance.showGavesanaProgress(
+        progress: 1.0,
+        isIndeterminate: true,
+        phase: 'extracting',
+      );
 
       await _extractZip(data, dir);
 
       _status = GavesanaDownloadStatus.ready;
       _progress = 1.0;
       _statusCtrl.add(_status);
+      DownloadNotificationService.instance.showGavesanaComplete();
       return true;
     } catch (e) {
       _status = GavesanaDownloadStatus.error;
       _error = e.toString();
       _statusCtrl.add(_status);
+      DownloadNotificationService.instance.showGavesanaError(e.toString());
       return false;
     }
   }

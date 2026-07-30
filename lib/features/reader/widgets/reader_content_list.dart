@@ -156,7 +156,8 @@ class ReaderContentList extends StatelessWidget {
           lineKeys = Map.from(ttsTargetLineKeys);
         }
 
-        return ReadingParagraph(
+        return RepaintBoundary(
+          child: ReadingParagraph(
           // Stable key for every paragraph — never a shared GlobalKey.
           // Re-keying a list item at runtime forces a semantics re-parent
           // that crashes (see reader_screen.dart).
@@ -192,6 +193,7 @@ class ReaderContentList extends StatelessWidget {
           translationLineHeight: settings.typography.lineHeightFor(
             settings.primaryTranslationLang,
           ),
+        ),
         );
       },
     );

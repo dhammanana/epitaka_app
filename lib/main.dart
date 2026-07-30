@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 import 'core/utils/database_initializer.dart';
+import 'features/settings/services/download_notification_service.dart';
 
 /// Maximum number of identical errors to report in a 2-second window.
 /// Prevents the console from being flooded with thousands of repeated
@@ -66,6 +67,19 @@ Future<void> main() async {
   // Copy bundled databases from assets to writable storage (needed on
   // Android/iOS where assets aren't directly file-system accessible).
   await ensureBundledDatabases();
+
+  // Initialise the download notification service for showing progress
+  // in the Android notification bar. Wrapped in try-catch so that a
+  // plugin initialization failure (e.g. during hot restart) doesn't
+  // prevent the app from starting.
+  try {
+    await DownloadNotificationService.instance.init();
+  } catch (e) {
+    developer.log(
+      '[DL_NOTIF] Failed to initialise notification service: $e',
+      name: 'epitaka.download',
+    );
+  }
 
   runApp(const ProviderScope(child: EpitakaApp()));
 }
