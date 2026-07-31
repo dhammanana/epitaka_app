@@ -950,6 +950,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       // Stream final answer
       final streamDone = Completer<void>();
       String accumulatedText = '';
+      String? streamError;
       final stream = _streamAnswer(
         provider: settings.provider,
         baseUrl: settings.baseUrl,
@@ -967,11 +968,21 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         },
         onError: (error) {
           debugPrint('[VIMAṂSA] Stream error: $error');
-          _finalizeMessage(accumulatedText);
+          streamError = _friendlyErrorMessage(error);
+          _finalizeMessage(accumulatedText, error: streamError);
           if (!streamDone.isCompleted) streamDone.complete();
         },
         onDone: () {
-          _finalizeMessage(accumulatedText);
+          // Guard: if the stream finished without producing any text AND no
+          // error was reported, surface a clear reason instead of leaving
+          // the user staring at a blank assistant bubble.
+          if (accumulatedText.trim().isEmpty && streamError == null) {
+            streamError =
+                'The model returned an empty response. This can happen when '
+                'the AI blocks the output or the question is too long. '
+                'Try asking again or check the model name in Settings.';
+          }
+          _finalizeMessage(accumulatedText, error: streamError);
           if (!streamDone.isCompleted) streamDone.complete();
         },
         cancelOnError: false,
@@ -1011,10 +1022,16 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       _debugLog['error'] = '$e';
       _saveDebugLog();
       debugPrint('[VIMAṂSA] Error: $e\n$stack');
-      if (state.isLoading) {
-        state = state.copyWith(isLoading: false, error: 'Error: $e');
+      final friendlyError = _friendlyErrorMessage(e);
+      if (_finalized) {
+        // The stream already finished (e.g. DB save failure) — surface the
+        // reason instead of silently swallowing it.
+        state = state.copyWith(isLoading: false, error: friendlyError);
       } else {
-        _finalizeMessage(_ref.read(streamingTextProvider));
+        _finalizeMessage(
+          _ref.read(streamingTextProvider),
+          error: friendlyError,
+        );
       }
     }
 
@@ -1588,6 +1605,67 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     }
   }
 
+  /// Translate raw errors into a friendly, actionable message for the user.
+  ///
+  /// The raw exception text (HTTP status, socket errors, etc.) is often
+  /// cryptic — this makes sure the reason is understandable and suggests
+  /// what to do next.
+  String _friendlyErrorMessage(Object error) {
+    final raw = error.toString();
+    final lower = raw.toLowerCase();
+
+    final statusMatch = RegExp(r'API error (\d+)').firstMatch(raw);
+    if (statusMatch != null) {
+      switch (statusMatch.group(1)) {
+        case '400':
+          return 'The AI service rejected the request (400). The question may '
+              'be too long or contain unsupported content. Try asking again.';
+        case '401':
+        case '403':
+          return 'Your API key was rejected (${statusMatch.group(1)}). '
+              'Please check the API key in Settings.';
+        case '404':
+          return 'Model not found (404). The selected model may have been '
+              'renamed or is unavailable — update the model in Settings.';
+        case '429':
+          return 'Rate limit exceeded (429). Please wait a moment and try again.';
+        case '500':
+        case '502':
+        case '503':
+          return 'The AI service is temporarily unavailable '
+              '(${statusMatch.group(1)}). Please try again shortly.';
+        default:
+          return 'The AI service returned an error '
+              '(${statusMatch.group(1)}). Please try again.';
+      }
+    }
+
+    if (lower.contains('socketexception') ||
+        lower.contains('connection refused') ||
+        lower.contains('connection reset') ||
+        lower.contains('clientexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('handshake')) {
+      return 'Network error — could not reach the AI service. '
+          'Check your internet connection and try again.';
+    }
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return 'The request timed out. Try again, or ask a shorter question.';
+    }
+    if (lower.contains('rate limit') || lower.contains('too many requests')) {
+      return 'Rate limit exceeded. Please wait a moment and try again.';
+    }
+    if (lower.contains('empty response')) {
+      return 'The AI service returned an empty response. '
+          'Check that the selected model is correct in Settings and try again.';
+    }
+    if (lower.contains('quota') || lower.contains('billing')) {
+      return 'Your API quota may be exhausted. Check your usage/billing on '
+          'the provider console.';
+    }
+    return 'Something went wrong: $raw';
+  }
+
   // ── Context building & finalization ───────────────────────────────────
 
   String _buildContextBlock(List<Map<String, dynamic>> toolResults) {
@@ -1645,7 +1723,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     return citations;
   }
 
-  void _finalizeMessage(String text) {
+  void _finalizeMessage(String text, {String? error}) {
     if (_finalized) return;
     _finalized = true;
 
@@ -1656,15 +1734,27 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     if (messageId != null) {
       final index = messages.indexWhere((m) => m.id == messageId);
       if (index >= 0) {
-        messages[index] = messages[index].copyWith(
-          text: text,
-          citations: citations,
-          isStreaming: false,
-        );
+        // If generation failed with no content, drop the blank bubble so the
+        // user isn't left looking at an empty assistant message.
+        if (error != null && text.trim().isEmpty) {
+          messages.removeAt(index);
+        } else {
+          messages[index] = messages[index].copyWith(
+            text: text,
+            citations: citations,
+            isStreaming: false,
+          );
+        }
       }
     }
 
-    state = state.copyWith(messages: messages, isLoading: false);
+    // Remove the transient "thinking" placeholder on failure so the chat
+    // doesn't end on a stuck researching bubble.
+    if (error != null) {
+      messages.removeWhere((m) => m.id == 'thinking');
+    }
+
+    state = state.copyWith(messages: messages, isLoading: false, error: error);
     _ref.read(streamingTextProvider.notifier).state = '';
     _ref.read(streamingMessageIdProvider.notifier).state = null;
   }

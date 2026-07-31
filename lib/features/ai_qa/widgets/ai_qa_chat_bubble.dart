@@ -4,15 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
-import '../../reader/providers/reader_tabs_provider.dart';
 import '../models/ai_qa_models.dart';
 import '../providers/ai_qa_provider.dart';
+import '../services/citation_quickview.dart';
 
 /// Custom inline syntax that matches [book_id:para_id:line_id] citations.
 class _CitationSyntax extends md.InlineSyntax {
@@ -663,17 +662,16 @@ class AiQaMessageBubble extends ConsumerWidget {
     int paraId,
     int lineId,
   ) {
-    ref
-        .read(readerTabsProvider.notifier)
-        .openTab(
-          ReaderTabInfo(
-            bookId: bookId,
-            bookName: bookId,
-            initialParaId: paraId,
-            initialLineId: lineId,
-          ),
-        );
-    context.push('/reader');
+    // Open a quickview preview of the cited passage instead of jumping
+    // straight to the reader; the user can open the book from there.
+    showCitationQuickview(
+      context,
+      ref,
+      bookId: bookId,
+      bookName: bookId,
+      paraId: paraId,
+      lineId: lineId,
+    );
   }
 }
 

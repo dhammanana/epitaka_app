@@ -43,6 +43,17 @@ enum AiProvider {
     }
   }
 
+  /// Direct URL where the user creates an API key for this provider.
+  /// Gemini's key page is free for everyone (requires a Google account).
+  String get apiKeyCreationUrl {
+    switch (this) {
+      case AiProvider.gemini:
+        return 'https://aistudio.google.com/app/apikey';
+      case AiProvider.openai:
+        return 'https://platform.openai.com/api-keys';
+    }
+  }
+
   /// Additional help URLs for related services that use the same format.
   List<({String label, String url})> get additionalHelps {
     switch (this) {

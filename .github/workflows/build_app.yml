@@ -158,19 +158,18 @@ jobs:
       - name: Install Rust (required by super_native_extensions)
         run: rustup default stable
 
-      - name: Fix AppData path for cargokit
+      - name: Ensure Windows AppData directory exists
         shell: pwsh
         run: |
-          $appData = "C:\Users\runneradmin\AppData"
+          Write-Host "USERPROFILE = $env:USERPROFILE"
+          Write-Host "APPDATA = $env:APPDATA"
+          Write-Host "LOCALAPPDATA = $env:LOCALAPPDATA"
 
-          if (Test-Path -LiteralPath $appData -PathType Container) {
-            Write-Host "AppData exists: $appData"
-          } else {
-            Write-Host "Creating AppData: $appData"
-            New-Item -ItemType Directory -Path $appData -Force | Out-Null
-          }
+          New-Item -ItemType Directory -Force -Path $env:APPDATA | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
 
-          Get-Item -LiteralPath $appData -Force
+          Get-Item $env:APPDATA
+          Get-Item $env:LOCALAPPDATA
       - name: Create Windows Platform Files
         # windows/ directory checked into git so this is a no-op fallback
         run: |
@@ -218,6 +217,21 @@ jobs:
 
           Remove-Item epitaka.zip, dpd.zip, epitaka_x, dpd_x -Recurse -Force
           Get-ChildItem assets/db
+
+      - name: Diagnose Windows paths
+        shell: pwsh
+        run: |
+          Write-Host "USERPROFILE=$env:USERPROFILE"
+          Write-Host "APPDATA=$env:APPDATA"
+          Write-Host "LOCALAPPDATA=$env:LOCALAPPDATA"
+          Write-Host "TEMP=$env:TEMP"
+          Write-Host "TMP=$env:TMP"
+
+          Test-Path $env:USERPROFILE
+          Test-Path $env:APPDATA
+          Test-Path $env:LOCALAPPDATA
+
+          Get-ChildItem "C:\Users\runneradmin" -Force
 
       - name: Build Windows Release
         shell: pwsh
@@ -432,9 +446,7 @@ jobs:
 
           # Download linuxdeploy and its GTK + AppImage plugins
           wget -S --show-progress -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -S --show-progress -O linuxdeploy-plugin-gtk-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
-          wget -S --show-progress -O linuxdeploy-plugin-appimage-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk-x86_64.AppImage linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
 
           # Assemble AppDir — keep exe, lib (RPATH $ORIGIN/lib) and data together
           mkdir -p AppDir/usr/bin
@@ -454,7 +466,7 @@ jobs:
           export VERSION="${GITHUB_REF_NAME}"
           export ARCH=x86_64
           export PATH="$PWD:$PATH"
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin gtk --output appimage
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
           mv epitaka-*.AppImage "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
           ls -la "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"

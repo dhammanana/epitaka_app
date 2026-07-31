@@ -46,12 +46,21 @@ class MainActivity : FlutterActivity() {
                             result.error("BAD_ARGS", "destDir required", null)
                             return@setMethodCallHandler
                         }
-                        try {
-                            val copied = copyCoreDatabases(File(destDir))
-                            result.success(copied)
-                        } catch (e: Exception) {
-                            result.error("COPY_FAILED", e.message, null)
-                        }
+                        // The DBs total ~700 MB — copying them on the platform
+                        // main thread at cold start could exceed the ANR
+                        // window. Do the copy on a background thread and post
+                        // the result back on the main thread.
+                        val target = File(destDir)
+                        Thread {
+                            try {
+                                val copied = copyCoreDatabases(target)
+                                runOnUiThread { result.success(copied) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error("COPY_FAILED", e.message, null)
+                                }
+                            }
+                        }.start()
                     }
                     else -> result.notImplemented()
                 }
@@ -66,7 +75,8 @@ class MainActivity : FlutterActivity() {
      * Install-time asset packs ship inside the AAB and are immediately
      * readable via the standard Android AssetManager — no Play Core library
      * is required. Returns the list of filenames that were copied (files that
-     * already exist are left untouched).
+     * already exist are left untouched). This method runs on a background
+     * thread (see the copyCoreDatabases channel handler).
      */
     private fun copyCoreDatabases(destDir: File): List<String> {
         if (!destDir.exists()) destDir.mkdirs()

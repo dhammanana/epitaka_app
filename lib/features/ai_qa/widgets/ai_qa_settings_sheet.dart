@@ -44,6 +44,17 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   bool _loadingModels = false;
   List<String> _availableModels = [];
   String? _modelsError;
+
+  /// Last API key that was successfully validated against the provider.
+  String _lastValidatedKey = '';
+
+  /// Whether the currently-typed key passed validation (models loaded).
+  bool _keyIsValid = false;
+
+  /// Whether the currently-typed key failed validation.
+  bool _keyCheckFailed = false;
+
+  late final FocusNode _apiKeyFocusNode;
   late AiProvider _selectedProvider;
 
   @override
@@ -69,6 +80,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       text: settings.maxQueriesPerChat.toString(),
     );
     _selectedProvider = settings.provider;
+    _apiKeyFocusNode = FocusNode()..addListener(_onApiKeyFocusChanged);
   }
 
   @override
@@ -81,30 +93,97 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     _maxResultCharsController.dispose();
     _answerMaxTokensController.dispose();
     _maxQueriesController.dispose();
+    _apiKeyFocusNode.dispose();
     super.dispose();
   }
 
+  /// Validates the current API key by fetching the model list from the
+  /// provider. Persists the key first so a valid key survives even if the
+  /// user closes the sheet without tapping Save.
   Future<void> _fetchModels() async {
+    if (_loadingModels || !mounted) return;
+    final key = _apiKeyController.text.trim();
+    if (key.isEmpty) return;
+
     setState(() {
       _loadingModels = true;
       _modelsError = null;
+      _keyIsValid = false;
+      _keyCheckFailed = false;
     });
+
+    await ref.read(aiQaSettingsProvider.notifier).setApiKey(key);
 
     final result = await AiModelService.fetchModels(
       provider: _selectedProvider,
-      apiKey: _apiKeyController.text.trim(),
+      apiKey: key,
       baseUrl: _baseUrlController.text.trim(),
     );
 
     if (!mounted) return;
     setState(() {
       _loadingModels = false;
+      _lastValidatedKey = key;
       if (result.isSuccess) {
         _availableModels = result.models;
+        _keyIsValid = true;
+        _keyCheckFailed = false;
+        _autoFillModelFieldsIfEmpty();
       } else {
         _modelsError = result.error;
+        _keyIsValid = false;
+        _keyCheckFailed = true;
       }
     });
+  }
+
+  /// Called when the API key field loses focus: validate the key (and load
+  /// models) automatically if it changed and is non-empty.
+  void _onApiKeyFocusChanged() {
+    if (!mounted) return;
+    if (!_apiKeyFocusNode.hasFocus) {
+      _validateApiKey();
+    }
+  }
+
+  /// Validate the key on submit or focus-loss — skip if unchanged/empty.
+  Future<void> _validateApiKey() async {
+    if (!mounted) return;
+    final key = _apiKeyController.text.trim();
+    if (key.isEmpty || key == _lastValidatedKey) return;
+    await _fetchModels();
+  }
+
+  /// If the tool/answer model fields are empty or no longer in the fetched
+  /// list, pick sensible defaults from the models we just loaded.
+  void _autoFillModelFieldsIfEmpty() {
+    if (_availableModels.isEmpty) return;
+
+    // The fetched list is sorted descending, so `.first` is the newest
+    // (preferred) model, e.g. gemini-flash-lite-latest / gemini-flash-latest.
+    final tool = _toolModelController.text.trim();
+    if (tool.isEmpty || !_availableModels.contains(tool)) {
+      final flashLite = _availableModels
+          .where((m) => m.toLowerCase().contains('flash-lite'))
+          .toList();
+      final fallback = flashLite.isNotEmpty
+          ? flashLite.first
+          : _availableModels.first;
+      _toolModelController.text = fallback;
+    }
+
+    final answer = _answerModelController.text.trim();
+    if (answer.isEmpty || !_availableModels.contains(answer)) {
+      final flash = _availableModels
+          .where(
+            (m) =>
+                m.toLowerCase().contains('flash') &&
+                !m.toLowerCase().contains('lite'),
+          )
+          .toList();
+      final fallback = flash.isNotEmpty ? flash.first : _availableModels.first;
+      _answerModelController.text = fallback;
+    }
   }
 
   Future<void> _save() async {
@@ -155,7 +234,6 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final settings = ref.watch(aiQaSettingsProvider);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -220,43 +298,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 20),
 
-              // Status indicator
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: settings.isValid
-                      ? Colors.green.withValues(alpha: 0.08)
-                      : Colors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      settings.isValid
-                          ? Icons.check_circle
-                          : Icons.warning_amber,
-                      size: 18,
-                      color: settings.isValid
-                          ? Colors.green
-                          : Colors.orange[700],
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        settings.isValid
-                            ? 'API key configured'
-                            : 'API key required — enter your key below',
-                        style: AppTypography.labelSmall.copyWith(
-                          color: settings.isValid
-                              ? Colors.green[700]
-                              : Colors.orange[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Status indicator (reflects live validation state)
+              _buildStatusCard(colors),
               const SizedBox(height: 20),
 
               // ── Provider ─────────────────────────────────────────
@@ -292,9 +335,19 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 6),
               TextField(
                 controller: _apiKeyController,
+                focusNode: _apiKeyFocusNode,
                 obscureText: _obscureKey,
                 maxLines: 1,
                 style: TextStyle(color: colors.onSurface, fontSize: 14),
+                onChanged: (_) {
+                  setState(() {
+                    _keyIsValid = false;
+                    _keyCheckFailed = false;
+                    _modelsError = null;
+                    _availableModels = [];
+                  });
+                },
+                onSubmitted: (_) => _validateApiKey(),
                 decoration: InputDecoration(
                   hintText: _selectedProvider == AiProvider.gemini
                       ? 'AIza...'
@@ -330,9 +383,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                           icon: const Icon(Icons.clear, size: 18),
                           onPressed: () {
                             _apiKeyController.clear();
+                            _lastValidatedKey = '';
+                            _keyIsValid = false;
+                            _keyCheckFailed = false;
+                            _modelsError = null;
+                            _availableModels = [];
                             ref
                                 .read(aiQaSettingsProvider.notifier)
                                 .clearApiKey();
+                            setState(() {});
                           },
                         ),
                     ],
@@ -340,6 +399,11 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 ),
               ),
               const SizedBox(height: 6),
+
+              // ── Beginner guide: get a free Gemini key ───────────
+              if (_selectedProvider == AiProvider.gemini)
+                _buildGeminiGuide(colors),
+              const SizedBox(height: 20),
 
               // ── Help links ───────────────────────────────────────
               _HelpLinks(provider: _selectedProvider),
@@ -385,7 +449,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 const SizedBox(height: 20),
               ],
 
-              // ── Fetch Models ─────────────────────────────────────
+              // ── Fetch Models (also validates the key) ───────────
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -401,8 +465,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       : const Icon(Icons.cloud_download_outlined, size: 18),
                   label: Text(
                     _loadingModels
-                        ? 'Fetching models...'
-                        : 'Fetch available models',
+                        ? 'Checking key & loading models...'
+                        : 'Check key & load models',
                   ),
                 ),
               ),
@@ -751,6 +815,212 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
         );
       },
     );
+  }
+
+  /// Status banner that reflects the live validation state of the API key
+  /// field (empty / typed / checking / valid / failed).
+  Widget _buildStatusCard(ColorScheme colors) {
+    final hasKey = _apiKeyController.text.trim().isNotEmpty;
+
+    final IconData icon;
+    final Color color;
+    final String text;
+
+    if (!hasKey) {
+      icon = Icons.warning_amber;
+      color = Colors.orange[700]!;
+      text = _selectedProvider == AiProvider.gemini
+          ? 'API key required — get your free Gemini key below'
+          : 'API key required — enter your key below';
+    } else if (_loadingModels) {
+      icon = Icons.sync;
+      color = Colors.blue[700]!;
+      text = 'Checking API key...';
+    } else if (_keyCheckFailed) {
+      icon = Icons.error_outline;
+      color = Colors.red[700]!;
+      text = 'API key rejected — see the error below';
+    } else if (_keyIsValid) {
+      icon = Icons.check_circle;
+      color = Colors.green[700]!;
+      text = _availableModels.isNotEmpty
+          ? 'API key valid — ${_availableModels.length} models available'
+          : 'API key valid';
+    } else {
+      icon = Icons.info_outline;
+      color = Colors.blue[700]!;
+      text = 'Key entered — press Enter or "Check key" to verify';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.labelSmall.copyWith(
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Step-by-step card that walks a non-technical user through getting a
+  /// free Gemini API key and pasting it back here.
+  Widget _buildGeminiGuide(ColorScheme colors) {
+    return Container(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colors.primary,
+                      colors.primary.withValues(alpha: 0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.key, size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Get a free Gemini API key',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Gemini is free for everyone — just 4 easy steps:',
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _guideStep(colors, '1', 'Tap "Get free Gemini API key" below.'),
+          _guideStep(
+            colors,
+            '2',
+            'Sign in with your Google account (free, no credit card).',
+          ),
+          _guideStep(
+            colors,
+            '3',
+            'Tap "Create API key" and copy it (it starts with AIza).',
+          ),
+          _guideStep(
+            colors,
+            '4',
+            'Paste it in the API Key field above — it is checked automatically.',
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () =>
+                  _openUrl(context, _selectedProvider.apiKeyCreationUrl),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Get free Gemini API key'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'No credit card needed. The free tier includes generous daily '
+            'limits for Gemini Flash models.',
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _guideStep(ColorScheme colors, String num, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                num,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: colors.primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurface,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openUrl(BuildContext context, String urlString) async {
+    final uri = Uri.tryParse(urlString);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the link'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Widget _sectionLabel(ColorScheme colors, String label) {

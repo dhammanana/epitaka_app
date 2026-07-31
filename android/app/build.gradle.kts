@@ -10,29 +10,36 @@ if (keystorePropertiesFile.exists()) {
 
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
     namespace = "com.dn.epitaka"
-    // compileSdk = flutter.compileSdkVersion
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-		isCoreLibraryDesugaringEnabled = true
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
         applicationId = "com.dn.epitaka"
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
     }
 
     signingConfigs {
@@ -46,13 +53,10 @@ android {
 
     buildTypes {
         release {
-            // Assign the release signing config
             signingConfig = signingConfigs.getByName("release")
         }
     }
 
-    // Reference the install-time asset pack that ships the core databases
-    // (epitaka.db, dpd-dictionary.db). See android/packs/core_db/.
     assetPacks += listOf(":packs:core_db")
 }
 

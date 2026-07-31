@@ -185,6 +185,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // request racing each other.
   final Map<String, int> _pendingJumpParaId = {};
 
+  // Monotonic token per book so a stale fine-scroll from a superseded jump
+  // can never clear jump flags while a newer jump is in progress.
+  final Map<String, int> _jumpTokens = {};
+
   // App lifecycle state for background TTS optimization
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
@@ -197,6 +201,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   final Map<String, StreamSubscription<double>> _scrollOffsetSubs = {};
   final Map<String, double> _scrollAccum = {};
   static const double _kScrollThreshold = 20.0; // px
+
+  /// Maximum frames to wait for a fine-scroll target line widget to be
+  /// laid out before giving up.
+  static const int _kMaxLineScrollRetries = 15;
 
   /// Precise (fractional) scroll offset per book, updated on every position
   /// callback. Used by tab restoration to reproduce the exact position,
@@ -618,6 +626,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _suppressAppBarScroll = true;
 
     _pendingJumpParaId[bookId] = paraId;
+    final int jumpToken = (_jumpTokens[bookId] ?? 0) + 1;
+    _jumpTokens[bookId] = jumpToken;
 
     var state = ref.read(readerDataProvider(bookId));
     var index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
@@ -691,6 +701,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // _jumpToParagraph call has fresh state.
     _lastJumpedParaId[bookId] = paraId;
 
+    // Resolve the target line. AI-generated citations can reference a line
+    // that doesn't exist in this paragraph (search chunks span multiple
+    // paragraphs) or a hallucinated number — this used to fall back to
+    // alignment 0.0 and land the jump at the paragraph start. Snap to the
+    // nearest real line so the fine-scroll still lands on actual text.
+    final effectiveLineId = lineId != null && index >= 0
+        ? _nearestLineId(state.paragraphs[index], lineId)
+        : lineId;
+
     // Issue 4: Create a GlobalKey for the target line so
     // Scrollable.ensureVisible can precisely scroll it into view.
     // Must call setState so the widget rebuilds with the new lineKeys.
@@ -699,11 +718,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Fix: Clear any stale target line keys FIRST so that a subsequent jump
     // from rapid TTS advancement doesn't leave orphaned keys from the
     // previous jump. Then set the new key for the current line.
-    if (lineId != null) {
+    if (effectiveLineId != null) {
       final ttsSyncNotifier = ref.read(ttsSyncProvider(bookId).notifier);
       ttsSyncNotifier.clearTargetLineKeys();
       ttsSyncNotifier.setTargetParaId(paraId);
-      ttsSyncNotifier.setTargetLineKey(lineId, GlobalKey());
+      ttsSyncNotifier.setTargetLineKey(effectiveLineId, GlobalKey());
       if (mounted) setState(() {});
     }
 
@@ -712,9 +731,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // position within the paragraph so the target line appears at or
     // near the center of the viewport — not just the paragraph start.
     final useAlignment = () {
-      if (lineId != null && index >= 0 && index < state.paragraphs.length) {
+      if (effectiveLineId != null &&
+          index >= 0 &&
+          index < state.paragraphs.length) {
         final para = state.paragraphs[index];
-        final lineIndex = para.lines.indexWhere((l) => l.lineId == lineId);
+        final lineIndex = para.lines.indexWhere(
+          (l) => l.lineId == effectiveLineId,
+        );
         if (lineIndex >= 0 && para.lines.length > 1) {
           // Invert: early lines (top of paragraph) need HIGHER
           // alignment to push the paragraph down so the first line
@@ -757,16 +780,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       name: 'epitaka.reader.ui',
     );
 
-    // Programmatic scroll done — clear flags.
-    // Use addPostFrameCallback so any in-flight scroll offset
-    // notifications from this jump's paragraph scroll are still
-    // suppressed.
-    if (mounted) {
+    // ── Precise line fine-scroll ──────────────────────────────────
+    // The paragraph scroll above only positions the whole paragraph.
+    // ScrollablePositionedList addresses whole items (paragraphs), not
+    // individual lines, so citations previously landed at the paragraph
+    // start. Use the line's GlobalKey to precisely bring the cited line
+    // to ~30% of the viewport. Jump flags stay suppressed until this
+    // fine-scroll finishes.
+    if (effectiveLineId != null) {
+      _fineScrollToLine(bookId, effectiveLineId, jumpToken: jumpToken);
+    } else if (mounted) {
+      // Programmatic scroll done — clear flags.
+      // Use addPostFrameCallback so any in-flight scroll offset
+      // notifications from this jump's paragraph scroll are still
+      // suppressed.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           developer.log(
-            '[JUMP] book=$bookId clearing _isInitialJumpPending '
-            '(lineId=$lineId)',
+            '[JUMP] book=$bookId clearing _isInitialJumpPending',
             name: 'epitaka.reader.ui',
           );
           _isInitialJumpPending = false;
@@ -774,6 +805,103 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       });
     }
+  }
+
+  /// Snap an AI-cited [lineId] to the nearest real line of [para].
+  ///
+  /// Citation line numbers come from the model and may reference a line
+  /// outside this paragraph (search chunks span multiple paragraphs) or a
+  /// hallucinated number. Falling back to the raw id previously made the
+  /// alignment computation fail and land the jump at the paragraph start.
+  int _nearestLineId(ParagraphData para, int lineId) {
+    if (para.lines.isEmpty) return lineId;
+    if (para.lines.any((l) => l.lineId == lineId)) return lineId;
+    var best = para.lines.first;
+    var bestDist = (best.lineId - lineId).abs();
+    for (final l in para.lines.skip(1)) {
+      final dist = (l.lineId - lineId).abs();
+      if (dist < bestDist) {
+        best = l;
+        bestDist = dist;
+      }
+    }
+    developer.log(
+      '[JUMP] line=$lineId not in paragraph; snapped to line=${best.lineId}',
+      name: 'epitaka.reader.ui',
+    );
+    return best.lineId;
+  }
+
+  /// Precise scroll to a specific line inside the just-scrolled paragraph.
+  ///
+  /// [_jumpToParagraph] scrolls to the containing paragraph, but
+  /// ScrollablePositionedList can only address whole items (paragraphs),
+  /// not individual lines within them. The per-line GlobalKey registered
+  /// via [ttsSyncProvider] is used with `Scrollable.ensureVisible` so the
+  /// cited line lands at ~30% of the viewport instead of the paragraph
+  /// start. The line widget may not be laid out yet, so this retries for a
+  /// few frames until it becomes available.
+  void _fineScrollToLine(
+    String bookId,
+    int lineId, {
+    required int jumpToken,
+    int retryCount = 0,
+  }) {
+    final key = ref.read(ttsSyncProvider(bookId)).ttsTargetLineKeys[lineId];
+    if (key == null) {
+      // Key already consumed (fine-scroll done) or superseded by a newer
+      // jump — nothing to scroll; make sure flags aren't left hanging.
+      _finishJumpFlags(bookId, jumpToken);
+      return;
+    }
+    final lineContext = key.currentContext;
+    if (lineContext == null || !lineContext.mounted) {
+      // Line widget not laid out yet — retry next frame.
+      if (retryCount >= _kMaxLineScrollRetries) {
+        ref.read(ttsSyncProvider(bookId).notifier).removeTargetLineKey(lineId);
+        _finishJumpFlags(bookId, jumpToken);
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _fineScrollToLine(
+          bookId,
+          lineId,
+          jumpToken: jumpToken,
+          retryCount: retryCount + 1,
+        );
+      });
+      return;
+    }
+    developer.log(
+      '[JUMP] book=$bookId fine-scroll to line=$lineId',
+      name: 'epitaka.reader.ui',
+    );
+    Scrollable.ensureVisible(
+      lineContext,
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    ).then((_) {
+      if (!mounted) return;
+      ref.read(ttsSyncProvider(bookId).notifier).removeTargetLineKey(lineId);
+      _finishJumpFlags(bookId, jumpToken);
+    });
+  }
+
+  /// Clears the initial-jump pending flag and app-bar scroll suppression
+  /// after a programmatic jump (and any fine-scroll) finishes. Only acts if
+  /// [jumpToken] is still the latest token for [bookId], so a stale
+  /// fine-scroll from a superseded jump can't clobber a newer jump's flags.
+  void _finishJumpFlags(String bookId, int jumpToken) {
+    if (!mounted) return;
+    if (_jumpTokens[bookId] != jumpToken) return;
+    developer.log(
+      '[JUMP] book=$bookId clearing _isInitialJumpPending (fine-scroll done)',
+      name: 'epitaka.reader.ui',
+    );
+    _isInitialJumpPending = false;
+    _suppressAppBarScroll = false;
   }
 
   /// TTS voices cache for the controls dialog (loaded on demand).

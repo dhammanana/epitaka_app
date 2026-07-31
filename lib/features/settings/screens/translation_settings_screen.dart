@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' hide ColorSwatch;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/translation_version.dart';
@@ -9,7 +9,7 @@ import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../providers/translation_download_provider.dart';
-import '../widgets/color_swatch.dart';
+import '../widgets/color_picker_section.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -940,14 +940,25 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 widget.onTypographyChanged(typo.copyWith(underline: v)),
           ),
           const SizedBox(height: AppDimensions.sm),
-          _SectionLabel('Color', colors),
-          const SizedBox(height: 6),
-          _ColorPicker(
+          ColorPickerSection(
+            title: 'Color',
+            icon: Icons.palette_outlined,
             currentColor: typo.color ?? defaultColor,
-            presets: _colorPresets(defaultColor),
+            selectedColor: typo.color ?? defaultColor,
+            presetColors: _colorPresets(defaultColor),
             colors: colors,
-            onChanged: (c) {
+            onColorSelected: (c) {
               widget.onTypographyChanged(typo.copyWith(color: c));
+            },
+            onCustomColor: () {
+              showColorPickerScreen(
+                context,
+                title: 'Pick Color',
+                initialColor: typo.color ?? defaultColor,
+                onApply: (c) {
+                  widget.onTypographyChanged(typo.copyWith(color: c));
+                },
+              );
             },
           ),
           const SizedBox(height: AppDimensions.sm),
@@ -1505,14 +1516,25 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                       widget.onTypographyChanged(typo.copyWith(underline: v)),
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel('Color', colors),
-                const SizedBox(height: 8),
-                _ColorPicker(
+                ColorPickerSection(
+                  title: 'Color',
+                  icon: Icons.palette_outlined,
                   currentColor: typo.color ?? widget.defaultColor,
-                  presets: _colorPresets(widget.defaultColor),
+                  selectedColor: typo.color ?? widget.defaultColor,
+                  presetColors: _colorPresets(widget.defaultColor),
                   colors: colors,
-                  onChanged: (c) {
+                  onColorSelected: (c) {
                     widget.onTypographyChanged(typo.copyWith(color: c));
+                  },
+                  onCustomColor: () {
+                    showColorPickerScreen(
+                      context,
+                      title: 'Pick Color',
+                      initialColor: typo.color ?? widget.defaultColor,
+                      onApply: (c) {
+                        widget.onTypographyChanged(typo.copyWith(color: c));
+                      },
+                    );
                   },
                 ),
                 const SizedBox(height: AppDimensions.md),
@@ -1798,37 +1820,6 @@ class _StyleToggleChip extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ColorPicker extends StatelessWidget {
-  final Color currentColor;
-  final List<Color> presets;
-  final ColorScheme colors;
-  final ValueChanged<Color> onChanged;
-
-  const _ColorPicker({
-    required this.currentColor,
-    required this.presets,
-    required this.colors,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppDimensions.sm,
-      runSpacing: AppDimensions.sm,
-      children: presets.map((c) {
-        return ColorSwatch(
-          color: c,
-          isSelected: currentColor == c,
-          onTap: () => onChanged(c),
-          size: 34,
-          iconSize: 14,
-        );
-      }).toList(),
     );
   }
 }
