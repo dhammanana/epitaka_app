@@ -23,7 +23,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart';
-import 'package:ffuzzy/ffuzzy.dart';
+import '../../../core/utils/fuzzy_matcher/fuzzy_matcher_library.dart'
+    show fuzzySearchWith, normalizeQuery;
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
@@ -220,7 +221,7 @@ class MentionService {
       // ── Add a BOOK-level entry (para_id = 0) ─────────────────────────
       if (bookName.isNotEmpty) {
         final bookPath = '$bookId/$bookName';
-        final bookSearchText = _normalizeSearchText('$bookId/$bookName');
+        final bookSearchText = normalizeQuery('$bookId/$bookName');
         await appDb.customStatement(
           '''
           INSERT INTO mention_index
@@ -292,7 +293,7 @@ class MentionService {
 
         final path = '$bookId/${hierarchy.join('/')}';
         final searchParts = <String>[bookId, ...hierarchy];
-        final searchText = _normalizeSearchText(searchParts.join('/'));
+        final searchText = normalizeQuery(searchParts.join('/'));
         final hierarchyJson = jsonEncode(hierarchy);
 
         await appDb.customStatement(
@@ -355,7 +356,7 @@ class MentionService {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
 
-    final normalized = _normalizeSearchText(trimmed.toLowerCase());
+    final normalized = normalizeQuery(trimmed);
     if (normalized.isEmpty) return [];
 
     final firstChars = normalized.replaceAll('/', '').replaceAll('-', '');
@@ -408,12 +409,10 @@ class MentionService {
     }
   }
 
-  /// Filter and rank SQL rows using ffuzzy FZF-style matching.
+  /// Filter and rank SQL rows using the pure-Dart fuzzy matcher.
   ///
-  /// Falls back to pure-Dart matching (character-by-character FZF-style)
-  /// when the ffuzzy native library (`libffz.so`) is unavailable.  This
-  /// happens on some devices/emulators or in debug mode on certain
-  /// platforms where the native .so isn't bundled.
+  /// Uses [fuzzySearchWith] — our fzf/nucleo-inspired algorithm — which
+  /// requires no native libraries and works on all platforms.
   List<MentionSearchResult> _filterWithFfuzzy(
     List<QueryRow> rows,
     String normalized, {
@@ -421,118 +420,14 @@ class MentionService {
   }) {
     final candidates = rows.map((r) => _rowToResult(r.data)).toList();
 
-    try {
-      // Try ffuzzy native engine first.
-      final corpus = FuzzyCorpus<MentionSearchResult>(
-        candidates,
-        stringOf: (r) => r.searchText,
-        matchPaths: true,
-      );
-      try {
-        final hits = corpus.fuzzy(normalized, limit: limit);
-        return hits.map((h) => h.raw).toList();
-      } finally {
-        corpus.dispose();
-      }
-    } on FuzzyException catch (e) {
-      // ffuzzy native library not available — fall back to pure Dart.
-      debugPrint('[MENTION] ffuzzy native lib unavailable ($e) — using Dart fallback');
-      return _filterWithDart(candidates, normalized, limit: limit);
-    }
-  }
+    final results = fuzzySearchWith(
+      query: normalized,
+      items: candidates,
+      stringOf: (r) => r.searchText,
+      limit: limit,
+    );
 
-  /// Pure-Dart FZF-style fuzzy filter + score fallback.
-  ///
-  /// Used when the ffuzzy native library is not available on the device.
-  /// Implements the same character-by-character matching algorithm:
-  /// all query characters must appear **in order** within the search text.
-  List<MentionSearchResult> _filterWithDart(
-    List<MentionSearchResult> candidates,
-    String normalized, {
-    int limit = 20,
-  }) {
-    final filtered = candidates
-        .where((c) => _fuzzyMatch(normalized, c.searchText))
-        .toList();
-
-    filtered.sort((a, b) {
-      return _fuzzyScore(normalized, b.searchText)
-          .compareTo(_fuzzyScore(normalized, a.searchText));
-    });
-
-    return filtered.take(limit).toList();
-  }
-
-  /// FZF-style fuzzy match: check whether all characters of [query] appear
-  /// **in order** within [text].  Characters need not be consecutive.
-  static bool _fuzzyMatch(String query, String text) {
-    if (query.isEmpty) return true;
-    if (text.isEmpty) return false;
-
-    int ti = 0;
-    for (int qi = 0; qi < query.length; qi++) {
-      final qc = query[qi];
-      if (qc == ' ') continue;
-
-      while (ti < text.length && text[ti] != qc) {
-        ti++;
-      }
-      if (ti >= text.length) return false;
-      ti++;
-    }
-    return true;
-  }
-
-  /// Score a fuzzy match result — higher is better.
-  ///
-  /// Bonus points for:
-  ///   - Consecutive character matches (gaps penalise)
-  ///   - Matches after a `/` (path segment boundary)
-  ///   - Matches at word start
-  ///   - Shorter overall text
-  static int _fuzzyScore(String query, String text) {
-    if (query.isEmpty) return 0;
-
-    int score = 0;
-    int ti = 0;
-    int prevMatchEnd = -10;
-
-    for (int qi = 0; qi < query.length; qi++) {
-      final qc = query[qi];
-      if (qc == ' ') continue;
-
-      while (ti < text.length && text[ti] != qc) {
-        ti++;
-      }
-      if (ti >= text.length) break;
-
-      final gap = ti - prevMatchEnd - 1;
-      if (gap > 0) {
-        score -= gap;
-      }
-
-      if (ti == 0 || text[ti - 1] == '/') {
-        score += 10;
-      }
-
-      if (ti > 0) {
-        final prev = text[ti - 1];
-        if (prev == '-' || prev == ' ' || prev == '_') {
-          score += 5;
-        }
-      }
-
-      if (gap == 0) {
-        score += 3;
-      }
-
-      prevMatchEnd = ti;
-      ti++;
-    }
-
-    score += (100 - text.length).clamp(0, 100);
-
-    return score;
+    return results.map((r) => candidates[r.index]).toList();
   }
 
   // ── Fetch full Pāli text ──────────────────────────────────────────────
@@ -656,23 +551,6 @@ class MentionService {
     );
   }
 
-  /// Normalise text for search: lowercase, strip Pāli diacritics.
-  static String _normalizeSearchText(String text) {
-    return text
-        .toLowerCase()
-        .replaceAll('ā', 'a')
-        .replaceAll('ī', 'i')
-        .replaceAll('ū', 'u')
-        .replaceAll('ṃ', 'm')
-        .replaceAll('ṁ', 'm')
-        .replaceAll('ñ', 'n')
-        .replaceAll('ṇ', 'n')
-        .replaceAll('ṭ', 't')
-        .replaceAll('ḍ', 'd')
-        .replaceAll('ḷ', 'l')
-        .replaceAll(RegExp(r'[^a-z0-9\s/@-]'), '')
-        .replaceAll(RegExp(r'\s+'), ' ');
-  }
 }
 
 /// Riverpod provider for the MentionService.

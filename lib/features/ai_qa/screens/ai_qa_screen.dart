@@ -63,9 +63,17 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
 
     Future.microtask(() {
       ref.read(aiQaSettingsProvider.notifier).load();
-      if (widget.initialThreadId != null) {
+
+      // Check for a staged initial prompt (from reader context menu).
+      // Send it automatically and clear the staged prompt.
+      final initialPrompt = ref.read(aiQaInitialPromptProvider);
+      if (initialPrompt != null && initialPrompt.isNotEmpty) {
+        ref.read(aiQaInitialPromptProvider.notifier).state = null;
+        ref.read(aiQaProvider.notifier).sendMessage(initialPrompt);
+      } else if (widget.initialThreadId != null) {
         ref.read(aiQaProvider.notifier).loadThread(widget.initialThreadId!);
       }
+
       // Check mention index status once on init
       _checkMentionIndex();
     });

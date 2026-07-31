@@ -513,14 +513,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
-  ffuzzy:
-    dependency: "direct main"
-    description:
-      name: ffuzzy
-      sha256: "305cf765bb7faea06045bfe3ad1db3d601ccbf76745b95629178303dd6c92238"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.2"
   file:
     dependency: transitive
     description:

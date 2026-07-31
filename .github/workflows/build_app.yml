@@ -5,6 +5,27 @@ on:
     tags:
       - 'v*' # Triggers on tags like v1.0.0
   workflow_dispatch: # Allows manual run from GitHub UI
+    inputs:
+      build_android:
+        description: 'Build Android (APK + AAB)'
+        type: boolean
+        default: true
+      build_ios:
+        description: 'Build iOS (requires macOS runner + signing setup)'
+        type: boolean
+        default: false
+      build_windows:
+        description: 'Build Windows (x64)'
+        type: boolean
+        default: true
+      build_macos:
+        description: 'Build macOS'
+        type: boolean
+        default: true
+      build_linux:
+        description: 'Build Linux (x64)'
+        type: boolean
+        default: true
 
 jobs:
   # -------------------------------------------------------------
@@ -12,6 +33,7 @@ jobs:
   # -------------------------------------------------------------
   build-android:
     name: Build Android
+    if: github.event_name == 'push' || github.event.inputs.build_android == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -45,6 +67,9 @@ jobs:
           storeFile=upload-keystore.jks
           EOF
 
+      - name: Ensure assets/db directory exists
+        run: mkdir -p assets/db
+
       - name: Build Android AAB & APK
         run: |
           flutter build appbundle --release
@@ -63,6 +88,7 @@ jobs:
   # -------------------------------------------------------------
   build-ios:
     name: Build iOS
+    if: github.event_name == 'push' || github.event.inputs.build_ios == 'true'
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -83,6 +109,9 @@ jobs:
             flutter create --platforms=ios .
           fi
 
+      - name: Ensure assets/db directory exists
+        run: mkdir -p assets/db
+
       - name: Build iOS Release (no codesign)
         run: flutter build ios --release --no-codesign
 
@@ -97,6 +126,7 @@ jobs:
   # -------------------------------------------------------------
   build-windows:
     name: Build Windows
+    if: github.event_name == 'push' || github.event.inputs.build_windows == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -130,6 +160,41 @@ jobs:
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
+      - name: Install ImageMagick (icon conversion)
+        shell: pwsh
+        run: choco install imagemagick -y --no-progress --no-color
+
+      - name: Generate Windows app icon from logo
+        shell: pwsh
+        run: |
+          # Replace the default Flutter icon with the app logo (multi-size .ico)
+          magick convert assets/icon.png -define icon:auto-resize=16,32,48,64,128,256 windows/runner/resources/app_icon.ico
+          Get-ChildItem windows/runner/resources
+
+      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+        shell: pwsh
+        run: |
+          # URLs come from the checked-out translations manifest (single source of truth)
+          $manifest = Get-Content -Raw assets/translations_manifest.json | ConvertFrom-Json
+          $epitakaUrl = $manifest.core.epitaka.url
+          $dpdUrl = $manifest.core.dpd_dictionary.url
+
+          New-Item -ItemType Directory -Force -Path assets/db | Out-Null
+
+          Write-Host "Downloading $epitakaUrl"
+          curl.exe -fL -o epitaka.zip $epitakaUrl
+          Write-Host "Downloading $dpdUrl"
+          curl.exe -fL -o dpd.zip $dpdUrl
+
+          Expand-Archive -Force -Path epitaka.zip -DestinationPath epitaka_x
+          Expand-Archive -Force -Path dpd.zip -DestinationPath dpd_x
+
+          Get-ChildItem -Path epitaka_x -Recurse -Filter *.db | Copy-Item -Destination assets/db -Force
+          Get-ChildItem -Path dpd_x -Recurse -Filter *.db | Copy-Item -Destination assets/db -Force
+
+          Remove-Item epitaka.zip, dpd.zip, epitaka_x, dpd_x -Recurse -Force
+          Get-ChildItem assets/db
+
       - name: Build Windows Release
         run: flutter build windows --release
 
@@ -137,17 +202,33 @@ jobs:
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\windows\epitaka-windows-x64.zip
 
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress --no-color
+
+      - name: Build NSIS Installer
+        shell: pwsh
+        run: |
+          # Run from the script dir so OutFile lands at install/windows/ deterministically
+          pushd install/windows
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$env:GITHUB_REF_NAME" epitaka.nsi
+          popd
+          Get-ChildItem install/windows/epitaka-windows-x64-setup.exe
+
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: build/windows/epitaka-windows-x64.zip
+          path: |
+            build/windows/epitaka-windows-x64.zip
+            install/windows/epitaka-windows-x64-setup.exe
 
   # -------------------------------------------------------------
   # 4. MACOS BUILD
   # -------------------------------------------------------------
   build-macos:
     name: Build macOS
+    if: github.event_name == 'push' || github.event.inputs.build_macos == 'true'
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -171,8 +252,81 @@ jobs:
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
 
+      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+        run: |
+          # URLs come from the checked-out translations manifest (single source of truth)
+          EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
+          DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+
+          mkdir -p assets/db
+
+          echo "Downloading $EPITAKA_URL"
+          curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
+          echo "Downloading $DPD_URL"
+          curl -fL -o /tmp/dpd.zip "$DPD_URL"
+
+          unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
+          unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+
+          find /tmp/epitaka_x -name '*.db' -exec cp {} assets/db/ \;
+          find /tmp/dpd_x -name '*.db' -exec cp {} assets/db/ \;
+          ls -la assets/db/
+
       - name: Build macOS Release
         run: flutter build macos --release
+
+      - name: Rename app bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          mv Runner.app ePitaka.app
+
+      - name: Build DMG Installer
+        run: |
+          set -e
+          APP_DIR="build/macos/Build/Products/Release/ePitaka.app"
+          STAGE="build/macos/dmg_stage"
+          TMP_DMG="build/macos/ePitaka-tmp.dmg"
+          DMG="build/macos/ePitaka-macos.dmg"
+          ICONSET="build/macos/icon.iconset"
+
+          # Convert logo PNG to .icns
+          mkdir -p "$ICONSET"
+          sips -z 16 16 assets/icon.png --out "$ICONSET/icon_16x16.png"
+          sips -z 32 32 assets/icon.png --out "$ICONSET/icon_16x16@2x.png"
+          sips -z 32 32 assets/icon.png --out "$ICONSET/icon_32x32.png"
+          sips -z 64 64 assets/icon.png --out "$ICONSET/icon_32x32@2x.png"
+          sips -z 128 128 assets/icon.png --out "$ICONSET/icon_128x128.png"
+          sips -z 256 256 assets/icon.png --out "$ICONSET/icon_128x128@2x.png"
+          sips -z 256 256 assets/icon.png --out "$ICONSET/icon_256x256.png"
+          sips -z 512 512 assets/icon.png --out "$ICONSET/icon_256x256@2x.png"
+          sips -z 512 512 assets/icon.png --out "$ICONSET/icon_512x512.png"
+          sips -z 1024 1024 assets/icon.png --out "$ICONSET/icon_512x512@2x.png"
+          iconutil -c icns "$ICONSET" -o build/macos/ePitaka.icns
+
+          # Use the logo as the app bundle icon
+          cp build/macos/ePitaka.icns "$APP_DIR/Contents/Resources/ePitaka.icns"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile ePitaka" "$APP_DIR/Contents/Info.plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string ePitaka" "$APP_DIR/Contents/Info.plist"
+
+          # Re-sign the bundle (ad-hoc) — modifying the bundle above
+          # invalidated the signature produced by flutter build.
+          codesign --force --deep -s - "$APP_DIR"
+
+          # Stage app + /Applications symlink and create a writable DMG
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP_DIR" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "ePitaka" -srcfolder "$STAGE" -ov -format UDRW "$TMP_DMG"
+
+          # Set the DMG volume icon, then compress
+          DEVICE=$(hdiutil attach -nobrowse "$TMP_DMG" | awk '/\/dev\/disk/{print $1; exit}')
+          cp build/macos/ePitaka.icns "/Volumes/ePitaka/.VolumeIcon.icns"
+          SetFile -a C "/Volumes/ePitaka"
+          hdiutil detach "$DEVICE"
+          hdiutil convert "$TMP_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG"
+          rm -f "$TMP_DMG"
+          ls -la "$DMG"
 
       - name: Compress macOS Output
         run: |
@@ -183,13 +337,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-release
-          path: build/macos/Build/Products/Release/epitaka-macos.zip
+          path: |
+            build/macos/Build/Products/Release/epitaka-macos.zip
+            build/macos/ePitaka-macos.dmg
 
   # -------------------------------------------------------------
   # 5. LINUX BUILD
   # -------------------------------------------------------------
   build-linux:
     name: Build Linux
+    if: github.event_name == 'push' || github.event.inputs.build_linux == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -200,6 +357,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
+            patchelf file libgtk-3-bin \
             libgtk-3-dev libglib2.0-dev \
             liblzma-dev libstdc++-12-dev \
             libasound2-dev libgstreamer-plugins-base1.0-dev \
@@ -223,8 +381,61 @@ jobs:
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
 
+      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+        run: |
+          EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
+          DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+
+          mkdir -p assets/db
+
+          echo "Downloading $EPITAKA_URL"
+          curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
+          echo "Downloading $DPD_URL"
+          curl -fL -o /tmp/dpd.zip "$DPD_URL"
+
+          unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
+          unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+
+          find /tmp/epitaka_x -name '*.db' -exec cp {} assets/db/ \;
+          find /tmp/dpd_x -name '*.db' -exec cp {} assets/db/ \;
+          ls -la assets/db/
+
       - name: Build Linux Release
         run: flutter build linux --release
+
+      - name: Build Linux AppImage
+        run: |
+          set -e
+          cd build/linux/x64/release/bundle
+
+          # Download linuxdeploy and its GTK + AppImage plugins
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk-x86_64.AppImage linuxdeploy-plugin-appimage-x86_64.AppImage
+
+          # Assemble AppDir — keep exe, lib (RPATH $ORIGIN/lib) and data together
+          mkdir -p AppDir/usr/bin
+          cp epitaka AppDir/usr/bin/
+          cp -r lib AppDir/usr/bin/lib
+          cp -r data AppDir/usr/bin/data
+
+          # Desktop entry + icon
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/512x512/apps
+          cp "$GITHUB_WORKSPACE/install/linux/epitaka.desktop" AppDir/usr/share/applications/
+          cp "$GITHUB_WORKSPACE/assets/icon.png" AppDir/usr/share/icons/hicolor/512x512/apps/epitaka.png
+
+          # Extract-and-run avoids the FUSE requirement on the runner.
+          # Plugins are discovered via PATH (not cwd) when extracted, so
+          # add the current directory to PATH before invoking linuxdeploy.
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export VERSION="${GITHUB_REF_NAME}"
+          export ARCH=x86_64
+          export PATH="$PWD:$PATH"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin gtk --output appimage
+
+          mv ePitaka-*.AppImage "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
+          ls -la "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
 
       - name: Compress Linux Output
         run: |
@@ -235,4 +446,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
-          path: epitaka-linux-x64.tar.gz
+          path: |
+            epitaka-linux-x64.AppImage
+            epitaka-linux-x64.tar.gz

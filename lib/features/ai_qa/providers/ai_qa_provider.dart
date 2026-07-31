@@ -50,6 +50,11 @@ class _ToolCallSpec {
   const _ToolCallSpec({required this.name, required this.args});
 }
 
+/// Staged initial prompt to auto-send when the Vimaṃsa screen opens.
+/// Set by the reader's context menu (Explain / Summarize Chapter) before
+/// navigating to the Vimaṃsa screen. The screen reads and clears it on init.
+final aiQaInitialPromptProvider = StateProvider<String?>((ref) => null);
+
 /// Separate providers for streaming text — kept outside [AiQaState] so
 /// updating them on each token does NOT rebuild the entire screen.
 final streamingTextProvider = StateProvider<String>((ref) => '');

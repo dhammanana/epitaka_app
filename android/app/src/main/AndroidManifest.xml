@@ -1,5 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- Required for fetching the translations manifest, downloading
+         translation databases, and AI Q&A network calls. NOTE: this
+         must be in the MAIN manifest — debug/profile manifests only
+         grant it during development, so release builds uploaded to
+         Google Play would have no network access without it. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>

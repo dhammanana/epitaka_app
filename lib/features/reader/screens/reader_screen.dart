@@ -8,7 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import 'package:drift/drift.dart' show Variable;
+
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -18,6 +21,7 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/utils/reading_clipboard.dart';
+import '../../../features/ai_qa/providers/ai_qa_provider.dart' show aiQaInitialPromptProvider;
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../library/screens/library_screen.dart';
@@ -1376,6 +1380,147 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   // ── Copy with style ──────────────────────────────────────────────────
 
+  /// Called when user taps "Explain" in the context menu.
+  /// Sends the selected text to Vimaṃsa AI asking for explanation.
+  /// The AI uses its get_commentaries tool to fetch relevant context
+  /// (Aṭṭhakathā and Ṭīkā) from the current section.
+  void _onExplainTap() {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+
+    final selectionState = ref.read(readerSelectionProvider);
+    final selectedText =
+        selectionState.lastSelectedContent?.plainText.trim() ?? '';
+    if (selectedText.isEmpty) return;
+
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    final bookName = readerState.bookName ?? activeTab.bookId;
+    final currentParaId = activeTab.currentParaId;
+
+    _stageExplainPrompt(activeTab, selectedText, bookName, currentParaId);
+  }
+
+  /// Gather heading context and stage the explain prompt.
+  void _stageExplainPrompt(
+    ReaderTabInfo activeTab,
+    String selectedText,
+    String bookName,
+    int? currentParaId,
+  ) async {
+    // Query the level=10 heading (section title) from the database
+    String headingContext = '';
+    if (currentParaId != null) {
+      try {
+        final db = await ref.read(epitakaDbProvider.future);
+        final rows = await db.customSelect(
+          'SELECT title FROM headings '
+          'WHERE book_id = ? AND para_id <= ? AND level = 10 '
+          'ORDER BY para_id DESC LIMIT 1',
+          variables: [
+            Variable.withString(activeTab.bookId),
+            Variable.withInt(currentParaId),
+          ],
+        ).get();
+        if (rows.isNotEmpty) {
+          final title = rows.first.data['title'] as String?;
+          if (title != null && title.isNotEmpty) {
+            headingContext = 'Section heading: "$title" (para_id=$currentParaId)\n';
+          }
+        }
+      } catch (_) {
+        // Silently ignore DB errors
+      }
+    }
+
+    final paraIdStr = currentParaId != null ? ' at para_id=$currentParaId' : '';
+    final prompt =
+        'Explain this passage from $bookName (${activeTab.bookId}).\n'
+        '${headingContext}'
+        'Use the get_commentaries tool to fetch the relevant '
+        'commentaries (Aṭṭhakathā and Ṭīkā) for this section$paraIdStr.\n\n'
+        'Focus on explaining the selected text below, using the '
+        'broader section context and commentaries as reference:\n\n'
+        '$selectedText';
+
+    ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
+    if (context.mounted) context.push('/ai-qa');
+  }
+
+  /// Called when user taps "Summarize Ch." in the context menu.
+  /// Builds the current chapter/section content and sends to Vimaṃsa AI.
+  void _onSummarizeChapterTap() {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    final paragraphs = readerState.paragraphs;
+    if (paragraphs.isEmpty) return;
+
+    final bookName = readerState.bookName ?? activeTab.bookId;
+    final currentParaId = activeTab.currentParaId;
+    if (currentParaId == null) return;
+
+    // Find the section start (nearest heading at or before currentParaId)
+    int sectionStart = 0;
+    String? headingTitle;
+    for (int i = paragraphs.length - 1; i >= 0; i--) {
+      final p = paragraphs[i];
+      if (p.paraId <= currentParaId && p.heading != null) {
+        sectionStart = i;
+        headingTitle = p.heading!.title;
+        break;
+      }
+    }
+
+    // Find the section end (next heading after sectionStart)
+    int sectionEnd = paragraphs.length;
+    for (int i = sectionStart + 1; i < paragraphs.length; i++) {
+      if (paragraphs[i].heading != null) {
+        sectionEnd = i;
+        break;
+      }
+    }
+
+    // Cap at 150 paragraphs to avoid sending too much content
+    const int maxParagraphs = 150;
+    if (sectionEnd - sectionStart > maxParagraphs) {
+      sectionEnd = sectionStart + maxParagraphs;
+    }
+
+    // Build the chapter text
+    final buf = StringBuffer();
+    buf.writeln('Book: $bookName');
+    if (headingTitle != null && headingTitle.isNotEmpty) {
+      buf.writeln('Section: $headingTitle');
+    }
+    buf.writeln('');
+
+    for (int i = sectionStart; i < sectionEnd; i++) {
+      final para = paragraphs[i];
+      for (final line in para.lines) {
+        if (line.paliText != null && line.paliText!.trim().isNotEmpty) {
+          buf.writeln(ReaderCopyService.stripTags(line.paliText!.trim()));
+        }
+        for (final entry in line.translations.entries) {
+          if (entry.value.trim().isNotEmpty) {
+            buf.writeln(ReaderCopyService.stripTags(entry.value.trim()));
+          }
+        }
+      }
+      if (i < sectionEnd - 1) buf.writeln();
+    }
+
+    final chapterText = buf.toString().trim();
+    if (chapterText.isEmpty) return;
+
+    final prompt =
+        'Please summarize this chapter from $bookName. '
+        'Include the key teachings, main points, and structure:\n\n$chapterText';
+
+    ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
+    context.push('/ai-qa');
+  }
+
   Widget _buildCopyContextMenu(
     BuildContext context,
     SelectableRegionState selectableRegionState,
@@ -1398,6 +1543,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       currentParaId: activeTab?.currentParaId,
       currentLineId: activeTab?.currentLineId,
       selectedText: selectedText,
+      onExplainTap: selectedText != null && selectedText.isNotEmpty
+          ? _onExplainTap
+          : null,
+      onSummarizeChapterTap: _onSummarizeChapterTap,
     );
   }
 

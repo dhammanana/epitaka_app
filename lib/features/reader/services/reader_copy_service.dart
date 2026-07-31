@@ -80,6 +80,8 @@ class ReaderCopyService {
     required int? currentParaId,
     required int? currentLineId,
     required String? selectedText,
+    VoidCallback? onExplainTap,
+    VoidCallback? onSummarizeChapterTap,
   }) {
     TextSelectionToolbarAnchors anchors;
     try {
@@ -204,6 +206,28 @@ class ReaderCopyService {
           },
           colors: colors,
         ),
+        // ── Explain (send to Vimaṃsa AI) ────────────────────────────
+        if (onExplainTap != null)
+          ContextMenuButton(
+            icon: Icons.auto_awesome,
+            label: 'Explain',
+            onTap: () {
+              onExplainTap();
+              selectableRegionState.clearSelection();
+            },
+            colors: colors,
+          ),
+        // ── Summarize Chapter (send to Vimaṃsa AI) ──────────────────
+        if (onSummarizeChapterTap != null)
+          ContextMenuButton(
+            icon: Icons.notes,
+            label: 'Summarize Ch.',
+            onTap: () {
+              onSummarizeChapterTap();
+              selectableRegionState.clearSelection();
+            },
+            colors: colors,
+          ),
         // ── Share (with quote like excerpt) ─────────────────────────
         ContextMenuButton(
           icon: Icons.share,
@@ -356,7 +380,7 @@ class ReaderCopyService {
                 line.paliText!.trim(),
                 script,
               );
-              buf.writeln(_stripTags(pali));
+              buf.writeln(stripTags(pali));
             }
             final translationEntries = enabledLangs.isNotEmpty
                 ? line.translations.entries.where(
@@ -366,7 +390,7 @@ class ReaderCopyService {
             for (final entry in translationEntries) {
               final text = entry.value.trim();
               if (text.isNotEmpty) {
-                buf.writeln(_stripTags(text));
+                buf.writeln(stripTags(text));
               }
             }
           }
@@ -403,7 +427,7 @@ class ReaderCopyService {
             line.paliText!.trim(),
             script,
           );
-          buf.writeln(_stripTags(pali));
+          buf.writeln(stripTags(pali));
         }
         final translationEntries = enabledLangs.isNotEmpty
             ? line.translations.entries.where(
@@ -413,7 +437,7 @@ class ReaderCopyService {
         for (final entry in translationEntries) {
           final text = entry.value.trim();
           if (text.isNotEmpty) {
-            buf.writeln(_stripTags(text));
+            buf.writeln(stripTags(text));
           }
         }
       }
@@ -1005,26 +1029,13 @@ class ReaderCopyService {
       );
 
       if (paragraphs != null && paragraphs.isNotEmpty) {
-        // Build citation
-        final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
-        final firstPara = paragraphs.first;
-        final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
-        final citation = buildCitationFromTemplate(
-          settings.quoteTemplate,
-          activeTab.bookId,
-          readerState.bookName,
-          nearbyHeading,
-          firstPara.pageNumbers,
-          paraId: firstPara.paraId,
-        );
-
-        // Build plain text from paragraphs
+        // Build plain text from paragraphs first
         final buf = StringBuffer();
         for (int pi = 0; pi < paragraphs.length; pi++) {
           final para = paragraphs[pi];
           for (final line in para.lines) {
             if (line.paliText != null && line.paliText!.trim().isNotEmpty) {
-              buf.writeln(_stripTags(line.paliText!.trim()));
+              buf.writeln(stripTags(line.paliText!.trim()));
             }
             final translationEntries = enabledLangs.isNotEmpty
                 ? line.translations.entries.where(
@@ -1033,16 +1044,33 @@ class ReaderCopyService {
                 : line.translations.entries;
             for (final entry in translationEntries) {
               if (entry.value.trim().isNotEmpty) {
-                buf.writeln(_stripTags(entry.value.trim()));
+                buf.writeln(stripTags(entry.value.trim()));
               }
             }
           }
           if (pi < paragraphs.length - 1) buf.writeln();
         }
-
         textToShare = buf.toString().trim();
-        if (citation.isNotEmpty) {
-          textToShare = '$textToShare\n\n$citation';
+
+        // Only add citation/reference if text has >= 3 words.
+        // For short selections (< 3 words), share text alone
+        // so users can share single words for dictionary lookup.
+        final wordCount = textToShare.split(RegExp(r'\s+')).length;
+        if (wordCount >= 3) {
+          final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
+          final firstPara = paragraphs.first;
+          final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
+          final citation = buildCitationFromTemplate(
+            settings.quoteTemplate,
+            activeTab.bookId,
+            readerState.bookName,
+            nearbyHeading,
+            firstPara.pageNumbers,
+            paraId: firstPara.paraId,
+          );
+          if (citation.isNotEmpty) {
+            textToShare = '$textToShare\n\n$citation';
+          }
         }
       } else {
         // Fallback: just use the selected text without citation
@@ -1063,11 +1091,11 @@ class ReaderCopyService {
         final para = readerState.paragraphs[i];
         for (final line in para.lines) {
           if (line.paliText != null && line.paliText!.trim().isNotEmpty) {
-            buf.writeln(_stripTags(line.paliText!.trim()));
+            buf.writeln(stripTags(line.paliText!.trim()));
           }
           for (final entry in line.translations.entries) {
             if (entry.value.trim().isNotEmpty) {
-              buf.writeln(entry.value.trim());
+              buf.writeln(stripTags(entry.value.trim()));
             }
           }
         }
@@ -1137,10 +1165,12 @@ class ReaderCopyService {
     await Clipboard.setData(ClipboardData(text: shareText));
   }
 
-  // ── Private helpers ──────────────────────────────────────────────
+  // ── Public helpers ───────────────────────────────────────────────
 
   /// Strip HTML tags from a string.
-  static String _stripTags(String html) {
+  static String stripTags(String html) {
     return html.replaceAll(RegExp(r'<[^>]*>'), '');
   }
+
+  // ── Private helpers ──────────────────────────────────────────────
 }
