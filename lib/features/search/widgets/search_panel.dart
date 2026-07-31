@@ -16,6 +16,7 @@ import '../../../shared/utils/html_text_parser.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
+import 'search_result_highlight.dart';
 
 /// A search panel that can be shown in a sidebar.
 ///
@@ -1049,6 +1050,8 @@ class _PanelLineTile extends StatelessWidget {
   }
 
   /// Build Pali text with search terms highlighted.
+  /// Trims the snippet to a window around the first match so the found word
+  /// is always visible even in very long lines.
   Widget _buildHighlightedPaliText({
     required String text,
     required List<String> searchTerms,
@@ -1061,97 +1064,34 @@ class _PanelLineTile extends StatelessWidget {
     final effStyle = style.copyWith(fontFamily: scriptFontFamily(script));
 
     if (searchTerms.isEmpty || text.isEmpty) {
-      return HtmlTextParser.richText(converted, effStyle, maxLines: 2, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(
+        converted,
+        effStyle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
-    final nterms = searchTerms
-        .map((t) => normalizePaliFuzzy(t))
-        .where((t) => t.isNotEmpty)
-        .toList();
-
-    if (nterms.isEmpty) {
-      return HtmlTextParser.richText(converted, effStyle, maxLines: 2, overflow: TextOverflow.ellipsis);
-    }
-
-    // Parse HTML into styled TextSpans, then highlight search terms within
-    // each span's text content.
-    final allSpans = HtmlTextParser.parse(converted, effStyle);
-    final resultSpans = <InlineSpan>[];
-
-    for (final span in allSpans) {
-      if (span is! TextSpan || span.text == null || span.text!.isEmpty) {
-        resultSpans.add(span);
-        continue;
-      }
-
-      final spanText = span.text!;
-      final spanStyle = span.style ?? effStyle;
-
-      // Find match positions in this span's text
-      final ranges = <MapEntry<int, int>>[];
-      for (final nt in nterms) {
-        int pos = 0;
-        while (pos <= spanText.length - nt.length) {
-          final candidate = spanText.substring(pos, pos + nt.length);
-          if (normalizePaliFuzzy(candidate) == nt) {
-            ranges.add(MapEntry(pos, pos + nt.length));
-            pos += nt.length;
-          } else {
-            pos++;
-          }
-        }
-      }
-
-      if (ranges.isEmpty) {
-        resultSpans.add(TextSpan(text: spanText, style: spanStyle));
-        continue;
-      }
-
-      // Sort and merge overlapping ranges
-      ranges.sort((a, b) => a.key.compareTo(b.key));
-      final merged = <MapEntry<int, int>>[];
-      for (final r in ranges) {
-        if (merged.isEmpty || r.key > merged.last.value) {
-          merged.add(r);
-        } else if (r.value > merged.last.value) {
-          merged[merged.length - 1] = MapEntry(merged.last.key, r.value);
-        }
-      }
-
-      // Build highlighted spans
-      int lastEnd = 0;
-      for (final r in merged) {
-        if (r.key > lastEnd) {
-          resultSpans.add(TextSpan(
-            text: spanText.substring(lastEnd, r.key),
-            style: spanStyle,
-          ));
-        }
-        resultSpans.add(TextSpan(
-          text: spanText.substring(r.key, r.value),
-          style: spanStyle.copyWith(
-            backgroundColor: highlightColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ));
-        lastEnd = r.value;
-      }
-      if (lastEnd < spanText.length) {
-        resultSpans.add(TextSpan(
-          text: spanText.substring(lastEnd),
-          style: spanStyle,
-        ));
-      }
-    }
+    final spans = buildSearchSnippetSpans(
+      html: converted,
+      baseStyle: effStyle,
+      terms: searchTerms,
+      isPali: true,
+      highlightColor: highlightColor,
+      beforeChars: 30,
+      afterChars: 45,
+    );
 
     return Text.rich(
-      TextSpan(style: effStyle, children: resultSpans),
+      TextSpan(style: effStyle, children: spans),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
   }
 
   /// Build translation text with search terms highlighted.
+  /// Trims the snippet to a window around the first match so the found word
+  /// is always visible even in very long lines.
   Widget _buildHighlightedTranslationText({
     required String text,
     required List<String> searchTerms,
@@ -1159,88 +1099,26 @@ class _PanelLineTile extends StatelessWidget {
     required Color highlightColor,
   }) {
     if (searchTerms.isEmpty || text.isEmpty) {
-      return HtmlTextParser.richText(text, style, maxLines: 1, overflow: TextOverflow.ellipsis);
+      return HtmlTextParser.richText(
+        text,
+        style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
-    final nterms = searchTerms
-        .map((t) => t.toLowerCase())
-        .where((t) => t.isNotEmpty)
-        .toList();
-
-    if (nterms.isEmpty) {
-      return HtmlTextParser.richText(text, style, maxLines: 1, overflow: TextOverflow.ellipsis);
-    }
-
-    // Parse HTML into spans, then highlight search terms within each span
-    final allSpans = HtmlTextParser.parse(text, style);
-    final resultSpans = <InlineSpan>[];
-
-    for (final span in allSpans) {
-      if (span is! TextSpan || span.text == null || span.text!.isEmpty) {
-        resultSpans.add(span);
-        continue;
-      }
-
-      final spanText = span.text!;
-      final spanStyle = span.style ?? style;
-      final normalized = spanText.toLowerCase();
-
-      // Find match positions in this span's text
-      final ranges = <MapEntry<int, int>>[];
-      for (final nt in nterms) {
-        int pos = 0;
-        while (true) {
-          final idx = normalized.indexOf(nt, pos);
-          if (idx < 0) break;
-          ranges.add(MapEntry(idx, idx + nt.length));
-          pos = idx + nt.length;
-        }
-      }
-
-      if (ranges.isEmpty) {
-        resultSpans.add(TextSpan(text: spanText, style: spanStyle));
-        continue;
-      }
-
-      // Sort and merge overlapping ranges
-      ranges.sort((a, b) => a.key.compareTo(b.key));
-      final merged = <MapEntry<int, int>>[];
-      for (final r in ranges) {
-        if (merged.isEmpty || r.key > merged.last.value) {
-          merged.add(r);
-        } else if (r.value > merged.last.value) {
-          merged[merged.length - 1] = MapEntry(merged.last.key, r.value);
-        }
-      }
-
-      // Build highlighted spans
-      int lastEnd = 0;
-      for (final r in merged) {
-        if (r.key > lastEnd) {
-          resultSpans.add(TextSpan(
-            text: spanText.substring(lastEnd, r.key),
-            style: spanStyle,
-          ));
-        }
-        resultSpans.add(TextSpan(
-          text: spanText.substring(r.key, r.value),
-          style: spanStyle.copyWith(
-            backgroundColor: highlightColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ));
-        lastEnd = r.value;
-      }
-      if (lastEnd < spanText.length) {
-        resultSpans.add(TextSpan(
-          text: spanText.substring(lastEnd),
-          style: spanStyle,
-        ));
-      }
-    }
+    final spans = buildSearchSnippetSpans(
+      html: text,
+      baseStyle: style,
+      terms: searchTerms,
+      isPali: false,
+      highlightColor: highlightColor,
+      beforeChars: 25,
+      afterChars: 40,
+    );
 
     return Text.rich(
-      TextSpan(style: style, children: resultSpans),
+      TextSpan(style: style, children: spans),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );

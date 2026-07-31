@@ -89,16 +89,27 @@ jobs:
 
       - name: Build Android AAB & APK
         run: |
-          flutter build appbundle --release
-          flutter build apk --release
+          flutter build appbundle --release -v
+          flutter build apk --release -v
+      - name: Find Android artifacts
+        if: always()
+        run: |
+          echo "=== AAB files ==="
+          find build -type f -name "*.aab" -print
+
+          echo "=== APK files ==="
+          find build -type f -name "*.apk" -print
+
+          echo "=== Bundle directories ==="
+          find build/app/outputs -maxdepth 4 -type d -print 2>/dev/null || true
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: |
-            build/app/outputs/bundle/release/app-release.aab
-            build/app/outputs/flutter-apk/app-release.apk
+            build/**/*.aab
+            build/**/*.apk
 
   # -------------------------------------------------------------
   # 2. iOS BUILD
@@ -119,6 +130,11 @@ jobs:
 
       - name: Install Dependencies
         run: flutter pub get
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
 
       - name: Create iOS Platform Files (if missing)
         run: |
@@ -380,15 +396,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Linux Build Dependencies
+        # run: |
+        #   sudo apt-get update
+        #   sudo apt-get install -y \
+        #     clang cmake ninja-build pkg-config \
+        #     patchelf file libgtk-3-bin \
+        #     libgtk-3-dev libglib2.0-dev \
+        #     liblzma-dev libstdc++-12-dev \
+        #     libasound2-dev libgstreamer-plugins-base1.0-dev \
+        #     libgstreamer1.0-dev
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
-            patchelf file libgtk-3-bin \
-            libgtk-3-dev libglib2.0-dev \
-            liblzma-dev libstdc++-12-dev \
-            libasound2-dev libgstreamer-plugins-base1.0-dev \
-            libgstreamer1.0-dev
+            libgtk-3-dev liblzma-dev libstdc++-dev \
+            libasound2-dev libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -459,7 +482,8 @@ jobs:
           export PATH="$PWD:$PATH"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
-          mv epitaka-*.AppImage "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
+          APPIMAGE=$(find . -maxdepth 1 -name '*.AppImage' -type f | head -n 1)
+          mv "$APPIMAGE" "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
           ls -la "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
 
       - name: Compress Linux Output
