@@ -39,18 +39,11 @@ class ThemePickerTile extends ConsumerWidget {
                   ref.read(settingsProvider.notifier).setThemePreference(pref);
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: ThemePreference.system,
-                    child: Text(_themeLabel(ThemePreference.system)),
-                  ),
-                  PopupMenuItem(
-                    value: ThemePreference.light,
-                    child: Text(_themeLabel(ThemePreference.light)),
-                  ),
-                  PopupMenuItem(
-                    value: ThemePreference.dark,
-                    child: Text(_themeLabel(ThemePreference.dark)),
-                  ),
+                  for (final pref in ThemePreference.displayOrder)
+                    PopupMenuItem(
+                      value: pref,
+                      child: Text(_themeLabel(pref)),
+                    ),
                 ],
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -79,11 +72,19 @@ class ThemePickerTile extends ConsumerWidget {
   String _themeLabel(ThemePreference pref) {
     switch (pref) {
       case ThemePreference.system:
-        return 'System';
+        return 'Dhammatā';
       case ThemePreference.light:
-        return 'Paper (Light)';
+        return 'Tālapatta';
+      case ThemePreference.sepia:
+        return 'Paññā-āloka';
+      case ThemePreference.ocean:
+        return 'Vimutti-rasa';
       case ThemePreference.dark:
-        return 'Dark';
+        return 'Samādhi';
+      case ThemePreference.midnight:
+        return 'Passaddhi';
+      case ThemePreference.forest:
+        return 'Arañña';
     }
   }
 }

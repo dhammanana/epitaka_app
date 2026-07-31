@@ -748,18 +748,11 @@ class _ThemePickerTile extends ConsumerWidget {
                   ref.read(settingsProvider.notifier).setThemePreference(pref);
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: ThemePreference.system,
-                    child: Text(_themeLabel(ThemePreference.system, loc)),
-                  ),
-                  PopupMenuItem(
-                    value: ThemePreference.light,
-                    child: Text(_themeLabel(ThemePreference.light, loc)),
-                  ),
-                  PopupMenuItem(
-                    value: ThemePreference.dark,
-                    child: Text(_themeLabel(ThemePreference.dark, loc)),
-                  ),
+                  for (final pref in ThemePreference.displayOrder)
+                    PopupMenuItem(
+                      value: pref,
+                      child: Text(_themeLabel(pref, loc)),
+                    ),
                 ],
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -782,16 +775,8 @@ class _ThemePickerTile extends ConsumerWidget {
     );
   }
 
-  String _themeLabel(ThemePreference pref, AppLocalizations loc) {
-    switch (pref) {
-      case ThemePreference.system:
-        return loc.systemTheme;
-      case ThemePreference.light:
-        return loc.lightTheme;
-      case ThemePreference.dark:
-        return loc.darkTheme;
-    }
-  }
+  String _themeLabel(ThemePreference pref, AppLocalizations loc) =>
+      loc.themeName(pref);
 }
 
 /// Toggle for expanding/collapsing search result groups by default.
@@ -824,7 +809,6 @@ class _SearchExpandToggle extends ConsumerWidget {
           ),
           Switch(
             value: expand,
-            activeTrackColor: colors.primary,
             onChanged: (val) =>
                 ref.read(expandSearchResultsProvider.notifier).state = val,
           ),

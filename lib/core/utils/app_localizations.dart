@@ -86,9 +86,55 @@ class AppLocalizations {
   String get category => _t('Category', 'Danh mục');
   String get expand => _t('Expand', 'Mở rộng');
   String get theme => _t('Theme', 'Chủ đề');
-  String get systemTheme => _t('System', 'Hệ thống');
-  String get lightTheme => _t('Paper (Light)', 'Sáng');
-  String get darkTheme => _t('Dark', 'Tối');
+  // Theme names use the Pāli names with an English/Vietnamese gloss shown
+  // as a subtitle in the theme picker.
+  String get systemTheme => _t('Dhammatā', 'Dhammatā');
+  String get lightTheme => _t('Tālapatta', 'Tālapatta');
+  String get sepiaTheme => _t('Paññā-āloka', 'Paññā-āloka');
+  String get oceanTheme => _t('Vimutti-rasa', 'Vimutti-rasa');
+  String get darkTheme => _t('Samādhi', 'Samādhi');
+  String get midnightTheme => _t('Passaddhi', 'Passaddhi');
+  String get forestTheme => _t('Arañña', 'Arañña');
+
+  /// Display name for a theme preference (Pāli name).
+  String themeName(ThemePreference pref) {
+    switch (pref) {
+      case ThemePreference.system:
+        return systemTheme;
+      case ThemePreference.light:
+        return lightTheme;
+      case ThemePreference.sepia:
+        return sepiaTheme;
+      case ThemePreference.ocean:
+        return oceanTheme;
+      case ThemePreference.dark:
+        return darkTheme;
+      case ThemePreference.midnight:
+        return midnightTheme;
+      case ThemePreference.forest:
+        return forestTheme;
+    }
+  }
+
+  /// Short gloss explaining the meaning behind each theme's Pāli name.
+  String themeGloss(ThemePreference pref) {
+    switch (pref) {
+      case ThemePreference.system:
+        return _t('Natural Law / Adaptability', 'Luật tự nhiên / Thích ứng');
+      case ThemePreference.light:
+        return _t('Preserved Sacred Texts', 'Kinh văn bảo tồn');
+      case ThemePreference.sepia:
+        return _t('Illuminating Wisdom', 'Trí tuệ soi sáng');
+      case ThemePreference.ocean:
+        return _t('Oceanic Taste of Freedom', 'Vị giác của sự giải thoát');
+      case ThemePreference.dark:
+        return _t('Meditative Stillness', 'Tĩnh lặng thiền định');
+      case ThemePreference.midnight:
+        return _t('Profound Tranquility', 'Khinh an sâu lắng');
+      case ThemePreference.forest:
+        return _t('Forest Seclusion', 'Ẩn cư nơi rừng');
+    }
+  }
   String get expandResultsDefault =>
       _t('Expand results by default', 'Mở rộng kết quả mặc định');
   String get rebuildSearchIndex =>

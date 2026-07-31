@@ -382,6 +382,9 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                       ),
               ),
 
+              // ── Answer mode (orthodox / knowledge) ────────────────────
+              _AnswerModeToggle(colors: colors),
+
               // ── Attachment chips bar ──────────────────────────────────
               if (attachments.isNotEmpty) const AttachmentBar(),
 
@@ -1064,6 +1067,88 @@ class AiQaMessageListView extends ConsumerWidget {
       );
     }
     return listContent;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ANSWER MODE TOGGLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Compact toggle for the answer mode.
+///
+/// Orthodox (default, ticked): answers are based ONLY on the passages found
+/// in the Tipitaka.  Unticking allows the AI to also use its own knowledge.
+class _AnswerModeToggle extends ConsumerWidget {
+  final ColorScheme colors;
+
+  const _AnswerModeToggle({required this.colors});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(aiQaSettingsProvider);
+
+    void toggle() {
+      ref
+          .read(aiQaSettingsProvider.notifier)
+          .setOrthodoxMode(!settings.orthodoxMode);
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        0,
+        AppDimensions.marginMobile,
+        2,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Checkbox(
+              value: settings.orthodoxMode,
+              onChanged: (v) {
+                ref
+                    .read(aiQaSettingsProvider.notifier)
+                    .setOrthodoxMode(v ?? true);
+              },
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          const SizedBox(width: 2),
+          Expanded(
+            child: GestureDetector(
+              onTap: toggle,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Orthodox',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    settings.orthodoxMode
+                        ? 'Answers use only the passages found in the Tipitaka.'
+                        : 'The AI may also use its own knowledge alongside the found passages.',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

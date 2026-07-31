@@ -390,11 +390,36 @@ After each search batch, evaluate:
 - For commentaries, use get_commentaries with the specific passage.
 - Include precise citations [book_id:para_id:line_id] for every quoted passage.''';
 
-  static const String _defaultAnswerSystemPrompt =
-      '''You are a knowledgeable scholar of the Pāli Canon and Theravāda Buddhism. You have been provided with tool results from the database containing specific passages from the Tipitaka and/or commentaries.
+  /// Build the answer-model system prompt, adapting the grounding rules to
+  /// the selected answer mode.
+  ///
+  /// Orthodox mode (default): the answer may use ONLY the passages found by
+  /// the tools.  Knowledge mode: the AI may supplement the found passages
+  /// with its own knowledge of the Pāli Canon.
+  static String _buildAnswerSystemPrompt({required bool orthodoxMode}) {
+    final grounding = orthodoxMode
+        ? '''## Strict rules
+1. Every factual claim MUST be backed by an inline citation like [book_id:para_id:line_id].
+2. Answer the user's question using ONLY the passages provided in the tool results. Never use outside knowledge.
+3. Quote Pāli EXACTLY as given — never paraphrase Pāli words.
+4. After each Pāli quote, provide the English meaning.
+5. If the provided passages are insufficient, say so honestly rather than speculating.
+6. Explain Pāli technical terms briefly on first use.
+7. Use Markdown for structure (## headings, **bold**, *italic*, > blockquotes).
+8. [book_id:para_id:line_id] citations will be rendered as interactive buttons — the user can click them to open the passage in the reader. Ensure every citation includes all three components.'''
+        : '''## Strict rules
+1. Every factual claim drawn from the sources MUST be backed by an inline citation like [book_id:para_id:line_id].
+2. Answer the user's question using the passages provided in the tool results as your primary source.
+3. You MAY supplement with your own knowledge of the Pāli Canon and Theravāda Buddhism when the sources are insufficient — but clearly distinguish what comes from the sources from your own explanation.
+4. Quote Pāli EXACTLY as given — never paraphrase Pāli words.
+5. After each Pāli quote, provide the English meaning.
+6. Explain Pāli technical terms briefly on first use.
+7. Use Markdown for structure (## headings, **bold**, *italic*, > blockquotes).
+8. [book_id:para_id:line_id] citations will be rendered as interactive buttons — the user can click them to open the passage in the reader. Ensure every citation includes all three components.''';
+    return '''You are a knowledgeable scholar of the Pāli Canon and Theravāda Buddhism. You have been provided with tool results from the database containing specific passages from the Tipitaka and/or commentaries.
 
 ## Your task
-Write a clear, well-structured answer to the user's original question using ONLY the provided passages.
+Write a clear, well-structured answer to the user's original question.
 
 ## Citation format
 Every citation MUST be formatted as a **quote button** that users can click:
@@ -405,14 +430,8 @@ For example:
 
 The citation format [book_id:para_id:line_id] will be rendered as an interactive button in the UI that opens the passage when clicked.
 
-## Strict rules
-1. Every factual claim MUST be backed by an inline citation like [book_id:para_id:line_id].
-2. Quote Pāli EXACTLY as given — never paraphrase Pāli words.
-3. After each Pāli quote, provide the English meaning.
-4. If the provided passages are insufficient, say so honestly rather than speculating.
-5. Explain Pāli technical terms briefly on first use.
-6. Use Markdown for structure (## headings, **bold**, *italic*, > blockquotes).
-7. [book_id:para_id:line_id] citations will be rendered as interactive buttons — the user can click them to open the passage in the reader. Ensure every citation includes all three components.''';
+$grounding''';
+  }
 
   // ── Thread management ─────────────────────────────────────────────────
 
@@ -582,6 +601,7 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       'settings': {
         'tool_model': _ref.read(aiQaSettingsProvider).toolModel,
         'answer_model': _ref.read(aiQaSettingsProvider).answerModel,
+        'orthodox_mode': _ref.read(aiQaSettingsProvider).orthodoxMode,
       },
       'tool_loop': [],
       'answer_model_prompt': '',
@@ -894,12 +914,12 @@ The citation format [book_id:para_id:line_id] will be rendered as an interactive
       // ── 3. Generate final answer ──────────────────────────────────
       final answerSystemPrompt = settings.customSystemPrompt.isNotEmpty
           ? settings.customSystemPrompt
-          : _defaultAnswerSystemPrompt;
+          : _buildAnswerSystemPrompt(orthodoxMode: settings.orthodoxMode);
 
       final contextBlock = _buildContextBlock(allToolResults);
 
-      final answerPrompt =
-          '''
+      final answerPrompt = settings.orthodoxMode
+          ? '''
 ═══════════════════════════════════════════
 USER'S ORIGINAL QUESTION:
 ═══════════════════════════════════════════
@@ -911,6 +931,22 @@ TOOL RESULTS (sources from the database):
 $contextBlock
 
 Please answer the user's question using ONLY the sources above.
+If the sources do not cover the question, say so honestly instead of guessing.
+Format every citation as [book_id:para_id:line_id] so users can click to open the passage.
+'''
+          : '''
+═══════════════════════════════════════════
+USER'S ORIGINAL QUESTION:
+═══════════════════════════════════════════
+${userMessage.text}
+
+═══════════════════════════════════════════
+TOOL RESULTS (sources from the database):
+═══════════════════════════════════════════
+$contextBlock
+
+Please answer the user's question using the sources above as the primary reference.
+You may supplement with your own knowledge of the Pāli Canon where the sources are insufficient.
 Format every citation as [book_id:para_id:line_id] so users can click to open the passage.
 ''';
 

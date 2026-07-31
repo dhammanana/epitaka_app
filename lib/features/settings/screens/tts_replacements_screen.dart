@@ -64,7 +64,7 @@ class _ReplacementCard extends StatelessWidget {
       child: InkWell(onTap: onEdit, borderRadius: BorderRadius.circular(AppDimensions.radiusMd), child: Padding(padding: const EdgeInsets.all(AppDimensions.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(rule.isRegex ? Icons.code : Icons.text_fields, size: 18, color: rule.enabled ? colors.primary : colors.onSurfaceVariant), const SizedBox(width: AppDimensions.sm),
           Expanded(child: Text(rule.isRegex ? 'Regex' : 'Text', style: AppTypography.labelSmall.copyWith(color: colors.primary, fontWeight: FontWeight.w600))),
-          Switch(value: rule.enabled, activeTrackColor: colors.primary, onChanged: onToggle),
+          Switch(value: rule.enabled, onChanged: onToggle),
           IconButton(icon: Icon(Icons.delete_outline, color: colors.error, size: 20), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints(), visualDensity: VisualDensity.compact)]),
         const SizedBox(height: AppDimensions.sm),
         Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm, vertical: AppDimensions.xs), decoration: BoxDecoration(color: colors.surfaceContainerHighest.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(AppDimensions.radiusSm)),
@@ -95,7 +95,7 @@ class _ReplacementEditDialogState extends State<_ReplacementEditDialog> {
     return AlertDialog(
       title: Text(isEditing ? loc.editReplacement : loc.addReplacementTitle),
       content: SizedBox(width: double.maxFinite, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(Icons.code, size: 18, color: widget.colors.primary), const SizedBox(width: 8), Text(loc.useRegex), const Spacer(), Switch(value: _isRegex, activeTrackColor: widget.colors.primary, onChanged: (v) => setState(() => _isRegex = v))]),
+        Row(children: [Icon(Icons.code, size: 18, color: widget.colors.primary), const SizedBox(width: 8), Text(loc.useRegex), const Spacer(), Switch(value: _isRegex, onChanged: (v) => setState(() => _isRegex = v))]),
         const SizedBox(height: AppDimensions.md),
         Text(loc.find, style: AppTypography.labelSmall.copyWith(color: widget.colors.onSurfaceVariant)), const SizedBox(height: 4),
         TextField(controller: _patternCtrl, autofocus: true, maxLines: 2,

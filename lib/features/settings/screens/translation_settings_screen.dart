@@ -569,14 +569,9 @@ class _LanguageHeader extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        SizedBox(
-                          height: 28,
-                          child: Switch(
-                            value: isAnyEnabled,
-                            onChanged: (v) => onEnableChanged!(v),
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
+                        Switch(
+                          value: isAnyEnabled,
+                          onChanged: (v) => onEnableChanged!(v),
                         ),
                       ],
                     ),

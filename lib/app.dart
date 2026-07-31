@@ -172,7 +172,14 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
 
     final settings = ref.watch(settingsProvider);
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
-    final isDark = settings.resolveDarkMode(platformBrightness);
+    // Build the exact theme the user chose (System resolves against the
+    // platform brightness).  The resolved theme is applied as the single
+    // active theme so every preference maps to its own color scheme.
+    final theme = AppTheme.forPreference(
+      settings.themePreference,
+      platformBrightness: platformBrightness,
+      accentColor: settings.accentColor,
+    );
 
     return AudioServiceInitializer(
       child: Consumer(
@@ -182,9 +189,10 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
             child: MaterialApp.router(
               title: 'ePitaka',
               debugShowCheckedModeBanner: false,
-              theme: AppTheme.light(accentColor: settings.accentColor),
-              darkTheme: AppTheme.dark(accentColor: settings.accentColor),
-              themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+              // The resolved theme is set as the app theme; when no
+              // darkTheme is provided MaterialApp falls back to [theme] in
+              // every brightness, so the chosen scheme is always applied.
+              theme: theme,
               routerConfig: _router,
               locale: _resolveLocale(settings.appLanguage),
               supportedLocales: AppLocalizationsDelegate.supportedLocales,

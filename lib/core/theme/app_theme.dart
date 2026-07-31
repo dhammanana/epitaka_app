@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../providers/settings_provider.dart' show ThemePreference;
 import 'app_colors.dart';
 import 'app_dimensions.dart';
 import 'app_typography.dart';
@@ -7,38 +9,90 @@ import 'app_typography.dart';
 class AppTheme {
   AppTheme._();
 
-  /// Build the light theme, optionally seeded from [accentColor].
-  ///
-  /// When a custom accent is provided, Material 3 generates a complete
-  /// harmonious [ColorScheme] from that seed via [ColorScheme.fromSeed],
-  /// and the [primary] is explicitly set to [accentColor] so the chosen
-  /// accent is always visibly reflected in the UI.
-  ///
-  /// When `null`, the default Digital Manuscript palette is used.
-  static ThemeData light({Color? accentColor}) {
-    final colorScheme = accentColor != null
-        ? ColorScheme.fromSeed(
-            seedColor: accentColor,
-            brightness: Brightness.light,
-          ).copyWith(primary: accentColor)
-        : AppColors.lightColorScheme();
-    return _buildTheme(colorScheme);
+  /// Build the [ThemeData] for a [ThemePreference], resolving `system`
+  /// against [platformBrightness].
+  static ThemeData forPreference(
+    ThemePreference preference, {
+    required Brightness platformBrightness,
+    Color? accentColor,
+  }) {
+    switch (preference) {
+      case ThemePreference.system:
+        return platformBrightness == Brightness.dark
+            ? dark(accentColor: accentColor)
+            : light(accentColor: accentColor);
+      case ThemePreference.light:
+        return light(accentColor: accentColor);
+      case ThemePreference.sepia:
+        return sepia(accentColor: accentColor);
+      case ThemePreference.ocean:
+        return ocean(accentColor: accentColor);
+      case ThemePreference.dark:
+        return dark(accentColor: accentColor);
+      case ThemePreference.midnight:
+        return midnight(accentColor: accentColor);
+      case ThemePreference.forest:
+        return forest(accentColor: accentColor);
+    }
   }
 
-  /// Build the dark theme, optionally seeded from [accentColor].
+  /// Build the light („Tālapatta“) theme, optionally seeded from [accentColor].
+  static ThemeData light({Color? accentColor}) =>
+      _themed(base: AppColors.lightColorScheme(), accentColor: accentColor);
+
+  /// Build the dark („Samādhi“) theme, optionally seeded from [accentColor].
+  static ThemeData dark({Color? accentColor}) =>
+      _themed(base: AppColors.darkColorScheme(), accentColor: accentColor);
+
+  /// Build the sepia („Paññā-āloka“) light theme.
+  static ThemeData sepia({Color? accentColor}) =>
+      _themed(base: AppColors.sepiaColorScheme(), accentColor: accentColor);
+
+  /// Build the ocean („Vimutti-rasa“) light theme.
+  static ThemeData ocean({Color? accentColor}) =>
+      _themed(base: AppColors.oceanColorScheme(), accentColor: accentColor);
+
+  /// Build the midnight („Passaddhi“) dark theme.
+  static ThemeData midnight({Color? accentColor}) =>
+      _themed(base: AppColors.midnightColorScheme(), accentColor: accentColor);
+
+  /// Build the forest („Arañña“) dark theme.
+  static ThemeData forest({Color? accentColor}) =>
+      _themed(base: AppColors.forestColorScheme(), accentColor: accentColor);
+
+  /// Build a theme from a fixed base palette, optionally seeding accent colors.
   ///
-  /// Unlike light mode, the dark-mode [ColorScheme.fromSeed] already
-  /// generates a saturated primary that is recognisable as the chosen
-  /// accent while remaining readable on the dark background, so no
-  /// manual override is applied.
-  static ThemeData dark({Color? accentColor}) {
-    final colorScheme = accentColor != null
-        ? ColorScheme.fromSeed(
-            seedColor: accentColor,
-            brightness: Brightness.dark,
-          )
-        : AppColors.darkColorScheme();
-    return _buildTheme(colorScheme);
+  /// The surface family always comes from [base] so every theme keeps its own
+  /// character (paper, sepia, midnight…) even when a custom accent is chosen;
+  /// the accent only drives the primary/secondary/tertiary roles.  In dark
+  /// themes the seeded primary is left untouched so it stays readable on the
+  /// dark background.
+  static ThemeData _themed({required ColorScheme base, Color? accentColor}) {
+    final ColorScheme colors;
+    if (accentColor == null) {
+      colors = base;
+    } else {
+      final seed = ColorScheme.fromSeed(
+        seedColor: accentColor,
+        brightness: base.brightness,
+      );
+      colors = seed.copyWith(
+        primary: base.brightness == Brightness.light ? accentColor : null,
+        surface: base.surface,
+        onSurface: base.onSurface,
+        surfaceContainerLowest: base.surfaceContainerLowest,
+        surfaceContainerLow: base.surfaceContainerLow,
+        surfaceContainer: base.surfaceContainer,
+        surfaceContainerHigh: base.surfaceContainerHigh,
+        surfaceContainerHighest: base.surfaceContainerHighest,
+        onSurfaceVariant: base.onSurfaceVariant,
+        outline: base.outline,
+        outlineVariant: base.outlineVariant,
+        inverseSurface: base.inverseSurface,
+        inversePrimary: base.inversePrimary,
+      );
+    }
+    return _buildTheme(colors);
   }
 
   static ThemeData _buildTheme(ColorScheme colors) {
@@ -140,18 +194,23 @@ class AppTheme {
       ),
 
       // ── Switch ──────────────────────────────────────────────────────
+      // Enabled switches use a contrasting thumb (onPrimary) on the primary
+      // track so they read as a proper switch instead of a solid pill of
+      // color.  Disabled ones use a neutral track with a subtle outline.
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return colors.primary;
-          }
-          return null;
+          if (states.contains(WidgetState.selected)) return colors.onPrimary;
+          return colors.surface;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return colors.primary;
+          return colors.surfaceContainerHighest;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return colors.primaryContainer;
+            return Colors.transparent;
           }
-          return null;
+          return colors.outlineVariant;
         }),
       ),
 

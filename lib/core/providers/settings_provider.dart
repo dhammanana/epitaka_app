@@ -24,7 +24,38 @@ enum AppLanguage {
 }
 
 /// Theme mode preference.
-enum ThemePreference { system, light, dark }
+///
+/// Values are appended (never reordered/removed) so the integer stored in
+/// SharedPreferences stays stable across app updates.
+enum ThemePreference {
+  system,
+  light,
+  dark,
+  sepia,
+  ocean,
+  midnight,
+  forest;
+
+  /// The order themes are shown in the Settings UI (light modes grouped
+  /// together, dark modes together).
+  static const List<ThemePreference> displayOrder = [
+    ThemePreference.system,
+    ThemePreference.light,
+    ThemePreference.sepia,
+    ThemePreference.ocean,
+    ThemePreference.dark,
+    ThemePreference.midnight,
+    ThemePreference.forest,
+  ];
+
+  /// Whether this theme uses a dark color scheme.
+  bool get isDark => switch (this) {
+        ThemePreference.dark ||
+        ThemePreference.midnight ||
+        ThemePreference.forest => true,
+        _ => false,
+      };
+}
 
 /// Library expand level for the book browser.
 enum LibraryExpandLevel {
@@ -220,6 +251,17 @@ class TypographySettings {
       languageOverrides: languageOverrides ?? this.languageOverrides,
     );
   }
+}
+
+/// Safely resolve a stored theme index, falling back to the system theme
+/// when the value is missing or out of range.
+ThemePreference _safeThemePreference(int? index) {
+  if (index == null ||
+      index < 0 ||
+      index >= ThemePreference.values.length) {
+    return ThemePreference.system;
+  }
+  return ThemePreference.values[index];
 }
 
 /// Parse a display mode string to enum.
@@ -457,20 +499,7 @@ class AppSettings {
       quotePageNumberSystem:
           quotePageNumberSystem ?? this.quotePageNumberSystem,
     );
-  }
-
-  /// Resolve whether dark mode should be active based on preference and platform brightness.
-  bool resolveDarkMode(Brightness platformBrightness) {
-    switch (themePreference) {
-      case ThemePreference.light:
-        return false;
-      case ThemePreference.dark:
-        return true;
-      case ThemePreference.system:
-        return platformBrightness == Brightness.dark;
-    }
-  }
-}
+  }}
 
 /// Provider for [AppSettings] backed by SharedPreferences.
 class SettingsNotifier extends StateNotifier<AppSettings> {
@@ -481,10 +510,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void init(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
-  }
-
-  bool isDarkMode(Brightness platformBrightness) {
-    return state.resolveDarkMode(platformBrightness);
   }
 
   /// Load a [ColorPair] from [key].  Falls back to reading the legacy
@@ -612,9 +637,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         (l) => l.code == appLangCode,
         orElse: () => AppLanguage.english,
       ),
-      themePreference:
-          ThemePreference.values[prefs.getInt('theme_preference') ??
-              ThemePreference.system.index],
+      // Clamp so a corrupt/out-of-range stored value can't crash startup.
+      themePreference: _safeThemePreference(
+        prefs.getInt('theme_preference'),
+      ),
       primaryTranslationLang: prefs.getString('primary_lang') ?? 'en',
       secondaryTranslationLang: prefs.getString('secondary_lang') ?? 'th',
       showPali: prefs.getBool('show_pali') ?? true,

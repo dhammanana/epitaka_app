@@ -132,6 +132,12 @@ class AiQaSettings {
   /// Max queries (user messages) allowed per chat thread.
   final int maxQueriesPerChat;
 
+  /// Whether answers must be based ONLY on the passages found in the
+  /// Tipitaka ("orthodox" mode).  When false, the AI may supplement the
+  /// found passages with its own knowledge of the Pāli Canon.
+  /// Defaults to true.
+  final bool orthodoxMode;
+
   const AiQaSettings({
     this.apiKey = '',
     this.provider = AiProvider.gemini,
@@ -142,6 +148,7 @@ class AiQaSettings {
     this.maxToolResultChars = 200000,
     this.answerMaxTokens = 64000,
     this.maxQueriesPerChat = 8,
+    this.orthodoxMode = true,
   });
 
   bool get isValid {
@@ -160,6 +167,7 @@ class AiQaSettings {
     int? maxToolResultChars,
     int? answerMaxTokens,
     int? maxQueriesPerChat,
+    bool? orthodoxMode,
   }) {
     return AiQaSettings(
       apiKey: apiKey ?? this.apiKey,
@@ -171,6 +179,7 @@ class AiQaSettings {
       maxToolResultChars: maxToolResultChars ?? this.maxToolResultChars,
       answerMaxTokens: answerMaxTokens ?? this.answerMaxTokens,
       maxQueriesPerChat: maxQueriesPerChat ?? this.maxQueriesPerChat,
+      orthodoxMode: orthodoxMode ?? this.orthodoxMode,
     );
   }
 
@@ -184,6 +193,7 @@ class AiQaSettings {
     'maxToolResultChars': maxToolResultChars,
     'answerMaxTokens': answerMaxTokens,
     'maxQueriesPerChat': maxQueriesPerChat,
+    'orthodoxMode': orthodoxMode,
   };
 
   factory AiQaSettings.fromJson(Map<String, dynamic> json) {
@@ -198,6 +208,7 @@ class AiQaSettings {
           (json['maxToolResultChars'] as num?)?.toInt() ?? 200000,
       answerMaxTokens: (json['answerMaxTokens'] as num?)?.toInt() ?? 64000,
       maxQueriesPerChat: (json['maxQueriesPerChat'] as num?)?.toInt() ?? 8,
+      orthodoxMode: json['orthodoxMode'] as bool? ?? true,
     );
   }
 }

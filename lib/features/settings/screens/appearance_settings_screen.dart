@@ -5,6 +5,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/color_pair.dart';
 import '../widgets/color_swatch.dart';
@@ -34,7 +35,14 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           _AccentPairCard(lightAccent: settings.accentColor, darkAccent: darkAccent, isDarkMode: isDark, colors: colors),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(title: loc.theme, colors: colors, children: [
-            _ThemeSelector(current: settings.themePreference, onSelected: (pref) => ref.read(settingsProvider.notifier).setThemePreference(pref), colors: colors),
+            _ThemeGrid(
+              current: settings.themePreference,
+              accentColor: settings.accentColor,
+              platformBrightness: isDark ? Brightness.dark : Brightness.light,
+              onSelected: (pref) =>
+                  ref.read(settingsProvider.notifier).setThemePreference(pref),
+              colors: colors,
+            ),
           ]),
           const SizedBox(height: AppDimensions.md),
           SettingsSection(title: loc.accentColor, colors: colors, children: [
@@ -101,29 +109,223 @@ class _AccentRow extends StatelessWidget {
   Color _onColor(Color bg) => bg.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
 }
 
-class _ThemeSelector extends StatelessWidget {
-  final ThemePreference current; final ValueChanged<ThemePreference> onSelected; final ColorScheme colors;
-  const _ThemeSelector({required this.current, required this.onSelected, required this.colors});
+/// Grid of theme cards, each showing a live mini-preview of its palette.
+class _ThemeGrid extends StatelessWidget {
+  final ThemePreference current;
+  final Color? accentColor;
+  final Brightness platformBrightness;
+  final ValueChanged<ThemePreference> onSelected;
+  final ColorScheme colors;
+
+  const _ThemeGrid({
+    required this.current,
+    required this.accentColor,
+    required this.platformBrightness,
+    required this.onSelected,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Build each theme's color scheme once per build — the accent is shared
+    // by every card, so per-card construction would be wasteful.
+    final schemes = <ThemePreference, ColorScheme>{
+      for (final pref in ThemePreference.displayOrder)
+        pref: AppTheme.forPreference(
+          pref,
+          platformBrightness: platformBrightness,
+          accentColor: accentColor,
+        ).colorScheme,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      child: GridView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 260,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.4,
+        ),
+        children: [
+          for (final pref in ThemePreference.displayOrder)
+            _ThemePreviewCard(
+              preference: pref,
+              scheme: schemes[pref]!,
+              selected: pref == current,
+              onTap: () => onSelected(pref),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A tappable card that renders a miniature preview of one theme using its
+/// real color scheme, so users see what they're choosing before selecting.
+class _ThemePreviewCard extends StatelessWidget {
+  final ThemePreference preference;
+  final ColorScheme scheme;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemePreviewCard({
+    required this.preference,
+    required this.scheme,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
-    return Padding(padding: const EdgeInsets.all(AppDimensions.sm), child: Row(children: [
-      Icon(Icons.palette, color: colors.primary),
-      const SizedBox(width: AppDimensions.md),
-      Expanded(child: Text(loc.theme, style: AppTypography.labelMedium.copyWith(color: colors.onSurface))),
-      PopupMenuButton<ThemePreference>(
-        initialValue: current, onSelected: onSelected,
-        itemBuilder: (context) => [for (final pref in ThemePreference.values) PopupMenuItem(value: pref, child: Text(_themeLabel(pref, loc)))],
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(_themeLabel(current, loc), style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)),
-          const SizedBox(width: 8), Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-        ]),
-      ),
-    ]));
-  }
+    final colors = Theme.of(context).colorScheme;
+    final cs = scheme;
 
-  String _themeLabel(ThemePreference pref, AppLocalizations loc) {
-    switch (pref) { case ThemePreference.system: return loc.systemTheme; case ThemePreference.light: return loc.lightTheme; case ThemePreference.dark: return loc.darkTheme; }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? colors.primary : colors.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            // ── Live preview ──
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                color: cs.surface,
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: cs.primary,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: cs.secondaryContainer,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: cs.onSecondaryContainer.withValues(
+                                alpha: 0.3,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Evaṃ me sutaṃ',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Thus have I heard…',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (final c in [
+                          cs.primary,
+                          cs.primaryContainer,
+                          cs.secondary,
+                          cs.tertiary,
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // ── Name + gloss ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 7,
+              ),
+              decoration: BoxDecoration(color: colors.surfaceContainerLow),
+              child: Row(
+                children: [
+                  if (selected)
+                    Icon(Icons.check_circle, size: 14, color: colors.primary)
+                  else
+                    const SizedBox(width: 14),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          loc.themeName(preference),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          loc.themeGloss(preference),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.onSurfaceVariant,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

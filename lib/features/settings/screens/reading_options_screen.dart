@@ -546,13 +546,9 @@ class _SwitchTile extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(
-            height: 20,
-            child: Switch(
-              value: value,
-              activeTrackColor: colors.primary,
-              onChanged: onChanged,
-            ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
           ),
         ],
       ),

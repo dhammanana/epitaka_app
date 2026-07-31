@@ -96,6 +96,13 @@ class AiQaSettingsNotifier extends StateNotifier<AiQaSettings> {
     await _persist();
   }
 
+  /// Set whether answers must be based ONLY on the passages found in the
+  /// Tipitaka (orthodox mode).
+  Future<void> setOrthodoxMode(bool value) async {
+    state = state.copyWith(orthodoxMode: value);
+    await _persist();
+  }
+
   /// Update multiple settings at once.
   Future<void> updateAll(AiQaSettings newSettings) async {
     state = newSettings;
