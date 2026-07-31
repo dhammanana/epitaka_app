@@ -67,8 +67,25 @@ jobs:
           storeFile=upload-keystore.jks
           EOF
 
-      - name: Ensure assets/db directory exists
-        run: mkdir -p assets/db
+      - name: Download core DBs (epitaka, dpd-dictionary) into asset pack
+        run: |
+          # URLs come from the checked-out translations manifest (single source of truth)
+          EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
+          DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+
+          mkdir -p android/packs/core_db/src/main/assets
+
+          echo "Downloading $EPITAKA_URL"
+          curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
+          echo "Downloading $DPD_URL"
+          curl -fL -o /tmp/dpd.zip "$DPD_URL"
+
+          unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
+          unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+
+          find /tmp/epitaka_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
+          find /tmp/dpd_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
+          ls -la android/packs/core_db/src/main/assets/
 
       - name: Build Android AAB & APK
         run: |
@@ -141,12 +158,19 @@ jobs:
       - name: Install Rust (required by super_native_extensions)
         run: rustup default stable
 
-      - name: Ensure AppData directory exists (fix cargokit symlink resolution)
+      - name: Fix AppData path for cargokit
+        shell: pwsh
         run: |
-          if (-not (Test-Path "C:\Users\runneradmin\AppData")) {
-            New-Item -Path "C:\Users\runneradmin\AppData" -ItemType Directory -Force
+          $appData = "C:\Users\runneradmin\AppData"
+
+          if (Test-Path -LiteralPath $appData -PathType Container) {
+            Write-Host "AppData exists: $appData"
+          } else {
+            Write-Host "Creating AppData: $appData"
+            New-Item -ItemType Directory -Path $appData -Force | Out-Null
           }
 
+          Get-Item -LiteralPath $appData -Force
       - name: Create Windows Platform Files
         # windows/ directory checked into git so this is a no-op fallback
         run: |
@@ -196,7 +220,10 @@ jobs:
           Get-ChildItem assets/db
 
       - name: Build Windows Release
-        run: flutter build windows --release
+        shell: pwsh
+        run: |
+          $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
+          flutter build windows --release
 
       - name: Compress Windows Output
         run: |
@@ -275,18 +302,13 @@ jobs:
       - name: Build macOS Release
         run: flutter build macos --release
 
-      - name: Rename app bundle
-        run: |
-          cd build/macos/Build/Products/Release
-          mv Runner.app ePitaka.app
-
       - name: Build DMG Installer
         run: |
           set -e
-          APP_DIR="build/macos/Build/Products/Release/ePitaka.app"
+          APP_DIR="build/macos/Build/Products/Release/epitaka.app"
           STAGE="build/macos/dmg_stage"
-          TMP_DMG="build/macos/ePitaka-tmp.dmg"
-          DMG="build/macos/ePitaka-macos.dmg"
+          TMP_DMG="build/macos/epitaka-tmp.dmg"
+          DMG="build/macos/epitaka-macos.dmg"
           ICONSET="build/macos/icon.iconset"
 
           # Convert logo PNG to .icns
@@ -301,12 +323,12 @@ jobs:
           sips -z 512 512 assets/icon.png --out "$ICONSET/icon_256x256@2x.png"
           sips -z 512 512 assets/icon.png --out "$ICONSET/icon_512x512.png"
           sips -z 1024 1024 assets/icon.png --out "$ICONSET/icon_512x512@2x.png"
-          iconutil -c icns "$ICONSET" -o build/macos/ePitaka.icns
+          iconutil -c icns "$ICONSET" -o build/macos/epitaka.icns
 
           # Use the logo as the app bundle icon
-          cp build/macos/ePitaka.icns "$APP_DIR/Contents/Resources/ePitaka.icns"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile ePitaka" "$APP_DIR/Contents/Info.plist" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string ePitaka" "$APP_DIR/Contents/Info.plist"
+          cp build/macos/epitaka.icns "$APP_DIR/Contents/Resources/epitaka.icns"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile epitaka" "$APP_DIR/Contents/Info.plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string epitaka" "$APP_DIR/Contents/Info.plist"
 
           # Re-sign the bundle (ad-hoc) — modifying the bundle above
           # invalidated the signature produced by flutter build.
@@ -317,12 +339,12 @@ jobs:
           mkdir -p "$STAGE"
           cp -R "$APP_DIR" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
-          hdiutil create -volname "ePitaka" -srcfolder "$STAGE" -ov -format UDRW "$TMP_DMG"
+          hdiutil create -volname "epitaka" -srcfolder "$STAGE" -ov -format UDRW "$TMP_DMG"
 
           # Set the DMG volume icon, then compress
           DEVICE=$(hdiutil attach -nobrowse "$TMP_DMG" | awk '/\/dev\/disk/{print $1; exit}')
-          cp build/macos/ePitaka.icns "/Volumes/ePitaka/.VolumeIcon.icns"
-          SetFile -a C "/Volumes/ePitaka"
+          cp build/macos/epitaka.icns "/Volumes/epitaka/.VolumeIcon.icns"
+          SetFile -a C "/Volumes/epitaka"
           hdiutil detach "$DEVICE"
           hdiutil convert "$TMP_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG"
           rm -f "$TMP_DMG"
@@ -339,7 +361,7 @@ jobs:
           name: macos-release
           path: |
             build/macos/Build/Products/Release/epitaka-macos.zip
-            build/macos/ePitaka-macos.dmg
+            build/macos/epitaka-macos.dmg
 
   # -------------------------------------------------------------
   # 5. LINUX BUILD
@@ -409,9 +431,9 @@ jobs:
           cd build/linux/x64/release/bundle
 
           # Download linuxdeploy and its GTK + AppImage plugins
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          wget -S --show-progress -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -S --show-progress -O linuxdeploy-plugin-gtk-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
+          wget -S --show-progress -O linuxdeploy-plugin-appimage-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk-x86_64.AppImage linuxdeploy-plugin-appimage-x86_64.AppImage
 
           # Assemble AppDir — keep exe, lib (RPATH $ORIGIN/lib) and data together
@@ -434,7 +456,7 @@ jobs:
           export PATH="$PWD:$PATH"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin gtk --output appimage
 
-          mv ePitaka-*.AppImage "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
+          mv epitaka-*.AppImage "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
           ls -la "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
 
       - name: Compress Linux Output

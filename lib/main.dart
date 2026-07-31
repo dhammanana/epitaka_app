@@ -68,6 +68,12 @@ Future<void> main() async {
   // Android/iOS where assets aren't directly file-system accessible).
   await ensureBundledDatabases();
 
+  // On Android, copy the core databases (epitaka.db, dpd-dictionary.db) out
+  // of the install-time Play Asset Delivery pack so the app works fully
+  // offline (no download required). Falls back silently when the pack isn't
+  // present (debug builds, side-loaded APKs).
+  await ensureAssetPackDatabases();
+
   // Initialise the download notification service for showing progress
   // in the Android notification bar. Wrapped in try-catch so that a
   // plugin initialization failure (e.g. during hot restart) doesn't

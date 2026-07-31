@@ -23,3 +23,4 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 include(":app")
+include(":packs:core_db")

@@ -4,6 +4,9 @@ import android.content.Context
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.InputStream
 
 class MainActivity : FlutterActivity() {
     override fun provideFlutterEngine(context: Context): FlutterEngine {
@@ -30,5 +33,76 @@ class MainActivity : FlutterActivity() {
             FlutterEngineCache.getInstance().put(engineId, engine)
         }
         return engine
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "copyCoreDatabases" -> {
+                        val destDir = call.argument<String>("destDir")
+                        if (destDir == null) {
+                            result.error("BAD_ARGS", "destDir required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val copied = copyCoreDatabases(File(destDir))
+                            result.success(copied)
+                        } catch (e: Exception) {
+                            result.error("COPY_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * Copies the two core databases (epitaka.db, dpd-dictionary.db) from the
+     * install-time Play Asset Delivery pack ("core_db") into [destDir] on
+     * first launch.
+     *
+     * Install-time asset packs ship inside the AAB and are immediately
+     * readable via the standard Android AssetManager — no Play Core library
+     * is required. Returns the list of filenames that were copied (files that
+     * already exist are left untouched).
+     */
+    private fun copyCoreDatabases(destDir: File): List<String> {
+        if (!destDir.exists()) destDir.mkdirs()
+        val copied = mutableListOf<String>()
+        for (name in CORE_DB_FILES) {
+            val dest = File(destDir, name)
+            if (dest.exists()) continue // already present — never overwrite
+            val input = openAsset(name) ?: continue // pack not available
+            input.use { ins ->
+                dest.outputStream().use { out -> ins.copyTo(out) }
+            }
+            copied.add(name)
+        }
+        return copied
+    }
+
+    /**
+     * Opens a file from the install-time asset pack via the standard
+     * AssetManager. Depending on the bundletool version the file may be
+     * addressable by its bare name, or prefixed with the pack name — try the
+     * common layouts defensively.
+     */
+    private fun openAsset(name: String): InputStream? {
+        val assetManager = assets
+        for (candidate in listOf(name, "core_db/$name", "assets/core_db/$name")) {
+            try {
+                return assetManager.open(candidate)
+            } catch (_: Exception) {
+                // try next candidate
+            }
+        }
+        return null
+    }
+
+    companion object {
+        private const val CHANNEL = "epitaka/asset_pack"
+        private val CORE_DB_FILES = listOf("epitaka.db", "dpd-dictionary.db")
     }
 }

@@ -17,7 +17,13 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    project.evaluationDependsOn(":app")
+    // Asset pack modules (:packs:core_db) are pure Android AssetPack
+    // projects with no Flutter/plugin coupling — they must NOT wait on
+    // :app evaluation, otherwise Gradle reports a circular dependency
+    // (the app references the pack via `assetPacks`).
+    if (name != "core_db") {
+        project.evaluationDependsOn(":app")
+    }
 }
 
 tasks.register<Delete>("clean") {

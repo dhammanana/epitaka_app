@@ -50,6 +50,10 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
+    // Reference the install-time asset pack that ships the core databases
+    // (epitaka.db, dpd-dictionary.db). See android/packs/core_db/.
+    assetPacks += listOf(":packs:core_db")
 }
 
 dependencies {

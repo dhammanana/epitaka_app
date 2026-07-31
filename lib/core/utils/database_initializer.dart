@@ -1,6 +1,7 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -74,5 +75,47 @@ Future<void> ensureBundledDatabases() async {
       // Asset might not exist in this build variant — skip silently.
       continue;
     }
+  }
+}
+
+/// Copies the core databases (epitaka.db, dpd-dictionary.db) out of the
+/// Android install-time Play Asset Delivery pack on first launch.
+///
+/// The pack is delivered inside the AAB, so this works fully offline. The
+/// copy itself runs natively (MainActivity.kt — MethodChannel
+/// `epitaka/asset_pack`) because the files are too large to stream through
+/// the Dart isolate.
+///
+/// Falls back silently when the pack isn't present (debug builds,
+/// side-loaded APKs, or platforms other than Android) — the regular
+/// bundled-assets / runtime download paths then take over.
+Future<void> ensureAssetPackDatabases() async {
+  if (!Platform.isAndroid) return;
+
+  final appDir = await getApplicationDocumentsDirectory();
+  final dbDir = Directory(appDir.path);
+  if (!await dbDir.exists()) {
+    await dbDir.create(recursive: true);
+  }
+
+  try {
+    const channel = MethodChannel('epitaka/asset_pack');
+    final copied = await channel.invokeMethod<List<dynamic>>(
+      'copyCoreDatabases',
+      {'destDir': appDir.path},
+    );
+    if (copied != null && copied.isNotEmpty) {
+      developer.log(
+        '[ASSET_PACK] Copied from install-time asset pack: $copied',
+        name: 'epitaka.database',
+      );
+    }
+  } catch (e) {
+    // Asset pack not available (debug/side-load, or channel missing) —
+    // fall through to the bundled-assets / download paths.
+    developer.log(
+      '[ASSET_PACK] Asset pack unavailable (falling back): $e',
+      name: 'epitaka.database',
+    );
   }
 }
