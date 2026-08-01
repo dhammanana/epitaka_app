@@ -1,8 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/app_models.dart';
+import '../models/translation_version.dart';
 import '../utils/database_initializer.dart';
 
 /// Metadata for an available translation (legacy model).
@@ -18,26 +16,35 @@ class AvailableTranslation {
     required this.nativeName,
     this.isAvailable = true,
   });
-
-  TranslationLanguage get language => TranslationLanguage.fromCode(languageCode);
 }
 
-/// Legacy provider that checks only default filenames for known languages.
-/// Kept for backward compatibility with existing code (index building, etc.).
+/// Legacy provider that reports which translations are available on disk.
+///
+/// Scans the database directory (rather than a hardcoded language list) so
+/// ANY language offered by the manifest — including vi, lo, ta … — is
+/// detected. Only the default (non-nissaya) version of each language is
+/// listed; nissaya variants are managed through their own version providers.
+/// Kept for backward compatibility with existing code (index building,
+/// typography settings, etc.).
 final translationRegistryProvider =
     FutureProvider<List<AvailableTranslation>>((ref) async {
   final dbDir = await getDatabaseDirectory();
-  final fileNames =
-      dbDir.listSync().whereType<File>().map((f) => f.path.split('/').last).toList();
+  final versions = TranslationFilenameParser.scanDirectory(dbDir);
 
-  return TranslationLanguage.values.map((lang) {
-    final exists = fileNames.contains(lang.filename);
-    return AvailableTranslation(
-      languageCode: lang.code,
-      englishName: lang.englishName,
-      nativeName: lang.nativeName,
-      isAvailable: exists,
+  final seen = <String>{};
+  final result = <AvailableTranslation>[];
+  for (final v in versions) {
+    if (v.isNissaya) continue;
+    if (!seen.add(v.languageCode)) continue;
+    final info = TranslationLanguageRegistry.getName(v.languageCode);
+    result.add(
+      AvailableTranslation(
+        languageCode: v.languageCode,
+        englishName: info?.englishName ?? v.languageCode.toUpperCase(),
+        nativeName: info?.nativeName ?? v.languageCode.toUpperCase(),
+        isAvailable: true,
+      ),
     );
-  }).toList();
+  }
+  return result;
 });
-

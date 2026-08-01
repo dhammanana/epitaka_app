@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/database/epitaka_database.dart';
-import '../../../core/models/app_models.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/database_initializer.dart';
@@ -448,8 +447,7 @@ class GavesanaNotifier extends StateNotifier<GavesanaState> {
     String langCode,
   ) async {
     try {
-      final lang = TranslationLanguage.fromCode(langCode);
-      final transDb = await _ref.read(translationDbProvider(lang).future);
+      final transDb = await _ref.read(translationDbProvider(langCode).future);
       if (transDb == null) return '';
 
       final rows = await transDb

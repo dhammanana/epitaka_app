@@ -20,8 +20,13 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+import '../../../core/database/app_database.dart';
+import '../../../core/database/dpd_dictionary_database.dart';
+import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../reader/services/jump_service.dart';
+import 'section_index_service.dart';
 
 /// Result from a tool execution.
 class ToolResult {
@@ -132,9 +137,11 @@ class AiQaToolService {
       final parsed = jsonDecode(bm25Result.data) as List<dynamic>?;
       if (parsed != null && parsed.isNotEmpty) {
         debugPrint('[AI_QA] search_tipitaka: ✅ BM25 => ${parsed.length} results');
+        final enriched =
+            await _enrichWithHeadingChain(parsed.cast<Map<String, dynamic>>());
         return ToolResult(
           success: true,
-          data: _toJsonString(parsed.take(20).toList()),
+          data: _toJsonString(enriched.take(50).toList()),
         );
       }
     }
@@ -268,7 +275,13 @@ class AiQaToolService {
             success: false, data: '[]', errorMessage: 'No valid keywords');
       }
 
-      // Search Pāli text using LIKE
+      // Search Pāli text using LIKE.
+      //
+      // Pool a generous number of candidates (ordered by book/para so no
+      // book is starved — with a plain LIMIT 50, A-*/Abh-* rows sort before
+      // S-*/D-*/M-*/Dhp and the canonical passages never surface), then
+      // RANK in Dart by keyword density so short, dense passages (e.g. a
+      // sutta verse) beat long paragraphs that merely mention the term once.
       final conditions =
           keywords.map((_) => 'LOWER(s.pali) LIKE ?').join(' OR ');
       final likeParams = keywords.map((kw) => '%${kw.toLowerCase()}%').toList();
@@ -280,7 +293,7 @@ class AiQaToolService {
         'JOIN books b ON b.book_id = s.book_id '
         'WHERE $conditions '
         'ORDER BY s.book_id, s.para_id, s.line_id '
-        'LIMIT 50',
+        'LIMIT 1000',
         variables: [
           ...likeParams.map((p) => Variable.withString(p)),
         ],
@@ -294,24 +307,38 @@ class AiQaToolService {
         final bookId = (row.data['book_id'] as String?) ?? '';
         final paraId = (row.data['para_id'] as int?) ?? 0;
         final key = '$bookId:$paraId';
-        if (seen.add(key)) {
-          final paliText = (row.data['pali'] as String?) ?? '';
-          final matchCount = keywords
-              .where((kw) => paliText.toLowerCase().contains(kw.toLowerCase()))
-              .length;
-          results.add({
-            'book_id': bookId,
-            'book_name': (row.data['book_name'] as String?) ?? bookId,
-            'para_id': paraId,
-            'line_id': (row.data['line_id'] as int?) ?? 1,
-            'text': paliText,
-            'relevance': matchCount / keywords.length,
-            'search_method': 'like',
-          });
+        if (!seen.add(key)) continue;
+
+        final paliText = (row.data['pali'] as String?) ?? '';
+        final lower = paliText.toLowerCase();
+        // Keyword-occurrence density: total matched-char weight / length.
+        double score = 0;
+        for (final kw in keywords) {
+          final needle = kw.toLowerCase();
+          var idx = 0;
+          while (idx != -1) {
+            idx = lower.indexOf(needle, idx);
+            if (idx != -1) {
+              score += needle.length;
+              idx += needle.length;
+            }
+          }
         }
+        final relevance =
+            lower.isEmpty ? 0.0 : (score / lower.length).clamp(0.0, 1.0);
+
+        results.add({
+          'book_id': bookId,
+          'book_name': (row.data['book_name'] as String?) ?? bookId,
+          'para_id': paraId,
+          'line_id': (row.data['line_id'] as int?) ?? 1,
+          'text': paliText,
+          'relevance': relevance,
+          'search_method': 'like',
+        });
       }
 
-      debugPrint('[AI_QA] _searchLike: ✅ ${results.length} results (taking top 20)');
+      debugPrint('[AI_QA] _searchLike: ✅ ${results.length} results');
 
       // Sort by relevance descending, then para_id ascending
       results.sort((a, b) {
@@ -321,9 +348,10 @@ class AiQaToolService {
         return (a['para_id'] as int).compareTo(b['para_id'] as int);
       });
 
+      final enriched = await _enrichWithHeadingChain(results);
       return ToolResult(
         success: true,
-        data: _toJsonString(results.take(20).toList()),
+        data: _toJsonString(enriched.take(50).toList()),
       );
     } catch (e) {
       debugPrint('[AI_QA] _searchLike: ❌ error: $e');
@@ -441,7 +469,7 @@ class AiQaToolService {
           '${merged.length} unique category-filtered results');
       return ToolResult(
         success: true,
-        data: _toJsonString(merged.take(30).toList()),
+        data: _toJsonString(merged.take(80).toList()),
       );
     } catch (e) {
       debugPrint('[AI_QA] search_by_category: ❌ error: $e');
@@ -497,7 +525,7 @@ class AiQaToolService {
         merged.length} unique results from ${results.length} queries');
     return ToolResult(
       success: true,
-      data: _toJsonString(merged.take(30).toList()),
+      data: _toJsonString(merged.take(80).toList()),
     );
   }
 
@@ -895,6 +923,364 @@ class AiQaToolService {
       debugPrint('[AI_QA] get_commentaries: ❌ error: $e');
       return ToolResult(success: false, data: '{}', errorMessage: e.toString());
     }
+  }
+
+  // ── Heading-chain enrichment (Layer 0, §4.2) ──────────────────────────
+
+  /// Add `heading_chain` (Pāli titles) and `heading_chain_en` (English
+  /// titles) to every search hit so the model sees *where* each hit lives
+  /// in the canon hierarchy without an extra `get_headings` call.
+  ///
+  /// Uses the same recursive CTE proven in `vector_search_service.dart`:
+  /// find the nearest heading at/before the hit's para, then walk up the
+  /// parent chain. English titles are fetched in ONE batched query per book
+  /// from the English translation DB (best-effort; skipped if unavailable).
+  Future<List<Map<String, dynamic>>> _enrichWithHeadingChain(
+    List<Map<String, dynamic>> results,
+  ) async {
+    if (results.isEmpty) return results;
+    try {
+      final epitakaDb = await _ref.read(epitakaDbProvider.future);
+      final enDb = await _ref
+          .read(translationDbProvider('en').future);
+
+      // Collect heading para ids per book for batched English lookup.
+      final enLookupIds = <String, Set<int>>{};
+      final resultBookIds = <int, String>{};
+      final resultHeadingIds = <int, List<int>>{};
+
+      for (int i = 0; i < results.length; i++) {
+        final r = results[i];
+        final bookId = r['book_id'] as String? ?? '';
+        final paraId = r['para_id'] as int? ?? 0;
+        if (bookId.isEmpty || paraId <= 0) continue;
+
+        try {
+          final rows = await epitakaDb.customSelect(
+            '''
+            WITH RECURSIVE hc(para_id, title, parent) AS (
+              SELECT para_id, title, parent FROM headings
+              WHERE book_id = ? AND para_id <= ?
+              ORDER BY para_id DESC LIMIT 1
+              UNION ALL
+              SELECT h.para_id, h.title, h.parent
+              FROM headings h INNER JOIN hc ON h.para_id = hc.parent
+            )
+            SELECT para_id, title FROM hc ORDER BY para_id ASC
+          ''',
+            variables: [
+              Variable.withString(bookId),
+              Variable.withInt(paraId),
+            ],
+          ).get();
+
+          if (rows.isEmpty) continue;
+
+          final chain = <String>[];
+          final headingIds = <int>[];
+          for (final row in rows) {
+            final title = (row.data['title'] as String? ?? '').trim();
+            if (title.isNotEmpty) chain.add(title);
+            final hid = row.data['para_id'] as int? ?? 0;
+            if (hid > 0) headingIds.add(hid);
+          }
+          if (chain.isNotEmpty) r['heading_chain'] = chain;
+
+          if (enDb != null && headingIds.isNotEmpty) {
+            resultBookIds[i] = bookId;
+            resultHeadingIds[i] = headingIds;
+            enLookupIds.putIfAbsent(bookId, () => <int>{}).addAll(headingIds);
+          }
+        } catch (_) {
+          // Best-effort: keep the hit even if its chain cannot be resolved.
+        }
+      }
+
+      // Batched English title lookup per book.
+      if (enDb != null && enLookupIds.isNotEmpty) {
+        final enTitles = <String, String>{}; // 'bookId:paraId' -> title
+        for (final entry in enLookupIds.entries) {
+          final ids = entry.value.toList();
+          if (ids.isEmpty) continue;
+          try {
+            final placeholders = ids.map((_) => '?').join(',');
+            final rows = await enDb.customSelect(
+              'SELECT para_id, translation FROM sentences '
+              'WHERE book_id = ? AND para_id IN ($placeholders) '
+              'ORDER BY para_id ASC, line_id ASC',
+              variables: [
+                Variable.withString(entry.key),
+                ...ids.map((i) => Variable.withInt(i)),
+              ],
+            ).get();
+            for (final row in rows) {
+              final t = (row.data['translation'] as String? ?? '').trim();
+              if (t.isNotEmpty) {
+                enTitles['${entry.key}:${row.data['para_id']}'] = t;
+              }
+            }
+          } catch (_) {}
+        }
+
+        for (int i = 0; i < results.length; i++) {
+          final bookId = resultBookIds[i];
+          if (bookId == null) continue;
+          final headingIds = resultHeadingIds[i];
+          if (headingIds == null) continue;
+          final enChain = <String>[];
+          for (final hid in headingIds) {
+            final t = enTitles['$bookId:$hid'];
+            if (t != null && t.isNotEmpty) enChain.add(t);
+          }
+          if (enChain.isNotEmpty) results[i]['heading_chain_en'] = enChain;
+        }
+      }
+    } catch (e) {
+      debugPrint('[AI_QA] _enrichWithHeadingChain: error $e');
+    }
+    return results;
+  }
+
+  // ── Tool 6b: search_sections (Layer 1 — section summary index) ───────
+
+  /// Search section/sutta TITLES (plus extractive summaries) across the
+  /// whole canon, backed by `section_summaries_fts` (built lazily by
+  /// [SectionIndexService]). This is the AI-navigable "map" of the canon:
+  /// use it FIRST for concept questions to discover WHICH suttas discuss a
+  /// topic, then open them with get_paragraph_content.
+  Future<ToolResult> searchSections(Map<String, dynamic> args) async {
+    final query = (args['query'] as String?) ?? '';
+    debugPrint('[AI_QA] search_sections: query="$query"');
+    if (query.trim().isEmpty) {
+      return const ToolResult(
+          success: false, data: '{}', errorMessage: 'Empty query');
+    }
+
+    try {
+      final appDb = await _ref.read(appDbProvider.future);
+      final sectionService = _ref.read(sectionIndexServiceProvider);
+      // Lazy-build the section index on first use (~seconds for the canon).
+      await sectionService.ensureIndex();
+
+      // FTS5 prefix MATCH query (mirrors _searchBm25 term-builder):
+      // lowercase, quote/escape each term, add prefix `*`, OR-joined.
+      final terms = query
+          .toLowerCase()
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty && w.length >= 2)
+          .map((w) {
+            final safe = w.replaceAll('"', '""');
+            return '"$safe"*';
+          })
+          .join(' ');
+
+      if (terms.isEmpty) {
+        return const ToolResult(
+            success: false, data: '{}', errorMessage: 'No valid terms');
+      }
+
+      final rows = await appDb.customSelect(
+        'SELECT s.book_id, s.para_start, s.para_end, s.title, s.title_en, '
+        '       s.path, s.summary, s.summary_en, '
+        '       bm25(section_summaries_fts) AS score '
+        'FROM section_summaries_fts '
+        'JOIN section_summaries s '
+        '  ON s.book_id = section_summaries_fts.book_id '
+        ' AND s.para_start = section_summaries_fts.para_start '
+        'WHERE section_summaries_fts MATCH ? '
+        'ORDER BY score ASC '
+        'LIMIT 20',
+        variables: [Variable.withString(terms)],
+      ).get();
+
+      if (rows.isEmpty) {
+        return ToolResult(
+          success: true,
+          data: _toJsonJson({'query': query, 'results': []}),
+        );
+      }
+
+      // Resolve book names in ONE batch query.
+      final bookIds =
+          rows.map((r) => r.data['book_id'] as String).toSet().toList();
+      final bookNames = <String, String>{};
+      if (bookIds.isNotEmpty) {
+        try {
+          final epitakaDb = await _ref.read(epitakaDbProvider.future);
+          final placeholders = bookIds.map((_) => '?').join(',');
+          final bookRows = await epitakaDb.customSelect(
+            'SELECT book_id, book_name FROM books '
+            'WHERE book_id IN ($placeholders)',
+            variables: bookIds.map((b) => Variable.withString(b)).toList(),
+          ).get();
+          for (final br in bookRows) {
+            bookNames[br.data['book_id'] as String] =
+                (br.data['book_name'] as String?) ?? '';
+          }
+        } catch (_) {}
+      }
+
+      final results = rows
+          .map((r) {
+            final bid = r.data['book_id'] as String;
+            final paraStart = r.data['para_start'] as int;
+            return {
+              'book_id': bid,
+              // para_id kept for backward compatibility with the model's
+              // habit of passing it to get_paragraph_content.
+              'para_id': paraStart,
+              'para_start': paraStart,
+              'para_end': r.data['para_end'] as int,
+              'title': (r.data['title'] as String?) ?? '',
+              'title_en': (r.data['title_en'] as String?) ?? '',
+              'path': (r.data['path'] as String?) ?? '',
+              'book_name': bookNames[bid] ?? bid,
+              'summary': (r.data['summary'] as String?) ?? '',
+              'summary_en': (r.data['summary_en'] as String?) ?? '',
+            };
+          })
+          .toList();
+
+      debugPrint('[AI_QA] search_sections: ✅ ${results.length} sections');
+      return ToolResult(
+        success: true,
+        data: _toJsonJson({'query': query, 'results': results}),
+      );
+    } catch (e) {
+      debugPrint('[AI_QA] search_sections: ❌ error: $e');
+      return ToolResult(
+        success: false,
+        data: '{}',
+        errorMessage: 'search_sections error: $e',
+      );
+    }
+  }
+
+  // ── Tool 6c: get_section (Layer 1 — browse the map) ───────────────────
+
+  /// Read one section's summary plus its direct child sections and its
+  /// parent section, letting the model BROWSE the canon hierarchy
+  /// (vagga → sutta) without dumping a whole book's headings.
+  Future<ToolResult> getSection(Map<String, dynamic> args) async {
+    final bookId = (args['book_id'] as String?) ?? '';
+    final paraStart = (args['para_start'] as num?)?.toInt() ?? 0;
+    debugPrint('[AI_QA] get_section: book_id="$bookId", para_start=$paraStart');
+
+    if (bookId.isEmpty || paraStart <= 0) {
+      return const ToolResult(
+          success: false, data: '{}', errorMessage: 'Missing book_id/para_start');
+    }
+
+    try {
+      final sectionService = _ref.read(sectionIndexServiceProvider);
+      await sectionService.ensureIndex();
+      final data = await sectionService.getSection(bookId, paraStart);
+
+      if (data == null) {
+        return ToolResult(
+          success: true,
+          data: _toJsonJson({
+            'book_id': bookId,
+            'para_start': paraStart,
+            'error': 'Section not found. Try search_sections first.',
+          }),
+        );
+      }
+
+      debugPrint('[AI_QA] get_section: ✅ '
+          '${(data['children'] as List).length} children');
+      return ToolResult(success: true, data: _toJsonJson(data));
+    } catch (e) {
+      debugPrint('[AI_QA] get_section: ❌ error: $e');
+      return ToolResult(
+        success: false,
+        data: '{}',
+        errorMessage: 'get_section error: $e',
+      );
+    }
+  }
+
+  // ── Tool 7b: get_dictionary ───────────────────────────────────────────
+
+  /// Scholarly definition + inflections (DPD dictionary) plus canon
+  /// occurrences (`pali_definition` table) for a Pāli term.
+  ///
+  /// Both lookups are best-effort: the DPD database may not be installed,
+  /// and `pali_definition` may be empty — partial results are returned
+  /// instead of failing the whole tool.
+  Future<ToolResult> getDictionary(Map<String, dynamic> args) async {
+    final term = (args['term'] as String?)?.trim() ?? '';
+    debugPrint('[AI_QA] get_dictionary: term="$term"');
+    if (term.isEmpty) {
+      return const ToolResult(
+          success: false, data: '{}', errorMessage: 'Empty term');
+    }
+
+    final result = <String, dynamic>{
+      'term': term,
+      'lookups': <Map<String, dynamic>>[],
+      'canon_occurrences': <Map<String, dynamic>>[],
+    };
+
+    // 1. DPD dictionary: exact lookup first, then prefix fallback.
+    try {
+      final dpdDb = await _ref.read(dpdDictionaryDbProvider.future);
+      final normalized = term.toLowerCase();
+
+      final lookups = <DpdLookupRow>[];
+      final exact = dpdDb.getLookup(normalized);
+      if (exact != null) {
+        lookups.add(exact);
+      } else {
+        lookups.addAll(dpdDb.searchLookup(normalized, limit: 5));
+      }
+
+      final lookupResults = <Map<String, dynamic>>[];
+      for (final lr in lookups) {
+        final headwords = dpdDb.getHeadwordsByIds(lr.headwords);
+        lookupResults.add({
+          'lookup_key': lr.lookupKey,
+          'headwords': headwords
+              .map((h) => {
+                    'id': h.id,
+                    'lemma': h.cleanLemma1,
+                    'meaning': h.meaningHtml ?? '',
+                  })
+              .toList(),
+        });
+      }
+      result['lookups'] = lookupResults;
+    } catch (e) {
+      debugPrint('[AI_QA] get_dictionary: DPD lookup unavailable: $e');
+    }
+
+    // 2. Canon occurrences from pali_definition.
+    try {
+      final epitakaDb = await _ref.read(epitakaDbProvider.future);
+      final defRows = await epitakaDb.customSelect(
+        'SELECT book_id, para_id, line_id, word, plain, stem '
+        'FROM pali_definition WHERE word = ? LIMIT 10',
+        variables: [Variable.withString(term.toLowerCase())],
+      ).get();
+      result['canon_occurrences'] = defRows
+          .map((r) => {
+                'book_id': r.data['book_id'] as String,
+                'para_id': r.data['para_id'] as int,
+                'line_id': r.data['line_id'] as int,
+                'word': (r.data['word'] as String?) ?? '',
+                'plain': (r.data['plain'] as String?) ?? '',
+                'stem': (r.data['stem'] as String?) ?? '',
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('[AI_QA] get_dictionary: pali_definition query failed: $e');
+    }
+
+    debugPrint(
+      '[AI_QA] get_dictionary: ✅ ${(result['lookups'] as List).length} '
+      'lookups, ${(result['canon_occurrences'] as List).length} occurrences',
+    );
+    return ToolResult(success: true, data: _toJsonJson(result));
   }
 }
 

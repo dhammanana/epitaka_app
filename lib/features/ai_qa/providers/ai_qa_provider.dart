@@ -176,6 +176,65 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
       },
     },
     {
+      'name': 'search_sections',
+      'description':
+          'Search section/sutta TITLES (with short summaries) across the whole canon. '
+          'Use this FIRST for concept questions to discover WHICH suttas discuss '
+          'a topic, then open them with get_paragraph_content or drill in with get_section.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'query': {
+            'type': 'STRING',
+            'description':
+                'Term or phrase to match against section/sutta titles or summaries (Pāli or English).',
+          },
+        },
+        'required': ['query'],
+      },
+    },
+    {
+      'name': 'get_section',
+      'description':
+          'Get ONE section (vagga/sutta/chapter) with its summary, its direct '
+          'child sections, and its parent section. Use this to BROWSE down the '
+          'canon hierarchy (vagga → sutta) after search_sections, instead of '
+          'dumping a whole book\'s headings.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'book_id': {
+            'type': 'STRING',
+            'description':
+                'Book ID (e.g. "D-i", "S-iii", "M-iii", "Dhp").',
+          },
+          'para_start': {
+            'type': 'INTEGER',
+            'description':
+                'The section\'s starting paragraph (para_start from a search_sections result).',
+          },
+        },
+        'required': ['book_id', 'para_start'],
+      },
+    },
+    {
+      'name': 'get_dictionary',
+      'description':
+          'Get the scholarly definition, inflections and canon occurrences for a '
+          'Pāli term from the Pāli-English dictionary. Use this BEFORE searching '
+          'the canon when the question is about the meaning of a Pāli term or concept.',
+      'parameters': {
+        'type': 'OBJECT',
+        'properties': {
+          'term': {
+            'type': 'STRING',
+            'description': 'Pāli term to look up (e.g. "saṅkhāra").',
+          },
+        },
+        'required': ['term'],
+      },
+    },
+    {
       'name': 'get_headings',
       'description':
           'Get the table of contents / section headings for a specific book. '
@@ -338,17 +397,37 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
       '''You are an expert research assistant for the Pāli Canon (Tipitaka).
 
 ## Available tools
-1. **search_tipitaka(query)** — Full-text search across the Tipitaka.
-2. **search_tipitaka_batch(queries: [...])** — Search with MULTIPLE different terms in ONE call (parallel).
-3. **search_by_category(queries, categories, [nikayas])** — Search WITHIN specific book categories ("vinaya"/"sutta"/"abhidhamma") or nikāyas ("dn"/"mn"/"sn"/"an"/"dhp"/"ja"/etc). Results are filtered to only those books.
-4. **get_headings(book_id)** — Get table of contents for a book.
-5. **get_books()** — List all available books with their categories.
-6. **get_paragraph_content(book_id, para_start, para_end)** — Read Pāli text.
-7. **get_paragraph_content_batch(ranges: [...])** — Read MULTIPLE ranges in parallel.
-8. **get_commentaries(mula_book_id, mula_para_id)** — Find Aṭṭhakathā/Ṭīkā.
+1. **search_sections(query)** — Search section/sutta TITLES across the whole canon (not full text). Use this FIRST for concept questions to discover WHICH suttas discuss a topic, then open them with get_paragraph_content or get_section.
+2. **get_section(book_id, para_start)** — Get ONE section's summary + its child sections + parent. Use to BROWSE down the hierarchy (vagga → sutta).
+3. **get_dictionary(term)** — Scholarly definition + inflections + canon occurrences for a Pāli term. Use for concept questions BEFORE searching the canon.
+4. **search_tipitaka(query)** — Full-text search across the Tipitaka.
+5. **search_tipitaka_batch(queries: [...])** — Search with MULTIPLE different terms in ONE call (parallel).
+6. **search_by_category(queries, categories, [nikayas])** — Search WITHIN specific book categories ("vinaya"/"sutta"/"abhidhamma") or nikāyas ("dn"/"mn"/"sn"/"an"/"dhp"/"ja"/etc). Results are filtered to only those books.
+7. **get_headings(book_id)** — Get table of contents for a book.
+8. **get_books()** — List all available books with their categories.
+9. **get_paragraph_content(book_id, para_start, para_end)** — Read Pāli text.
+10. **get_paragraph_content_batch(ranges: [...])** — Read MULTIPLE ranges in parallel.
+11. **get_commentaries(mula_book_id, mula_para_id)** — Find Aṭṭhakathā/Ṭīkā.
+
+## The Map (section index)
+- search_sections(query) finds SUTTA/SECTION titles across the whole canon — use it to discover where a topic lives BEFORE full-text search.
+- get_section(book_id, para_start) shows a section's summary + its sub-sections — use it to browse down a hierarchy (vagga → sutta).
+- Summaries are NAVIGATION HINTS only. Never quote from a summary in your answer; always open the real text with get_paragraph_content first.
 
 ## CRITICAL: Strategic search process
 You have up to 8 tool iterations. Use them WISELY. Follow this process:
+
+### PHASE 0: Disambiguate the concept (thinking, no tools yet)
+If the question is about a broad or polysemous term:
+1. List the DISTINCT SENSES of the term. (e.g. saṅkhāra → (a) khandha, (b) paṭiccasamuppāda link, (c) conditioned things / anicca teaching, (d) abhidhamma technical use.)
+2. For EACH sense, note the most likely location:
+   - khandha → SN 22 (Saṃyutta, Khandhavagga)
+   - paṭiccasamuppāda → SN 12.2, MN 9
+   - conditioned things → Dhp 277–279
+   - abhidhamma → Vibhaṅga (Vbh), Dhammasaṅgaṇī (Dhs)
+3. FIRST call search_sections for the term (finds sutta TITLES).
+4. Then run ONE search_by_category per sense, targeted at those nikāyas.
+5. Prefer passages that DEFINE the term over passages that merely use it.
 
 ### PHASE 1: Analyze the question (thinking, no tools yet)
 Before searching, analyze:
@@ -1090,6 +1169,12 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         return service.searchTipitakaBatch(args);
       case 'search_by_category':
         return service.searchByCategory(args);
+      case 'search_sections':
+        return service.searchSections(args);
+      case 'get_section':
+        return service.getSection(args);
+      case 'get_dictionary':
+        return service.getDictionary(args);
       case 'get_headings':
         return service.getHeadings(args);
       case 'get_books':
@@ -1235,6 +1320,12 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         resultCount = (parsed['headings'] as List).length;
       } else if (parsed is Map && parsed['books'] is List) {
         resultCount = (parsed['books'] as List).length;
+      } else if (parsed is Map && parsed['results'] is List) {
+        resultCount = (parsed['results'] as List).length;
+      } else if (parsed is Map && parsed['paragraphs'] is List) {
+        resultCount = (parsed['paragraphs'] as List).length;
+      } else if (parsed is Map && parsed['children'] is List) {
+        resultCount = (parsed['children'] as List).length;
       }
     } catch (_) {}
 
@@ -1272,6 +1363,16 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         final scope = [...cats, ...niks];
         final scopeStr = scope.isEmpty ? 'all' : scope.join(', ');
         return '🔍 $scopeStr[$resultCount results]';
+      case 'search_sections':
+        final query = args['query'] as String? ?? '';
+        return '🗂️ "$query" → $resultCount sections';
+      case 'get_section':
+        final bookId = args['book_id'] as String? ?? '';
+        final paraStart = args['para_start'] ?? 0;
+        return '🗺️ $bookId §$paraStart → $resultCount children';
+      case 'get_dictionary':
+        final term = args['term'] as String? ?? '';
+        return '📖 "$term" → $resultCount entries';
       case 'get_headings':
         final bookId = args['book_id'] as String? ?? '';
         return '📋 $bookId — $resultCount headings';

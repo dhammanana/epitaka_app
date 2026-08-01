@@ -1,0 +1,175 @@
+[
+  {
+    "id": "sankhara",
+    "question": "What is saṅkhāra?",
+    "expects_book_ids": ["S-iii", "S-ii", "Dhp"],
+    "expects_para_any": [
+      {"book_id": "S-iii", "para_id": 451},
+      {"book_id": "S-ii", "para_id": 10}
+    ],
+    "tags": ["concept", "polysemous"],
+    "search_terms": ["saṅkhāra"],
+    "senses": [
+      {"label": "khandha", "terms": ["saṅkhāra khandha"], "nikayas": ["S-"]},
+      {"label": "paṭiccasamuppāda", "terms": ["saṅkhāra paṭiccasamuppāda"], "nikayas": ["S-"]},
+      {"label": "conditioned", "terms": ["saṅkhārā aniccā"], "nikayas": ["Dhp"]}
+    ]
+  },
+  {
+    "id": "sankhara_dhp",
+    "question": "What does the Dhammapada say about conditioned things (saṅkhārā) being impermanent?",
+    "expects_book_ids": ["Dhp"],
+    "expects_para_any": [
+      {"book_id": "Dhp", "para_id": 899},
+      {"book_id": "Dhp", "para_id": 902}
+    ],
+    "tags": ["concept", "narrow"],
+    "search_terms": ["saṅkhārā aniccā"]
+  },
+  {
+    "id": "anapanasati_narrow",
+    "question": "What are the sixteen stages of ānāpānasati?",
+    "expects_book_ids": ["M-iii"],
+    "expects_para_any": [
+      {"book_id": "M-iii", "para_id": 439}
+    ],
+    "tags": ["narrow", "regression"],
+    "search_terms": ["ānāpānasati", "assasati passasati"]
+  },
+  {
+    "id": "satipatthana",
+    "question": "What are the four establishments of mindfulness (satipaṭṭhāna)?",
+    "expects_book_ids": ["D-ii"],
+    "expects_para_any": [
+      {"book_id": "D-ii", "para_id": 1341}
+    ],
+    "tags": ["concept"],
+    "search_terms": ["satipaṭṭhāna", "kāyānupassanā vedanānupassanā"]
+  },
+  {
+    "id": "sammaditthi",
+    "question": "What is right view (sammādiṭṭhi) according to the Buddha?",
+    "expects_book_ids": ["M-i"],
+    "expects_para_any": [
+      {"book_id": "M-i", "para_id": 237}
+    ],
+    "tags": ["concept"],
+    "search_terms": ["sammādiṭṭhi"]
+  },
+  {
+    "id": "vinaya_age",
+    "question": "At what age can a monk be ordained (upasampadā)?",
+    "expects_book_ids": ["Vin-iii", "Vin-i"],
+    "tags": ["vinaya", "navigation"],
+    "search_terms": ["upasampadā", "vīsativasso"],
+    "nikayas": ["Vin-"]
+  },
+  {
+    "id": "vinaya_parajika",
+    "question": "What are the four pārājika rules that entail expulsion from the Saṅgha?",
+    "expects_book_ids": ["Vin-i"],
+    "tags": ["vinaya"],
+    "search_terms": ["pārājika", "methuna"],
+    "nikayas": ["Vin-"]
+  },
+  {
+    "id": "abhidhamma_khandha",
+    "question": "How does the Abhidhamma classify the five aggregates (khandhā)?",
+    "expects_book_ids": ["Vibh", "Dhs"],
+    "tags": ["abhidhamma"],
+    "search_terms": ["khandha", "rūpakkhandha"],
+    "categories": ["abhidhamma"]
+  },
+  {
+    "id": "abhidhamma_vibhanga",
+    "question": "What does the Vibhaṅga say about dependent origination?",
+    "expects_book_ids": ["Vibh"],
+    "tags": ["abhidhamma"],
+    "search_terms": ["paṭiccasamuppāda"],
+    "categories": ["abhidhamma"]
+  },
+  {
+    "id": "metta_sutta",
+    "question": "What does the Karaṇīyamettasutta teach about loving-kindness?",
+    "expects_book_ids": ["Khp"],
+    "tags": ["narrow"],
+    "search_terms": ["mettā", "karaṇīya"]
+  },
+  {
+    "id": "dhamma_characteristic",
+    "question": "What are the three characteristics of existence?",
+    "expects_book_ids": ["Dhp", "S-iii"],
+    "tags": ["concept"],
+    "search_terms": ["anicca dukkha anatta"]
+  },
+  {
+    "id": "nidana",
+    "question": "What is dependent origination (paṭiccasamuppāda)?",
+    "expects_book_ids": ["S-ii"],
+    "expects_para_any": [
+      {"book_id": "S-ii", "para_id": 10}
+    ],
+    "tags": ["concept", "polysemous"],
+    "search_terms": ["paṭiccasamuppāda", "avijjāpaccayā"],
+    "senses": [
+      {"label": "sutta", "terms": ["paṭiccasamuppāda"], "nikayas": ["S-"]},
+      {"label": "vibhanga", "terms": ["paṭiccasamuppāda"], "categories": ["abhidhamma"]}
+    ]
+  },
+  {
+    "id": "commentary_mahavagga",
+    "question": "What does the commentary say about the Buddha's first sermon at Sārnāth?",
+    "expects_book_ids": ["Vin-iii", "S-"],
+    "tags": ["commentary-seeking"],
+    "search_terms": ["dhammacakkappavattana", "isipatana"]
+  },
+  {
+    "id": "commentary_metta",
+    "question": "What is the story behind the Metta Sutta according to the commentary?",
+    "expects_book_ids": ["Khp"],
+    "tags": ["commentary-seeking"],
+    "search_terms": ["mettā", "bhikkhū"]
+  },
+  {
+    "id": "jataka_story",
+    "question": "Tell me the story of the Monkey King jātaka.",
+    "expects_book_ids": ["Ja-"],
+    "tags": ["jataka", "story"],
+    "search_terms": ["vānara", "jātaka"]
+  },
+  {
+    "id": "reader_attachment",
+    "question": "In the Khandhavagga, what does the Buddha say about clinging to the aggregates?",
+    "expects_book_ids": ["S-iii"],
+    "tags": ["sutta-attachment"],
+    "search_terms": ["upādāna", "khandha"]
+  },
+  {
+    "id": "nibbana_narrow",
+    "question": "What is the definition of nibbāna as the end of craving?",
+    "expects_book_ids": ["S-ii", "Dhp"],
+    "tags": ["concept"],
+    "search_terms": ["nibbāna", "taṇhakkhaya"]
+  },
+  {
+    "id": "five_precepts",
+    "question": "What are the five precepts (pañcasīla) in the suttas?",
+    "expects_book_ids": ["D-", "A-"],
+    "tags": ["narrow"],
+    "search_terms": ["pāṇātipātā", "musāvādā"]
+  },
+  {
+    "id": "brahmavihara",
+    "question": "What are the four divine abodes (brahmavihārā)?",
+    "expects_book_ids": ["D-ii", "M-i"],
+    "tags": ["concept"],
+    "search_terms": ["mettā karuṇā muditā upekkhā"]
+  },
+  {
+    "id": "anatta_sn",
+    "question": "What does the Buddha teach about not-self (anattā) in the Khandhasaṃyutta?",
+    "expects_book_ids": ["S-iii"],
+    "tags": ["concept", "sutta-attachment"],
+    "search_terms": ["anattā", "sabbe dhammā anattā"]
+  }
+]

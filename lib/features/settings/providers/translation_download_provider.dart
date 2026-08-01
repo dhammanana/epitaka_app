@@ -278,9 +278,7 @@ class TranslationDownloadNotifier
       if (version.isNissaya) {
         ref.invalidate(nissayaDbByFilenameProvider(version.filename));
       } else {
-        ref.invalidate(translationDbProvider(
-          TranslationLanguage.fromCode(version.languageCode),
-        ));
+        ref.invalidate(translationDbProvider(version.languageCode));
       }
 
       state = {

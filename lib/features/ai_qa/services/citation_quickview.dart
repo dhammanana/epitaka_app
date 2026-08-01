@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/models/app_models.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
@@ -59,8 +58,7 @@ Future<void> showCitationQuickview(
     final translationMap = <String, Map<String, String>>{};
     if (activeLang != null) {
       try {
-        final lang = TranslationLanguage.fromCode(activeLang);
-        final transDb = await ref.read(translationDbProvider(lang).future);
+        final transDb = await ref.read(translationDbProvider(activeLang).future);
         if (transDb != null) {
           final transRows = await transDb
               .customSelect(

@@ -109,7 +109,7 @@ class _IndexProgressScreenState extends ConsumerState<IndexProgressScreen> {
           });
 
           final translationDb =
-              await ref.read(translationDbProvider(trans.language).future);
+              await ref.read(translationDbProvider(trans.languageCode).future);
           if (translationDb != null) {
             try {
               await appDb.buildTranslationSearchIndex(

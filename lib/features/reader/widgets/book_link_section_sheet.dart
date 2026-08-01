@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/models/app_models.dart';
 import '../../../core/database/translation_database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -78,8 +77,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
       final transDbs = <String, TranslationDatabase>{};
       for (final langCode in enabledLangs) {
         try {
-          final lang = TranslationLanguage.fromCode(langCode);
-          final transDb = await ref.read(translationDbProvider(lang).future);
+          final transDb = await ref.read(translationDbProvider(langCode).future);
           if (transDb != null) {
             transDbs[langCode] = transDb;
           }

@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/app_models.dart';
 import 'database_provider.dart';
 import 'settings_provider.dart';
 
@@ -141,7 +140,7 @@ final paliDefinitionProvider = FutureProvider.autoDispose
         final translationByLine = <String, String>{};
         for (final code in langCodes) {
           final transDb = await ref.read(
-            translationDbProvider(TranslationLanguage.fromCode(code)).future,
+            translationDbProvider(code).future,
           );
           if (transDb == null) continue;
           final transRows = await transDb

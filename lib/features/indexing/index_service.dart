@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
-import '../../core/models/app_models.dart';
 import '../../core/providers/app_db_provider.dart';
 import '../../core/providers/database_provider.dart';
 import '../../core/providers/translation_manifest_provider.dart';
@@ -47,12 +46,8 @@ class IndexService {
     debugPrint('[INDEX_SVC] buildIndex: starting for lang=$translationLang');
     final appDb = await _ref.read(appDbProvider.future);
     final epitakaDb = await _ref.read(epitakaDbProvider.future);
-    final translationLangEnum = TranslationLanguage.values.firstWhere(
-      (l) => l.code == translationLang,
-      orElse: () => TranslationLanguage.english,
-    );
     final transDb = await _ref.read(
-      translationDbProvider(translationLangEnum).future,
+      translationDbProvider(translationLang).future,
     );
 
     if (transDb == null) {
@@ -149,9 +144,8 @@ class IndexService {
       if (seenLangCodes.contains(version.languageCode)) continue;
       seenLangCodes.add(version.languageCode);
       try {
-        final langEnum = TranslationLanguage.fromCode(version.languageCode);
         final transDb = await _ref.read(
-          translationDbProvider(langEnum).future,
+          translationDbProvider(version.languageCode).future,
         );
         if (transDb != null) {
           final alreadyBuilt = await appDb.isTranslationIndexBuilt(

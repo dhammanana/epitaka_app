@@ -1,0 +1,1719 @@
+{
+  "db_dir": "/Users/totden/Library/Containers/com.dn.epitaka/Data/Documents",
+  "bm25_available": false,
+  "summary": {
+    "total": 20,
+    "passed": 9,
+    "avg_book_recall": 0.6916666666666667,
+    "avg_precision": 0.11772361933462513,
+    "avg_steps": 3.6
+  },
+  "results": [
+    {
+      "id": "sankhara",
+      "pass": false,
+      "book_recall": 0.3333333333333333,
+      "para_any_hit": false,
+      "precision": 0.027777777777777776,
+      "steps": 6,
+      "retrieved_books": [
+        "A-iii",
+        "A-iv",
+        "Abh-pv",
+        "AbhMāt",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Abhidh-av-pt",
+        "Abhidh-av-vinich",
+        "Abhidh-s",
+        "Anudīp",
+        "As",
+        "D-ii",
+        "D-iii",
+        "Dhatuk-a",
+        "Dhp-a",
+        "Dhs-anuṭ",
+        "Ja-ṭ-i",
+        "Ja-ṭ-iii",
+        "Jinvdīp",
+        "Kacc-sadd",
+        "Kv",
+        "Paṭis",
+        "Vibh",
+        "Yam-i",
+        "Yam-ii"
+      ],
+      "missing_books": [
+        "S-iii",
+        "S-ii"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "saṅkhāra"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "saṅkhāra"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "saṅkhāra khandha"
+            ],
+            "categories": [],
+            "nikayas": [
+              "S-"
+            ]
+          },
+          "hits": 0,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "saṅkhāra paṭiccasamuppāda"
+            ],
+            "categories": [],
+            "nikayas": [
+              "S-"
+            ]
+          },
+          "hits": 0,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "saṅkhārā aniccā"
+            ],
+            "categories": [],
+            "nikayas": [
+              "Dhp"
+            ]
+          },
+          "hits": 2,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "saṅkhāra"
+          },
+          "hits": 1,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "sankhara_dhp",
+      "pass": false,
+      "book_recall": 1.0,
+      "para_any_hit": false,
+      "precision": 0.04285714285714286,
+      "steps": 3,
+      "retrieved_books": [
+        "A-iii",
+        "A-iv",
+        "A-vii",
+        "A-x",
+        "Abh-pv",
+        "AbhMāt",
+        "Abhidh-av-nt",
+        "Abhidh-av-vinich",
+        "Anudīp",
+        "Ap-i",
+        "Ap-ii",
+        "Ap-iii",
+        "As",
+        "Catur",
+        "Cp-a",
+        "D-ii",
+        "D-iii",
+        "Dhammn",
+        "Dhp-a",
+        "Ja-a-i",
+        "Ja-a-iv",
+        "Ja-i",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-iii",
+        "Kv",
+        "M-i",
+        "Mp-iv",
+        "Mp-t-iii",
+        "Mp-vii",
+        "S-iii",
+        "SN-pv",
+        "Spk-iv",
+        "Spk-t-iv"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "saṅkhārā aniccā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "saṅkhārā aniccā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "saṅkhārā aniccā"
+          },
+          "hits": 0,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "anapanasati_narrow",
+      "pass": false,
+      "book_recall": 1.0,
+      "para_any_hit": false,
+      "precision": 0.03125,
+      "steps": 3,
+      "retrieved_books": [
+        "A-ix",
+        "A-x",
+        "Ap-iii",
+        "D-ii",
+        "Ja-a-i",
+        "Ja-ṭ-i",
+        "Ja-ṭ-iv",
+        "M-i",
+        "M-ii",
+        "M-iii",
+        "Mhv",
+        "Nidd-i",
+        "Nirud",
+        "Paṭis",
+        "Paṭis-a",
+        "Ps-ii",
+        "S-v",
+        "Sadd-dh",
+        "Sp-i",
+        "Sp-t-i-b",
+        "Sv-ii",
+        "Th",
+        "Th-a-i",
+        "Th-a-ii",
+        "Thī-a",
+        "Vin-i",
+        "Vin-vn-t",
+        "Vism-i",
+        "Vism-mht-i"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "ānāpānasati"
+          },
+          "hits": 6,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "ānāpānasati"
+          },
+          "hits": 9,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "assasati passasati"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "satipatthana",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.075,
+      "steps": 4,
+      "retrieved_books": [
+        "A-iv",
+        "A-ix",
+        "Abh-pv",
+        "AbhMāt",
+        "D-ii",
+        "DN-pv",
+        "Jinvdīp",
+        "Kv",
+        "Kv-a",
+        "Kv-anuṭ",
+        "Kv-mt",
+        "M-i",
+        "MN-pv",
+        "Moh",
+        "Mp-t-i",
+        "Namar-p",
+        "Paṭis",
+        "Paṭis-a",
+        "Ps-i",
+        "Ps-t-i",
+        "S-iv",
+        "S-v",
+        "SN-pv",
+        "Spk-t-i",
+        "Spk-t-v",
+        "Spk-v",
+        "Sv-ii",
+        "Sv-iii",
+        "Sv-pt-ii",
+        "Vibh",
+        "Vibh-a",
+        "Vibh-anuṭ",
+        "Vibh-mt"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "satipaṭṭhāna"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "satipaṭṭhāna"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "kāyānupassanā vedanānupassanā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "satipaṭṭhāna"
+          },
+          "hits": 10,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "sammaditthi",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.12857142857142856,
+      "steps": 3,
+      "retrieved_books": [
+        "A-i",
+        "A-iii",
+        "A-iv",
+        "A-v",
+        "A-x",
+        "Anudīp",
+        "As",
+        "D-ii",
+        "D-iii",
+        "Dhp-a",
+        "It",
+        "It-a",
+        "Ja-ṭ-iii",
+        "Kv",
+        "M-i",
+        "M-ii",
+        "M-iii",
+        "Mp-i",
+        "Mp-iii",
+        "Mp-iv",
+        "Mp-t-i",
+        "Mp-t-v",
+        "Mp-t-vi",
+        "Mp-v",
+        "Mp-vi",
+        "Narad",
+        "Nett",
+        "Nett-vbh",
+        "Nirud",
+        "Ps-i",
+        "Ps-t-i",
+        "S-iv",
+        "Spk-t-ii",
+        "Vibh"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "sammādiṭṭhi"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "sammādiṭṭhi"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "sammādiṭṭhi"
+          },
+          "hits": 11,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "vinaya_age",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.14166666666666666,
+      "steps": 4,
+      "retrieved_books": [
+        "A-v",
+        "A-viii",
+        "A-x",
+        "Abh-ṭ",
+        "D-i",
+        "Ja-ṭ-i",
+        "Khuddas-pt",
+        "Kkh",
+        "Kkh-nt",
+        "Mhv",
+        "Mil",
+        "Mp-t-i",
+        "Mp-t-ii",
+        "Mp-v",
+        "Mp-x",
+        "Nett-a",
+        "Paṭis-a",
+        "Pj-i",
+        "Pācity-y",
+        "Sp-i",
+        "Sp-ii",
+        "Sp-iii",
+        "Sp-iv",
+        "Sp-t-i-a",
+        "Sp-t-ii",
+        "Sp-t-iii",
+        "Sp-t-iv",
+        "Sp-t-v",
+        "Sp-v",
+        "Sv-ii",
+        "Sīmav",
+        "Thī-a",
+        "Utt-vn",
+        "Utt-vn-t",
+        "Vibh-a",
+        "Vin-alaṅke",
+        "Vin-ii",
+        "Vin-ii-b",
+        "Vin-iii",
+        "Vin-iv",
+        "Vin-pv",
+        "Vin-v",
+        "Vin-vn",
+        "Vin-vn-t",
+        "VinSaṅg-a",
+        "Vjb-bkn",
+        "Vjb-mv",
+        "Vjb-pac",
+        "Vjb-pr",
+        "Vmv-ii",
+        "Vmv-iii"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "upasampadā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "upasampadā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "vīsativasso"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "upasampadā",
+              "vīsativasso"
+            ],
+            "categories": [],
+            "nikayas": [
+              "Vin-"
+            ]
+          },
+          "hits": 32,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "vinaya_parajika",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.11666666666666667,
+      "steps": 4,
+      "retrieved_books": [
+        "A-vii",
+        "Cāṇn",
+        "D-ii",
+        "D-iii",
+        "Dhammn",
+        "Dhp-a",
+        "Dvem-bhk",
+        "Dvem-bhni",
+        "Ja-a-v",
+        "Ja-ṭ-i",
+        "Ja-ṭ-ii",
+        "Khuddas",
+        "Khuddas-nt",
+        "Khuddas-pt",
+        "Kkh",
+        "Kkh-nt",
+        "Kkh-pt",
+        "Lokan",
+        "Mp-i",
+        "Mp-t-vii",
+        "Mp-vii",
+        "Mūlasikk",
+        "Mūlasikk-t",
+        "Nidd-i",
+        "PadRūp",
+        "Pj-ii",
+        "Pācity-y",
+        "Sp-i",
+        "Sp-ii",
+        "Sp-ii-b",
+        "Sp-t-i-b",
+        "Sp-t-v",
+        "Sv-i",
+        "Sv-pt-iii",
+        "Ud-a",
+        "Utt-vn",
+        "Vessg",
+        "Vin-i",
+        "Vin-iv",
+        "Vin-pv",
+        "Vin-v",
+        "Vin-vn-t",
+        "Vjb-bkn",
+        "Vjb-pr",
+        "Vjb-prj"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "pārājika"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "pārājika"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "methuna"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "pārājika",
+              "methuna"
+            ],
+            "categories": [],
+            "nikayas": [
+              "Vin-"
+            ]
+          },
+          "hits": 13,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "abhidhamma_khandha",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.06779661016949153,
+      "steps": 4,
+      "retrieved_books": [
+        "A-iv",
+        "A-ix",
+        "A-vi",
+        "Abh-pv",
+        "Abh-ṭ",
+        "AbhMāt",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Abhidh-av-sacc",
+        "Anudīp",
+        "Ap-a",
+        "As",
+        "As-mt",
+        "Cp-a",
+        "D-i",
+        "D-ii",
+        "DN-pv",
+        "Dhatuk-a",
+        "Dhatuk-anuṭ",
+        "Dhatuk-mt",
+        "Dhp-a",
+        "Dhs-anuṭ",
+        "Kv",
+        "Kv-anuṭ",
+        "M-iii",
+        "Moh",
+        "Mp-t-i",
+        "Nett-ṭ",
+        "Nidd-a-ii",
+        "Paṭis",
+        "Paṭis-a",
+        "Paṭṭh-i",
+        "Paṭṭh-ii",
+        "Ps-i",
+        "Ps-t-i",
+        "S-iii",
+        "Sp-t-i-a",
+        "Spk-t-i",
+        "Spk-t-ii",
+        "Sv-ii",
+        "Sv-iii",
+        "Sv-pt-ii",
+        "Sv-pt-iii",
+        "Vibh-a",
+        "Vibh-anuṭ",
+        "Vibh-mt",
+        "Vism-i",
+        "Vism-ii",
+        "Vism-mht-ii",
+        "Vmv-i",
+        "Yam-a",
+        "Yam-anuṭ",
+        "Yam-i"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "khandha"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "khandha"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "rūpakkhandha"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "khandha",
+              "rūpakkhandha"
+            ],
+            "categories": [
+              "abhidhamma"
+            ],
+            "nikayas": []
+          },
+          "hits": 0,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "abhidhamma_vibhanga",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.2,
+      "steps": 3,
+      "retrieved_books": [
+        "Abh-pv",
+        "AbhMāt",
+        "Abhidh-s",
+        "Abhidh-s-t",
+        "Anudīp",
+        "Dhatuk-a",
+        "Dhatuk-anuṭ",
+        "Dhatuk-mt",
+        "Dhs",
+        "Kv",
+        "Kv-a",
+        "Kv-anuṭ",
+        "Kv-mt",
+        "Namar-p",
+        "Paṭis-a",
+        "Pet",
+        "Ps-t-i",
+        "S-ii",
+        "SN-pv",
+        "Sp-iii",
+        "Spk-ii",
+        "Spk-t-i",
+        "Spk-t-ii",
+        "Sv-ii",
+        "Sv-pt-ii",
+        "Ud-a",
+        "Vibh",
+        "Vibh-a",
+        "Vibh-anuṭ",
+        "Vibh-mt",
+        "Vism-ii",
+        "Vism-mht-ii"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "paṭiccasamuppāda"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "paṭiccasamuppāda"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "paṭiccasamuppāda"
+            ],
+            "categories": [
+              "abhidhamma"
+            ],
+            "nikayas": []
+          },
+          "hits": 0,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "metta_sutta",
+      "pass": false,
+      "book_recall": 0.0,
+      "para_any_hit": true,
+      "precision": 0.0,
+      "steps": 3,
+      "retrieved_books": [
+        "A-iii",
+        "A-iv",
+        "A-viii",
+        "A-x",
+        "A-xi",
+        "Abhidh-av-sacc",
+        "As",
+        "As-mt",
+        "Att-pv",
+        "Buddhaguṇ",
+        "Catur",
+        "Cp",
+        "Cp-a",
+        "D-ii",
+        "It",
+        "It-a",
+        "Ja-a-v",
+        "Ja-i",
+        "Ja-ii",
+        "Ja-ṭ-i",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-iii",
+        "Ja-ṭ-iv",
+        "Kv",
+        "M-ii",
+        "M-iii",
+        "Mil",
+        "Mil-t",
+        "MoggVutt",
+        "Moh",
+        "Mp-iii",
+        "Mp-iv",
+        "Mp-ix",
+        "Mp-t-i",
+        "Mp-t-iii",
+        "Mp-t-iv",
+        "Mp-t-ix",
+        "Mp-t-v",
+        "Mp-t-vi",
+        "Mp-t-viii",
+        "Mp-t-x",
+        "Mp-t-xi",
+        "Mp-vi",
+        "Mp-viii",
+        "Mp-x",
+        "Namar-p",
+        "Nett",
+        "Nett-a",
+        "Nidd-a-ii",
+        "PadRūp",
+        "Paṭis",
+        "Paṭis-a",
+        "Pācity-y",
+        "S-i",
+        "S-v",
+        "Sadd-pad",
+        "Samantak",
+        "Sn",
+        "Sp-i",
+        "Spk-t-v",
+        "Spk-v",
+        "Th",
+        "Vibh"
+      ],
+      "missing_books": [
+        "Khp"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "mettā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "mettā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "karaṇīya"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "dhamma_characteristic",
+      "pass": false,
+      "book_recall": 0.5,
+      "para_any_hit": true,
+      "precision": 0.014285714285714285,
+      "steps": 3,
+      "retrieved_books": [
+        "A-ii",
+        "A-iii",
+        "A-iv",
+        "A-v",
+        "A-vi",
+        "A-vii",
+        "A-viii",
+        "A-x",
+        "AN-pv",
+        "Abh-pv",
+        "Abh-ṭ",
+        "AbhMāt",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Mp-iii",
+        "Mp-v",
+        "Paṭis",
+        "Paṭis-a",
+        "Paṭṭh-i",
+        "Paṭṭh-ii",
+        "S-iii",
+        "Spk-iii",
+        "Vibh",
+        "Vism-ii"
+      ],
+      "missing_books": [
+        "Dhp"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "anicca dukkha anatta"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "anicca dukkha anatta"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "anicca dukkha anatta"
+          },
+          "hits": 0,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "nidana",
+      "pass": false,
+      "book_recall": 1.0,
+      "para_any_hit": false,
+      "precision": 0.15833333333333333,
+      "steps": 6,
+      "retrieved_books": [
+        "Abh-pv",
+        "AbhMāt",
+        "Abhidh-s",
+        "Abhidh-s-t",
+        "Anudīp",
+        "Dhatuk-a",
+        "Dhatuk-anuṭ",
+        "Dhatuk-mt",
+        "Dhs",
+        "Kv",
+        "Kv-a",
+        "Kv-anuṭ",
+        "Kv-mt",
+        "Mp-iv",
+        "Mp-t-iv",
+        "Namar-p",
+        "Nett",
+        "Nett-a",
+        "Paṭis-a",
+        "Pet",
+        "Pj-ii",
+        "PmtDīp",
+        "Ps-t-i",
+        "S-ii",
+        "SN-pv",
+        "Sp-iii",
+        "Spk-ii",
+        "Spk-t-i",
+        "Spk-t-ii",
+        "Sv-ii",
+        "Sv-nt-i",
+        "Sv-pt-ii",
+        "Ud-a",
+        "Vibh",
+        "Vibh-a",
+        "Vibh-anuṭ",
+        "Vibh-mt",
+        "Vism-ii",
+        "Vism-mht-ii"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "paṭiccasamuppāda"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "paṭiccasamuppāda"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "avijjāpaccayā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "paṭiccasamuppāda"
+            ],
+            "categories": [],
+            "nikayas": [
+              "S-"
+            ]
+          },
+          "hits": 1,
+          "method": "like"
+        },
+        {
+          "tool": "search_by_category",
+          "args": {
+            "queries": [
+              "paṭiccasamuppāda"
+            ],
+            "categories": [
+              "abhidhamma"
+            ],
+            "nikayas": []
+          },
+          "hits": 0,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "paṭiccasamuppāda"
+          },
+          "hits": 2,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "commentary_mahavagga",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.10256410256410256,
+      "steps": 3,
+      "retrieved_books": [
+        "Ap-a",
+        "As",
+        "Bv-a",
+        "D-ii",
+        "Dat.h",
+        "Dhs-anuṭ",
+        "It-a",
+        "Ja-a-ii",
+        "Ja-ṭ-i",
+        "Jinal",
+        "M-i",
+        "M-ii",
+        "Mhv",
+        "Mp-i",
+        "Mp-t-iii",
+        "Mp-t-iv",
+        "Nett-a",
+        "Nāmakkp",
+        "Nāmakkṭ",
+        "Paṭis-a",
+        "Pj-i",
+        "Pj-ii",
+        "Ps-i",
+        "Ps-iii",
+        "Pv-a",
+        "S-v",
+        "SN-pv",
+        "Sas",
+        "Sp-t-i-a",
+        "Sp-t-iii",
+        "Spk-i",
+        "Spk-t-v",
+        "Spk-v",
+        "Subodh-t",
+        "Sv-i",
+        "Sv-ii",
+        "Sv-nt-i",
+        "Sv-pt-i",
+        "Sv-pt-ii",
+        "Th-a-i",
+        "Th-a-ii",
+        "Thup",
+        "Ud-a",
+        "Vibh-mt",
+        "Vin-iii",
+        "Vism-mht-ii",
+        "Vjb-mv",
+        "Vmv-i",
+        "Vv-a"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "dhammacakkappavattana"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "dhammacakkappavattana"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "isipatana"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "commentary_metta",
+      "pass": false,
+      "book_recall": 0.0,
+      "para_any_hit": true,
+      "precision": 0.0,
+      "steps": 3,
+      "retrieved_books": [
+        "A-i",
+        "A-ii",
+        "A-iii",
+        "A-iv",
+        "A-ix",
+        "A-v",
+        "A-vi",
+        "A-vii",
+        "A-viii",
+        "A-x",
+        "A-xi",
+        "Abh-ṭ",
+        "Abhidh-av-sacc",
+        "Abhidh-s",
+        "Ap-a",
+        "As",
+        "As-mt",
+        "Buddhaguṇ",
+        "Catur",
+        "Cp",
+        "Cp-a",
+        "D-ii",
+        "It",
+        "It-a",
+        "Ja-i",
+        "Ja-ṭ-i",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-iii",
+        "M-ii",
+        "M-iii",
+        "Mil",
+        "Mil-t",
+        "Moh",
+        "Mp-iv",
+        "Mp-ix",
+        "Mp-t-i",
+        "Mp-t-ix",
+        "Mp-t-v",
+        "Mp-t-vi",
+        "Mp-t-viii",
+        "Mp-t-xi",
+        "Mp-vi",
+        "Mp-viii",
+        "Namar-p",
+        "Nett",
+        "Paṭis",
+        "Paṭis-a",
+        "S-v",
+        "Th",
+        "Vibh"
+      ],
+      "missing_books": [
+        "Khp"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "mettā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "mettā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "bhikkhū"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "jataka_story",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.8,
+      "steps": 3,
+      "retrieved_books": [
+        "Abh-ṭ",
+        "Ap-a",
+        "Cp-a",
+        "D-ii",
+        "Dhp-a",
+        "Ja-a-i",
+        "Ja-a-ii",
+        "Ja-a-iii",
+        "Ja-a-v",
+        "Ja-a-vi",
+        "Ja-a-vi-b",
+        "Ja-a-vii",
+        "Ja-i",
+        "Ja-ii",
+        "Ja-ṭ-i",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-iii",
+        "Ja-ṭ-iv",
+        "Ja-ṭ-v",
+        "Jinal",
+        "Mp-i",
+        "Mp-t-iv",
+        "Mp-x",
+        "Nirud",
+        "Payog",
+        "Ps-ii",
+        "Ps-t-ii",
+        "Sp-t-iii",
+        "Spk-t-iii",
+        "Th",
+        "Th-a-i",
+        "Th-a-ii",
+        "Vin-alaṅke",
+        "Vin-vn-t",
+        "Vism-i",
+        "Vmv-iii"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "vānara"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "vānara"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "jātaka"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "reader_attachment",
+      "pass": false,
+      "book_recall": 0.0,
+      "para_any_hit": true,
+      "precision": 0.0,
+      "steps": 3,
+      "retrieved_books": [
+        "A-iv",
+        "A-ix",
+        "A-vi",
+        "Abh-pv",
+        "Abh-ṭ",
+        "AbhMāt",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Abhidh-av-pt",
+        "Abhidh-av-sacc",
+        "Abhidh-s",
+        "Abhidh-s-t",
+        "Anudīp",
+        "Ap-a",
+        "As",
+        "As-mt",
+        "Cp-a",
+        "D-i",
+        "D-ii",
+        "D-iii",
+        "DN-pv",
+        "Dhatuk-a",
+        "Dhatuk-anuṭ",
+        "Dhatuk-mt",
+        "Dhp-a",
+        "Dhs",
+        "Khp",
+        "Khuddas-nt",
+        "Kkh-nt",
+        "Kv",
+        "M-i",
+        "M-iii",
+        "MoggPañc",
+        "Moh",
+        "Nett",
+        "Nidd-a-i",
+        "Nidd-a-ii",
+        "Padamañj",
+        "Payog",
+        "Paṭis",
+        "Paṭis-a",
+        "Paṭṭh-iii",
+        "Paṭṭh-iv"
+      ],
+      "missing_books": [
+        "S-iii"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "upādāna"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "upādāna"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "khandha"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "nibbana_narrow",
+      "pass": false,
+      "book_recall": 0.5,
+      "para_any_hit": true,
+      "precision": 0.041666666666666664,
+      "steps": 4,
+      "retrieved_books": [
+        "A-iv",
+        "A-ix",
+        "A-vi",
+        "A-vii",
+        "AN-pv",
+        "Abh",
+        "Abh-ṭ",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Abhidh-av-pt",
+        "Abhidh-av-sacc",
+        "Abhidh-av-vinich",
+        "Abhidh-s",
+        "Abhidh-s-t",
+        "Anudīp",
+        "Ap-a",
+        "As",
+        "Buddhaguṇ",
+        "Bv-a",
+        "D-i",
+        "D-ii",
+        "DN-pv",
+        "Dhp",
+        "Dhp-a",
+        "It",
+        "It-a",
+        "Ja-a-ii",
+        "Ja-i",
+        "Mil",
+        "Mil-t",
+        "Nidd-ii",
+        "Nāmakkṭ",
+        "Pet",
+        "Pj-ii",
+        "S-iv",
+        "S-v",
+        "SN-pv",
+        "Sn",
+        "Spk-iv",
+        "Spk-t-iv",
+        "Spk-t-v",
+        "Spk-v",
+        "Th",
+        "Th-a-ii",
+        "Thī-a",
+        "Ud"
+      ],
+      "missing_books": [
+        "S-ii"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "nibbāna"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "nibbāna"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "taṇhakkhaya"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "nibbāna"
+          },
+          "hits": 3,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "five_precepts",
+      "pass": false,
+      "book_recall": 0.5,
+      "para_any_hit": true,
+      "precision": 0.22807017543859648,
+      "steps": 3,
+      "retrieved_books": [
+        "A-iii",
+        "A-iv",
+        "A-v",
+        "A-viii",
+        "A-x",
+        "Abh-pv",
+        "Abh-ṭ",
+        "Abhidh-av-nt",
+        "Abhidh-s-t",
+        "Anudīp",
+        "As",
+        "As-mt",
+        "Buddhaguṇ",
+        "Dhp-a",
+        "Dhātv",
+        "It-a",
+        "Ja-a-vi",
+        "Ja-ṭ-i",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-iii",
+        "Khp",
+        "Kkh",
+        "Kv",
+        "Kv-a",
+        "Mil",
+        "Moh",
+        "Mp-iii",
+        "Mp-iv",
+        "Mp-t-iii",
+        "Mp-t-x",
+        "Namar-p",
+        "Nett-ṭ",
+        "Nidd-a-i",
+        "Paṭis-a",
+        "Pet",
+        "Pj-i",
+        "PmtDīp",
+        "Ps-i",
+        "Ps-t-i",
+        "Pācity-y",
+        "Rasav",
+        "S-ii",
+        "S-iv",
+        "S-v",
+        "Sp-ii-b",
+        "Spk-i",
+        "Spk-ii",
+        "Subodh",
+        "Subodh-t",
+        "Sv-iii",
+        "Sv-nt-i",
+        "Sv-nt-ii",
+        "Sv-pt-i",
+        "Sv-pt-ii",
+        "Thī-a",
+        "Utt-vn",
+        "Vibh",
+        "Vibh-a",
+        "Vibh-anuṭ",
+        "Vin-v",
+        "Vism-mht-i",
+        "Vv",
+        "Vv-a"
+      ],
+      "missing_books": [
+        "D-"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "pāṇātipātā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "pāṇātipātā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "musāvādā"
+          },
+          "hits": 50,
+          "method": "like"
+        }
+      ]
+    },
+    {
+      "id": "brahmavihara",
+      "pass": false,
+      "book_recall": 0.0,
+      "para_any_hit": true,
+      "precision": 0.0,
+      "steps": 3,
+      "retrieved_books": [
+        "A-ii",
+        "A-iv",
+        "A-viii",
+        "A-xi",
+        "AbhMāt",
+        "Abhidh-av",
+        "Abhidh-av-nt",
+        "Abhidh-av-pt",
+        "Abhidh-av-sacc",
+        "Abhidh-av-vinich",
+        "Abhidh-s",
+        "Abhidh-s-t",
+        "Anudīp",
+        "As",
+        "D-i",
+        "Ja-a-ii",
+        "Kv",
+        "Mp-v",
+        "S-v",
+        "Vibh",
+        "Vism-i"
+      ],
+      "missing_books": [
+        "D-ii",
+        "M-i"
+      ],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "mettā karuṇā muditā upekkhā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "mettā karuṇā muditā upekkhā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "mettā karuṇā muditā upekkhā"
+          },
+          "hits": 0,
+          "method": "dpd"
+        }
+      ]
+    },
+    {
+      "id": "anatta_sn",
+      "pass": true,
+      "book_recall": 1.0,
+      "para_any_hit": true,
+      "precision": 0.17796610169491525,
+      "steps": 4,
+      "retrieved_books": [
+        "A-ii",
+        "A-iii",
+        "A-iv",
+        "A-v",
+        "A-vi",
+        "A-vii",
+        "A-x",
+        "Dhp-a",
+        "Ja-ṭ-ii",
+        "Ja-ṭ-v",
+        "Jinvdīp",
+        "M-i",
+        "M-iii",
+        "Mp-iii",
+        "Namar-p",
+        "Nett-vbh",
+        "Nidd-ii",
+        "Nirud",
+        "Paṭis-a",
+        "Ps-t-i",
+        "S-iii",
+        "S-iv",
+        "S-v",
+        "Spk-iii",
+        "Spk-t-iii",
+        "Vibh"
+      ],
+      "missing_books": [],
+      "tool_trace": [
+        {
+          "tool": "search_sections",
+          "args": {
+            "query": "anattā"
+          },
+          "hits": 20,
+          "method": "fts"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "anattā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "search_tipitaka",
+          "args": {
+            "query": "sabbe dhammā anattā"
+          },
+          "hits": 50,
+          "method": "like"
+        },
+        {
+          "tool": "get_dictionary",
+          "args": {
+            "term": "anattā"
+          },
+          "hits": 11,
+          "method": "dpd"
+        }
+      ]
+    }
+  ]
+}

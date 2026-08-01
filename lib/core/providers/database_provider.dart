@@ -6,10 +6,8 @@ import 'package:path/path.dart' as p;
 import '../database/epitaka_database.dart';
 import '../database/nissaya_database.dart';
 import '../database/translation_database.dart';
-import '../models/app_models.dart';
 import '../models/translation_version.dart';
 import '../utils/database_initializer.dart';
-import 'settings_provider.dart';
 
 /// Provider for the main Tipitaka database (epitaka.db).
 final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
@@ -19,11 +17,16 @@ final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
 });
 
 /// Provider for a specific translation database (regular schema).
+///
+/// Keyed by the language CODE string (e.g. 'en', 'th', 'vi') rather than
+/// the `TranslationLanguage` enum. The enum only knows th/si/my/en and
+/// `fromCode()` silently maps unknown codes (vi, lo, ta …) to English,
+/// which made e.g. a downloaded `epitaka_vi.db` never get opened. Using the
+/// raw code here means any language offered by the manifest works.
 final translationDbProvider =
-    FutureProvider.family<TranslationDatabase?, TranslationLanguage>(
-        (ref, lang) async {
+    FutureProvider.family<TranslationDatabase?, String>((ref, langCode) async {
   final dbDir = await getDatabaseDirectory();
-  final dbPath = p.join(dbDir.path, lang.filename);
+  final dbPath = p.join(dbDir.path, TranslationFilenameParser.build(langCode));
   final file = File(dbPath);
   if (!await file.exists()) {
     return null;
@@ -57,9 +60,3 @@ final nissayaDbByFilenameProvider =
   return NissayaDatabase.open(dbPath);
 });
 
-
-/// Provider that watches the settings and returns the active translation language.
-final activeTranslationLangProvider = Provider<TranslationLanguage>((ref) {
-  final settings = ref.watch(settingsProvider);
-  return TranslationLanguage.fromCode(settings.primaryTranslationLang);
-});

@@ -579,8 +579,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final transLineMap = <int, Map<int, String>>{};
       if (activeLang != null) {
         try {
-          final lang = TranslationLanguage.fromCode(activeLang);
-          final transDb = await _ref.read(translationDbProvider(lang).future);
+          final transDb = await _ref.read(translationDbProvider(activeLang).future);
           if (transDb != null) {
             final tRows = await transDb.customSelect(
               'SELECT para_id, line_id, translation '

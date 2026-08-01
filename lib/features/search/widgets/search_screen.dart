@@ -279,8 +279,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final translationMap = <String, Map<String, String>>{};
       if (activeLang != null) {
         try {
-          final lang = TranslationLanguage.fromCode(activeLang);
-          final transDb = await ref.read(translationDbProvider(lang).future);
+          final transDb = await ref.read(translationDbProvider(activeLang).future);
           if (transDb != null) {
             final transRows = await transDb
                 .customSelect(

@@ -532,9 +532,8 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           }
         } else {
           // ── Load from standard translation database ───────────────
-          final lang = TranslationLanguage.fromCode(langCode);
           final translationDb = await _ref.read(
-            translationDbProvider(lang).future,
+            translationDbProvider(langCode).future,
           );
           if (translationDb == null) return;
 
