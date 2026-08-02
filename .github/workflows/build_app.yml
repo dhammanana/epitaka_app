@@ -561,36 +561,42 @@ jobs:
           path: |
             epitaka-linux-x64.AppImage
             epitaka-linux-x64.tar.gz
-
-# -------------------------------------------------------------
-
-# 6. PUBLISH RELEASE (ONLY RUNS ON TAGS)
-
-# -------------------------------------------------------------
+ # -------------------------------------------------------------
+  # 6. PUBLISH RELEASE (ONLY RUNS ON TAGS)
+  # -------------------------------------------------------------
   publish-release:
     name: Publish Release
     needs: [build-android, build-windows, build-macos, build-linux, build-ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Remove 'always()' if you want to ensure all builds must pass before releasing
+
     if: startsWith(github.ref, 'refs/tags/v')
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+
+      - name: Show downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find . -type f -print
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            android-release/*.apk
-            android-release/*.aab
-            windows-release/epitaka-windows-x64-setup.exe
-            windows-release/epitaka-windows-x64.zip
-            windows-release/*.msix
-            macos-release/epitaka-macos.dmg
-            ios-release/epitaka-ios-bundle.zip
-            linux-release/epitaka-linux-x64.AppImage
-            linux-release/epitaka-linux-x64.tar.gz
-          fail_on_unmatched_files: false
+            android-release/**/*.apk
+            android-release/**/*.aab
+
+            windows-release/**/*.exe
+            windows-release/**/*.zip
+            windows-release/**/*.msix
+
+            macos-release/**/*.dmg
+
+            linux-release/**/*.AppImage
+            linux-release/**/*.tar.gz
+
+          fail_on_unmatched_files: true
           generate_release_notes: true
