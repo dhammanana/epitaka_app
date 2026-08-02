@@ -166,6 +166,7 @@ dev_dependencies:
   riverpod_lint: ^2.6.5
   custom_lint: ^0.7.5
   flutter_launcher_icons: "^0.14.4"
+  msix: ^3.18.0
 
 flutter_launcher_icons:
   android: "ic_launcher"

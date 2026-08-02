@@ -313,6 +313,17 @@ jobs:
           find /tmp/dpd_x -name '*.db' -exec cp {} assets/db/ \;
           ls -la assets/db/
 
+      - name: Sync CocoaPods (flutter_onnxruntime 1.8.3 needs ONNX Runtime 1.23.0)
+        # The committed macos/Podfile.lock still pins onnxruntime-objc 1.24.2
+        # (from the old flutter_onnxruntime 1.8.0 podspec). The 1.8.3 podspec
+        # requires 1.23.0, and a plain `pod install` would fail on the version
+        # mismatch. `--repo-update` refreshes the specs so CocoaPods can
+        # resolve 1.23.0 and rewrite macos/Podfile.lock before the build.
+        run: |
+          cd macos
+          pod install --repo-update
+          cd ..
+
       - name: Build macOS Release
         # `flutter build macos --release` already produces a UNIVERSAL binary
         # (x86_64 + arm64) by default — the Flutter tool passes the generic
