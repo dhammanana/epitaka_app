@@ -286,10 +286,10 @@ jobs:
           path: |
             install/windows/epitaka-windows-x64-setup.exe
             build/windows/**/*.msix
-        shell: pwsh
-        run: |
-          $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
-          flutter build windows --release
+          shell: pwsh
+          run: |
+            $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
+            flutter build windows --release
 
   # -------------------------------------------------------------
   # 4. MACOS BUILD

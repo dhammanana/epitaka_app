@@ -7,5 +7,10 @@
   "epitaka_sumedha.db": "7b1663e44fb114ff56fd2c2cf626d816800d08f57eacf18738816e66bcaba697",
   "epitaka_ta.db": "7d21e52051f580002d343771ca1625b53d7bdcdedc78b1b1468d1ec59c63b6c4",
   "epitaka_th.db": "19a0641ee740a1daeece84b7e3191572c5e71bb5245ea766d1c6b5dc1f519a0d",
-  "epitaka_vec_converted.db": "573ed95026782b125fd9730d4c4ad1761d58e43cae789ee495f0047e12c3f757"
+  "epitaka_vec_converted.db": "573ed95026782b125fd9730d4c4ad1761d58e43cae789ee495f0047e12c3f757",
+  "epitaka_vec_slim.db": "71bb07be3731041df400a210f1865585b25aea900c41b9b82d444b8cba55a177",
+  "epitaka_vec-0.6b.db": "3dba5608667ed05e5d151188730c3a44bda120946e33ff5eb4a73c773b4c4211",
+  "epitaka_vec.db": "71bb07be3731041df400a210f1865585b25aea900c41b9b82d444b8cba55a177",
+  "epitaka_vi.db": "7129f8ef8929213ee8d723365a3ad4ace5736d1b21e002938871c52ac345dc29",
+  "epitaka.db": "4b7a02cb83e9658ce09f5a05de82703febccfa6a3ebb048bb9a69c577f49bd1a"
 }
