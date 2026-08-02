@@ -20,7 +20,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-import '../../../core/database/app_database.dart';
 import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
@@ -256,11 +255,17 @@ class AiQaToolService {
   }
 
   /// LIKE-based keyword search (fallback when BM25 is not available).
-  Future<ToolResult> _searchLike(String query) async {
+  ///
+  /// When [bookIds] is given (e.g. from search_by_category's resolved book
+  /// filter), the search is SCOPED to those books inside SQL — a global
+  /// book-ordered pool starves later books (S-*/D-*/M-*/Dhp sort after
+  /// A-*/Abh-*), so post-filtering never reaches them.
+  Future<ToolResult> _searchLike(String query, {Set<String>? bookIds}) async {
     try {
       final epitakaDb = await _ref.read(epitakaDbProvider.future);
 
-      debugPrint('[AI_QA] _searchLike: keywords="$query"');
+      debugPrint('[AI_QA] _searchLike: keywords="$query" '
+          'scoped=${bookIds?.length ?? 0} books');
 
       // Tokenise the query into keywords (split on whitespace)
       final keywords = query
@@ -277,42 +282,56 @@ class AiQaToolService {
 
       // Search Pāli text using LIKE.
       //
-      // Pool a generous number of candidates (ordered by book/para so no
-      // book is starved — with a plain LIMIT 50, A-*/Abh-* rows sort before
-      // S-*/D-*/M-*/Dhp and the canonical passages never surface), then
-      // RANK in Dart by keyword density so short, dense passages (e.g. a
-      // sutta verse) beat long paragraphs that merely mention the term once.
+      // Pool candidates with a PER-BOOK CAP (window function) so common
+      // terms cannot starve books whose IDs sort late (A-*/Abh-* rows would
+      // otherwise fill the pool before S-*/D-*/M-*/Dhp ever enter). The
+      // WHERE conditions are PARENTHESISED so an optional book scope
+      // applies to EVERY keyword, not just the last one.
       final conditions =
           keywords.map((_) => 'LOWER(s.pali) LIKE ?').join(' OR ');
       final likeParams = keywords.map((kw) => '%${kw.toLowerCase()}%').toList();
 
+      final bookClause = (bookIds != null && bookIds.isNotEmpty)
+          ? 'AND s.book_id IN (${bookIds.map((_) => '?').join(',')}) '
+          : '';
+
+      // Pool at PARAGRAPH level: group lines into whole paragraphs, then
+      // cap at 150 paragraphs per book. A paragraph whose answer spans
+      // several lines (e.g. the brahmavihāra formula at D-ii:716) is scored
+      // as a whole, and no single paragraph is starved because its book had
+      // 150+ matching LINES before it.
       final rows = await epitakaDb.customSelect(
-        'SELECT s.book_id, s.para_id, s.line_id, s.pali, '
-        'b.book_name '
-        'FROM sentences s '
-        'JOIN books b ON b.book_id = s.book_id '
-        'WHERE $conditions '
-        'ORDER BY s.book_id, s.para_id, s.line_id '
-        'LIMIT 1000',
+        '''
+        SELECT * FROM (
+          SELECT s.book_id, s.para_id,
+                 MIN(s.line_id) AS first_line_id,
+                 group_concat(s.pali, ' ') AS para_text,
+                 b.book_name,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY s.book_id
+                   ORDER BY s.para_id
+                 ) AS rn
+          FROM sentences s
+          JOIN books b ON b.book_id = s.book_id
+          WHERE ($conditions) $bookClause
+          GROUP BY s.book_id, s.para_id
+        ) WHERE rn <= 150
+        ''',
         variables: [
           ...likeParams.map((p) => Variable.withString(p)),
+          ...(bookIds ?? const <String>{}).map(
+            (b) => Variable.withString(b),
+          ),
         ],
       ).get();
 
-      // Deduplicate by (book_id, para_id)
-      final seen = <String>{};
       final results = <Map<String, dynamic>>[];
-
       for (final row in rows) {
-        final bookId = (row.data['book_id'] as String?) ?? '';
-        final paraId = (row.data['para_id'] as int?) ?? 0;
-        final key = '$bookId:$paraId';
-        if (!seen.add(key)) continue;
-
-        final paliText = (row.data['pali'] as String?) ?? '';
-        final lower = paliText.toLowerCase();
-        // Keyword-occurrence density: total matched-char weight / length.
+        final paraText = (row.data['para_text'] as String?) ?? '';
+        final lower = paraText.toLowerCase();
+        if (lower.isEmpty) continue;
         double score = 0;
+        final matched = <String>{};
         for (final kw in keywords) {
           final needle = kw.toLowerCase();
           var idx = 0;
@@ -320,28 +339,36 @@ class AiQaToolService {
             idx = lower.indexOf(needle, idx);
             if (idx != -1) {
               score += needle.length;
+              matched.add(kw);
               idx += needle.length;
             }
           }
         }
-        final relevance =
-            lower.isEmpty ? 0.0 : (score / lower.length).clamp(0.0, 1.0);
-
+        final density = (score / lower.length).clamp(0.0, 1.0);
+        final coverage = matched.length / keywords.length;
         results.add({
-          'book_id': bookId,
-          'book_name': (row.data['book_name'] as String?) ?? bookId,
-          'para_id': paraId,
-          'line_id': (row.data['line_id'] as int?) ?? 1,
-          'text': paliText,
-          'relevance': relevance,
+          'book_id': (row.data['book_id'] as String?) ?? '',
+          'book_name': (row.data['book_name'] as String?) ??
+              ((row.data['book_id'] as String?) ?? ''),
+          'para_id': (row.data['para_id'] as int?) ?? 0,
+          'line_id': (row.data['first_line_id'] as int?) ?? 1,
+          'text': paraText.length <= 300
+              ? paraText
+              : '${paraText.substring(0, 300)}…',
+          'relevance': density,
+          'coverage': coverage,
           'search_method': 'like',
         });
       }
 
       debugPrint('[AI_QA] _searchLike: ✅ ${results.length} results');
 
-      // Sort by relevance descending, then para_id ascending
+      // Rank: full keyword coverage first (a passage naming all requested
+      // terms beats one naming a single term), then density, then para id.
       results.sort((a, b) {
+        final covCmp = (b['coverage'] as double)
+            .compareTo(a['coverage'] as double);
+        if (covCmp != 0) return covCmp;
         final relCmp =
             (b['relevance'] as double).compareTo(a['relevance'] as double);
         if (relCmp != 0) return relCmp;
@@ -438,12 +465,14 @@ class AiQaToolService {
 
       debugPrint('[AI_QA] search_by_category: ${validBookIds.length} matching books');
 
-      // Execute ALL queries in PARALLEL
+      // Execute ALL queries in PARALLEL — SCOPED to the resolved books.
+      // (A global pool + post-filter starves books whose IDs sort late; a
+      // scoped LIKE deterministically covers every requested book.)
       final results = await Future.wait(
-        queries.map((q) => searchTipitaka({'query': q})),
+        queries.map((q) => _searchLike(q, bookIds: validBookIds)),
       );
 
-      // Merge, deduplicate, and FILTER by book category
+      // Merge and deduplicate (already scoped to the requested books).
       final seen = <String>{};
       final merged = <Map<String, dynamic>>[];
 
@@ -454,8 +483,6 @@ class AiQaToolService {
           for (final item in parsed) {
             final map = item as Map<String, dynamic>;
             final bookId = map['book_id'] as String? ?? '';
-            // Only include results from the requested categories
-            if (!validBookIds.contains(bookId)) continue;
             final paraId = map['para_id'] as int? ?? 0;
             final key = '$bookId:$paraId';
             if (seen.add(key)) {
@@ -1082,7 +1109,8 @@ class AiQaToolService {
       final rows = await appDb.customSelect(
         'SELECT s.book_id, s.para_start, s.para_end, s.title, s.title_en, '
         '       s.path, s.summary, s.summary_en, '
-        '       bm25(section_summaries_fts) AS score '
+        '       bm25(section_summaries_fts, 0.0, 0.0, 10.0, 5.0, 1.0, '
+        '            1.0, 1.0) AS score '
         'FROM section_summaries_fts '
         'JOIN section_summaries s '
         '  ON s.book_id = section_summaries_fts.book_id '

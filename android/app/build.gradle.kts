@@ -32,16 +32,6 @@ android {
         versionName = flutter.versionName
     }
 
-    flavorDimensions += "environment"
-
-    productFlavors {
-        create("dev") {
-            dimension = "environment"
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-        }
-    }
-
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties.getProperty("keyAlias")
@@ -52,6 +42,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Dev/debug installs get a distinct app id (com.dn.epitaka.dev)
+            // so they can coexist with the Play Store release on the same
+            // device. This is a build-type suffix, NOT a product flavor — a
+            // flavor would rename the release variant to "devRelease" and
+            // break `flutter build appbundle --release` (the Flutter tool
+            // then can't find app-release.aab under bundle/release/).
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
+        // NOTE: a `profile` build type cannot be configured here — `profile`
+        // collides with a Kotlin DSL extension on NamedDomainObjectContainer
+        // and fails script compilation. Flutter's implicit profile build type
+        // is used as-is (no .dev suffix).
         release {
             signingConfig = signingConfigs.getByName("release")
         }

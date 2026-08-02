@@ -47,6 +47,7 @@ class _TranslationSettingsScreenState
         .toList();
 
     return Scaffold(
+      backgroundColor: colors.surface,
       appBar: SettingsAppBar(colors: colors),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
@@ -60,18 +61,20 @@ class _TranslationSettingsScreenState
             'Translations & Downloads',
             style: AppTypography.headlineLarge.copyWith(
               color: colors.onSurface,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             'Manage translation databases: download, update, and delete.',
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: AppDimensions.md),
+          const SizedBox(height: AppDimensions.lg),
           _buildUpdateBanner(colors),
-          const SizedBox(height: AppDimensions.md),
+          const SizedBox(height: AppDimensions.lg),
           SettingsSection(
             title: 'Display Mode',
             colors: colors,
@@ -98,7 +101,7 @@ class _TranslationSettingsScreenState
               ),
             ],
           ),
-          const SizedBox(height: AppDimensions.md),
+          const SizedBox(height: AppDimensions.lg),
           SettingsSection(
             title: 'Pāli Text',
             colors: colors,
@@ -119,7 +122,7 @@ class _TranslationSettingsScreenState
               ),
             ],
           ),
-          const SizedBox(height: AppDimensions.md),
+          const SizedBox(height: AppDimensions.lg),
           SettingsSection(
             title: 'Translation Order',
             colors: colors,
@@ -129,82 +132,106 @@ class _TranslationSettingsScreenState
                   AppDimensions.md,
                   AppDimensions.sm,
                   AppDimensions.md,
-                  0,
+                  AppDimensions.sm,
                 ),
                 child: Text(
                   'Drag to reorder enabled translations. '
                   'The first one is shown when multiple are enabled.',
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
+                    height: 1.4,
                   ),
                 ),
               ),
               if (reorderableCodes.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(AppDimensions.md),
-                  child: Text(
-                    'No translations downloaded yet. Download a translation '
-                    'above to reorder it.',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontStyle: FontStyle.italic,
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimensions.md,
+                    0,
+                    AppDimensions.md,
+                    AppDimensions.md,
+                  ),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppDimensions.md),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest.withValues(
+                        alpha: 0.35,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'No translations downloaded yet. Download a translation '
+                      'above to reorder it.',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
                 )
               else
-                ReorderableListView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  children: reorderableCodes.asMap().entries.map((entry) {
-                    final code = entry.value;
-                    final index = entry.key;
-                    final langName = TranslationLanguageRegistry.englishName(
-                      code,
-                    );
-                    final nativeName = TranslationLanguageRegistry.nativeName(
-                      code,
-                    );
-                    return _ReorderableTranslationTile(
-                      key: ValueKey(code),
-                      index: index,
-                      code: code,
-                      langName: langName,
-                      nativeName: nativeName,
-                      colors: colors,
-                    );
-                  }).toList(),
-                  onReorderItem: (oldIndex, newIndex) {
-                    // onReorderItem returns the FINAL index (Flutter already
-                    // adjusts for the removed item) — do NOT decrement.
-                    final reordered = List<String>.from(reorderableCodes);
-                    final moved = reordered.removeAt(oldIndex);
-                    reordered.insert(newIndex, moved);
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimensions.sm,
+                    0,
+                    AppDimensions.sm,
+                    AppDimensions.sm,
+                  ),
+                  child: ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    children: reorderableCodes.asMap().entries.map((entry) {
+                      final code = entry.value;
+                      final index = entry.key;
+                      final langName = TranslationLanguageRegistry.englishName(
+                        code,
+                      );
+                      final nativeName = TranslationLanguageRegistry.nativeName(
+                        code,
+                      );
+                      return _ReorderableTranslationTile(
+                        key: ValueKey(code),
+                        index: index,
+                        code: code,
+                        langName: langName,
+                        nativeName: nativeName,
+                        colors: colors,
+                      );
+                    }).toList(),
+                    onReorderItem: (oldIndex, newIndex) {
+                      // onReorderItem returns the FINAL index (Flutter already
+                      // adjusts for the removed item) — do NOT decrement.
+                      final reordered = List<String>.from(reorderableCodes);
+                      final moved = reordered.removeAt(oldIndex);
+                      reordered.insert(newIndex, moved);
 
-                    // Rebuild the FULL enabled list, keeping non-downloaded
-                    // (e.g. not-yet-downloaded) languages in place and only
-                    // applying the new order to the downloaded subset.
-                    final reorderedQueue = List<String>.from(reordered);
-                    final full = settings.enabledTranslations.map((code) {
-                      if (!downloadedCodes.contains(code)) return code;
-                      return reorderedQueue.removeAt(0);
-                    }).toList();
+                      // Rebuild the FULL enabled list, keeping non-downloaded
+                      // (e.g. not-yet-downloaded) languages in place and only
+                      // applying the new order to the downloaded subset.
+                      final reorderedQueue = List<String>.from(reordered);
+                      final full = settings.enabledTranslations.map((code) {
+                        if (!downloadedCodes.contains(code)) return code;
+                        return reorderedQueue.removeAt(0);
+                      }).toList();
 
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setTranslationsOrder(full);
-                  },
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setTranslationsOrder(full);
+                    },
+                  ),
                 ),
             ],
           ),
-          const SizedBox(height: AppDimensions.md),
+          const SizedBox(height: AppDimensions.lg),
           SettingsSection(
             title: 'Translation Databases',
             colors: colors,
             children: [
               mergedVersionsAsync.when(
                 loading: () => const Padding(
-                  padding: EdgeInsets.all(AppDimensions.md),
+                  padding: EdgeInsets.all(AppDimensions.lg),
                   child: Center(
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
@@ -261,50 +288,56 @@ class _TranslationSettingsScreenState
                       final isAnyEnabled = settings.enabledTranslations
                           .contains(code);
                       return [
-                        _LanguageHeader(
-                          code: code,
-                          englishName: langName,
-                          nativeName: nativeName,
-                          isAnyEnabled: isAnyEnabled,
-                          isAnyVersionInstalled: langVersions.any(
-                            (v) => v.isAvailable,
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppDimensions.sm,
+                            bottom: 2,
                           ),
-                          colors: colors,
-                          onEnableChanged: (enabled) {
-                            final notifier = ref.read(
-                              settingsProvider.notifier,
-                            );
-                            notifier.setTranslationEnabled(code, enabled);
-                            // Auto-select the first available version when
-                            // enabling, if none is selected yet.  This way
-                            // the user doesn't have to also tap "Select this
-                            // version" separately — the nissaya (or default)
-                            // version just works after enabling the language.
-                            if (enabled) {
-                              final currentSuffix =
-                                  settings.translationVersionMap[code];
-                              if (currentSuffix == null ||
-                                  currentSuffix.isEmpty) {
-                                final available = langVersions
-                                    .where((v) => v.isAvailable)
-                                    .toList();
-                                if (available.isNotEmpty) {
-                                  // Prefer nissaya versions when auto-
-                                  // selecting — users who have installed a
-                                  // nissaya DB are most likely trying to
-                                  // use that specific version.
-                                  final best = available.firstWhere(
-                                    (v) => v.isNissaya,
-                                    orElse: () => available.first,
-                                  );
-                                  notifier.setTranslationVersion(
-                                    code,
-                                    best.suffix,
-                                  );
+                          child: _LanguageHeader(
+                            code: code,
+                            englishName: langName,
+                            nativeName: nativeName,
+                            isAnyEnabled: isAnyEnabled,
+                            isAnyVersionInstalled: langVersions.any(
+                              (v) => v.isAvailable,
+                            ),
+                            colors: colors,
+                            onEnableChanged: (enabled) {
+                              final notifier = ref.read(
+                                settingsProvider.notifier,
+                              );
+                              notifier.setTranslationEnabled(code, enabled);
+                              // Auto-select the first available version when
+                              // enabling, if none is selected yet.  This way
+                              // the user doesn't have to also tap "Select this
+                              // version" separately — the nissaya (or default)
+                              // version just works after enabling the language.
+                              if (enabled) {
+                                final currentSuffix =
+                                    settings.translationVersionMap[code];
+                                if (currentSuffix == null ||
+                                    currentSuffix.isEmpty) {
+                                  final available = langVersions
+                                      .where((v) => v.isAvailable)
+                                      .toList();
+                                  if (available.isNotEmpty) {
+                                    // Prefer nissaya versions when auto-
+                                    // selecting — users who have installed a
+                                    // nissaya DB are most likely trying to
+                                    // use that specific version.
+                                    final best = available.firstWhere(
+                                      (v) => v.isNissaya,
+                                      orElse: () => available.first,
+                                    );
+                                    notifier.setTranslationVersion(
+                                      code,
+                                      best.suffix,
+                                    );
+                                  }
                                 }
                               }
-                            }
-                          },
+                            },
+                          ),
                         ),
                         ...langVersions.map((v) {
                           final versionKey =
@@ -358,10 +391,17 @@ class _TranslationSettingsScreenState
                           );
                         }),
                         if (langCodes.last != code)
-                          Divider(
-                            height: 24,
-                            thickness: 1,
-                            color: colors.outlineVariant.withValues(alpha: 0.3),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppDimensions.sm,
+                            ),
+                            child: Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: colors.outlineVariant.withValues(
+                                alpha: 0.25,
+                              ),
+                            ),
                           ),
                       ];
                     }).toList(),
@@ -379,27 +419,38 @@ class _TranslationSettingsScreenState
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.md,
-        vertical: AppDimensions.sm,
+        vertical: AppDimensions.sm + 2,
       ),
       decoration: BoxDecoration(
-        color: colors.primaryContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
+        color: colors.primaryContainer.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
-          Icon(
-            _manifestLoading ? Icons.sync : Icons.update,
-            size: 20,
-            color: colors.primary,
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _manifestLoading ? Icons.sync : Icons.cloud_sync_outlined,
+              size: 17,
+              color: colors.primary,
+            ),
           ),
-          const SizedBox(width: AppDimensions.sm),
+          const SizedBox(width: AppDimensions.sm + 2),
           Expanded(
             child: Text(
               _manifestLoading
                   ? 'Checking for updates…'
                   : 'Check for translation updates from GitHub.',
-              style: AppTypography.labelSmall.copyWith(color: colors.onSurface),
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           TextButton.icon(
@@ -421,11 +472,15 @@ class _TranslationSettingsScreenState
                       );
                     }
                   },
-            icon: const Icon(Icons.refresh, size: 16),
+            icon: const Icon(Icons.refresh, size: 15),
             label: const Text('Check'),
             style: TextButton.styleFrom(
               foregroundColor: colors.primary,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              backgroundColor: colors.primary.withValues(alpha: 0.1),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
@@ -439,6 +494,7 @@ class _TranslationSettingsScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Translation?'),
         content: Text(
           'Delete "${version.displayName}" (${version.englishName})?\\n'
@@ -453,6 +509,9 @@ class _TranslationSettingsScreenState
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(ctx).colorScheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: const Text('Delete'),
           ),
@@ -478,6 +537,9 @@ class _TranslationSettingsScreenState
                 'Deleted ${version.englishName} (${version.displayName})',
               ),
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
         }
@@ -509,21 +571,33 @@ class _LanguageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.md,
-        AppDimensions.sm,
-        AppDimensions.md,
-        4,
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.sm + 2,
+        vertical: AppDimensions.sm,
+      ),
+      decoration: BoxDecoration(
+        color: isAnyEnabled
+            ? colors.primary.withValues(alpha: 0.06)
+            : colors.surfaceContainerHighest.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          Icon(
-            isAnyVersionInstalled
-                ? Icons.translate
-                : Icons.cloud_download_outlined,
-            size: 16,
-            color: colors.primary,
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isAnyVersionInstalled
+                  ? Icons.translate
+                  : Icons.cloud_download_outlined,
+              size: 15,
+              color: colors.primary,
+            ),
           ),
           const SizedBox(width: AppDimensions.sm),
           Expanded(
@@ -532,12 +606,22 @@ class _LanguageHeader extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      code.toUpperCase(),
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        code.toUpperCase(),
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -545,8 +629,8 @@ class _LanguageHeader extends StatelessWidget {
                       child: Text(
                         '$englishName · $nativeName',
                         style: AppTypography.labelSmall.copyWith(
-                          color: colors.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -558,6 +642,16 @@ class _LanguageHeader extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Row(
                       children: [
+                        Icon(
+                          isAnyEnabled
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          size: 11,
+                          color: isAnyEnabled
+                              ? Colors.green.shade600
+                              : colors.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
                         Text(
                           isAnyEnabled ? 'Enabled' : 'Disabled',
                           style: TextStyle(
@@ -568,28 +662,22 @@ class _LanguageHeader extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Switch(
-                          value: isAnyEnabled,
-                          onChanged: (v) => onEnableChanged!(v),
-                        ),
                       ],
                     ),
                   ),
               ],
             ),
           ),
-          if (isAnyVersionInstalled && !isAnyEnabled)
-            Text(
-              'Off',
-              style: TextStyle(
-                fontSize: 10,
-                color: colors.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
+          if (isAnyVersionInstalled)
+            Transform.scale(
+              scale: 0.85,
+              child: Switch(
+                value: isAnyEnabled,
+                onChanged: onEnableChanged == null
+                    ? null
+                    : (v) => onEnableChanged!(v),
               ),
             ),
-          if (isAnyVersionInstalled && isAnyEnabled)
-            Icon(Icons.check_circle, size: 14, color: Colors.green),
         ],
       ),
     );
@@ -658,18 +746,34 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
     final colors = widget.colors;
     final isInstalled = v.isAvailable;
 
+    final isSelected =
+        widget.selectedSuffix == v.suffix ||
+        (widget.selectedSuffix == null &&
+            (v.suffix == null || v.suffix!.isEmpty));
+
     return Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: 4,
+        horizontal: AppDimensions.sm,
+        vertical: 5,
       ),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          color: colors.surfaceContainerLowest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: colors.outlineVariant.withValues(alpha: 0.3),
+            color: isSelected && isInstalled
+                ? colors.primary.withValues(alpha: 0.35)
+                : colors.outlineVariant.withValues(alpha: 0.25),
+            width: isSelected && isInstalled ? 1.2 : 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadow.withValues(alpha: 0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -702,16 +806,16 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
 
     return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: AppDimensions.sm,
-          vertical: AppDimensions.sm,
+          horizontal: AppDimensions.sm + 2,
+          vertical: AppDimensions.sm + 2,
         ),
         child: Row(
           children: [
             _VersionBadge(version: v, colors: colors),
-            const SizedBox(width: AppDimensions.sm),
+            const SizedBox(width: AppDimensions.sm + 2),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -720,9 +824,11 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                     v.displayName,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurface,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
                     ),
                   ),
+                  const SizedBox(height: 1),
                   Text(
                     v.filename,
                     style: AppTypography.labelSmall.copyWith(
@@ -736,13 +842,14 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               ),
             ),
             // Active version indicator
-            if (isSelected && isInstalled)
+            if (isSelected && isInstalled) ...[
               _StatusChip(
                 label: 'Active',
                 color: colors.primary,
                 colors: colors,
               ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 6),
+            ],
             // Status / action buttons
             if (dlState.status == DownloadStatus.downloading ||
                 dlState.status == DownloadStatus.extracting)
@@ -775,7 +882,14 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 ],
               )
             else if (dlState.status == DownloadStatus.completed)
-              Icon(Icons.check_circle, size: 18, color: Colors.green)
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check, size: 14, color: Colors.green),
+              )
             else if (isInstalled && v.isNissaya)
               _StatusChip(label: 'Nissaya', color: Colors.teal, colors: colors)
             else if (isInstalled)
@@ -794,15 +908,15 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                     onTap: widget.onDelete,
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: colors.error.withValues(alpha: 0.08),
                       ),
                       child: Icon(
                         Icons.delete_outline,
-                        size: 16,
-                        color: colors.error.withValues(alpha: 0.7),
+                        size: 15,
+                        color: colors.error.withValues(alpha: 0.75),
                       ),
                     ),
                   ),
@@ -815,7 +929,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 onTap: widget.onDownload,
                 colors: colors,
               ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Icon(
               _expanded ? Icons.expand_less : Icons.expand_more,
               size: 18,
@@ -830,23 +944,25 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   Widget _buildProgress(TranslationDownloadState dlState, ColorScheme colors) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppDimensions.sm,
+        AppDimensions.sm + 2,
         0,
+        AppDimensions.sm + 2,
         AppDimensions.sm,
-        6,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          LinearProgressIndicator(
-            value: dlState.status == DownloadStatus.extracting
-                ? null
-                : dlState.progress,
-            minHeight: 3,
-            borderRadius: BorderRadius.circular(2),
-            backgroundColor: colors.surfaceContainerHighest,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: dlState.status == DownloadStatus.extracting
+                  ? null
+                  : dlState.progress,
+              minHeight: 4,
+              backgroundColor: colors.surfaceContainerHighest,
+            ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             dlState.status == DownloadStatus.extracting
                 ? 'Installing…'
@@ -854,6 +970,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             style: AppTypography.labelSmall.copyWith(
               color: colors.primary,
               fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -864,19 +981,35 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   Widget _buildError(String error, ColorScheme colors) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppDimensions.sm,
+        AppDimensions.sm + 2,
         0,
+        AppDimensions.sm + 2,
         AppDimensions.sm,
-        6,
       ),
-      child: Text(
-        error,
-        style: AppTypography.labelSmall.copyWith(
-          color: colors.error,
-          fontSize: 10,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: colors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
         ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 13, color: colors.error),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                error,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.error,
+                  fontSize: 10,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -887,21 +1020,21 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        AppDimensions.sm,
+        AppDimensions.sm + 2,
         0,
-        AppDimensions.sm,
-        AppDimensions.sm,
+        AppDimensions.sm + 2,
+        AppDimensions.sm + 2,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Divider(
             height: 1,
-            color: colors.outlineVariant.withValues(alpha: 0.3),
+            color: colors.outlineVariant.withValues(alpha: 0.25),
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.sm + 2),
           _SectionLabel('Font Family', colors),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _FontFamilySelector(
             current: typo.fontFamily,
             colors: colors,
@@ -909,9 +1042,9 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               widget.onTypographyChanged(typo.copyWith(fontFamily: family));
             },
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.md),
           _SectionLabel('Font Size', colors),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _FontSizeControl(
             fontSize: typo.fontSize,
             colors: colors,
@@ -919,9 +1052,9 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               widget.onTypographyChanged(typo.copyWith(fontSize: size));
             },
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.md),
           _SectionLabel('Style', colors),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _StyleToggles(
             bold: typo.bold,
             italic: typo.italic,
@@ -934,7 +1067,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             onUnderlineChanged: (v) =>
                 widget.onTypographyChanged(typo.copyWith(underline: v)),
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.md),
           ColorPickerSection(
             title: 'Color',
             icon: Icons.palette_outlined,
@@ -956,30 +1089,30 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               );
             },
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.md),
 
           // Version selector
           _SectionLabel('Use for Reading', colors),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _VersionSelector(
             version: widget.version,
             currentSuffix: widget.selectedSuffix,
             colors: colors,
             onChanged: widget.onVersionChanged,
           ),
-          const SizedBox(height: AppDimensions.sm),
+          const SizedBox(height: AppDimensions.md),
 
           // Version info
           _SectionLabel('Version Info', colors),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _VersionInfo(version: widget.version, colors: colors),
 
           if (widget.version.isNissaya) ...[
-            const SizedBox(height: AppDimensions.sm),
+            const SizedBox(height: AppDimensions.sm + 2),
             _NissayaInfoCard(colors: colors),
           ],
           if (widget.version.isAvailable) ...[
-            const SizedBox(height: AppDimensions.sm),
+            const SizedBox(height: AppDimensions.md),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -989,7 +1122,10 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: colors.error,
                   side: BorderSide(color: colors.error.withValues(alpha: 0.3)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
@@ -1000,7 +1136,9 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   }
 
   List<Color> _colorPresets(Color defaultColor) {
-    return [
+    // Dedupe by ARGB value so the default color (which may itself be
+    // black, or match one of the fixed swatches) never appears twice.
+    final swatches = <Color>[
       defaultColor,
       const Color(0xFF7A2E1D),
       const Color(0xFF33312E),
@@ -1011,6 +1149,11 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
       const Color(0xFF4A6FA5),
       const Color(0xFF6B635A),
       Colors.black,
+    ];
+    final seen = <int>{};
+    return [
+      for (final c in swatches)
+        if (seen.add(c.toARGB32())) c,
     ];
   }
 }
@@ -1043,18 +1186,19 @@ class _VersionBadge extends StatelessWidget {
     }
 
     return Container(
-      width: 28,
-      height: 28,
+      width: 32,
+      height: 32,
       decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        color: bgColor.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: bgColor.withValues(alpha: 0.25)),
       ),
       child: Center(
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
             color: bgColor,
           ),
         ),
@@ -1079,17 +1223,18 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: TextStyle(
           fontSize: 9,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: color,
+          letterSpacing: 0.2,
         ),
       ),
     );
@@ -1123,17 +1268,18 @@ class _VersionSelector extends StatelessWidget {
       onTap: canBeSelected && !isCurrentlySelected
           ? () => onChanged(version.suffix)
           : null,
+      borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
           color: isCurrentlySelected
               ? colors.primary.withValues(alpha: 0.1)
-              : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(6),
+              : colors.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isCurrentlySelected
-                ? colors.primary
-                : colors.outlineVariant.withValues(alpha: 0.5),
+                ? colors.primary.withValues(alpha: 0.5)
+                : colors.outlineVariant.withValues(alpha: 0.4),
           ),
         ),
         child: Row(
@@ -1213,23 +1359,23 @@ class _SmallButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(999),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: colors.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
+          color: colors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 12, color: colors.primary),
-            const SizedBox(width: 3),
+            const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: colors.primary,
               ),
             ),
@@ -1264,16 +1410,17 @@ class _VersionInfo extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         children: items.entries.map((entry) {
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
                   width: 80,
@@ -1311,17 +1458,17 @@ class _NissayaInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.teal.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.teal.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Icons.info_outline, size: 14, color: Colors.teal),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Nissaya translations show word-by-word Pāli breakdown '
@@ -1329,7 +1476,7 @@ class _NissayaInfoCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.teal.shade700,
-                height: 1.3,
+                height: 1.4,
               ),
             ),
           ),
@@ -1381,10 +1528,11 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
       children: [
         InkWell(
           onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppDimensions.md,
-              vertical: AppDimensions.sm,
+              vertical: AppDimensions.sm + 2,
             ),
             child: Row(
               children: [
@@ -1398,7 +1546,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                       color: widget.isEnabled
                           ? colors.primary
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: widget.isEnabled
                             ? colors.primary
@@ -1423,7 +1571,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                               ? colors.onSurface
                               : colors.onSurfaceVariant,
                           fontWeight: widget.isEnabled
-                              ? FontWeight.w600
+                              ? FontWeight.w700
                               : FontWeight.w400,
                         ),
                       ),
@@ -1437,22 +1585,35 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   ),
                 ),
                 Container(
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   decoration: BoxDecoration(
                     color: effectiveColor,
                     shape: BoxShape.circle,
                     border: Border.all(color: colors.outlineVariant),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${typo.fontSize.round()}px',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest.withValues(
+                      alpha: 0.6,
+                    ),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${typo.fontSize.round()}px',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
                   color: colors.onSurfaceVariant,
@@ -1473,7 +1634,11 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  color: colors.outlineVariant.withValues(alpha: 0.25),
+                ),
+                const SizedBox(height: AppDimensions.md),
                 _SectionLabel('Font Family', colors),
                 const SizedBox(height: 8),
                 _FontFamilySelector(
@@ -1534,7 +1699,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                 ),
                 const SizedBox(height: AppDimensions.md),
                 _SectionLabel('Preview', colors),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 _TextPreview(
                   typography: typo,
                   fallbackColor: widget.defaultColor,
@@ -1547,7 +1712,9 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
   }
 
   List<Color> _colorPresets(Color defaultColor) {
-    return [
+    // Dedupe by ARGB value so the default color (which may itself be
+    // black, or match one of the fixed swatches) never appears twice.
+    final swatches = <Color>[
       defaultColor,
       const Color(0xFF7A2E1D),
       const Color(0xFF33312E),
@@ -1558,6 +1725,11 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
       const Color(0xFF4A6FA5),
       const Color(0xFF6B635A),
       Colors.black,
+    ];
+    final seen = <int>{};
+    return [
+      for (final c in swatches)
+        if (seen.add(c.toARGB32())) c,
     ];
   }
 }
@@ -1573,10 +1745,12 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      label,
+      label.toUpperCase(),
       style: AppTypography.labelSmall.copyWith(
         color: colors.onSurfaceVariant,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
+        fontSize: 10,
+        letterSpacing: 0.4,
       ),
     );
   }
@@ -1597,20 +1771,23 @@ class _FontFamilySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 8,
+      runSpacing: 8,
       children: ReadingFontFamily.values.map((family) {
         final isSelected = current == family;
         return GestureDetector(
           onTap: () => onChanged(family),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
               color: isSelected
                   ? colors.primaryContainer
-                  : colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+                  : colors.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isSelected ? colors.primary : colors.outlineVariant,
+                color: isSelected
+                    ? colors.primary
+                    : colors.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Text(
@@ -1651,33 +1828,44 @@ class _FontSizeControl extends StatelessWidget {
           colors: colors,
           onTap: () => onChanged((fontSize - 1).clamp(10.0, 48.0)),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Expanded(
-          child: Slider(
-            value: fontSize,
-            min: 10,
-            max: 48,
-            divisions: 38,
-            label: '${fontSize.round()}px',
-            onChanged: (v) => onChanged(v),
-            activeColor: colors.primary,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              overlayShape: SliderComponentShape.noOverlay,
+            ),
+            child: Slider(
+              value: fontSize,
+              min: 10,
+              max: 48,
+              divisions: 38,
+              label: '${fontSize.round()}px',
+              onChanged: (v) => onChanged(v),
+              activeColor: colors.primary,
+            ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         _CircleButton(
           icon: Icons.add,
           colors: colors,
           onTap: () => onChanged((fontSize + 1).clamp(10.0, 48.0)),
         ),
         const SizedBox(width: 12),
-        SizedBox(
-          width: 40,
+        Container(
+          width: 36,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: colors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: Text(
             '${fontSize.round()}',
             textAlign: TextAlign.center,
             style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.w600,
+              color: colors.primary,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -1707,7 +1895,10 @@ class _CircleButton extends StatelessWidget {
         height: 30,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: colors.outlineVariant),
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.6),
+          ),
         ),
         child: Icon(icon, size: 14, color: colors.onSurfaceVariant),
       ),
@@ -1796,10 +1987,12 @@ class _StyleToggleChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: active
               ? colors.primaryContainer
-              : colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+              : colors.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: active ? colors.primary : colors.outlineVariant,
+            color: active
+                ? colors.primary
+                : colors.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         child: Center(
@@ -1833,8 +2026,8 @@ class _TextPreview extends StatelessWidget {
       padding: const EdgeInsets.all(AppDimensions.md),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Text(
         'Evaṃ me sutaṃ… Thus have I heard…',
@@ -1891,58 +2084,83 @@ class _ModeSelector extends StatelessWidget {
 
     return Column(
       children: options.map((option) {
-        return InkWell(
-          onTap: () {
-            if (option.mode == null) {
-              onToggleTranslation(false);
-            } else {
-              onSelectMode(option.mode!);
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppDimensions.md,
-              vertical: AppDimensions.sm,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  option.isSelected
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_off,
-                  color: option.isSelected
-                      ? colors.primary
-                      : colors.onSurfaceVariant,
-                  size: 20,
-                ),
-                const SizedBox(width: AppDimensions.md),
-                Icon(option.icon, color: colors.primary, size: 20),
-                const SizedBox(width: AppDimensions.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        option.title,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: option.isSelected
-                              ? colors.primary
-                              : colors.onSurface,
-                          fontWeight: option.isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                      ),
-                      Text(
-                        option.subtitle,
-                        style: AppTypography.labelSmall.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+        return Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.sm,
+            vertical: 2,
+          ),
+          child: InkWell(
+            onTap: () {
+              if (option.mode == null) {
+                onToggleTranslation(false);
+              } else {
+                onSelectMode(option.mode!);
+              }
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.sm + 2,
+                vertical: AppDimensions.sm + 2,
+              ),
+              decoration: BoxDecoration(
+                color: option.isSelected
+                    ? colors.primary.withValues(alpha: 0.08)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    option.isSelected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: option.isSelected
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                    size: 20,
                   ),
-                ),
-              ],
+                  const SizedBox(width: AppDimensions.sm + 2),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: option.isSelected
+                          ? colors.primary.withValues(alpha: 0.14)
+                          : colors.surfaceContainerHighest.withValues(
+                              alpha: 0.5,
+                            ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(option.icon, color: colors.primary, size: 17),
+                  ),
+                  const SizedBox(width: AppDimensions.sm + 2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          option.title,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: option.isSelected
+                                ? colors.primary
+                                : colors.onSurface,
+                            fontWeight: option.isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          option.subtitle,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1970,24 +2188,50 @@ class _ReorderableTranslationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: AppDimensions.sm,
+        horizontal: AppDimensions.sm + 2,
+        vertical: AppDimensions.sm + 2,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.25),
+        ),
       ),
       child: Row(
         children: [
           ReorderableDragStartListener(
             index: index,
             child: Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 10),
               child: Icon(
-                Icons.drag_handle,
+                Icons.drag_indicator,
                 size: 20,
-                color: colors.onSurfaceVariant,
+                color: colors.onSurfaceVariant.withValues(alpha: 0.6),
               ),
             ),
           ),
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '${index + 1}',
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2006,20 +2250,6 @@ class _ReorderableTranslationTile extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              '#${index + 1}',
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-                fontSize: 11,
-              ),
             ),
           ),
         ],

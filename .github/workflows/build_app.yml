@@ -28,9 +28,6 @@ on:
         default: true
 
 jobs:
-  # -------------------------------------------------------------
-  # 1. ANDROID BUILD
-  # -------------------------------------------------------------
   build-android:
     name: Build Android
     if: github.event_name == 'push' || github.event.inputs.build_android == 'true'
@@ -87,30 +84,19 @@ jobs:
           find /tmp/dpd_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
           ls -la android/packs/core_db/src/main/assets/
 
-      - name: Build Android AAB & APK
-        run: |
-          flutter build appbundle --release -v
-          flutter build apk --release -v
-      - name: Find Android artifacts
-        if: always()
-        run: |
-          echo "=== AAB files ==="
-          find build -type f -name "*.aab" -print
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release
 
-          echo "=== APK files ==="
-          find build -type f -name "*.apk" -print
-
-          echo "=== Bundle directories ==="
-          find build/app/outputs -maxdepth 4 -type d -print 2>/dev/null || true
+      - name: Build Android APK
+        run: flutter build apk --release
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: |
-            build/**/*.aab
-            build/**/*.apk
-
+            build/app/outputs/bundle/release/*.aab
+            build/app/outputs/flutter-apk/*.apk
   # -------------------------------------------------------------
   # 2. iOS BUILD
   # -------------------------------------------------------------
@@ -328,7 +314,10 @@ jobs:
           ls -la assets/db/
 
       - name: Build macOS Release
-        run: flutter build macos --release
+        # Universal binary (x86_64 + arm64) so the DMG runs on both Intel
+        # and Apple Silicon Macs. macos-latest runners are Apple Silicon, so
+        # a plain build would produce an arm64-only app Intel users can't open.
+        run: flutter build macos --release --target-platform=darwin-x64,darwin-arm64
 
       - name: Build DMG Installer
         run: |
@@ -339,7 +328,16 @@ jobs:
           DMG="build/macos/epitaka-macos.dmg"
           ICONSET="build/macos/icon.iconset"
 
-          # Convert logo PNG to .icns
+          # The app is already ad-hoc signed by flutter build (CODE_SIGN_IDENTITY="-")
+          # and carries the custom icon from the asset catalog. Do NOT modify
+          # the bundle after the build — touching Info.plist/resources would
+          # invalidate the signature and Gatekeeper would report the app as
+          # "damaged" (the old codesign --force --deep re-sign is deprecated
+          # and unreliable on modern macOS). Verify the signature instead.
+          echo "Verifying ad-hoc signature..."
+          codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+
+          # Volume icon for the DMG only (does not touch the .app bundle)
           mkdir -p "$ICONSET"
           sips -z 16 16 assets/icon.png --out "$ICONSET/icon_16x16.png"
           sips -z 32 32 assets/icon.png --out "$ICONSET/icon_16x16@2x.png"
@@ -353,19 +351,48 @@ jobs:
           sips -z 1024 1024 assets/icon.png --out "$ICONSET/icon_512x512@2x.png"
           iconutil -c icns "$ICONSET" -o build/macos/epitaka.icns
 
-          # Use the logo as the app bundle icon
-          cp build/macos/epitaka.icns "$APP_DIR/Contents/Resources/epitaka.icns"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile epitaka" "$APP_DIR/Contents/Info.plist" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string epitaka" "$APP_DIR/Contents/Info.plist"
-
-          # Re-sign the bundle (ad-hoc) — modifying the bundle above
-          # invalidated the signature produced by flutter build.
-          codesign --force --deep -s - "$APP_DIR"
-
-          # Stage app + /Applications symlink and create a writable DMG
+          # Stage the app + one-click installer + instructions
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
           cp -R "$APP_DIR" "$STAGE/"
+
+          # One-click launcher: installs to /Applications and clears the
+          # Gatekeeper quarantine so the app opens without any certificate.
+          # NOTE: heredoc body + EOF marker must be indented (10 spaces) so
+          # they stay inside the YAML block scalar; YAML de-indents them back
+          # to column 0 for bash.
+          cat > "$STAGE/Install Epitaka.command" <<'EOF'
+          #!/bin/bash
+          # Installs epitaka.app into /Applications and clears the Gatekeeper
+          # quarantine flag so it can be opened (no Apple Developer cert needed).
+          SRC="$(cd "$(dirname "$0")" && pwd)"
+          APP="/Applications/epitaka.app"
+          rm -rf "$APP"
+          ditto "$SRC/epitaka.app" "$APP"
+          xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+          open "$APP"
+          EOF
+          chmod +x "$STAGE/Install Epitaka.command"
+
+          cat > "$STAGE/README - How to Open.txt" <<'EOF'
+          Epitaka is a community build and is NOT notarized (no Apple Developer
+          certificate is used), so macOS Gatekeeper will block the first launch.
+
+          EASIEST - ONE CLICK:
+            Double-click "Install Epitaka.command" in this window. It installs the
+            app into /Applications and clears the quarantine flag automatically.
+
+          MANUAL:
+            1. Drag epitaka.app into your Applications folder.
+            2. Right-click (Control-click) epitaka.app and choose "Open", then
+               click "Open" again in the confirmation dialog.
+               On macOS 15 Sequoia this bypass was removed - instead open
+               System Settings > Privacy & Security, scroll to the bottom and
+               click "Open Anyway".
+            3. Or clear the quarantine flag once in Terminal:
+                 xattr -dr com.apple.quarantine /Applications/epitaka.app
+          EOF
+
           ln -s /Applications "$STAGE/Applications"
           hdiutil create -volname "epitaka" -srcfolder "$STAGE" -ov -format UDRW "$TMP_DMG"
 
@@ -396,6 +423,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev build-essential \
+            libasound2-dev libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
         # run: |
         #   sudo apt-get update
         #   sudo apt-get install -y \
@@ -405,13 +439,6 @@ jobs:
         #     liblzma-dev libstdc++-12-dev \
         #     libasound2-dev libgstreamer-plugins-base1.0-dev \
         #     libgstreamer1.0-dev
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-dev \
-            libasound2-dev libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -505,12 +532,20 @@ jobs:
   # -------------------------------------------------------------
   publish-release:
     name: Publish Release
+    # Runs after all build jobs finish, but publishes whatever artifacts
+    # were actually produced — a failed platform build does not block the
+    # release (if: always()). softprops/action-gh-release skips globs that
+    # match no files by default (fail_on_unmatched_files: false), so only
+    # the successfully built files are attached.
     needs: [build-android, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    if: always() && !cancelled() && startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -521,6 +556,8 @@ jobs:
             windows-release/*.exe
             macos-release/*.dmg
             linux-release/*.AppImage
+            linux-release/*.tar.gz
+          fail_on_unmatched_files: false
           draft: false
           prerelease: false
         env:

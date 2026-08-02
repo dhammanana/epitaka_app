@@ -4,8 +4,8 @@
     "question": "What is saṅkhāra?",
     "expects_book_ids": ["S-iii", "S-ii", "Dhp"],
     "expects_para_any": [
-      {"book_id": "S-iii", "para_id": 451},
-      {"book_id": "S-ii", "para_id": 10}
+      {"book_id": "S-iii", "para_id": 456},
+      {"book_id": "S-ii", "para_id": 9}
     ],
     "tags": ["concept", "polysemous"],
     "search_terms": ["saṅkhāra"],
@@ -24,14 +24,15 @@
       {"book_id": "Dhp", "para_id": 902}
     ],
     "tags": ["concept", "narrow"],
-    "search_terms": ["saṅkhārā aniccā"]
+    "search_terms": ["saṅkhārā aniccā"],
+    "nikayas": ["Dhp"]
   },
   {
     "id": "anapanasati_narrow",
     "question": "What are the sixteen stages of ānāpānasati?",
     "expects_book_ids": ["M-iii"],
     "expects_para_any": [
-      {"book_id": "M-iii", "para_id": 439}
+      {"book_id": "M-iii", "para_id": 446}
     ],
     "tags": ["narrow", "regression"],
     "search_terms": ["ānāpānasati", "assasati passasati"]
@@ -93,21 +94,24 @@
     "question": "What does the Karaṇīyamettasutta teach about loving-kindness?",
     "expects_book_ids": ["Khp"],
     "tags": ["narrow"],
-    "search_terms": ["mettā", "karaṇīya"]
+    "search_terms": ["mettā", "karaṇīya"],
+    "nikayas": ["Khp"]
   },
   {
     "id": "dhamma_characteristic",
     "question": "What are the three characteristics of existence?",
     "expects_book_ids": ["Dhp", "S-iii"],
     "tags": ["concept"],
-    "search_terms": ["anicca dukkha anatta"]
+    "search_terms": ["anicca dukkha anatta"],
+    "nikayas": ["Dhp", "S-"]
   },
   {
     "id": "nidana",
     "question": "What is dependent origination (paṭiccasamuppāda)?",
     "expects_book_ids": ["S-ii"],
     "expects_para_any": [
-      {"book_id": "S-ii", "para_id": 10}
+      {"book_id": "S-ii", "para_id": 7},
+      {"book_id": "S-ii", "para_id": 8}
     ],
     "tags": ["concept", "polysemous"],
     "search_terms": ["paṭiccasamuppāda", "avijjāpaccayā"],
@@ -128,7 +132,8 @@
     "question": "What is the story behind the Metta Sutta according to the commentary?",
     "expects_book_ids": ["Khp"],
     "tags": ["commentary-seeking"],
-    "search_terms": ["mettā", "bhikkhū"]
+    "search_terms": ["mettā", "bhikkhū"],
+    "nikayas": ["Khp"]
   },
   {
     "id": "jataka_story",
@@ -142,28 +147,36 @@
     "question": "In the Khandhavagga, what does the Buddha say about clinging to the aggregates?",
     "expects_book_ids": ["S-iii"],
     "tags": ["sutta-attachment"],
-    "search_terms": ["upādāna", "khandha"]
+    "search_terms": ["upādāna", "khandha"],
+    "nikayas": ["S-"]
   },
   {
     "id": "nibbana_narrow",
     "question": "What is the definition of nibbāna as the end of craving?",
     "expects_book_ids": ["S-ii", "Dhp"],
     "tags": ["concept"],
-    "search_terms": ["nibbāna", "taṇhakkhaya"]
+    "search_terms": ["nibbāna", "taṇhakkhaya"],
+    "nikayas": ["S-", "Dhp"]
   },
   {
     "id": "five_precepts",
     "question": "What are the five precepts (pañcasīla) in the suttas?",
     "expects_book_ids": ["D-", "A-"],
     "tags": ["narrow"],
-    "search_terms": ["pāṇātipātā", "musāvādā"]
+    "search_terms": ["pāṇātipātā", "musāvādā"],
+    "nikayas": ["A-", "D-"]
   },
   {
     "id": "brahmavihara",
     "question": "What are the four divine abodes (brahmavihārā)?",
     "expects_book_ids": ["D-ii", "M-i"],
+    "expects_para_any": [
+      {"book_id": "D-ii", "para_id": 716},
+      {"book_id": "M-i", "para_id": 197}
+    ],
     "tags": ["concept"],
-    "search_terms": ["mettā karuṇā muditā upekkhā"]
+    "search_terms": ["mettā karuṇā muditā upekkhā"],
+    "nikayas": ["D-", "M-"]
   },
   {
     "id": "anatta_sn",

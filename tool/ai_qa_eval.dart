@@ -63,10 +63,6 @@ String _resolveDbDir(String? override) {
   exit(2);
 }
 
-// ── Small JSON helpers ──────────────────────────────────────────────────
-
-String _j(Object? v) => const JsonEncoder().convert(v);
-
 // ── Retrieval core (mirrors AiQaToolService) ───────────────────────────
 
 class EvalRetriever {
@@ -167,27 +163,35 @@ class EvalRetriever {
           .toSet()
           .toList();
       if (keywords.isNotEmpty) {
-        // Same fix as AiQaToolService._searchLike: pool a generous number
-        // of candidates (book-ordered so no book is starved) then rank by
-        // keyword-occurrence density in Dart.
+        // Mirror AiQaToolService._searchLike: pool candidates at PARAGRAPH
+        // level (group_concat whole paragraphs, capped at 150 paragraphs
+        // per book via a window function) so common terms cannot starve
+        // books whose IDs sort late, then rank by keyword coverage and
+        // occurrence density across the WHOLE paragraph text.
         final conds = keywords.map((_) => 'LOWER(s.pali) LIKE ?').join(' OR ');
         final params = keywords.map((k) => '%${k.toLowerCase()}%').toList();
         final rows = epiDb.select(
-          'SELECT s.book_id, s.para_id, s.line_id, s.pali '
-          'FROM sentences s JOIN books b ON b.book_id = s.book_id '
-          'WHERE $conds '
-          'ORDER BY s.book_id, s.para_id, s.line_id LIMIT 1000',
+          'SELECT * FROM ('
+          '  SELECT s.book_id, s.para_id, '
+          '    MIN(s.line_id) AS first_line_id, '
+          '    group_concat(s.pali, \' \') AS para_text, '
+          '    ROW_NUMBER() OVER (PARTITION BY s.book_id '
+          '      ORDER BY s.para_id) AS rn '
+          '  FROM sentences s JOIN books b ON b.book_id = s.book_id '
+          '  WHERE ($conds) '
+          '  GROUP BY s.book_id, s.para_id '
+          ') WHERE rn <= 150',
           params,
         );
-        final seen = <String>{};
         final scored = <Map<String, Object?>>[];
         for (final row in rows) {
           final bookId = row['book_id'] as String;
           final paraId = row['para_id'] as int;
-          if (!seen.add('$bookId:$paraId')) continue;
-          final text = row['pali'] as String? ?? '';
-          final lower = text.toLowerCase();
+          final paraText = row['para_text'] as String? ?? '';
+          final lower = paraText.toLowerCase();
+          if (lower.isEmpty) continue;
           double score = 0;
+          final matched = <String>{};
           for (final kw in keywords) {
             final needle = kw.toLowerCase();
             var idx = 0;
@@ -195,22 +199,30 @@ class EvalRetriever {
               idx = lower.indexOf(needle, idx);
               if (idx != -1) {
                 score += needle.length;
+                matched.add(kw);
                 idx += needle.length;
               }
             }
           }
-          final relevance =
-              lower.isEmpty ? 0.0 : (score / lower.length).clamp(0.0, 1.0);
+          final density = (score / lower.length).clamp(0.0, 1.0);
+          final coverage = matched.length / keywords.length;
+          final text = paraText.length <= 300
+              ? paraText
+              : '${paraText.substring(0, 300)}…';
           scored.add({
             'book_id': bookId,
             'para_id': paraId,
-            'line_id': (row['line_id'] as int?) ?? 1,
+            'line_id': row['first_line_id'] as int? ?? 1,
             'text': text,
-            'relevance': relevance,
+            'relevance': density,
+            'coverage': coverage,
             'method': 'like',
           });
         }
         scored.sort((a, b) {
+          final cov = (b['coverage'] as double)
+              .compareTo(a['coverage'] as double);
+          if (cov != 0) return cov;
           final c = (b['relevance'] as double)
               .compareTo(a['relevance'] as double);
           return c != 0
@@ -278,7 +290,8 @@ class EvalRetriever {
         'ON s.book_id = section_summaries_fts.book_id '
         'AND s.para_start = section_summaries_fts.para_start '
         'WHERE section_summaries_fts MATCH ? '
-        'ORDER BY bm25(section_summaries_fts) ASC LIMIT 20',
+        'ORDER BY bm25(section_summaries_fts, 0.0, 0.0, 10.0, 5.0, 1.0, '
+        '1.0, 1.0) ASC LIMIT 20',
         [terms],
       );
       return rows.map((r) {
@@ -301,8 +314,9 @@ class EvalRetriever {
     }
   }
 
-  /// search_by_category — resolve books by category/nikaya prefix, then
-  /// run search_tipitaka per query and filter (mirrors the tool service).
+  /// search_by_category — resolve books by category/nikaya prefix, then run
+  /// a SCOPED LIKE search per query inside those books (mirrors the tool
+  /// service; a global pool + post-filter starves late-sorting books).
   List<Map<String, Object?>> searchByCategory(
     List<String> queries,
     List<String> categories,
@@ -334,14 +348,85 @@ class EvalRetriever {
     final seen = <String>{};
     final out = <Map<String, Object?>>[];
     for (final q in queries) {
-      for (final hit in searchTipitaka(q)) {
-        final bid = hit['book_id'] as String;
-        if (!valid.contains(bid)) continue;
-        if (!seen.add('$bid:${hit['para_id']}')) continue;
-        out.add(hit);
+      final keywords = q
+          .split(RegExp(r'\s+'))
+          .map((w) => w.trim())
+          .where((w) => w.length >= 3)
+          .toSet()
+          .toList();
+      if (keywords.isEmpty) continue;
+      // Parenthesise the OR'd LIKE conditions so the book scope applies to
+      // EVERY keyword, not just the last one (mirror of the tool fix).
+      final conds = keywords.map((_) => 'LOWER(s.pali) LIKE ?').join(' OR ');
+      final likeParams = keywords.map((k) => '%${k.toLowerCase()}%').toList();
+      final bookPh = valid.map((_) => '?').join(',');
+      final rows = epiDb.select(
+        'SELECT * FROM ('
+        '  SELECT s.book_id, s.para_id, '
+        '    MIN(s.line_id) AS first_line_id, '
+        '    group_concat(s.pali, \' \') AS para_text, '
+        '    ROW_NUMBER() OVER (PARTITION BY s.book_id '
+        '      ORDER BY s.para_id) AS rn '
+        '  FROM sentences s JOIN books b ON b.book_id = s.book_id '
+        '  WHERE ($conds) AND s.book_id IN ($bookPh) '
+        '  GROUP BY s.book_id, s.para_id '
+        ') WHERE rn <= 150',
+        [...likeParams, ...valid],
+      );
+      final scored = <Map<String, Object?>>[];
+      for (final row in rows) {
+        final bid = row['book_id'] as String;
+        final paraId = row['para_id'] as int;
+        final paraText = row['para_text'] as String? ?? '';
+        final lower = paraText.toLowerCase();
+        if (lower.isEmpty) continue;
+        double score = 0;
+        final matched = <String>{};
+        for (final kw in keywords) {
+          final needle = kw.toLowerCase();
+          var idx = 0;
+          while (idx != -1) {
+            idx = lower.indexOf(needle, idx);
+            if (idx != -1) {
+              score += needle.length;
+              matched.add(kw);
+              idx += needle.length;
+            }
+          }
+        }
+        final density = (score / lower.length).clamp(0.0, 1.0);
+        final coverage = matched.length / keywords.length;
+        final text = paraText.length <= 300
+            ? paraText
+            : '${paraText.substring(0, 300)}…';
+        scored.add({
+          'book_id': bid,
+          'para_id': paraId,
+          'line_id': row['first_line_id'] as int? ?? 1,
+          'text': text,
+          'relevance': density,
+          'coverage': coverage,
+          'method': 'like',
+        });
+      }
+      scored.sort((a, b) {
+        final cov = (b['coverage'] as double)
+            .compareTo(a['coverage'] as double);
+        if (cov != 0) return cov;
+        final c = (b['relevance'] as double)
+            .compareTo(a['relevance'] as double);
+        return c != 0
+            ? c
+            : (a['para_id'] as int).compareTo(b['para_id'] as int);
+      });
+      // Cap at 50 per query, then 80 total — mirror of the tool service's
+      // per-query take(50) and merged.take(80). Dedup across queries.
+      for (final s in scored.take(50)) {
+        final key = '${s['book_id']}:${s['para_id']}';
+        if (seen.add(key)) out.add(s);
       }
     }
-    return out;
+    return out.take(80).toList();
   }
 
   /// get_dictionary — DPD lookup + pali_definition occurrences.
@@ -687,7 +772,6 @@ List<StepRecord> _runPlanner(EvalRetriever r, Map<String, dynamic> q) {
       .map((e) => e.toString())
       .where((s) => s.trim().isNotEmpty)
       .toList();
-  final question = q['question'] as String;
 
   void record(String tool, Map<String, Object?> args, List hits, String method) {
     if (steps.length >= maxSteps) return;
@@ -778,6 +862,7 @@ List<StepRecord> _runPlanner(EvalRetriever r, Map<String, dynamic> q) {
 void main(List<String> args) {
   String? dbDirOverride;
   String? questionsPath;
+  String? onlyIds;
   for (int i = 0; i < args.length; i++) {
     if (args[i] == '--db-dir' && i + 1 < args.length) {
       dbDirOverride = args[i + 1];
@@ -785,12 +870,18 @@ void main(List<String> args) {
     } else if (args[i] == '--questions' && i + 1 < args.length) {
       questionsPath = args[i + 1];
       i++;
+    } else if (args[i] == '--only' && i + 1 < args.length) {
+      onlyIds = args[i + 1];
+      i++;
     } else if (args[i] == '--help') {
       print('Usage: dart run tool/ai_qa_eval.dart [--db-dir <path>] '
-          '[--questions <path>]');
+          '[--questions <path>] [--only id1,id2]');
       return;
     }
   }
+  final onlySet = onlyIds == null
+      ? null
+      : onlyIds.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toSet();
 
   final dbDir = _resolveDbDir(dbDirOverride);
   stdout.writeln('DB dir: $dbDir');
@@ -830,6 +921,8 @@ void main(List<String> args) {
   double totalPrecision = 0;
 
   for (final q in questions) {
+    if (onlySet != null && !onlySet.contains(q['id'])) continue;
+
     final steps = _runPlanner(retriever, q);
 
     final retrievedSpans = <RetrievedSpan>{};
@@ -847,9 +940,11 @@ void main(List<String> args) {
           break;
         case 'search_by_category':
           hits = retriever.searchByCategory(
-            (step.args['queries'] as List).cast<String>(),
-            (step.args['categories'] as List).cast<String>(),
-            (step.args['nikayas'] as List).cast<String>(),
+            (step.args['queries'] as List).map((e) => e.toString()).toList(),
+            (step.args['categories'] as List)
+                .map((e) => e.toString())
+                .toList(),
+            (step.args['nikayas'] as List).map((e) => e.toString()).toList(),
           );
           break;
         default:
@@ -888,9 +983,22 @@ void main(List<String> args) {
         '${s.args.toString().length > 90 ? s.args.toString().substring(0, 90) + "…" : s.args}',
       );
     }
+    if (onlySet != null) {
+      // Debug: per-book span distribution across all steps.
+      final byBook = <String, int>{};
+      for (final s in retrievedSpans) {
+        byBook[s.$1] = (byBook[s.$1] ?? 0) + 1;
+      }
+      final keys = byBook.keys.toList()..sort();
+      stdout.writeln('    spans by book: '
+          '${keys.map((k) => '$k:${byBook[k]}').join(' ')}');
+      stdout.writeln('    expected books: '
+          '${(q['expects_book_ids'] as List).join(', ')} '
+          'paras: ${q['expects_para_any']}');
+    }
   }
 
-  final n = questions.length;
+  final n = results.length;
   stdout.writeln('\n──────────────────────────────────────────');
   stdout.writeln('TOTAL: $passCount/$n passed');
   stdout.writeln(
