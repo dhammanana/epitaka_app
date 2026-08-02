@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # epitaka_app/
 DATA_DIR="$(cd "$APP_DIR/../data" && pwd)"       # ../data/ (sibling of epitaka_app)
 TARGET_DIR="$DATA_DIR/assets"                    # ../data/assets/
-HASH_FILE="$APP_DIR/.db_upload_hashes.json"      # tracked in git, inside epitaka_app
+HASH_FILE="$TARGET_DIR/.db_upload_hashes.json"      # tracked in git, inside epitaka_app
 RELEASE_TAG="latest"
 
 # ── 1. Verify required tools ─────────────────────────────────────────────────
@@ -27,6 +27,13 @@ fi
 if ! command -v jq &> /dev/null; then
     echo "❌ Error: 'jq' is not installed or not in PATH (needed for hash tracking)."
     exit 1
+fi
+HAVE_PV=0
+if command -v pv &> /dev/null; then
+    HAVE_PV=1
+else
+    echo "ℹ️  'pv' not found — uploads will run without a progress bar."
+    echo "    Install it for progress feedback: brew install pv"
 fi
 
 hash_of() {
@@ -84,9 +91,18 @@ for f in "${db_files[@]}"; do
     rm -f "$zip_file"
     (cd "$DATA_DIR" && zip -q -r "$zip_file" "$file_name")
 
-    # Upload to GitHub Release with progress and clobber (overwrite) flags
+    # Upload to GitHub Release with a real progress bar.
+    # `gh` itself gives no byte-level feedback when piping through some
+    # shells, so if `pv` is available we stream the file through it and
+    # feed gh via stdin (gh supports "-#name" to name a stdin asset).
     echo "   -> Uploading to GitHub release '$RELEASE_TAG'..."
-    gh release upload "$RELEASE_TAG" "$zip_file" --clobber
+    zip_size="$(du -h "$zip_file" | cut -f1)"
+    echo "      ($zip_size)"
+    if [ "$HAVE_PV" -eq 1 ]; then
+        pv "$zip_file" | gh release upload "$RELEASE_TAG" "-#${base_name}.zip" --clobber
+    else
+        gh release upload "$RELEASE_TAG" "$zip_file" --clobber
+    fi
 
     # Record the new hash only after a successful upload
     tmp_file="$(mktemp)"

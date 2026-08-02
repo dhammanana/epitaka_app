@@ -314,10 +314,11 @@ jobs:
           ls -la assets/db/
 
       - name: Build macOS Release
-        # Universal binary (x86_64 + arm64) so the DMG runs on both Intel
-        # and Apple Silicon Macs. macos-latest runners are Apple Silicon, so
-        # a plain build would produce an arm64-only app Intel users can't open.
-        run: flutter build macos --release --target-platform=darwin-x64,darwin-arm64
+        # `flutter build macos --release` already produces a UNIVERSAL binary
+        # (x86_64 + arm64) by default — the Flutter tool passes the generic
+        # 'platform=macOS' destination for release builds, which builds both
+        # architectures. There is no --target-platform option for macos.
+        run: flutter build macos --release
 
       - name: Build DMG Installer
         run: |
