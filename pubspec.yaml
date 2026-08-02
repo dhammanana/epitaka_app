@@ -187,4 +187,13 @@ flutter_launcher_icons:
     image_path: "assets/icon.png"
   android_notification_icon:
     image_path: "assets/logo_mono.png"
-    name: "mic_notification" 
+    name: "mic_notification"
+
+msix_config:
+  display_name: ePitaka
+  publisher_display_name: ePitaka
+  identity_name: ePitaka.ePitaka
+  publisher: CN=BE133D0C-D2FF-4B94-9E9D-C47919B43CBC
+  msix_version: 1.0.0.0
+  logo_path: assets/icon.png
+  store: true
