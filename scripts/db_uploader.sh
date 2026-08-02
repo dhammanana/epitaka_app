@@ -97,7 +97,7 @@ for f in "${db_files[@]}"; do
     # feed gh via stdin (gh supports "-#name" to name a stdin asset).
     echo "   -> Uploading to GitHub release '$RELEASE_TAG'..."
     zip_size="$(du -h "$zip_file" | cut -f1)"
-    echo "      ($zip_size)"
+    echo "      $(zip_size)"
     if [ "$HAVE_PV" -eq 1 ]; then
         pv "$zip_file" | gh release upload "$RELEASE_TAG" "-#${base_name}.zip" --clobber
     else
