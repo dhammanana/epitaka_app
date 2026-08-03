@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/utils/app_localizations.dart';
 import '../../core/utils/responsive_breakpoint.dart';
 import '../../features/contents/widgets/contents_panel.dart';
 import '../../features/dictionary/widgets/dictionary_panel.dart';
@@ -279,6 +280,7 @@ class _SidebarPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return SizedBox(
       width: width,
@@ -299,7 +301,7 @@ class _SidebarPanel extends ConsumerWidget {
                 const SizedBox(width: AppDimensions.sm),
                 Expanded(
                   child: Text(
-                    _titleFor(panelType),
+                    _titleFor(context, panelType),
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -311,7 +313,7 @@ class _SidebarPanel extends ConsumerWidget {
                 IconButton(
                   icon: Icon(Icons.close, size: 18),
                   color: colors.onSurfaceVariant,
-                  tooltip: 'Close panel',
+                  tooltip: loc.closePanel,
                   onPressed: () {
                     ref.read(sidePanelProvider.notifier).close(panelType);
                   },
@@ -364,18 +366,19 @@ class _SidebarPanel extends ConsumerWidget {
     }
   }
 
-  String _titleFor(SidePanelType type) {
+  String _titleFor(BuildContext context, SidePanelType type) {
+    final loc = AppLocalizations.of(context);
     switch (type) {
       case SidePanelType.contents:
-        return 'Contents';
+        return loc.contents;
       case SidePanelType.dictionary:
-        return 'Dictionary';
+        return loc.dictionary;
       case SidePanelType.search:
-        return 'Search';
+        return loc.search;
       case SidePanelType.library:
-        return 'Library';
+        return loc.libraryLabel;
       case SidePanelType.gavesana:
-        return 'Gavesana';
+        return loc.gavesana;
     }
   }
 }

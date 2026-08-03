@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/app_localizations.dart';
+
 /// In-book search bar shown as an overlay at the top of the reader.
 ///
 /// The search state (query, matches, controllers) lives in the owning
@@ -37,6 +39,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final currentMatch = currentMatchIndex + 1; // 1-based display
 
     return Padding(
@@ -48,7 +51,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
             icon: const Icon(Icons.close, size: 20),
             color: colors.onSurfaceVariant,
             onPressed: onClose,
-            tooltip: 'Close search',
+            tooltip: loc.closeSearch,
             visualDensity: VisualDensity.compact,
           ),
           const SizedBox(width: 4),
@@ -61,7 +64,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 focusNode: focusNode,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: 'Find in book…',
+                  hintText: loc.findInBook,
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                     fontSize: 14,
@@ -118,7 +121,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                'No results',
+                loc.noResults,
                 style: TextStyle(
                   fontSize: 13,
                   color: colors.error.withValues(alpha: 0.7),
@@ -132,7 +135,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 ? colors.onSurfaceVariant
                 : colors.onSurfaceVariant.withValues(alpha: 0.3),
             onPressed: matchCount > 0 ? onPrevious : null,
-            tooltip: 'Previous match',
+            tooltip: loc.previousMatch,
             visualDensity: VisualDensity.compact,
           ),
           // Next match
@@ -142,7 +145,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 ? colors.onSurfaceVariant
                 : colors.onSurfaceVariant.withValues(alpha: 0.3),
             onPressed: matchCount > 0 ? onNext : null,
-            tooltip: 'Next match',
+            tooltip: loc.nextMatch,
             visualDensity: VisualDensity.compact,
           ),
           // Separator
@@ -157,7 +160,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
             icon: const Icon(Icons.open_in_full, size: 18),
             color: colors.primary,
             onPressed: onSearchEntire,
-            tooltip: 'Search entire Tipiṭaka',
+            tooltip: loc.searchTipitakaFull,
             visualDensity: VisualDensity.compact,
           ),
         ],

@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../models/heading_attachment.dart';
 import '../providers/mention_provider.dart';
 import 'mention_index_build_dialog.dart';
@@ -90,6 +91,7 @@ class MentionOverlay extends ConsumerWidget {
   }
 
   Widget _buildHeader(BuildContext context, ColorScheme colors, MentionSearchState state) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -103,8 +105,8 @@ class MentionOverlay extends ConsumerWidget {
           Expanded(
             child: Text(
               state.query.isNotEmpty
-                  ? 'Attach: "${state.query}"'
-                  : 'Type a sutta or heading name',
+                  ? loc.attachQuery(state.query)
+                  : loc.typeSuttaOrHeading,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontSize: 11,
@@ -126,6 +128,7 @@ class MentionOverlay extends ConsumerWidget {
   }
 
   Widget _buildEmptyState(BuildContext context, ColorScheme colors, String query) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Column(
@@ -139,8 +142,8 @@ class MentionOverlay extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             query.isNotEmpty
-                ? 'No results for "$query"'
-                : 'Start typing a sutta or heading name',
+                ? loc.noResultsForQuery(query)
+                : loc.startTypingSutta,
             style: AppTypography.labelMedium.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.6),
             ),
@@ -148,7 +151,7 @@ class MentionOverlay extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tip: Try @cankisutta, @dn1, or a heading title',
+            loc.mentionTip,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.4),
               fontSize: 10,
@@ -164,6 +167,7 @@ class MentionOverlay extends ConsumerWidget {
   }
 
   Widget _buildFooter(BuildContext context, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -176,16 +180,16 @@ class MentionOverlay extends ConsumerWidget {
         children: [
           Icon(Icons.keyboard_return, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
           const SizedBox(width: 4),
-          Text('Select', style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(loc.selectShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
           const SizedBox(width: 10),
           Icon(Icons.keyboard_arrow_up, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
           Icon(Icons.keyboard_arrow_down, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
           const SizedBox(width: 4),
-          Text('Navigate', style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(loc.navigateShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
           const Spacer(),
           Icon(Icons.close, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
           const SizedBox(width: 4),
-          Text('Esc', style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(loc.escShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
         ],
       ),
     );
@@ -353,7 +357,7 @@ class _RebuildIndexButtonState extends ConsumerState<_RebuildIndexButton> {
             ),
             const SizedBox(width: 5),
             Text(
-              'Rebuild suggestion index',
+              AppLocalizations.of(context).rebuildSuggestionIndex,
               style: AppTypography.labelSmall.copyWith(
                 color: widget.colors.primary,
                 fontSize: 11,

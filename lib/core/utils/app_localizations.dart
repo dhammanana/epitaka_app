@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../providers/settings_provider.dart';
+import 'l10n/app_strings.dart';
 
 /// Localized strings for the ePitaka app UI.
 ///
-/// Supports English and Vietnamese.
+/// Strings live in per-language files under `core/utils/l10n/`:
+///   - `en.dart` — English (source of truth)
+///   - `vi.dart` — Vietnamese
+///   - `app_strings.dart` — registry of supported languages
+///
+/// To add a new language, copy `en.dart` to `xx.dart`, translate the
+/// values, and register it in `app_strings.dart`. That's the whole process.
 class AppLocalizations {
   final Locale locale;
 
@@ -14,87 +21,87 @@ class AppLocalizations {
     return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
   }
 
-  String _t(String en, String vi) {
-    if (locale.languageCode == 'vi') return vi;
-    return en;
+  /// Resolve [key] (an English source string) in the current language,
+  /// falling back to English when the translation is missing.
+  String _t(String key) {
+    return AppStrings.tableFor(locale.languageCode)[key] ?? key;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   //  COMMON / SHARED
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get save => _t('Save', 'Lưu');
-  String get saving => _t('Saving…', 'Đang lưu…');
-  String get cancel => _t('Cancel', 'Hủy');
-  String get delete => _t('Delete', 'Xóa');
-  String get download => _t('Download', 'Tải về');
-  String get retry => _t('Retry', 'Thử lại');
-  String get ok => _t('OK', 'Đồng ý');
-  String get yes => _t('Yes', 'Có');
-  String get no => _t('No', 'Không');
-  String get error => _t('Error', 'Lỗi');
-  String get confirm => _t('Confirm', 'Xác nhận');
-  String get open => _t('Open', 'Mở');
-  String get close => _t('Close', 'Đóng');
-  String get done => _t('Done', 'Xong');
-  String get add => _t('Add', 'Thêm');
-  String get update => _t('Update', 'Cập nhật');
-  String get search => _t('Search', 'Tìm kiếm');
-  String get clear => _t('Clear', 'Xóa');
-  String get remove => _t('Remove', 'Xóa bỏ');
-  String get none => _t('None', 'Không');
-  String get back => _t('Back', 'Quay lại');
-  String get unknown => _t('Unknown', 'Không xác định');
-  String get untitled => _t('Untitled', 'Chưa có tiêu đề');
+  String get save => _t('Save');
+  String get saving => _t('Saving…');
+  String get cancel => _t('Cancel');
+  String get delete => _t('Delete');
+  String get download => _t('Download');
+  String get retry => _t('Retry');
+  String get ok => _t('OK');
+  String get yes => _t('Yes');
+  String get no => _t('No');
+  String get error => _t('Error');
+  String get confirm => _t('Confirm');
+  String get open => _t('Open');
+  String get close => _t('Close');
+  String get done => _t('Done');
+  String get add => _t('Add');
+  String get update => _t('Update');
+  String get search => _t('Search');
+  String get clear => _t('Clear');
+  String get remove => _t('Remove');
+  String get none => _t('None');
+  String get back => _t('Back');
+  String get unknown => _t('Unknown');
+  String get untitled => _t('Untitled');
+  String get apply => _t('Apply');
+  String get check => _t('Check');
+  String get rebuild => _t('Rebuild');
+
+  /// Error prefix for `Error: $message` lines.
+  String errorMessage(String message) => '${_t('Error')}: $message';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  SETTINGS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get settings => _t('Settings', 'Cài đặt');
-  String get general => _t('General', 'Chung');
-  String get language => _t('Language', 'Ngôn ngữ');
-  String get appearance => _t('Appearance', 'Giao diện');
-  String get appearanceSubtitle => _t('Theme & accent', 'Chủ đề & màu sắc');
-  String get dataAndContent => _t('Data & Content', 'Dữ liệu & Nội dung');
-  String get translationsDownloads =>
-      _t('Translations & Downloads', 'Bản dịch & Tải về');
-  String get translationDisplay =>
-      _t('Translation Display', 'Hiển thị bản dịch');
+  String get settings => _t('Settings');
+  String get general => _t('General');
+  String get language => _t('Language');
+  String get appearance => _t('Appearance');
+  String get appearanceSubtitle => _t('Theme & accent');
+  String get dataAndContent => _t('Data & Content');
+  String get translationsDownloads => _t('Translations & Downloads');
+  String get translationDisplay => _t('Translation Display');
   String get translationDisplaySubtitle =>
-      _t('Layout, mode & typography', 'Bố cục, chế độ & kiểu chữ');
-  String get readingPreferences => _t('Reading Preferences', 'Tùy chỉnh đọc');
-  String get readingOptions => _t('Reading Options', 'Tùy chọn đọc');
+      _t('Layout, mode & typography');
+  String get readingPreferences => _t('Reading Preferences');
+  String get readingOptions => _t('Reading Options');
   String get readingOptionsSubtitle =>
-      _t('Layout, numbering & scroll', 'Bố cục, đánh số & cuộn');
-  String get textToSpeech => _t('Text-to-Speech', 'Văn bản thành giọng nói');
-  String get ttsSubtitle => _t('Voice & speed', 'Giọng & tốc độ');
-  String get ttsReplacements => _t('TTS Replacements', 'Thay thế TTS');
+      _t('Layout, numbering & scroll');
+  String get textToSpeech => _t('Text-to-Speech');
+  String get ttsSubtitle => _t('Voice & speed');
+  String get ttsReplacements => _t('TTS Replacements');
   String get ttsReplacementsSubtitle =>
-      _t('Regex text replacements', 'Thay thế văn bản bằng regex');
-  String get script => _t('Script', 'Chữ viết');
-  String get stripVariantAnnotations =>
-      _t('Show variant readings', 'Hiển phiên bản văn bản khác');
+      _t('Regex text replacements');
+  String get script => _t('Script');
+  String get stripVariantAnnotations => _t('Show variant readings');
   String get stripVariantAnnotationsSubtitle => _t(
     'Show variant readings from other textual versions',
-    'Hiển thị các phiên bản văn bản từ các bản khác',
   );
-  String get libraryBrowser => _t('Library Browser', 'Trình duyệt thư viện');
-  String get defaultExpandLevel =>
-      _t('Default expand level', 'Mức mở rộng mặc định');
-  String get collapsed => _t('Collapsed', 'Thu gọn');
-  String get category => _t('Category', 'Danh mục');
-  String get expand => _t('Expand', 'Mở rộng');
-  String get theme => _t('Theme', 'Chủ đề');
-  // Theme names use the Pāli names with an English/Vietnamese gloss shown
-  // as a subtitle in the theme picker.
-  String get systemTheme => _t('Dhammatā', 'Dhammatā');
-  String get lightTheme => _t('Tālapatta', 'Tālapatta');
-  String get sepiaTheme => _t('Paññā-āloka', 'Paññā-āloka');
-  String get oceanTheme => _t('Vimutti-rasa', 'Vimutti-rasa');
-  String get darkTheme => _t('Samādhi', 'Samādhi');
-  String get midnightTheme => _t('Passaddhi', 'Passaddhi');
-  String get forestTheme => _t('Arañña', 'Arañña');
+  String get libraryBrowser => _t('Library Browser');
+  String get defaultExpandLevel => _t('Default expand level');
+  String get collapsed => _t('Collapsed');
+  String get category => _t('Category');
+  String get expand => _t('Expand');
+  String get theme => _t('Theme');
+  String get systemTheme => _t('Dhammatā');
+  String get lightTheme => _t('Tālapatta');
+  String get sepiaTheme => _t('Paññā-āloka');
+  String get oceanTheme => _t('Vimutti-rasa');
+  String get darkTheme => _t('Samādhi');
+  String get midnightTheme => _t('Passaddhi');
+  String get forestTheme => _t('Arañña');
 
   /// Display name for a theme preference (Pāli name).
   String themeName(ThemePreference pref) {
@@ -120,50 +127,47 @@ class AppLocalizations {
   String themeGloss(ThemePreference pref) {
     switch (pref) {
       case ThemePreference.system:
-        return _t('Natural Law / Adaptability', 'Luật tự nhiên / Thích ứng');
+        return _t('Natural Law / Adaptability');
       case ThemePreference.light:
-        return _t('Preserved Sacred Texts', 'Kinh văn bảo tồn');
+        return _t('Preserved Sacred Texts');
       case ThemePreference.sepia:
-        return _t('Illuminating Wisdom', 'Trí tuệ soi sáng');
+        return _t('Illuminating Wisdom');
       case ThemePreference.ocean:
-        return _t('Oceanic Taste of Freedom', 'Vị giác của sự giải thoát');
+        return _t('Oceanic Taste of Freedom');
       case ThemePreference.dark:
-        return _t('Meditative Stillness', 'Tĩnh lặng thiền định');
+        return _t('Meditative Stillness');
       case ThemePreference.midnight:
-        return _t('Profound Tranquility', 'Khinh an sâu lắng');
+        return _t('Profound Tranquility');
       case ThemePreference.forest:
-        return _t('Forest Seclusion', 'Ẩn cư nơi rừng');
+        return _t('Forest Seclusion');
     }
   }
-  String get expandResultsDefault =>
-      _t('Expand results by default', 'Mở rộng kết quả mặc định');
-  String get rebuildSearchIndex =>
-      _t('Rebuild search index', 'Xây dựng lại chỉ mục tìm kiếm');
-  String get rebuildSearchIndexSubtitle => _t(
-    'Re-indexes Pāli texts & translations',
-    'Lập chỉ mục lại văn bản Pāli & bản dịch',
-  );
-  String get dictionaries => _t('Dictionaries', 'Từ điển');
-  String get dictionarySettings => _t('Dictionary Settings', 'Cài đặt từ điển');
+
+  String get expandResultsDefault => _t('Expand results by default');
+  String get rebuildSearchIndex => _t('Rebuild search index');
+  String get rebuildSearchIndexSubtitle =>
+      _t('Re-indexes Pāli texts & translations');
+  String get dictionaries => _t('Dictionaries');
+  String get dictionarySettings => _t('Dictionary Settings');
   String get dictionarySettingsSubtitle =>
-      _t('Enable, disable & reorder', 'Bật, tắt & sắp xếp');
-  String get account => _t('Account', 'Tài khoản');
-  String get profile => _t('Profile', 'Hồ sơ');
-  String get system => _t('System', 'Hệ thống');
-  String get about => _t('About ePitaka', 'Giới thiệu ePitaka');
-  String get help => _t('Help', 'Trợ giúp');
-  String get keyboardShortcuts => _t('Keyboard Shortcuts', 'Phím tắt');
-  String get searchInBook => _t('Search within the book', 'Tìm trong sách');
-  String get globalSearch => _t('Open global search', 'Mở tìm kiếm toàn cục');
-  String get closeFocusTab => _t('Close the focus tab', 'Đóng thẻ đang chọn');
-  String get closeAllTabs => _t('Close all tabs', 'Đóng tất cả thẻ');
-  String get openDictionary => _t('Open dictionary', 'Mở từ điển');
-  String get openLibrary => _t('Open library', 'Mở thư viện');
-  String get openSettings => _t('Open settings', 'Mở cài đặt');
-  String get increaseFontSize => _t('Increase font size', 'Tăng cỡ chữ');
-  String get decreaseFontSize => _t('Decrease font size', 'Giảm cỡ chữ');
-  String get languageEnglish => _t('English', 'Tiếng Anh');
-  String get languageVietnamese => _t('Vietnamese', 'Tiếng Việt');
+      _t('Enable, disable & reorder');
+  String get account => _t('Account');
+  String get profile => _t('Profile');
+  String get system => _t('System');
+  String get about => _t('About ePitaka');
+  String get help => _t('Help');
+  String get keyboardShortcuts => _t('Keyboard Shortcuts');
+  String get searchInBook => _t('Search within the book');
+  String get globalSearch => _t('Open global search');
+  String get closeFocusTab => _t('Close the focus tab');
+  String get closeAllTabs => _t('Close all tabs');
+  String get openDictionary => _t('Open dictionary');
+  String get openLibrary => _t('Open library');
+  String get openSettings => _t('Open settings');
+  String get increaseFontSize => _t('Increase font size');
+  String get decreaseFontSize => _t('Decrease font size');
+  String get languageEnglish => _t('English');
+  String get languageVietnamese => _t('Vietnamese');
 
   String appLanguageName(AppLanguage lang) {
     switch (lang) {
@@ -176,211 +180,202 @@ class AppLocalizations {
     }
   }
 
+  String get aiQa => _t('AI Q&A');
+  String get aiQaSettings => _t('AI Q&A Settings');
+  String get aiQaSettingsSubtitle => _t('API key, models, etc.');
+  String get noDownloadUrlForAiAssets =>
+      _t('No download URL available for AI search assets');
+
   // ═══════════════════════════════════════════════════════════════════════
   //  APPEARANCE SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get accentColor => _t('Accent Color', 'Màu nhấn');
-  String get accentPairPreview =>
-      _t('Accent Pair Preview', 'Xem trước cặp màu nhấn');
-  String get lightMode => _t('Light mode', 'Chế độ sáng');
-  String get darkMode => _t('Dark mode', 'Chế độ tối');
-  String get buttonLabel => _t('Button', 'Nút');
+  String get accentColor => _t('Accent Color');
+  String get accentPairPreview => _t('Accent Pair Preview');
+  String get lightMode => _t('Light mode');
+  String get darkMode => _t('Dark mode');
+  String get buttonLabel => _t('Button');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READING OPTIONS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get pageNumbering => _t('Page Numbering', 'Đánh số trang');
-  String get layout => _t('Layout', 'Bố cục');
-  String get sideBySideView => _t('Side-by-Side View', 'Xem song song');
-  String get sideBySideSubtitle => _t(
-    'Show Pāli and translation side by side',
-    'Hiển thị Pāli và bản dịch song song',
-  );
-  String get copyClipboard => _t('Copy / Clipboard', 'Sao chép');
-  String get quoteFormat => _t('Quote Format', 'Định dạng trích dẫn');
-  String get defaultCopyScope =>
-      _t('Default Copy Scope', 'Phạm vi sao chép mặc định');
-  String get autoScrollSpeed => _t('Auto-Scroll Speed', 'Tốc độ tự động cuộn');
-  String get display => _t('Display', 'Hiển thị');
-  String get keepScreenOn => _t('Keep Screen On', 'Giữ màn hình sáng');
-  String get keepScreenOnSubtitle => _t(
-    'Prevent screen from dimming while reading',
-    'Không cho màn hình tối khi đọc',
-  );
-  String get bookIdLabel => _t('Book ID', 'Mã sách');
-  String get bookNameLabel => _t('Book Name', 'Tên sách');
-  String get fullCitation => _t('Full Citation', 'Trích dẫn đầy đủ');
-  String get paliOnly => _t('Pāli Only', 'Chỉ Pāli');
-  String get translationOnly => _t('Translation Only', 'Chỉ bản dịch');
-  String get both => _t('Both', 'Cả hai');
-  String get slow => _t('Slow', 'Chậm');
-  String get fast => _t('Fast', 'Nhanh');
-  String get systemLabel => _t('System', 'Hệ thống');
+  String get pageNumbering => _t('Page Numbering');
+  String get layout => _t('Layout');
+  String get sideBySideView => _t('Side-by-Side View');
+  String get sideBySideSubtitle =>
+      _t('Show Pāli and translation side by side');
+  String get copyClipboard => _t('Copy / Clipboard');
+  String get quoteFormat => _t('Quote Format');
+  String get defaultCopyScope => _t('Default Copy Scope');
+  String get autoScrollSpeed => _t('Auto-Scroll Speed');
+  String get display => _t('Display');
+  String get keepScreenOn => _t('Keep Screen On');
+  String get keepScreenOnSubtitle =>
+      _t('Prevent screen from dimming while reading');
+  String get bookIdLabel => _t('Book ID');
+  String get bookNameLabel => _t('Book Name');
+  String get fullCitation => _t('Full Citation');
+  String get paliOnly => _t('Pāli Only');
+  String get translationOnly => _t('Translation Only');
+  String get both => _t('Both');
+  String get slow => _t('Slow');
+  String get fast => _t('Fast');
+  String get systemLabel => _t('System');
+  String get template => _t('Template');
+  String get pageSystem => _t('Page System');
+
+  // ── Display layout popup ──────────────────────────────────────────────
+  String get displayNoTranslation => _t('No translation');
+  String get displayNoTranslationSubtitle => _t('Hide all translations');
+  String get displayLineByLine => _t('Line by line');
+  String get displayLineByLineSubtitle => _t('Pāli above translation');
+  String get displaySideBySide => _t('Side by side');
+  String get displaySideBySideSubtitle => _t('Pāli beside translation');
+  String get anyShort => _t('Any');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  GAVESANA (AI SEARCH)
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get aiSearch => _t('Gavesana (AI Search)', 'Gavesana (Tìm kiếm AI)');
-  String get aiSearchAssets => _t('AI Search Assets', 'Tài nguyên tìm kiếm AI');
+  String get aiSearch => _t('Gavesana (AI Search)');
+  String get aiSearchAssets => _t('AI Search Assets');
   String get notDownloaded =>
-      _t('Not downloaded — tap to download', 'Chưa tải về — chạm để tải');
-  String get readyLabel => _t('Ready', 'Sẵn sàng');
-  String get gavesanaAssetsTitle =>
-      _t('Gavesana AI Assets', 'Tài nguyên AI Gavesana');
+      _t('Not downloaded — tap to download');
+  String get readyLabel => _t('Ready');
+  String get gavesanaAssetsTitle => _t('Gavesana AI Assets');
   String get gavesanaAssetsReadyDesc => _t(
     'The AI search model and vector database are ready to use.\n\n'
         'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.',
-    'Mô hình AI và cơ sở dữ liệu vector đã sẵn sàng.\n\n'
-        'Mở thanh bên trong màn hình Thư viện và chạm vào biểu tượng Gavesana để bắt đầu tìm kiếm ngữ nghĩa.',
   );
-  String get downloadGavesanaTitle =>
-      _t('Download Gavesana Assets?', 'Tải tài nguyên Gavesana?');
+  String get downloadGavesanaTitle => _t('Download Gavesana Assets?');
   String get downloadGavesanaDesc => _t(
     'This will download approximately 670 MB of data:\n- AI model (270 MB)\n- Vector database (364 MB)\n- Tokenizer config (33 MB)\n\nA Wi-Fi connection is recommended.',
-    'Thao tác này sẽ tải khoảng 670 MB dữ liệu:\n- Mô hình AI (270 MB)\n- Cơ sở dữ liệu vector (364 MB)\n- Cấu hình Tokenizer (33 MB)\n\nNên sử dụng kết nối Wi-Fi.',
   );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TRANSLATION SETTINGS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get displayMode => _t('Display Mode', 'Chế độ hiển thị');
-  String get paliTextLabel => _t('Pāli Text', 'Văn bản Pāli');
-  String get translationDatabases =>
-      _t('Translation Databases', 'Cơ sở dữ liệu bản dịch');
-  String get checkForUpdates => _t('Check for Updates', 'Kiểm tra cập nhật');
-  String get noUpdates => _t(
-    'All translations are up to date.',
-    'Tất cả bản dịch đã được cập nhật.',
-  );
-  String get activeVersion => _t('Active Version', 'Phiên bản đang dùng');
-  String get selectThisVersion =>
-      _t('Select this version', 'Chọn phiên bản này');
-  String get nissayaDesc => _t('Nissaya (word-by-word)', 'Nissaya (từng chữ)');
-  String get standardTranslation =>
-      _t('Standard translation', 'Bản dịch tiêu chuẩn');
-  String get installFirst => _t('Install first', 'Cài đặt trước');
-  String get fontFamily => _t('Font Family', 'Phông chữ');
-  String get fontSize => _t('Font Size', 'Cỡ chữ');
-  String get style => _t('Style', 'Kiểu');
-  String get colorLabel => _t('Color', 'Màu sắc');
-  String get useForReading => _t('Use for Reading', 'Sử dụng để đọc');
-  String get active => _t('Active', 'Đang dùng');
-  String get nissaya => _t('Nissaya', 'Nissaya');
-  String get enabled => _t('Enabled', 'Đã bật');
-  String get disabled => _t('Disabled', 'Đã tắt');
-  String get deleteTranslationTitle =>
-      _t('Delete Translation?', 'Xóa bản dịch?');
+  String get displayMode => _t('Display Mode');
+  String get paliTextLabel => _t('Pāli Text');
+  String get translationDatabases => _t('Translation Databases');
+  String get checkForUpdates => _t('Check for Updates');
+  String get noUpdates => _t('All translations are up to date.');
+  String get activeVersion => _t('Active Version');
+  String get selectThisVersion => _t('Select this version');
+  String get nissayaDesc => _t('Nissaya (word-by-word)');
+  String get standardTranslation => _t('Standard translation');
+  String get installFirst => _t('Install first');
+  String get fontFamily => _t('Font Family');
+  String get fontSize => _t('Font Size');
+  String get style => _t('Style');
+  String get colorLabel => _t('Color');
+  String get useForReading => _t('Use for Reading');
+  String get active => _t('Active');
+  String get nissaya => _t('Nissaya');
+  String get enabled => _t('Enabled');
+  String get disabled => _t('Disabled');
+  String get deleteTranslationTitle => _t('Delete Translation?');
+  String get deleteTranslationShort => _t('Delete Translation');
+  String get deleteTranslationConfirm => _t('Delete translation');
+  String get translationOrder => _t('Translation Order');
+  String get pickColor => _t('Pick Color');
+  String get updateCheckComplete => _t('Update check complete.');
+
+  // ── Display modes (Translation settings) ──────────────────────────────
+  String get hideTranslationMode => _t('Hide Translation');
+  String get hideTranslationModeSubtitle =>
+      _t('Show only Pāli text, joined as paragraphs');
+  String get lineByLineMode => _t('Line by Line');
+  String get lineByLineModeSubtitle =>
+      _t('Show Pāli followed by its translation');
+  String get sideBySideMode => _t('Side by Side');
+  String get sideBySideModeSubtitle =>
+      _t('Show Pāli and translation in two columns');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS SETTINGS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get ttsEngine => _t('TTS Engine', 'Công cụ TTS');
-  String get ttsVoiceLabel => _t('Voice', 'Giọng nói');
-  String get ttsSpeed => _t('Speed', 'Tốc độ');
-  String get ttPitch => _t('Pitch', 'Cao độ');
-  String get ttsLanguageLabel => _t('Language', 'Ngôn ngữ');
-  String get engine => _t('Engine', 'Công cụ');
-  String get systemTts => _t('System TTS', 'TTS Hệ thống');
-  String get systemTtsDesc => _t(
-    'Platform-native text-to-speech (fast, no download)',
-    'TTS nền tảng gốc (nhanh, không cần tải)',
-  );
-  String get supertonic => _t('SuperTonic', 'SuperTonic');
-  String get supertonicDesc => _t(
-    'Neural TTS with 31 languages (~400 MB model download)',
-    'TTS thần kinh với 31 ngôn ngữ (tải xuống ~400 MB)',
-  );
-  String get modelDownload => _t('Model Download', 'Tải mô hình');
-  String get modelsInstalled => _t('Models Installed', 'Mô hình đã cài');
-  String get ttsModels => _t('TTS Models', 'Mô hình TTS');
-  String get allModelsReady =>
-      _t('All models are ready for use', 'Tất cả mô hình đã sẵn sàng');
-  String get requiresDownload => _t(
-    'Requires ~400 MB download for neural TTS',
-    'Cần tải ~400 MB cho TTS thần kinh',
-  );
-  String get speakingRate => _t('Speaking Rate', 'Tốc độ nói');
-  String get low => _t('Low', 'Thấp');
-  String get high => _t('High', 'Cao');
-  String get preview => _t('Preview', 'Xem trước');
-  String get testSpeech => _t('Test Speech', 'Thử giọng nói');
-  String get testHearSample => _t(
-    'Hear a sample of the current voice & settings',
-    'Nghe thử giọng nói & cài đặt hiện tại',
-  );
-  String get playing => _t('Playing…', 'Đang phát…');
-  String get tapPauseOrStop => _t(
-    'Tap pause or stop to control playback',
-    'Chạm tạm dừng hoặc dừng để điều khiển',
-  );
-  String get paused => _t('Paused', 'Đã tạm dừng');
-  String get tapResume =>
-      _t('Tap resume to continue', 'Chạm tiếp tục để phát lại');
-  String get loadingAudio => _t('Preparing audio…', 'Đang chuẩn bị âm thanh…');
-  String get voiceStyle => _t('Voice Style', 'Kiểu giọng');
-  String get systemDefault => _t('System Default', 'Mặc định hệ thống');
-  String get config => _t('Config', 'Cấu hình');
+  String get ttsEngine => _t('TTS Engine');
+  String get ttsVoiceLabel => _t('Voice');
+  String get ttsSpeed => _t('Speed');
+  String get ttPitch => _t('Pitch');
+  String get ttsLanguageLabel => _t('Language');
+  String get engine => _t('Engine');
+  String get systemTts => _t('System TTS');
+  String get systemTtsDesc =>
+      _t('Platform-native text-to-speech (fast, no download)');
+  String get supertonic => _t('SuperTonic');
+  String get supertonicDesc =>
+      _t('Neural TTS with 31 languages (~400 MB model download)');
+  String get modelDownload => _t('Model Download');
+  String get modelsInstalled => _t('Models Installed');
+  String get ttsModels => _t('TTS Models');
+  String get allModelsReady => _t('All models are ready for use');
+  String get requiresDownload =>
+      _t('Requires ~400 MB download for neural TTS');
+  String get speakingRate => _t('Speaking Rate');
+  String get low => _t('Low');
+  String get high => _t('High');
+  String get preview => _t('Preview');
+  String get testSpeech => _t('Test Speech');
+  String get testHearSample =>
+      _t('Hear a sample of the current voice & settings');
+  String get playing => _t('Playing…');
+  String get tapPauseOrStop =>
+      _t('Tap pause or stop to control playback');
+  String get paused => _t('Paused');
+  String get tapResume => _t('Tap resume to continue');
+  String get loadingAudio => _t('Preparing audio…');
+  String get voiceStyle => _t('Voice Style');
+  String get systemDefault => _t('System Default');
+  String get config => _t('Config');
+  String get ttsLanguageLabel2 => _t('TTS Language');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get ttsReplacementsDesc => _t(
-    'Replace text patterns before TTS reads them aloud.',
-    'Thay thế mẫu văn bản trước khi TTS đọc to.',
-  );
-  String get addReplacement => _t('Add Replacement', 'Thêm thay thế');
-  String get noReplacementRules => _t(
-    'No replacement rules yet.\nTap "Add Replacement" to create one.',
-    'Chưa có quy tắc thay thế nào.\nChạm "Thêm thay thế" để tạo.',
-  );
-  String get deleteReplacementRule =>
-      _t('Delete Replacement Rule?', 'Xóa quy tắc thay thế?');
-  String get useRegex => _t('Use Regex', 'Dùng Regex');
-  String get find => _t('Find:', 'Tìm:');
-  String get replaceWith => _t('Replace with:', 'Thay thế bằng:');
-  String get regexUsesDart => _t(
-    'Regex uses Dart RegExp syntax.',
-    'Regex sử dụng cú pháp Dart RegExp.',
-  );
-  String get editReplacement => _t('Edit Replacement', 'Sửa thay thế');
-  String get addReplacementTitle => _t('Add Replacement', 'Thêm thay thế');
+  String get ttsReplacementsDesc =>
+      _t('Replace text patterns before TTS reads them aloud.');
+  String get addReplacement => _t('Add Replacement');
+  String get noReplacementRules =>
+      _t('No replacement rules yet.\nTap "Add Replacement" to create one.');
+  String get deleteReplacementRule => _t('Delete Replacement Rule?');
+  String get useRegex => _t('Use Regex');
+  String get find => _t('Find:');
+  String get replaceWith => _t('Replace with:');
+  String get regexUsesDart => _t('Regex uses Dart RegExp syntax.');
+  String get editReplacement => _t('Edit Replacement');
+  String get addReplacementTitle => _t('Add Replacement');
+  String get deleteReplacementConfirm =>
+      _t('Are you sure you want to delete this rule?');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READING COLORS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get readingColors => _t('Reading Colors', 'Màu đọc');
-  String get paliTextColor => _t('Pāli Text Color', 'Màu văn bản Pāli');
-  String get translationTextColor =>
-      _t('Translation Text Color', 'Màu văn bản dịch');
-  String get lightModeLabel => _t('Light mode', 'Chế độ sáng');
-  String get darkModeAuto => _t('Dark mode (auto)', 'Chế độ tối (tự động)');
-  String get darkModePreview => _t('Dark Mode Preview', 'Xem trước chế độ tối');
-  String get lightModePreview =>
-      _t('Light Mode Preview', 'Xem trước chế độ sáng');
+  String get readingColors => _t('Reading Colors');
+  String get paliTextColor => _t('Pāli Text Color');
+  String get translationTextColor => _t('Translation Text Color');
+  String get lightModeLabel => _t('Light mode');
+  String get darkModeAuto => _t('Dark mode (auto)');
+  String get darkModePreview => _t('Dark Mode Preview');
+  String get lightModePreview => _t('Light Mode Preview');
+  String get pickAColor => _t('Pick a color');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TYPOGRAPHY SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get typographyFontSize =>
-      _t('Typography & Font Size', 'Kiểu chữ & Cỡ chữ');
-  String get noTranslationDatabases => _t(
-    'No translation databases found.',
-    'Không tìm thấy cơ sở dữ liệu bản dịch.',
-  );
+  String get typographyFontSize => _t('Typography & Font Size');
+  String get noTranslationDatabases => _t('No translation databases found.');
   String get downloadInSettings => _t(
     'Download translations in Settings → Translations & Downloads.',
-    'Tải bản dịch trong Cài đặt → Bản dịch & Tải về.',
   );
-  String get couldNotLoadTranslations =>
-      _t('Could not load translations:', 'Không thể tải bản dịch:');
+  String get couldNotLoadTranslations => _t('Could not load translations:');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  DICTIONARY SETTINGS SCREEN
@@ -388,358 +383,586 @@ class AppLocalizations {
 
   String get dictionarySettingDesc => _t(
     'Enable, disable, and reorder dictionaries.\nDictionaries appear in this order in the dictionary panel.',
-    'Bật, tắt và sắp xếp từ điển.\nTừ điển xuất hiện theo thứ tự này trong bảng từ điển.',
   );
-  String get enabledDictionaries =>
-      _t('Enabled Dictionaries', 'Từ điển đã bật');
-  String get disabledDictionaries =>
-      _t('Disabled Dictionaries', 'Từ điển đã tắt');
+  String get enabledDictionaries => _t('Enabled Dictionaries');
+  String get disabledDictionaries => _t('Disabled Dictionaries');
   String get noDictEnabled => _t(
     'No dictionaries enabled. Tap a dictionary below to enable it.',
-    'Chưa bật từ điển nào. Chạm vào từ điển bên dưới để bật.',
   );
-  String get errorLoadingDict =>
-      _t('Error loading dictionaries:', 'Lỗi tải từ điển:');
+  String get errorLoadingDict => _t('Error loading dictionaries:');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  DICTIONARY SHEET
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get dictionary => _t('Dictionary', 'Từ điển');
-  String get searchPali => _t('Search Pāḷi…', 'Tìm Pāḷi…');
+  String get dictionary => _t('Dictionary');
+  String get searchPali => _t('Search Pāḷi…');
   String get dictIdlePrompt => _t(
     'Search for a Pāḷi word to see\ndefinitions across multiple dictionaries',
-    'Tìm từ Pāḷi để xem định nghĩa từ nhiều từ điển',
   );
-  String get showFullDetails => _t('Show full details', 'Xem chi tiết đầy đủ');
-  String get searchResultsFor =>
-      _t('Search results for', 'Kết quả tìm kiếm cho');
-  String get noDirectMatch =>
-      _t('No direct matches found for', 'Không tìm thấy kết quả trực tiếp cho');
+  String get showFullDetails => _t('Show full details');
+  String get searchResultsFor => _t('Search results for');
+  String get noDirectMatch => _t('No direct matches found for');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  LIBRARY SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get browse => _t('Browse', 'Duyệt');
-  String get reading => _t('Reading', 'Đang đọc');
-  String get bookmarks => _t('Bookmarks', 'Đánh dấu');
-  String get openTabs => _t('Open Tabs', 'Các tab đang mở');
-  String get books => _t('books', 'sách');
+  String get browse => _t('Browse');
+  String get reading => _t('Reading');
+  String get bookmarks => _t('Bookmarks');
+  String get openTabs => _t('Open Tabs');
+  String get books => _t('books');
   String get noBooksOpen => _t(
     'No books open yet.\nBrowse and open a book to start reading.',
-    'Chưa mở sách nào.\nDuyệt và mở sách để bắt đầu đọc.',
   );
-  String get history => _t('History', 'Lịch sử');
-  String get readingHistory => _t('Reading History', 'Lịch sử đọc');
+  String get noBooksOpenShort => _t('No books open yet.');
+  String get history => _t('History');
+  String get readingHistory => _t('Reading History');
   String get noBookmarks => _t(
     'No bookmarks yet.\nSave your reading position from the reader.',
-    'Chưa có đánh dấu nào.\nLưu vị trí đọc từ trình đọc.',
   );
-  String get noHistory => _t('No reading history yet.', 'Chưa có lịch sử đọc.');
-  String get removeBookmark => _t('Remove Bookmark?', 'Xóa đánh dấu?');
-  String get removeHistoryEntry =>
-      _t('Remove History Entry?', 'Xóa mục lịch sử?');
-  String get justNow => _t('Just now', 'Vừa xong');
-  String get minutesAgo => _t('m ago', 'ph trước');
-  String get hoursAgo => _t('h ago', 'g trước');
-  String get daysAgo => _t('d ago', 'n trước');
-  String get errorLoadingBookmarks =>
-      _t('Error loading bookmarks:', 'Lỗi tải đánh dấu:');
-  String get errorLoadingHistory =>
-      _t('Error loading history:', 'Lỗi tải lịch sử:');
-  String get noBooksInPitaka =>
-      _t('No books in this Piṭaka yet.', 'Chưa có sách trong Piṭaka này.');
-  String get couldNotLoadLibrary => _t(
-    'Could not load the Tipitaka library.',
-    'Không thể tải thư viện Tipitaka.',
-  );
-  String get removeBookmarkConfirm => _t('Delete bookmark', 'Xóa đánh dấu');
-  String get removeHistoryConfirm =>
-      _t('Delete history entry for', 'Xóa mục lịch sử cho');
+  String get noBookmarksShort => _t('No bookmarks yet.');
+  String get noHistory => _t('No reading history yet.');
+  String get removeBookmark => _t('Remove Bookmark?');
+  String get removeHistoryEntry => _t('Remove History Entry?');
+  String get justNow => _t('Just now');
+  String get minutesAgo => _t('m ago');
+  String get hoursAgo => _t('h ago');
+  String get daysAgo => _t('d ago');
+  String get errorLoadingBookmarks => _t('Error loading bookmarks:');
+  String get errorLoadingHistory => _t('Error loading history:');
+  String get noBooksInPitaka => _t('No books in this Piṭaka yet.');
+  String get couldNotLoadLibrary => _t('Could not load the Tipitaka library.');
+  String get removeBookmarkConfirm => _t('Delete bookmark');
+  String get removeHistoryConfirm => _t('Delete history entry for');
+  String get removedLabel => _t('Removed: ');
+  String get searchIndexTitle => _t('Search Index');
+
+  /// `Delete bookmark "NAME"?`
+  String deleteBookmarkConfirm(String name) =>
+      '${_t('Delete bookmark')} "$name"?';
+
+  /// `Delete history entry for "LABEL"?`
+  String deleteHistoryEntryConfirm(String label) =>
+      '${_t('Delete history entry for')} "$label"?';
+
+  /// `Removed: NAME`
+  String removedItem(String name) => '${_t('Removed: ')}$name';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  SEARCH SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get searchPaliTexts => _t('Search Pāli texts…', 'Tìm văn bản Pāli…');
-  String get fuzzy => _t('Fuzzy', 'Mờ');
-  String get wordDistance => _t('Word distance', 'Khoảng cách từ');
-  String get anyDistance => _t('Any distance', 'Mọi khoảng cách');
-  String get withinNWords => _t('Within', 'Trong vòng');
-  String get results => _t('results', 'kết quả');
-  String get dist => _t('Dist', 'KC');
-  String get searchTipitaka =>
-      _t('Search the Pāli Tipiṭaka', 'Tìm Tipiṭaka Pāli');
+  String get searchPaliTexts => _t('Search Pāli texts…');
+  String get fuzzy => _t('Fuzzy');
+  String get wordDistance => _t('Word distance');
+  String get anyDistance => _t('Any distance');
+  String get results => _t('results');
+  String get dist => _t('Dist');
+  String get searchTipitaka => _t('Search the Pāli Tipiṭaka');
   String get searchIdleHint => _t(
     'Search across both Pāli text and translations.\nEnable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).',
-    'Tìm kiếm trong cả văn bản Pāli và bản dịch.\nBật chế độ mờ để khớp các biến thể dấu phụ (ā=a, ñ=n, ṭ=t …).',
   );
-  String get buildingSearchIndex =>
-      _t('Building Search Index', 'Đang xây dựng chỉ mục tìm kiếm');
-  String get percentComplete => _t('complete', 'hoàn thành');
-  String get starting => _t('Starting…', 'Đang bắt đầu…');
-  String get noResultsFor => _t('No results for', 'Không có kết quả cho');
-  String get tryFuzzySearch => _t(
-    'Try enabling fuzzy search or using different terms.',
-    'Hãy thử bật tìm kiếm mờ hoặc dùng từ khác.',
-  );
-  String get showMore => _t('Show more', 'Hiển thị thêm');
-  String get remaining => _t('remaining', 'còn lại');
-  String get searchFailed => _t('Search failed:', 'Tìm kiếm thất bại:');
+  String get buildingSearchIndex => _t('Building Search Index');
+  String get percentComplete => _t('complete');
+  String get starting => _t('Starting…');
+  String get noResultsFor => _t('No results for');
+  String get tryFuzzySearch =>
+      _t('Try enabling fuzzy search or using different terms.');
+  String get showMore => _t('Show more');
+  String get remaining => _t('remaining');
+  String get searchFailed => _t('Search failed:');
+  String get searchPaliShort => _t('Search Pāli…');
+  String get toggleFilters => _t('Toggle filters');
+  String get layer => _t('Layer');
+  String get nikaya => _t('Nikāya');
+  String get noMatchesFor => _t('No matches for');
+  String get noMatchesFoundFor => _t('No matches found for');
+  String get didYouMean => _t('Did you mean…');
+  String get noResults => _t('No results');
+  String get fontSizeLabel => _t('Font size');
+  String get wordsLabel => _t('words');
+  String get showLabel => _t('Show');
+  String get moreLabel => _t('more');
+  String get resultSingular => _t('result');
+
+  /// `Within N words`
+  String withinNWords(int n) => '${_t('Within')} $n ${_t('words')}';
+
+  /// `Within N` (short form)
+  String withinNShort(int n) => '${_t('Within')} $n';
+
+  /// `Show N more`
+  String showNMore(int n) => '${_t('Show')} $n ${_t('more')}';
+
+  /// `N results` (with singular/plural)
+  String resultsCount(int n) =>
+      n == 1 ? '1 ${_t('result')}' : '$n ${_t('results')}';
+
+  /// `No matches for "QUERY"`
+  String noMatchesForQuery(String query) =>
+      '${_t('No matches for')} "$query"';
+
+  /// `No matches found for "QUERY"`
+  String noMatchesFoundForQuery(String query) =>
+      '${_t('No matches found for')} "$query"';
   String get typeToSearch => _t(
     'Type a word or phrase to search\nacross all Pāli texts',
-    'Nhập từ hoặc cụm từ để tìm\ntrong tất cả văn bản Pāli',
   );
-  String get openInReader => _t('Open in Reader', 'Mở trong trình đọc');
-  String get noHeadingFound => _t(
-    'No heading found for this result',
-    'Không tìm thấy tiêu đề cho kết quả này',
-  );
-  String get failedToLoadPreview =>
-      _t('Failed to load preview:', 'Không thể tải xem trước:');
+  String get openInReader => _t('Open in Reader');
+  String get noHeadingFound => _t('No heading found for this result');
+  String get failedToLoadPreview => _t('Failed to load preview:');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READER SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get findInBook => _t('Find in book…', 'Tìm trong sách…');
-  String get closeSearch => _t('Close search', 'Đóng tìm kiếm');
-  String get previousMatch => _t('Previous match', 'Kết quả trước');
-  String get nextMatch => _t('Next match', 'Kết quả sau');
-  String get searchTipitakaFull =>
-      _t('Search entire Tipiṭaka', 'Tìm toàn bộ Tipiṭaka');
-  String get noContentFound =>
-      _t('No content found.', 'Không tìm thấy nội dung.');
-  String get errorLoadingText => _t('Error loading text:', 'Lỗi tải văn bản:');
-  String get copyWithStyle => _t('Copy with Style', 'Sao chép có kiểu');
-  String get selectAll => _t('Select All', 'Chọn tất cả');
-  String get copyWithQuote => _t('Copy with Quote', 'Sao chép có trích dẫn');
+  String get findInBook => _t('Find in book…');
+  String get closeSearch => _t('Close search');
+  String get previousMatch => _t('Previous match');
+  String get nextMatch => _t('Next match');
+  String get searchTipitakaFull => _t('Search entire Tipiṭaka');
+  String get noContentFound => _t('No content found.');
+  String get errorLoadingText => _t('Error loading text:');
+  String get copyWithStyle => _t('Copy with Style');
+  String get selectAll => _t('Select All');
+  String get copyWithQuote => _t('Copy with Quote');
 
   // ── TTS Reader widgets ───────────────────────────────────────────────
-  String get follow => _t('Follow', 'Theo dõi');
-  String get ttsControls => _t('TTS Controls', 'Điều khiển TTS');
-  String get followTtsPosition =>
-      _t('Follow TTS Position', 'Theo dõi vị trí TTS');
+  String get follow => _t('Follow');
+  String get ttsControls => _t('TTS Controls');
+  String get followTtsPosition => _t('Follow TTS Position');
 
   // ── Bookmark Dialog ──────────────────────────────────────────────────
-  String get addBookmark => _t('Add Bookmark', 'Thêm đánh dấu');
-  String get bookmarkName => _t('Bookmark name', 'Tên đánh dấu');
-  String get bookmarkSaved => _t('Bookmark saved:', 'Đã lưu đánh dấu:');
-  String get failedToSaveBookmark =>
-      _t('Failed to save bookmark:', 'Không thể lưu đánh dấu:');
+  String get addBookmark => _t('Add Bookmark');
+  String get bookmarkName => _t('Bookmark name');
+  String get bookmarkSaved => _t('Bookmark saved:');
+  String get failedToSaveBookmark => _t('Failed to save bookmark:');
 
   // ── Jump Sheet ───────────────────────────────────────────────────────
-  String get connectedBooks => _t('Connected Books', 'Sách liên kết');
-  String get jumpToPage => _t('Jump to Page', 'Đến trang');
-  String get pageNumberingSystem =>
-      _t('Page Numbering System', 'Hệ thống đánh số trang');
-  String get pageNumberInput => _t('Page Number', 'Số trang');
-  String get pageInputHint => _t('e.g. 10 or 1.10', 'vd. 10 hoặc 1.10');
+  String get connectedBooks => _t('Connected Books');
+  String get jumpToPage => _t('Jump to Page');
+  String get pageNumberingSystem => _t('Page Numbering System');
+  String get pageNumberInput => _t('Page Number');
+  String get pageInputHint => _t('e.g. 10 or 1.10');
   String get jumpTip => _t(
     'Tip: If pages are numbered like "1.3", you can type just "3" to jump to page 1.3.',
-    'Mẹo: Nếu trang được đánh số như "1.3", bạn có thể gõ "3" để đến trang 1.3.',
   );
-  String get pageNotFound =>
-      _t('not found in this book.', 'không tìm thấy trong sách này.');
-  String get noConnectedBooks => _t(
-    'No connected books found for this section.',
-    'Không tìm thấy sách liên kết cho phần này.',
-  );
-  String get errorLoadingConnections =>
-      _t('Error loading connected books.', 'Lỗi tải sách liên kết.');
-  String get section => _t('Section', 'Phần');
+  String get pageNotFound => _t('not found in this book.');
+  String get noConnectedBooks =>
+      _t('No connected books found for this section.');
+  String get errorLoadingConnections => _t('Error loading connected books.');
+  String get section => _t('Section');
 
   // ── Book Link Section Sheet ─────────────────────────────────────────
-  String get linkedFrom => _t('Linked from', 'Liên kết từ');
-  String get noContentAvailable =>
-      _t('No content available.', 'Không có nội dung.');
-  String get couldNotLoadLinked =>
-      _t('Could not load linked content.', 'Không thể tải nội dung liên kết.');
-  String get linkedParaNotFound =>
-      _t('Linked paragraph not found.', 'Không tìm thấy đoạn liên kết.');
+  String get linkedFrom => _t('Linked from');
+  String get noContentAvailable => _t('No content available.');
+  String get couldNotLoadLinked => _t('Could not load linked content.');
+  String get linkedParaNotFound => _t('Linked paragraph not found.');
+  String get openLibraryShort => _t('Open Library');
+  String get closePanel => _t('Close panel');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  CONTENTS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get contents => _t('Contents', 'Mục lục');
-  String get searchContents => _t('Search contents…', 'Tìm mục lục…');
-  String get searchContentsHint => _t('Search contents…', 'Tìm mục lục…');
-  String get noMatchingSections =>
-      _t('No matching sections', 'Không có mục nào phù hợp');
-  String get noContentsAvailable =>
-      _t('No contents available', 'Không có mục lục');
+  String get contents => _t('Contents');
+  String get searchContents => _t('Search contents…');
+  String get searchContentsHint => _t('Search contents…');
+  String get noMatchingSections => _t('No matching sections');
+  String get noContentsAvailable => _t('No contents available');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  AI ASSISTANT (Paññā)
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get aiName => _t('Paññā', 'Paññā');
-  String get aiSubtitle => _t('AI Research Assistant', 'Trợ lý nghiên cứu AI');
-  String get answerMode => _t('💬 Answer', '💬 Trả lời');
-  String get answerModeSub => _t('Q&A', 'Hỏi & Đáp');
-  String get literalReviewMode =>
-      _t('📖 Literal Review', '📖 Nghiên cứu văn bản');
-  String get literalReviewModeSub => _t('Deep research', 'Nghiên cứu sâu');
-  String get askQuestion => _t('Ask a Question', 'Đặt câu hỏi');
-  String get literalReviewTitle => _t('Literal Review', 'Nghiên cứu văn bản');
+  String get aiName => _t('Paññā');
+  String get aiSubtitle => _t('AI Research Assistant');
+  String get answerMode => _t('💬 Answer');
+  String get answerModeSub => _t('Q&A');
+  String get literalReviewMode => _t('📖 Literal Review');
+  String get literalReviewModeSub => _t('Deep research');
+  String get askQuestion => _t('Ask a Question');
+  String get literalReviewTitle => _t('Literal Review');
   String get askQuestionDesc => _t(
     'Ask any question about the Tipitaka. The Assistant will search the Pāli Canon and provide a grounded answer with sources.',
-    'Hỏi bất kỳ câu hỏi nào về Tipitaka. Trợ lý sẽ tìm trong Kinh điển Pāli và cung cấp câu trả lời có nguồn.',
   );
   String get literalReviewDesc => _t(
     'Enter a research topic to search the Tipitaka and receive a structured literal review with Pāli quotes and citations.',
-    'Nhập chủ đề nghiên cứu để tìm trong Tipitaka và nhận bài nghiên cứu có cấu trúc với trích dẫn Pāli.',
   );
-  String get apiKeyRequired => _t('API key required', 'Cần khóa API');
-  String get configureApiKey => _t('Configure API Key', 'Cấu hình khóa API');
-  String get startConversation =>
-      _t('Start a conversation', 'Bắt đầu trò chuyện');
-  String get enterTopic =>
-      _t('Enter a research topic…', 'Nhập chủ đề nghiên cứu…');
-  String get askTipitaka =>
-      _t('Ask a question about the Tipitaka…', 'Hỏi về Tipitaka…');
-  String get aiSettings => _t('AI Settings', 'Cài đặt AI');
-  String get sources => _t('Sources', 'Nguồn');
-  String get cited => _t('cited', 'đã trích dẫn');
-  String get failedToLoadSource =>
-      _t('Failed to load text', 'Không thể tải văn bản');
-  String get lineByLine => _t('Line-by-line', 'Từng dòng');
+  String get apiKeyRequired => _t('API key required');
+  String get configureApiKey => _t('Configure API Key');
+  String get startConversation => _t('Start a conversation');
+  String get enterTopic => _t('Enter a research topic…');
+  String get askTipitaka => _t('Ask a question about the Tipitaka…');
+  String get aiSettings => _t('AI Settings');
+  String get sources => _t('Sources');
+  String get cited => _t('cited');
+  String get failedToLoadSource => _t('Failed to load text');
+  String get lineByLine => _t('Line-by-line');
+  String get startAsking => _t('Start asking');
+  String get buildShort => _t('Build');
+  String get deleteConversation => _t('Delete conversation?');
+  String get copied => _t('Copied!');
+  String get copyMessage => _t('Copy message');
+  String get thinkingLabel => _t('Thinking...');
+  String get researchingLabel => _t('Researching...');
+  String get generatingAnswer => _t('Generating answer...');
+  String get passageNotFound => _t('Passage not found in the database');
+
+  /// `Citations (N)`
+  String citationsCount(int count) => 'Citations ($count)';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  AI SETTINGS SHEET
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get aiSettingsTitle =>
-      _t('AI Assistant Settings', 'Cài đặt Trợ lý AI');
-  String get apiKeyConfigured =>
-      _t('API key is configured', 'Khóa API đã được cấu hình');
-  String get apiKeyRequiredMsg => _t(
-    'API key required — enter your Gemini key below',
-    'Cần khóa API — nhập khóa Gemini bên dưới',
-  );
-  String get geminiApiKey => _t('Gemini API Key', 'Khóa API Gemini');
-  String get apiKeyHint => _t('AIza...', 'AIza...');
-  String get getApiKeyHint => _t(
-    'Get your free Gemini API key at makersuite.google.com',
-    'Lấy khóa API Gemini miễn phí tại makersuite.google.com',
-  );
-  String get renderModel => _t(
-    'Render Model (for generating answers)',
-    'Mô hình kết xuất (để tạo câu trả lời)',
-  );
-  String get renderModelDesc => _t(
-    'Used for the main answer generation. Needs strong reasoning.',
-    'Được dùng để tạo câu trả lời chính. Cần khả năng suy luận mạnh.',
-  );
-  String get liteModel => _t(
-    'Lite Model (for filtering & search)',
-    'Mô hình nhẹ (để lọc & tìm kiếm)',
-  );
-  String get liteModelDesc => _t(
-    'Fast model for re-ranking results and query expansion.',
-    'Mô hình nhanh để sắp xếp lại kết quả và mở rộng truy vấn.',
-  );
-  String get saveSettings => _t('Save Settings', 'Lưu cài đặt');
-  String get aiSettingsSaved => _t('AI settings saved', 'Đã lưu cài đặt AI');
+  String get aiSettingsTitle => _t('AI Assistant Settings');
+  String get apiKeyConfigured => _t('API key is configured');
+  String get apiKeyRequiredMsg =>
+      _t('API key required — enter your Gemini key below');
+  String get geminiApiKey => _t('Gemini API Key');
+  String get apiKeyHint => _t('AIza...');
+  String get getApiKeyHint =>
+      _t('Get your free Gemini API key at makersuite.google.com');
+  String get renderModel => _t('Render Model (for generating answers)');
+  String get renderModelDesc =>
+      _t('Used for the main answer generation. Needs strong reasoning.');
+  String get liteModel => _t('Lite Model (for filtering & search)');
+  String get liteModelDesc =>
+      _t('Fast model for re-ranking results and query expansion.');
+  String get saveSettings => _t('Save Settings');
+  String get aiSettingsSaved => _t('AI settings saved');
+  String get aiQaSettingsSaved => _t('AI Q&A settings saved');
+  String get couldNotOpenLink => _t('Could not open the link');
+  String get aiProvider => _t('AI Provider');
+  String get apiKey => _t('API Key');
+  String get baseUrl => _t('Base URL');
+  String get checkKeyLoadModels => _t('Check key & load models');
+  String get checkingKeyLoadingModels =>
+      _t('Checking key & loading models...');
+  String get toolModelLabel =>
+      _t('Tool Model (for search & function calling)');
+  String get answerModelLabel =>
+      _t('Answer Model (for final answer generation)');
+  String get maxCharsPerToolResult => _t('Max chars per tool result');
+  String get zeroNoTruncation => _t('0 = no truncation');
+  String get answerMaxOutputTokens => _t('Answer max output tokens');
+  String get maxQueriesPerChat => _t('Max queries per chat');
+  String get customSystemPrompt => _t('Custom System Prompt (optional)');
+  String get suggestionIndex => _t('Suggestion Index');
+  String get rebuildSuggestionIndex => _t('Rebuild Suggestion Index');
+  String get getFreeGeminiKey => _t('Get a free Gemini API key');
+  String get geminiFree4Steps =>
+      _t('Gemini is free for everyone — just 4 easy steps:');
+  String get guideStep1 => _t('Tap "Get free Gemini API key" below.');
+  String get guideStep2 =>
+      _t('Sign in with your Google account (free, no credit card).');
+  String get guideStep3 =>
+      _t('Tap "Create API key" and copy it (it starts with AIza).');
+  String get guideStep4 =>
+      _t('Paste it in the API Key field above — it is checked automatically.');
+  String get noCreditCard =>
+      _t('No credit card needed. The free tier includes generous daily limits for Gemini Flash models.');
+  String get apiKeyRejected => _t('API key rejected — see the error below');
+  String get keyEnteredVerify =>
+      _t('Key entered — press Enter or "Check key" to verify');
+  String get checkingApiKey => _t('Checking API key...');
+  String get apiKeyValid => _t('API key valid');
+
+  /// `${count} models found`
+  String modelsFound(int count) => '$count models found';
+
+  /// `Failed to save: $error`
+  String failedToSave(String error) => '${_t('Failed to save: ')}$error';
+
+  /// `Could not open: $url`
+  String couldNotOpen(String url) => '${_t('Could not open: ')}$url';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  GAVESANA SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get askAboutTipitaka =>
-      _t('Ask about the Tipitaka…', 'Hỏi về Tipitaka…');
-  String get numberOfResults => _t('Number of results', 'Số lượng kết quả');
-  String get loadingGavesana => _t('Loading Gavesana…', 'Đang tải Gavesana…');
-  String get loadingModels => _t('Loading models…', 'Đang tải mô hình…');
-  String get computingEmbedding =>
-      _t('Computing query embedding…', 'Đang tính embedding truy vấn…');
-  String get searchingVectorDb =>
-      _t('Searching vector database…', 'Đang tìm trong cơ sở dữ liệu vector…');
-  String get searchSemantically => _t(
-    'Search semantically across the Tipitaka',
-    'Tìm kiếm ngữ nghĩa trong Tipitaka',
-  );
+  String get askAboutTipitaka => _t('Ask about the Tipitaka…');
+  String get numberOfResults => _t('Number of results');
+  String get loadingGavesana => _t('Loading Gavesana…');
+  String get loadingModels => _t('Loading models…');
+  String get computingEmbedding => _t('Computing query embedding…');
+  String get searchingVectorDb => _t('Searching vector database…');
+  String get searchSemantically =>
+      _t('Search semantically across the Tipitaka');
   String get gavesanaDesc => _t(
     "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.",
-    'Gavesana sử dụng AI để tìm các đoạn liên quan đến\ntruy vấn của bạn, ngay cả khi không có từ chính xác.',
   );
-  String get gavesanaAssetsNotFound => _t(
-    'Gavesana AI assets not found.',
-    'Không tìm thấy tài nguyên AI Gavesana.',
+  String get gavesanaAssetsNotFound => _t('Gavesana AI assets not found.');
+  String get downloadInSettingsHint => _t('Download them in Settings.');
+  String get anErrorOccurred => _t('An error occurred');
+
+  /// `Show N results`
+  String showNResults(int n) => 'Show $n results';
+
+  /// `N results`
+  String nResults(int n) => '$n results';
+
+  String get semanticSearch => _t('Semantic search');
+  String get investigationExploration => _t('Investigation & exploration');
+  String get tipitaka => _t('Tipitaka');
+  String get feedback => _t('Feedback');
+  String get navigationMenu => _t('Navigation menu');
+  String get chatHistory => _t('Chat history');
+  String get newChat => _t('New chat');
+  String get clearChat => _t('Clear chat');
+  String get vimamsaSettings => _t('Vimaṃsa Settings');
+  String get buildingHeadingIndex => _t('Building heading index…');
+  String get headingIndexNeeded =>
+      _t('Heading index needed for @ — build now?');
+  String get askAboutTipitakaShort => _t('Ask about the Tipitaka');
+  String get vimamsaIntro => _t(
+    'Vimaṃsa — investigation through questioning.\n'
+        'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
+        'and provides detailed answers with clickable citations.\n'
+        'Each chat thread is saved — you can continue later.',
   );
-  String get downloadInSettingsHint =>
-      _t('Download them in Settings.', 'Tải chúng trong Cài đặt.');
-  String get anErrorOccurred => _t('An error occurred', 'Đã xảy ra lỗi');
+  String get viewPastConversations => _t('View past conversations');
+  String get orthodox => _t('Orthodox');
+  String get orthodoxDesc =>
+      _t('Answers use only the passages found in the Tipitaka.');
+  String get unorthodoxDesc => _t(
+    'The AI may also use its own knowledge alongside the found passages.',
+  );
+  String get typeAtToAttach => _t('Type @ to attach a heading');
+  String get threadIsFull => _t('Thread is full — start a new chat');
+  String get askTipitakaOrAttach => _t(
+    'Ask about the Tipitaka, or type @ to attach a heading…',
+  );
+  String get chatHistoryTitle => _t('Chat History');
+  String get newChatTitle => _t('New Chat');
+  String get noConversationsYet => _t('No conversations yet');
+  String get startNewChatToBegin => _t('Start a new chat to begin');
+  String get activeLabel => _t('Active');
+  String get andAllItsMessages => _t('and all its messages?');
+  String get queryWord => _t('query');
+  String get queriesWord => _t('queries');
+  String get remainingInThread => _t('remaining in this thread');
+  String get translationWord => _t('Translation');
+
+  /// `$n query/queries remaining in this thread`
+  String queriesRemainingInThread(int n) =>
+      '$n ${n == 1 ? _t('query') : _t('queries')} ${_t('remaining in this thread')}';
+
+  /// `Delete "TITLE" and all its messages?`
+  String deleteThreadConfirm(String title) =>
+      '${_t('Delete')} "$title" ${_t('and all its messages?')}';
+
+  /// `$langName Translation` (typography section title)
+  String translationTitle(String langName) =>
+      '$langName ${_t('Translation')}';
+
+  String get dpdDictionary => _t('DPD Dictionary');
+  String get compoundBreakdown => _t('Compound breakdown');
+  String get pinToSidePanel => _t('Pin to side panel');
+  String get unpinFromSidePanel => _t('Unpin from side panel');
+  String get jumpLabel => _t('Jump');
+  String get hideLabel => _t('Hide');
+  String get lineByLineShort => _t('Line/L');
+  String get sideBySideShort => _t('Side/S');
+  String get stopLabel => _t('Stop');
+  String get lessLabel => _t('Less');
+  String get libraryLabel => _t('Library');
+  String get paliTipitakaReader => _t('Pāli Tipiṭaka Reader');
+  String get vimamsa => _t('Vimaṃsa');
+  String get downloadAiAssetsInSettings =>
+      _t('Download AI assets in Settings');
+  String get openGavesana => _t('Open Gavesana');
+  String get gavesana => _t('Gavesana');
+  String get gavesanaAiSearch => _t('Gavesana AI Search');
+  String get gavesanaPanelDesc => _t(
+    'AI-powered semantic search across the Tipiṭaka.\n\n'
+        'Open the full Gavesana panel for detailed results.',
+  );
+  String get buildBm25 => _t('Build BM25');
+  String get rebuildBm25 => _t('Rebuild BM25');
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  GAVESANA FTS BUILD DIALOG
+  // ═══════════════════════════════════════════════════════════════════════
+
+  String get buildBm25SearchIndex => _t('Build BM25 Search Index');
+  String get rebuildingBm25Index => _t('Rebuilding BM25 index…');
+  String get preparingBm25Index => _t('Preparing BM25 index…');
+  String get bm25IndexReady => _t('BM25 index ready');
+  String get continueWithoutBm25 => _t('Continue without BM25');
+  String get hybridSearchEnabled =>
+      _t('Hybrid (vector + BM25) search is now enabled.');
+  String get bm25IndexesOnce =>
+      _t('This indexes Pāli text for keyword (BM25) search and runs once.');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  APP SHELL (Toolbar)
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get toolbarContents => _t('Contents', 'Mục lục');
-  String get toolbarSearch => _t('Search', 'Tìm kiếm');
-  String get toolbarDictionary => _t('Dictionary', 'Từ điển');
-  String get toolbarListen => _t('Listen', 'Nghe');
-  String get toolbarSave => _t('Save', 'Lưu');
+  String get toolbarContents => _t('Contents');
+  String get toolbarSearch => _t('Search');
+  String get toolbarDictionary => _t('Dictionary');
+  String get toolbarListen => _t('Listen');
+  String get toolbarSave => _t('Save');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  INDEXING
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get availableTranslations =>
-      _t('Available Translations', 'Bản dịch khả dụng');
+  String get availableTranslations => _t('Available Translations');
   String get noTranslationsAvailable => _t(
     'No translations available.\nPlease download a translation first.',
-    'Không có bản dịch nào.\nVui lòng tải bản dịch trước.',
   );
-  String get buildIndex => _t('Build Index', 'Xây dựng chỉ mục');
-  String get selectATranslation => _t('Select a Translation', 'Chọn bản dịch');
-  String get buildFailed => _t('Build Failed', 'Xây dựng thất bại');
-  String get indexBuilt => _t('Index Built!', 'Đã xây chỉ mục!');
-  String get preparing => _t('Preparing…', 'Đang chuẩn bị…');
-  String get installing => _t('Installing…', 'Đang cài đặt…');
-  String get readyToIndex => _t('Ready to index', 'Sẵn sàng lập chỉ mục');
-  String get downloadCancelled => _t('Download cancelled', 'Đã hủy tải');
-  String get downloadFailed => _t('Download failed', 'Tải thất bại');
-  String get checkingIndex =>
-      _t('Checking search index…', 'Đang kiểm tra chỉ mục tìm kiếm…');
-  String get welcomeToEpitaka =>
-      _t('Welcome to ePitaka', 'Chào mừng đến với ePitaka');
+  String get noTranslationsAvailableShort => _t('No translations available.');
+  String get buildIndex => _t('Build Index');
+  String get selectATranslation => _t('Select a Translation');
+  String get buildFailed => _t('Build Failed');
+  String get indexBuilt => _t('Index Built!');
+  String get indexBuiltShort => _t('Index Built');
+  String get preparing => _t('Preparing…');
+  String get installing => _t('Installing…');
+  String get readyToIndex => _t('Ready to index');
+  String get downloadCancelled => _t('Download cancelled');
+  String get downloadFailed => _t('Download failed');
+  String get checkingIndex => _t('Checking search index…');
+  String get welcomeToEpitaka => _t('Welcome to ePitaka');
   String get indexingRequired => _t(
     'To enable full-text search, we need to build a search index for the Pāli texts and translations.',
-    'Để bật tìm kiếm toàn văn, chúng tôi cần xây dựng chỉ mục tìm kiếm cho văn bản Pāli và bản dịch.',
   );
   String get indexingOnce => _t(
     'The indexing only needs to happen once.\nYou can rebuild later from Settings.',
-    'Việc lập chỉ mục chỉ cần thực hiện một lần.\nBạn có thể xây dựng lại sau từ Cài đặt.',
   );
-  String get noTranslationsForDownload => _t(
-    'No translations available for download.',
-    'Không có bản dịch nào để tải.',
-  );
+  String get noTranslationsForDownload =>
+      _t('No translations available for download.');
   String get downloadTranslationToStart =>
-      _t('Download a translation to get started:', 'Tải bản dịch để bắt đầu:');
+      _t('Download a translation to get started:');
   String get chooseTranslationToIndex =>
-      _t('Choose a translation to index:', 'Chọn bản dịch để lập chỉ mục:');
-  String get buildIndexPali => _t('Build Index (Pāli)', 'Xây chỉ mục (Pāli)');
+      _t('Choose a translation to index:');
+  String get buildIndexPali => _t('Build Index (Pāli)');
+  String get somethingWentWrong => _t('Something went wrong');
+  String get unknownError => _t('Unknown error');
+  String get downloadRequiredDatabases =>
+      _t('Download the required databases to get started.');
+  String get addMoreTranslationsLater =>
+      _t('You can add more translations later.');
+  String get requiredDatabases => _t('Required Databases');
+  String get requiredDatabasesDesc =>
+      _t('These are needed for the app to function.');
+  String get requiredTranslations => _t('Required Translations');
+  String get requiredTranslationsDesc =>
+      _t('An English translation is needed for AI search features.');
+  String get optionalTranslations => _t('Optional Translations');
+  String get textColors => _t('Text Colors');
+  String get pickPaliTextColor => _t('Pick Pāli Text Color');
+  String get pickTranslationTextColor =>
+      _t('Pick Translation Text Color');
+  String get downloadRequiredItemsFirst =>
+      _t('Download required items first');
+  String get loadingAvailableTranslations =>
+      _t('Loading available translations…');
+  String get required => _t('Required');
+  String get installed => _t('Installed');
+  String get notInstalled => _t('Not installed');
+  String get comingSoon => _t('Coming soon');
+  String get buildingDots => _t('Building…');
+  String get notBuilt => _t('Not built');
+
+  /// `Pāli + XX translation indexed\nNN sentences`
+  String indexedSentenceSummary(String lang, int count) =>
+      'Pāli + ${lang.toUpperCase()} translation indexed\n$count ${_t('sentences')}';
+
+  /// `X / Y sentences`
+  String sentenceProgress(int current, int total) =>
+      '${_fmt(current)} / ${_fmt(total)} ${_t('sentences')}';
+
+  /// `Batch X / Y`
+  String batchProgress(int current, int total) => 'Batch $current / $total';
+
+  String get resettingAndRebuilding => _t('Resetting & Rebuilding');
+  String get loadingDots => _t('Loading…');
+  String get sentences => _t('sentences');
+  String get filesLabel => _t('files');
+  String get manageTranslationsSubtitle =>
+      _t('Manage translation databases: download, update, and delete.');
+  String get pali => _t('Pāli');
+  String get paliRomanScript => _t('Pali (Roman script)');
+  String get reorderTranslationsHint => _t(
+    'Drag to reorder enabled translations. The first one is shown when multiple are enabled.',
+  );
+  String get noTranslationsDownloadedYet => _t(
+    'No translations downloaded yet. Download a translation above to reorder it.',
+  );
+  String get noTranslationsFound =>
+      _t('No translations found or available for download.');
+  String get checkingForUpdates => _t('Checking for updates…');
+  String get checkForTranslationUpdates =>
+      _t('Check for translation updates from GitHub.');
+  String get deleteTranslationRemoveDb =>
+      _t('This will remove the database file from your device.');
+  String get deletedLabel => _t('Deleted ');
+  String get versionInfo => _t('Version Info');
+  String get filename => _t('Filename');
+  String get type => _t('Type');
+  String get suffix => _t('Suffix');
+  String get defaultLabel => _t('Default');
+  String get size => _t('Size');
+  String get updated => _t('Updated');
+  String get status => _t('Status');
+  String get nissayaInfo => _t(
+    'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.',
+  );
+  String get quoteFormatHelper =>
+      _t('Customize the citation format. Use the variables shown below.');
+  String get availableVariables => _t(
+    'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
+  );
+  String get errorPrefix => _t('Error: ');
+  String get couldNotLoadPreviewMsg => _t('Could not load preview: ');
+  String get bookmarkSavedMsg => _t('Bookmark saved: ');
+  String get failedToSaveBookmarkMsg => _t('Failed to save bookmark: ');
+
+  String get rebuildingIndex => _t('Rebuilding Index');
+  String get resetAndRebuild => _t('Reset & Rebuild');
+  String get resetAndRebuildTitle => _t('Reset & Rebuild?');
+  String get resetAndRebuildSubtitle =>
+      _t('Clear bookmarks, history & rebuild search index');
+  String get resetConfirmDesc => _t(
+    'This will permanently delete all bookmarks and reading history, then rebuild the search index from scratch.',
+  );
+  String get databaseLocation => _t('Database location:');
+  String get resetBackupTip => _t(
+    'Tip: Export your bookmarks and reading history as a JSON file before resetting. Online backup will be supported in a future update.',
+  );
+  String get exportBackups => _t('Export Backups');
+  String get resetNow => _t('Reset Now');
+  String get backupSavedTo => _t('Backup saved to: ');
+  String get failedToExportData => _t('Failed to export data: ');
+
+  String get rebuildSearchIndexTitle => _t('Rebuild Search Index?');
+  String get rebuildIndexConfirmDesc => _t(
+    'This will delete and rebuild the full-text search index from scratch. It may take a few seconds on slower devices. You can continue using the app while indexing runs in the background.',
+  );
+  String get clearIndexConfirmDesc => _t(
+    'This will clear the current search index and rebuild it from scratch. Previously indexed data will be lost until the rebuild completes.',
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  INDEX BUILD DIALOG
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get buildSearchIndex =>
-      _t('Build Search Index', 'Xây dựng chỉ mục tìm kiếm');
+  String get buildSearchIndex => _t('Build Search Index');
   String get chooseTranslation => _t(
     'Choose a translation to include in the search index.',
-    'Chọn bản dịch để đưa vào chỉ mục tìm kiếm.',
   );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  FEEDBACK
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get sendFeedback => _t('Send Feedback', 'Gửi phản hồi');
+  String get sendFeedback => _t('Send Feedback');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  PAGE NUMBER HELPERS
@@ -752,12 +975,44 @@ class AppLocalizations {
       case 'pts':
         return 'PTS';
       case 'thai':
-        return _t('Thai', 'Thái Lan');
+        return _t('Thai');
       case 'my':
-        return _t('Myanmar', 'Myanmar');
+        return _t('Myanmar');
       default:
         return 'VRI';
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  MENTION OVERLAY
+  // ═══════════════════════════════════════════════════════════════════════
+
+  String get mentionAttachPrefix => _t('Attach: ');
+  String get typeSuttaOrHeading => _t('Type a sutta or heading name');
+  String get startTypingSutta => _t('Start typing a sutta or heading name');
+  String get mentionTip =>
+      _t('Tip: Try @cankisutta, @dn1, or a heading title');
+  String get selectShort => _t('Select');
+  String get navigateShort => _t('Navigate');
+  String get escShort => _t('Esc');
+
+  /// `Attach: "QUERY"`
+  String attachQuery(String query) => '${_t('Attach: ')}"$query"';
+
+  /// `No results for "QUERY"`
+  String noResultsForQuery(String query) => '${_t('No results for')} "$query"';
+
+  String _fmt(int n) {
+    if (n < 1000) return n.toString();
+    final s = n.toString();
+    final b = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) b.write(',');
+      b.write(s[i]);
+      count++;
+    }
+    return b.toString().split('').reversed.join();
   }
 }
 
@@ -767,12 +1022,10 @@ class AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
 
   @override
   bool isSupported(Locale locale) =>
-      AppLocalizationsDelegate.supportedLocales.contains(locale);
-
-  static const supportedCodes = ['en', 'vi'];
+      AppStrings.supportedCodes.contains(locale.languageCode);
 
   static List<Locale> get supportedLocales =>
-      supportedCodes.map((c) => Locale(c)).toList();
+      AppStrings.supportedCodes.map((c) => Locale(c)).toList();
 
   @override
   Future<AppLocalizations> load(Locale locale) async =>

@@ -6,6 +6,7 @@ import '../../../core/models/app_models.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -233,11 +234,13 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   Widget build(BuildContext context) {
     final contentsAsync = ref.watch(contentsProvider(widget.bookId));
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Scaffold(
       body: contentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, stack) => Center(child: Text('Error: $e')),
+        error: (e, stack) =>
+            Center(child: Text(loc.errorMessage('$e'))),
         data: (headings) {
           final currentIndex = _currentHeadingIndex(headings);
 
@@ -287,8 +290,8 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                     ? Center(
                         child: Text(
                           query.isNotEmpty
-                              ? 'No matching sections'
-                              : 'No contents available',
+                              ? loc.noMatchingSections
+                              : loc.noContentsAvailable,
                           style: AppTypography.labelSmall.copyWith(
                             fontSize: 14,
                             color: colors.onSurfaceVariant,
@@ -340,11 +343,12 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   }
 
   Widget _buildTitleBar(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Contents',
+          loc.contents,
           style: AppTypography.headlineSmall.copyWith(color: colors.primary),
         ),
         Row(
@@ -353,7 +357,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
             IconButton(
               icon: const Icon(Icons.search),
               color: colors.onSurfaceVariant,
-              tooltip: 'Search contents',
+              tooltip: loc.searchContents,
               onPressed: _openSearch,
             ),
             IconButton(
@@ -368,6 +372,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   }
 
   Widget _buildSearchBar(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Row(
       children: [
         Expanded(
@@ -381,7 +386,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
               color: colors.onSurface,
             ),
             decoration: InputDecoration(
-              hintText: 'Search contents…',
+              hintText: loc.searchContents,
               hintStyle: AppTypography.labelSmall.copyWith(
                 fontSize: 14,
                 color: colors.onSurfaceVariant,
@@ -395,7 +400,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
         IconButton(
           icon: const Icon(Icons.close),
           color: colors.onSurfaceVariant,
-          tooltip: 'Close search',
+          tooltip: loc.closeSearch,
           onPressed: _closeSearch,
         ),
       ],
@@ -437,6 +442,7 @@ class _ContentsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     final script = ref.watch(settingsProvider).paliScript;
 
     return Padding(
@@ -477,7 +483,7 @@ class _ContentsRow extends ConsumerWidget {
                   const SizedBox(width: 24),
                 Expanded(
                   child: PaliTextStatic(
-                    heading.title ?? 'Untitled',
+                    heading.title ?? loc.untitled,
                     script,
                     style: AppTypography.headlineSmall.copyWith(
                       color: isCurrent ? colors.primary : colors.onSurface,

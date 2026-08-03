@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -95,8 +96,9 @@ Future<void> showCitationQuickview(
 
     if (previewLines.isEmpty) {
       if (context.mounted) {
+        final loc = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Passage not found in the database')),
+          SnackBar(content: Text(loc.passageNotFound)),
         );
       }
       return;
@@ -117,7 +119,7 @@ Future<void> showCitationQuickview(
       scrollToParaId: paraId,
       scrollToLineId: lineId,
       targetLineKey: targetLineKey,
-      actionLabel: 'Open in Reader',
+      actionLabel: AppLocalizations.of(context).openInReader,
       onAction: () {
         ref
             .read(readerTabsProvider.notifier)
@@ -135,9 +137,10 @@ Future<void> showCitationQuickview(
     );
   } catch (e) {
     if (context.mounted) {
+      final loc = AppLocalizations.of(context);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not load preview: $e')));
+      ).showSnackBar(SnackBar(content: Text(loc.couldNotLoadPreviewMsg + '$e')));
     }
   }
 }

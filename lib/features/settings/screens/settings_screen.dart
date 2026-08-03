@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/l10n/app_strings.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -201,14 +202,15 @@ class SettingsScreen extends ConsumerWidget {
 
   /// AI Q&A settings section.
   Widget _buildAiQaSection(BuildContext context, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return SettingsSection(
-      title: 'AI Q&A',
+      title: loc.aiQa,
       colors: colors,
       children: [
         _SettingsTile(
           icon: Icons.question_answer,
-          title: 'AI Q&A Settings',
-          subtitle: 'API key, models, etc.',
+          title: loc.aiQaSettings,
+          subtitle: loc.aiQaSettingsSubtitle,
           onTap: () => showAiQaSettingsSheet(context),
         ),
       ],
@@ -230,8 +232,16 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// Only English and Vietnamese for now.
-const _supportedLanguages = [AppLanguage.english, AppLanguage.vietnamese];
+/// Languages shown in the picker — derived from the registry
+/// (`AppStrings.supportedCodes`), so adding a language file to
+/// `core/utils/l10n/` automatically adds it to this menu.
+final List<AppLanguage> _supportedLanguages = [
+  for (final code in AppStrings.supportedCodes)
+    AppLanguage.values.firstWhere(
+      (l) => l.code == code,
+      orElse: () => AppLanguage.english,
+    ),
+];
 
 /// ── Language Picker Tile ──────────────────────────────────────────────
 
@@ -437,8 +447,8 @@ class _GavesanaDownloadTileState extends ConsumerState<_GavesanaDownloadTile> {
       if (url == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No download URL available for AI search assets'),
+            SnackBar(
+              content: Text(loc.noDownloadUrlForAiAssets),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -893,11 +903,7 @@ class _RebuildIndexTileState extends ConsumerState<_RebuildIndexTile> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(loc.rebuildSearchIndex),
-        content: const Text(
-          'This will delete and rebuild the full-text search index from scratch. '
-          'It may take a few seconds on slower devices. '
-          'You can continue using the app while indexing runs in the background.',
-        ),
+        content: Text(loc.rebuildIndexConfirmDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),

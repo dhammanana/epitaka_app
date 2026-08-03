@@ -8,6 +8,7 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 
 /// Shows a full-screen progress overlay for index building (and optionally
 /// resetting app data first). The dialog manages its own lifecycle and
@@ -164,6 +165,7 @@ class _IndexProgressScreenState extends ConsumerState<IndexProgressScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Dialog(
       insetPadding: EdgeInsets.zero,
@@ -181,7 +183,7 @@ class _IndexProgressScreenState extends ConsumerState<IndexProgressScreen> {
                 )
               : null,
           title: Text(
-            widget.resetFirst ? 'Resetting & Rebuilding' : 'Rebuilding Index',
+            widget.resetFirst ? loc.resettingAndRebuilding : loc.rebuildingIndex,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: colors.onSurface,
                   fontWeight: FontWeight.w600,
@@ -294,7 +296,7 @@ class _IndexProgressScreenState extends ConsumerState<IndexProgressScreen> {
                       OutlinedButton(
                         onPressed: () =>
                             Navigator.of(context).pop(false),
-                        child: const Text('Close'),
+                        child: Text(loc.close),
                       ),
                       const SizedBox(width: 12),
                       FilledButton(
@@ -307,7 +309,7 @@ class _IndexProgressScreenState extends ConsumerState<IndexProgressScreen> {
                           });
                           _startOperation();
                         },
-                        child: const Text('Retry'),
+                        child: Text(loc.retry),
                       ),
                     ],
                   ),

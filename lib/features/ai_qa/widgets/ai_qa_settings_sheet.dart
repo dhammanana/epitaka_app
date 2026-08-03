@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
 import '../providers/ai_qa_settings_provider.dart';
@@ -187,6 +188,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   }
 
   Future<void> _save() async {
+    final loc = AppLocalizations.of(context);
     setState(() => _saving = true);
     try {
       final notifier = ref.read(aiQaSettingsProvider.notifier);
@@ -210,8 +212,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('AI Q&A settings saved'),
+          SnackBar(
+            content: Text(loc.aiQaSettingsSaved),
             behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
           ),
@@ -221,7 +223,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save: $e'),
+            content: Text(loc.failedToSave(e.toString())),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -234,6 +236,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -800,7 +803,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 child: OutlinedButton.icon(
                   onPressed: () => _rebuildIndex(context),
                   icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Rebuild Suggestion Index'),
+                  label: Text(loc.rebuildSuggestionIndex),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     side: BorderSide(
@@ -879,6 +882,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   /// Step-by-step card that walks a non-technical user through getting a
   /// free Gemini API key and pasting it back here.
   Widget _buildGeminiGuide(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(AppDimensions.md),
       decoration: BoxDecoration(
@@ -950,7 +954,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               onPressed: () =>
                   _openUrl(context, _selectedProvider.apiKeyCreationUrl),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Get free Gemini API key'),
+              label: Text(loc.getFreeGeminiKey),
             ),
           ),
           const SizedBox(height: 8),
@@ -1007,6 +1011,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   }
 
   Future<void> _openUrl(BuildContext context, String urlString) async {
+    final loc = AppLocalizations.of(context);
     final uri = Uri.tryParse(urlString);
     if (uri == null) return;
     try {
@@ -1014,8 +1019,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open the link'),
+          SnackBar(
+            content: Text(loc.couldNotOpenLink),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1195,6 +1200,7 @@ class _LinkTile extends StatelessWidget {
   }
 
   Future<void> _openUrl(BuildContext context, String urlString) async {
+    final loc = AppLocalizations.of(context);
     final uri = Uri.tryParse(urlString);
     if (uri == null) return;
     try {
@@ -1203,7 +1209,7 @@ class _LinkTile extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not open: $urlString'),
+            content: Text(loc.couldNotOpen(urlString)),
             behavior: SnackBarBehavior.floating,
           ),
         );

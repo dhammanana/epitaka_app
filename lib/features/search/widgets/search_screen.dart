@@ -12,6 +12,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
@@ -205,6 +206,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     BookResultSummary summary,
     SearchResultItem item,
   ) async {
+    final loc = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
 
     final currentState = ref.read(searchProvider);
@@ -235,7 +237,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (headingRows.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No heading found for this result')),
+            SnackBar(content: Text(loc.noHeadingFound)),
           );
         }
         return;
@@ -339,7 +341,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         paliSnippet: item.lines.isNotEmpty
             ? item.lines.where((l) => l.isMatch).map((l) => l.pali).join(' ')
             : '',
-        actionLabel: 'Open in Reader',
+        actionLabel: loc.openInReader,
         onAction: () {
           // Find the first matching line's lineId for precise line-level jumping
           final int? initialLineId;
@@ -373,7 +375,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to load preview: $e')));
+        ).showSnackBar(SnackBar(content: Text('${loc.failedToLoadPreview} $e')));
       }
     }
   }
@@ -381,6 +383,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final searchState = ref.watch(searchProvider);
 
     final isFromDrawer =
@@ -406,7 +409,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           },
         ),
         title: Text(
-          'Search',
+          loc.search,
           style: AppTypography.headlineSmall.copyWith(
             color: colors.onSurface,
             fontWeight: FontWeight.bold,
@@ -430,6 +433,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildSearchBar(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -442,11 +446,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         focusNode: _focusNode,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: 'Search Pāli texts…',
+          hintText: loc.searchPaliTexts,
           prefixIcon: IconButton(
             icon: Icon(Icons.search, color: colors.onSurfaceVariant),
             onPressed: _executeSearch,
-            tooltip: 'Search',
+            tooltip: loc.search,
           ),
           suffixIcon: _searchController.text.isNotEmpty
               ? Row(
@@ -456,7 +460,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       icon: const Icon(Icons.search),
                       color: colors.primary,
                       onPressed: _executeSearch,
-                      tooltip: 'Search',
+                      tooltip: loc.search,
                     ),
                     IconButton(
                       icon: const Icon(Icons.clear),
@@ -465,7 +469,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         _onSearchChanged('');
                         ref.read(searchProvider.notifier).clear();
                       },
-                      tooltip: 'Clear',
+                      tooltip: loc.clear,
                     ),
                   ],
                 )
@@ -492,6 +496,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildOptionsBar(ColorScheme colors, SearchState searchState) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -506,7 +511,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               // Fuzzy toggle
               FilterChip(
                 label: Text(
-                  'Fuzzy',
+                  loc.fuzzy,
                   style: AppTypography.labelSmall.copyWith(
                     color: _fuzzy
                         ? colors.onPrimaryContainer
@@ -529,29 +534,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               PopupMenuButton<int>(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                tooltip: 'Word distance',
+                tooltip: loc.wordDistance,
                 initialValue: _wordDistance,
                 onSelected: (val) {
                   setState(() => _wordDistance = val);
                   if (_searchController.text.isNotEmpty) _executeSearch();
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 0, child: Text('Any distance')),
+                  PopupMenuItem(value: 0, child: Text(loc.anyDistance)),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 3,
                     child: Row(
                       children: [
-                        Icon(Icons.check, size: 16, color: Colors.transparent),
-                        SizedBox(width: 8),
-                        Text('Within 3 words'),
+                        const Icon(Icons.check, size: 16, color: Colors.transparent),
+                        const SizedBox(width: 8),
+                        Text(loc.withinNWords(3)),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(value: 1, child: Text('Within 1 word')),
-                  const PopupMenuItem(value: 2, child: Text('Within 2 words')),
-                  const PopupMenuItem(value: 5, child: Text('Within 5 words')),
-                  const PopupMenuItem(value: 10, child: Text('Within 10 words')),
+                  PopupMenuItem(value: 1, child: Text(loc.withinNWords(1))),
+                  PopupMenuItem(value: 2, child: Text(loc.withinNWords(2))),
+                  PopupMenuItem(value: 5, child: Text(loc.withinNWords(5))),
+                  PopupMenuItem(value: 10, child: Text(loc.withinNWords(10))),
                 ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -580,7 +585,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _wordDistance > 0 ? 'Dist: $_wordDistance' : 'Dist',
+                        _wordDistance > 0
+                            ? '${loc.dist}: $_wordDistance'
+                            : loc.dist,
                         style: AppTypography.labelSmall.copyWith(
                           color: _wordDistance > 0
                               ? colors.onSecondaryContainer
@@ -629,7 +636,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   size: 20,
                 ),
                 color: _showFilters ? colors.primary : colors.onSurfaceVariant,
-                tooltip: 'Toggle filters',
+                tooltip: loc.toggleFilters,
                 onPressed: () => setState(() => _showFilters = !_showFilters),
               ),
 
@@ -642,7 +649,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                   ),
                   child: Text(
-                    '${searchState.totalResults} result${searchState.totalResults == 1 ? '' : 's'}',
+                    loc.resultsCount(searchState.totalResults),
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.primary,
                       fontWeight: FontWeight.w600,
@@ -663,6 +670,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final notifier = ref.read(searchProvider.notifier);
     final enabledCats = notifier.enabledCategories;
     final enabledNik = notifier.enabledNikayas;
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -682,7 +690,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 SizedBox(
                   width: 44,
                   child: Text(
-                    'Layer',
+                    loc.layer,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
@@ -712,7 +720,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 SizedBox(
                   width: 44,
                   child: Text(
-                    'Nikāya',
+                    loc.nikaya,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
@@ -842,6 +850,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildIdleState(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -853,7 +862,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(height: AppDimensions.md),
           Text(
-            'Search the Pāli Tipiṭaka',
+            loc.searchTipitaka,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
             ),
@@ -862,8 +871,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           SizedBox(
             width: 280,
             child: Text(
-              'Search across both Pāli text and translations.\n'
-              'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).',
+              loc.searchIdleHint,
               textAlign: TextAlign.center,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
@@ -881,6 +889,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     String status,
     double progress,
   ) {
+    final loc = AppLocalizations.of(context);
     final p = progress.clamp(0.0, 1.0);
     return Center(
       child: Padding(
@@ -918,7 +927,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.lg),
             Text(
-              'Building Search Index',
+              loc.buildingSearchIndex,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w600,
@@ -948,7 +957,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.xs),
             Text(
-              p > 0 ? '${(p * 100).toStringAsFixed(0)}% complete' : 'Starting…',
+              p > 0
+                  ? '${(p * 100).toStringAsFixed(0)}% ${loc.percentComplete}'
+                  : loc.starting,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontSize: 11,
@@ -967,6 +978,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     int totalResults,
     List<HeadingResult> headings,
   ) {
+    final loc = AppLocalizations.of(context);
     if (summaries.isEmpty && headings.isEmpty) {
       return Center(
         child: Column(
@@ -979,14 +991,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: AppDimensions.sm),
             Text(
-              'No results for "$query"',
+              loc.noResultsForQuery(query),
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: AppDimensions.xs),
             Text(
-              'Try enabling fuzzy search or using different terms.',
+              loc.tryFuzzySearch,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                 fontSize: 11,
@@ -1081,7 +1093,7 @@ class _FontSizeButton extends ConsumerWidget {
     final paliSize = settings.typography.pali.fontSize.round();
 
     return PopupMenuButton<String>(
-      tooltip: 'Font size',
+      tooltip: AppLocalizations.of(context).fontSizeLabel,
       icon: Text(
         'A',
         style: TextStyle(
@@ -1132,7 +1144,7 @@ class _FontSizeButton extends ConsumerWidget {
               const Icon(Icons.add, size: 18),
               const SizedBox(width: 8),
               Text(
-                'Increase font size',
+                AppLocalizations.of(context).increaseFontSize,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.onSurface,
                 ),
@@ -1147,7 +1159,7 @@ class _FontSizeButton extends ConsumerWidget {
               const Icon(Icons.remove, size: 18),
               const SizedBox(width: 8),
               Text(
-                'Decrease font size',
+                AppLocalizations.of(context).decreaseFontSize,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.onSurface,
                 ),
@@ -1229,6 +1241,7 @@ class _BookResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final displayName = _displayBookName(summary.book);
 
     return Card(
@@ -1380,7 +1393,7 @@ class _BookResultCard extends StatelessWidget {
                     onPressed: onLoadMore,
                     icon: const Icon(Icons.expand_more, size: 18),
                     label: Text(
-                      'Show more (${summary.totalCount - summary.loadedCount} remaining)',
+                      '${loc.showMore} (${summary.totalCount - summary.loadedCount} ${loc.remaining})',
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.primary,
                       ),

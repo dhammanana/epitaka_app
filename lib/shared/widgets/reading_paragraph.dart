@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/utils/app_localizations.dart';
 import '../../features/reader/providers/reader_provider.dart';
 import '../../core/utils/pali_search_utils.dart';
 import '../../core/utils/pali_text_utils.dart';
@@ -877,7 +878,7 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
   Widget _buildCollapseButton() {
     return _buildToggleChip(
       icon: Icons.expand_less,
-      label: 'Less',
+      label: AppLocalizations.of(context).lessLabel,
       onTap: () => setState(() => _expanded = false),
     );
   }

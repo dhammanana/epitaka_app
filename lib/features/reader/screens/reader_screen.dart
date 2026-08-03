@@ -15,6 +15,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
@@ -1884,7 +1885,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 const SizedBox(height: AppDimensions.sm),
                 FilledButton.icon(
                   icon: const Icon(Icons.menu_book_outlined),
-                  label: const Text('Open Library'),
+                  label: Text(AppLocalizations.of(context).openLibraryShort),
                   onPressed: () => showLibraryDialog(context),
                 ),
               ],
@@ -2186,13 +2187,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         IconButton(
                           icon: const Icon(Icons.menu_book_outlined),
                           color: colors.onSurfaceVariant,
-                          tooltip: 'Library',
+                          tooltip: AppLocalizations.of(context).libraryLabel,
                           onPressed: () => showLibraryDialog(context),
                         ),
                         IconButton(
                           icon: const Icon(Icons.search),
                           color: colors.onSurfaceVariant,
-                          tooltip: 'Search',
+                          tooltip: AppLocalizations.of(context).search,
                           onPressed: () => ref
                               .read(sidePanelProvider.notifier)
                               .toggle(SidePanelType.search),
@@ -2200,7 +2201,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         IconButton(
                           icon: const Icon(Icons.settings),
                           color: colors.onSurfaceVariant,
-                          tooltip: 'Settings',
+                          tooltip: AppLocalizations.of(context).settings,
                           onPressed: () {
                             if (ResponsiveBreakpoint.isDesktop(context)) {
                               showSettingsDialog(context);

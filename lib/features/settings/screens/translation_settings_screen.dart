@@ -8,6 +8,7 @@ import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../providers/translation_download_provider.dart';
 import '../widgets/color_picker_section.dart';
 import '../widgets/settings_app_bar.dart';
@@ -31,6 +32,7 @@ class _TranslationSettingsScreenState
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final mergedVersionsAsync = ref.watch(mergedTranslationVersionsProvider);
     final localVersionsAsync = ref.watch(localTranslationVersionsProvider);
     final downloadStates = ref.watch(translationDownloadProvider);
@@ -58,7 +60,7 @@ class _TranslationSettingsScreenState
         ),
         children: [
           Text(
-            'Translations & Downloads',
+            loc.translationsDownloads,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.onSurface,
               fontWeight: FontWeight.w700,
@@ -67,7 +69,7 @@ class _TranslationSettingsScreenState
           ),
           const SizedBox(height: 6),
           Text(
-            'Manage translation databases: download, update, and delete.',
+            loc.manageTranslationsSubtitle,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -76,7 +78,7 @@ class _TranslationSettingsScreenState
           _buildUpdateBanner(colors),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(
-            title: 'Display Mode',
+            title: loc.displayMode,
             colors: colors,
             children: [
               _ModeSelector(
@@ -103,13 +105,13 @@ class _TranslationSettingsScreenState
           ),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(
-            title: 'Pāli Text',
+            title: loc.paliTextLabel,
             colors: colors,
             children: [
               _LanguageTypographyCard(
                 isEnabled: settings.showPali,
-                title: 'Pāli',
-                subtitle: 'Pali (Roman script)',
+                title: loc.pali,
+                subtitle: loc.paliRomanScript,
                 typography: settings.typography.pali,
                 defaultColor: AppSettings.defaultPaliColor,
                 onEnabledChanged: (v) {
@@ -124,7 +126,7 @@ class _TranslationSettingsScreenState
           ),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(
-            title: 'Translation Order',
+            title: loc.translationOrder,
             colors: colors,
             children: [
               Padding(
@@ -135,8 +137,7 @@ class _TranslationSettingsScreenState
                   AppDimensions.sm,
                 ),
                 child: Text(
-                  'Drag to reorder enabled translations. '
-                  'The first one is shown when multiple are enabled.',
+                  loc.reorderTranslationsHint,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     height: 1.4,
@@ -161,8 +162,7 @@ class _TranslationSettingsScreenState
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      'No translations downloaded yet. Download a translation '
-                      'above to reorder it.',
+                      loc.noTranslationsDownloadedYet,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                         fontStyle: FontStyle.italic,
@@ -226,7 +226,7 @@ class _TranslationSettingsScreenState
           ),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(
-            title: 'Translation Databases',
+            title: loc.translationDatabases,
             colors: colors,
             children: [
               mergedVersionsAsync.when(
@@ -239,7 +239,7 @@ class _TranslationSettingsScreenState
                 error: (e, _) => Padding(
                   padding: const EdgeInsets.all(AppDimensions.md),
                   child: Text(
-                    'Error scanning translations: $e',
+                    '${loc.error} $e',
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.error,
                     ),
@@ -250,7 +250,7 @@ class _TranslationSettingsScreenState
                     return Padding(
                       padding: const EdgeInsets.all(AppDimensions.md),
                       child: Text(
-                        'No translations found or available for download.',
+                        loc.noTranslationsFound,
                         style: AppTypography.labelSmall.copyWith(
                           color: colors.onSurfaceVariant,
                           fontStyle: FontStyle.italic,
@@ -416,6 +416,7 @@ class _TranslationSettingsScreenState
   }
 
   Widget _buildUpdateBanner(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.md,
@@ -445,8 +446,8 @@ class _TranslationSettingsScreenState
           Expanded(
             child: Text(
               _manifestLoading
-                  ? 'Checking for updates…'
-                  : 'Check for translation updates from GitHub.',
+                  ? loc.checkingForUpdates
+                  : loc.checkForTranslationUpdates,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w500,
@@ -465,7 +466,7 @@ class _TranslationSettingsScreenState
                       setState(() => _manifestLoading = false);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text('Update check complete.'),
+                          content: Text(loc.updateCheckComplete),
                           behavior: SnackBarBehavior.floating,
                           duration: const Duration(seconds: 2),
                         ),
@@ -473,7 +474,7 @@ class _TranslationSettingsScreenState
                     }
                   },
             icon: const Icon(Icons.refresh, size: 15),
-            label: const Text('Check'),
+            label: Text(loc.check),
             style: TextButton.styleFrom(
               foregroundColor: colors.primary,
               backgroundColor: colors.primary.withValues(alpha: 0.1),
@@ -491,19 +492,20 @@ class _TranslationSettingsScreenState
   }
 
   Future<void> _confirmDeleteVersion(TranslationVersion version) async {
+    final loc = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Translation?'),
+        title: Text(loc.deleteTranslationTitle),
         content: Text(
-          'Delete "${version.displayName}" (${version.englishName})?\\n'
-          'This will remove the database file from your device.',
+          '${loc.deleteTranslationConfirm} "${version.displayName}" (${version.englishName})?\n'
+          '${loc.deleteTranslationRemoveDb}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -513,7 +515,7 @@ class _TranslationSettingsScreenState
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text('Delete'),
+            child: Text(loc.delete),
           ),
         ],
       ),
@@ -534,7 +536,7 @@ class _TranslationSettingsScreenState
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Deleted ${version.englishName} (${version.displayName})',
+                '${loc.deletedLabel} ${version.englishName} (${version.displayName})',
               ),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -571,6 +573,7 @@ class _LanguageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.sm + 2,
@@ -653,7 +656,7 @@ class _LanguageHeader extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isAnyEnabled ? 'Enabled' : 'Disabled',
+                          isAnyEnabled ? loc.enabled : loc.disabled,
                           style: TextStyle(
                             fontSize: 10,
                             color: isAnyEnabled
@@ -799,6 +802,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
     TranslationDownloadState dlState,
     bool isInstalled,
   ) {
+    final loc = AppLocalizations.of(context);
     final isSelected =
         widget.selectedSuffix == v.suffix ||
         (widget.selectedSuffix == null &&
@@ -844,7 +848,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             // Active version indicator
             if (isSelected && isInstalled) ...[
               _StatusChip(
-                label: 'Active',
+                label: loc.active,
                 color: colors.primary,
                 colors: colors,
               ),
@@ -891,14 +895,14 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 child: const Icon(Icons.check, size: 14, color: Colors.green),
               )
             else if (isInstalled && v.isNissaya)
-              _StatusChip(label: 'Nissaya', color: Colors.teal, colors: colors)
+              _StatusChip(label: loc.nissaya, color: Colors.teal, colors: colors)
             else if (isInstalled)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (_hasUpdate && v.hasDownloadUrl)
                     _SmallButton(
-                      label: 'Update',
+                      label: loc.update,
                       icon: Icons.system_update,
                       onTap: widget.onDownload,
                       colors: colors,
@@ -924,7 +928,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               )
             else if (!isInstalled && v.hasDownloadUrl)
               _SmallButton(
-                label: 'Download',
+                label: loc.download,
                 icon: Icons.download,
                 onTap: widget.onDownload,
                 colors: colors,
@@ -942,6 +946,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   }
 
   Widget _buildProgress(TranslationDownloadState dlState, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.sm + 2,
@@ -965,7 +970,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
           const SizedBox(height: 3),
           Text(
             dlState.status == DownloadStatus.extracting
-                ? 'Installing…'
+                ? loc.installing
                 : '${(dlState.progress * 100).toStringAsFixed(0)}%',
             style: AppTypography.labelSmall.copyWith(
               color: colors.primary,
@@ -1015,6 +1020,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
   }
 
   Widget _buildExpandedContent(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     final typo = widget.typography;
     final defaultColor = AppSettings.defaultTranslationColor;
 
@@ -1033,7 +1039,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             color: colors.outlineVariant.withValues(alpha: 0.25),
           ),
           const SizedBox(height: AppDimensions.sm + 2),
-          _SectionLabel('Font Family', colors),
+          _SectionLabel(loc.fontFamily, colors),
           const SizedBox(height: 8),
           _FontFamilySelector(
             current: typo.fontFamily,
@@ -1043,7 +1049,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             },
           ),
           const SizedBox(height: AppDimensions.md),
-          _SectionLabel('Font Size', colors),
+          _SectionLabel(loc.fontSize, colors),
           const SizedBox(height: 8),
           _FontSizeControl(
             fontSize: typo.fontSize,
@@ -1053,7 +1059,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             },
           ),
           const SizedBox(height: AppDimensions.md),
-          _SectionLabel('Style', colors),
+          _SectionLabel(loc.style, colors),
           const SizedBox(height: 8),
           _StyleToggles(
             bold: typo.bold,
@@ -1069,7 +1075,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
           ),
           const SizedBox(height: AppDimensions.md),
           ColorPickerSection(
-            title: 'Color',
+            title: loc.colorLabel,
             icon: Icons.palette_outlined,
             currentColor: typo.color ?? defaultColor,
             selectedColor: typo.color ?? defaultColor,
@@ -1081,7 +1087,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             onCustomColor: () {
               showColorPickerScreen(
                 context,
-                title: 'Pick Color',
+                title: loc.pickColor,
                 initialColor: typo.color ?? defaultColor,
                 onApply: (c) {
                   widget.onTypographyChanged(typo.copyWith(color: c));
@@ -1092,7 +1098,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
           const SizedBox(height: AppDimensions.md),
 
           // Version selector
-          _SectionLabel('Use for Reading', colors),
+          _SectionLabel(loc.useForReading, colors),
           const SizedBox(height: 8),
           _VersionSelector(
             version: widget.version,
@@ -1103,7 +1109,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
           const SizedBox(height: AppDimensions.md),
 
           // Version info
-          _SectionLabel('Version Info', colors),
+          _SectionLabel(loc.versionInfo, colors),
           const SizedBox(height: 8),
           _VersionInfo(version: widget.version, colors: colors),
 
@@ -1118,7 +1124,7 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
               child: OutlinedButton.icon(
                 onPressed: widget.onDelete,
                 icon: const Icon(Icons.delete_outline, size: 16),
-                label: const Text('Delete Translation'),
+                label: Text(loc.deleteTranslationShort),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: colors.error,
                   side: BorderSide(color: colors.error.withValues(alpha: 0.3)),
@@ -1258,6 +1264,7 @@ class _VersionSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final isCurrentlySelected =
         currentSuffix == version.suffix ||
         (currentSuffix == null &&
@@ -1302,8 +1309,8 @@ class _VersionSelector extends StatelessWidget {
                 children: [
                   Text(
                     isCurrentlySelected
-                        ? 'Active Version'
-                        : 'Select this version',
+                        ? loc.activeVersion
+                        : loc.selectThisVersion,
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -1314,8 +1321,8 @@ class _VersionSelector extends StatelessWidget {
                   ),
                   Text(
                     version.isNissaya
-                        ? 'Nissaya (word-by-word)'
-                        : 'Standard translation',
+                        ? loc.nissayaDesc
+                        : loc.standardTranslation,
                     style: TextStyle(
                       fontSize: 10,
                       color: colors.onSurfaceVariant,
@@ -1326,7 +1333,7 @@ class _VersionSelector extends StatelessWidget {
             ),
             if (!canBeSelected)
               Text(
-                'Install first',
+                loc.installFirst,
                 style: TextStyle(
                   fontSize: 10,
                   color: colors.onSurfaceVariant,
@@ -1396,17 +1403,18 @@ class _VersionInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final items = <String, String>{
-      'Filename': version.filename,
-      'Type': version.isNissaya
-          ? 'Nissaya (word-by-word)'
-          : 'Standard translation',
-      'Language': version.englishName,
-      'Suffix': version.suffix ?? 'Default',
+      loc.filename: version.filename,
+      loc.type: version.isNissaya
+          ? loc.nissayaDesc
+          : loc.standardTranslation,
+      loc.language: version.englishName,
+      loc.suffix: version.suffix ?? loc.defaultLabel,
       if (version.fileSize != null)
-        'Size': '${(version.fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
-      if (version.updatedAt != null) 'Updated': version.updatedAt!,
-      if (version.isAvailable) 'Status': 'Installed',
+        loc.size: '${(version.fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
+      if (version.updatedAt != null) loc.updated: version.updatedAt!,
+      if (version.isAvailable) loc.status: loc.installed,
     };
 
     return Container(
@@ -1457,6 +1465,7 @@ class _NissayaInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -1471,8 +1480,7 @@ class _NissayaInfoCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Nissaya translations show word-by-word Pāli breakdown '
-              'with meanings, displayed as pali: meaning | pali: meaning.',
+              '${loc.nissayaInfo}',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.teal.shade700,
@@ -1520,6 +1528,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
   @override
   Widget build(BuildContext context) {
     final colors = widget.colors;
+    final loc = AppLocalizations.of(context);
     final typo = widget.typography;
     final effectiveColor = typo.effectiveColor(widget.defaultColor);
 
@@ -1639,7 +1648,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   color: colors.outlineVariant.withValues(alpha: 0.25),
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel('Font Family', colors),
+                _SectionLabel(loc.fontFamily, colors),
                 const SizedBox(height: 8),
                 _FontFamilySelector(
                   current: typo.fontFamily,
@@ -1651,7 +1660,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   },
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel('Font Size', colors),
+                _SectionLabel(loc.fontSize, colors),
                 const SizedBox(height: 8),
                 _FontSizeControl(
                   fontSize: typo.fontSize,
@@ -1661,7 +1670,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   },
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel('Style', colors),
+                _SectionLabel(loc.style, colors),
                 const SizedBox(height: 8),
                 _StyleToggles(
                   bold: typo.bold,
@@ -1677,7 +1686,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                 ),
                 const SizedBox(height: AppDimensions.md),
                 ColorPickerSection(
-                  title: 'Color',
+                  title: loc.colorLabel,
                   icon: Icons.palette_outlined,
                   currentColor: typo.color ?? widget.defaultColor,
                   selectedColor: typo.color ?? widget.defaultColor,
@@ -1689,7 +1698,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   onCustomColor: () {
                     showColorPickerScreen(
                       context,
-                      title: 'Pick Color',
+                      title: loc.pickColor,
                       initialColor: typo.color ?? widget.defaultColor,
                       onApply: (c) {
                         widget.onTypographyChanged(typo.copyWith(color: c));
@@ -1698,7 +1707,7 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   },
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel('Preview', colors),
+                _SectionLabel(loc.preview, colors),
                 const SizedBox(height: 8),
                 _TextPreview(
                   typography: typo,
@@ -2056,27 +2065,28 @@ class _ModeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final options = [
       _ModeOption(
         mode: null,
         icon: Icons.visibility_off,
-        title: 'Hide Translation',
-        subtitle: 'Show only Pāli text, joined as paragraphs',
+        title: loc.hideTranslationMode,
+        subtitle: loc.hideTranslationModeSubtitle,
         isSelected: !showTranslation,
       ),
       _ModeOption(
         mode: TranslationDisplayMode.lineByLine,
         icon: Icons.view_headline,
-        title: 'Line by Line',
-        subtitle: 'Show Pāli followed by its translation',
+        title: loc.lineByLineMode,
+        subtitle: loc.lineByLineModeSubtitle,
         isSelected:
             showTranslation && currentMode == TranslationDisplayMode.lineByLine,
       ),
       _ModeOption(
         mode: TranslationDisplayMode.sideBySide,
         icon: Icons.view_column,
-        title: 'Side by Side',
-        subtitle: 'Show Pāli and translation in two columns',
+        title: loc.sideBySideMode,
+        subtitle: loc.sideBySideModeSubtitle,
         isSelected:
             showTranslation && currentMode == TranslationDisplayMode.sideBySide,
       ),

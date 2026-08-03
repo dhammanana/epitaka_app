@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../../core/providers/app_db_provider.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/app_localizations.dart';
 import '../index_progress_screen.dart';
 
 /// Tile to reset all app data (bookmarks, history, search index) and
@@ -20,6 +21,7 @@ class ResetDataTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return InkWell(
       onTap: () => _showResetDialog(context, ref),
@@ -37,13 +39,13 @@ class ResetDataTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Reset & Rebuild',
+                    loc.resetAndRebuild,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                     ),
                   ),
                   Text(
-                    'Clear bookmarks, history & rebuild search index',
+                    loc.resetAndRebuildSubtitle,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -59,6 +61,7 @@ class ResetDataTile extends ConsumerWidget {
 
   Future<void> _showResetDialog(BuildContext context, WidgetRef ref) async {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     // Determine database path
     final dir = await getApplicationDocumentsDirectory();
@@ -71,7 +74,7 @@ class ResetDataTile extends ConsumerWidget {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
             const SizedBox(width: 8),
-            const Expanded(child: Text('Reset & Rebuild?')),
+            Expanded(child: Text(loc.resetAndRebuildTitle)),
           ],
         ),
         content: SingleChildScrollView(
@@ -79,9 +82,8 @@ class ResetDataTile extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'This will permanently delete all bookmarks and reading '
-                'history, then rebuild the search index from scratch.',
+              Text(
+                loc.resetConfirmDesc,
               ),
               const SizedBox(height: 16),
 
@@ -97,7 +99,7 @@ class ResetDataTile extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Database location:',
+                      loc.databaseLocation,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                         fontSize: 10,
@@ -138,9 +140,7 @@ class ResetDataTile extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Tip: Export your bookmarks and reading history '
-                        'as a JSON file before resetting. Online backup '
-                        'will be supported in a future update.',
+                        loc.resetBackupTip,
                         style: AppTypography.labelSmall.copyWith(
                           color: Colors.orange.shade800,
                           height: 1.4,
@@ -156,7 +156,7 @@ class ResetDataTile extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           OutlinedButton.icon(
             onPressed: () {
@@ -164,7 +164,7 @@ class ResetDataTile extends ConsumerWidget {
               _exportData(context, ref);
             },
             icon: const Icon(Icons.download, size: 18),
-            label: const Text('Export Backups'),
+            label: Text(loc.exportBackups),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -172,7 +172,7 @@ class ResetDataTile extends ConsumerWidget {
               backgroundColor: colors.error,
               foregroundColor: colors.onError,
             ),
-            child: const Text('Reset Now'),
+            child: Text(loc.resetNow),
           ),
         ],
       ),
@@ -185,6 +185,7 @@ class ResetDataTile extends ConsumerWidget {
 
   /// Export bookmarks and reading history as a JSON backup file.
   Future<void> _exportData(BuildContext context, WidgetRef ref) async {
+    final loc = AppLocalizations.of(context);
     try {
       final appDb = await ref.read(appDbProvider.future);
       final bookmarks = await appDb.getAllBookmarks();
@@ -237,17 +238,17 @@ class ResetDataTile extends ConsumerWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Backup saved to: $filePath'),
+          content: Text('${loc.backupSavedTo} $filePath'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
-          action: SnackBarAction(label: 'OK', onPressed: () {}),
+          action: SnackBarAction(label: loc.ok, onPressed: () {}),
         ),
       );
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to export data: $e'),
+          content: Text('${loc.failedToExportData} $e'),
           backgroundColor: Theme.of(context).colorScheme.error,
           behavior: SnackBarBehavior.floating,
         ),

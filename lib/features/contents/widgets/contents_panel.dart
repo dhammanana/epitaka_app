@@ -6,6 +6,7 @@ import '../../../core/models/app_models.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -203,10 +204,12 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
   Widget build(BuildContext context) {
     final contentsAsync = ref.watch(contentsProvider(_effectiveBookId));
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return contentsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, stack) => Center(child: Text('Error: $e')),
+      error: (e, stack) =>
+          Center(child: Text(loc.errorMessage('$e'))),
       data: (headings) {
         final currentIndex = _currentHeadingIndex(headings);
         // Inside panel it's always compact
@@ -243,7 +246,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                         color: colors.onSurface,
                       ),
                       decoration: InputDecoration(
-                        hintText: 'Search contents…',
+                        hintText: loc.searchContents,
                         isDense: true,
                         border: InputBorder.none,
                         suffixIcon: IconButton(
@@ -263,7 +266,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Contents',
+                            loc.contents,
                             style: AppTypography.labelMedium.copyWith(
                               color: colors.primary,
                               fontWeight: FontWeight.w600,
@@ -284,8 +287,8 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                   ? Center(
                       child: Text(
                         query.isNotEmpty
-                            ? 'No matching sections'
-                            : 'No contents available',
+                            ? loc.noMatchingSections
+                            : loc.noContentsAvailable,
                         style: AppTypography.labelSmall.copyWith(
                           color: colors.onSurfaceVariant,
                         ),
@@ -364,6 +367,7 @@ class _ContentsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     final script = ref.watch(settingsProvider).paliScript;
     return Padding(
       padding: EdgeInsets.only(left: indent * indentUnit),
@@ -397,7 +401,7 @@ class _ContentsRow extends ConsumerWidget {
                   const SizedBox(width: 20),
                 Expanded(
                   child: PaliTextStatic(
-                    heading.title ?? 'Untitled',
+                    heading.title ?? loc.untitled,
                     script,
                     style: AppTypography.labelSmall.copyWith(
                       color: isCurrent ? colors.primary : colors.onSurface,

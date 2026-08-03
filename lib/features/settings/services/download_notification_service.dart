@@ -10,6 +10,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// completion.  On Android this satisfies the
 /// `FOREGROUND_SERVICE_DATA_SYNC` requirement for Google Play compliance
 /// and gives the user a visible, cancellable download indicator.
+///
+/// The service is also initialized on other platforms (iOS/macOS/Linux) so
+/// that plugin calls never throw — a notification failure must NEVER crash
+/// a download. Every `_plugin` call is therefore wrapped defensively.
 class DownloadNotificationService {
   DownloadNotificationService._();
 
@@ -32,14 +36,20 @@ class DownloadNotificationService {
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
-    const iosSettings = DarwinInitializationSettings(
+    // Shared by iOS and macOS (both are "Darwin" platforms).
+    const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
+    const linuxSettings = LinuxInitializationSettings(
+      defaultActionName: 'Open',
+    );
     const settings = InitializationSettings(
       android: androidSettings,
-      iOS: iosSettings,
+      iOS: darwinSettings,
+      macOS: darwinSettings,
+      linux: linuxSettings,
     );
     await _plugin.initialize(settings);
     _initialized = true;
@@ -93,7 +103,7 @@ class DownloadNotificationService {
 
   /// Dismiss the translation download notification.
   void dismissTranslation() {
-    _plugin.cancel(_translationNotificationId);
+    _safeCancel(_translationNotificationId);
   }
 
   // ── Gavesana AI asset download notifications ─────────────────────────
@@ -137,7 +147,7 @@ class DownloadNotificationService {
   }
 
   void dismissGavesana() {
-    _plugin.cancel(_gavesanaNotificationId);
+    _safeCancel(_gavesanaNotificationId);
   }
 
   // ── Supertonic TTS model download notifications ─────────────────────
@@ -186,7 +196,7 @@ class DownloadNotificationService {
   }
 
   void dismissSupertonic() {
-    _plugin.cancel(_supertonicNotificationId);
+    _safeCancel(_supertonicNotificationId);
   }
 
   // ── Low-level helpers ────────────────────────────────────────────────
@@ -236,7 +246,7 @@ class DownloadNotificationService {
       currentProgress: pct.clamp(0, 100),
       indeterminate: isIndeterminate,
     );
-    _plugin.show(
+    _safeShow(
       id,
       title,
       body ?? (isIndeterminate ? null : '$pct%'),
@@ -262,15 +272,10 @@ class DownloadNotificationService {
       onlyAlertOnce: true,
       showWhen: false,
     );
-    _plugin.show(
-      id,
-      title,
-      body,
-      NotificationDetails(android: androidDetails),
-    );
+    _safeShow(id, title, body, NotificationDetails(android: androidDetails));
     // Auto-dismiss after 3 seconds
     Future.delayed(const Duration(seconds: 3), () {
-      _plugin.cancel(id);
+      _safeCancel(id);
     });
   }
 
@@ -292,15 +297,51 @@ class DownloadNotificationService {
       onlyAlertOnce: true,
       showWhen: true,
     );
-    _plugin.show(
-      id,
-      title,
-      body,
-      NotificationDetails(android: androidDetails),
-    );
+    _safeShow(id, title, body, NotificationDetails(android: androidDetails));
     // Auto-dismiss error after 8 seconds
     Future.delayed(const Duration(seconds: 8), () {
-      _plugin.cancel(id);
+      _safeCancel(id);
     });
+  }
+
+  /// Fire-and-forget notification show that can NEVER throw. A plugin or
+  /// platform failure is logged and swallowed so a download is never
+  /// interrupted by a notification problem (e.g. unsupported platform,
+  /// missing permission, or a nil force-unwrap on the native side).
+  void _safeShow(
+    int id,
+    String? title,
+    String? body,
+    NotificationDetails details,
+  ) {
+    try {
+      _plugin.show(id, title, body, details).catchError((Object e) {
+        developer.log(
+          '[DL_NOTIF] show notification failed: $e',
+          name: 'epitaka.download',
+        );
+      });
+    } catch (e) {
+      developer.log(
+        '[DL_NOTIF] show notification failed: $e',
+        name: 'epitaka.download',
+      );
+    }
+  }
+
+  void _safeCancel(int id) {
+    try {
+      _plugin.cancel(id).catchError((Object e) {
+        developer.log(
+          '[DL_NOTIF] cancel notification failed: $e',
+          name: 'epitaka.download',
+        );
+      });
+    } catch (e) {
+      developer.log(
+        '[DL_NOTIF] cancel notification failed: $e',
+        name: 'epitaka.download',
+      );
+    }
   }
 }

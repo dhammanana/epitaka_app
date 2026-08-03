@@ -7,6 +7,7 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
@@ -484,6 +485,7 @@ class _BookmarksTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     final bookmarksAsync = ref.watch(bookmarksProvider);
     final historyAsync = ref.watch(historyProvider);
 
@@ -513,7 +515,7 @@ class _BookmarksTab extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Error loading bookmarks: $e'),
+            child: Text(loc.errorLoadingBookmarks + ' $e'),
           ),
           data: (bookmarks) {
             if (bookmarks.isEmpty) {
@@ -587,7 +589,7 @@ class _BookmarksTab extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Error loading history: $e'),
+            child: Text(loc.errorLoadingHistory + ' $e'),
           ),
           data: (history) {
             if (history.isEmpty) {
@@ -672,15 +674,16 @@ class _BookmarksTab extends ConsumerWidget {
     int id,
     String name,
   ) {
+    final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove Bookmark?'),
-        content: Text('Delete bookmark "$name"?'),
+        title: Text(loc.removeBookmark),
+        content: Text(loc.deleteBookmarkConfirm(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -688,7 +691,7 @@ class _BookmarksTab extends ConsumerWidget {
               _deleteBookmark(ref, id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Removed: $name'),
+                  content: Text(loc.removedItem(name)),
                   behavior: SnackBarBehavior.floating,
                   duration: const Duration(seconds: 2),
                 ),
@@ -698,7 +701,7 @@ class _BookmarksTab extends ConsumerWidget {
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
-            child: const Text('Delete'),
+            child: Text(loc.delete),
           ),
         ],
       ),
@@ -721,15 +724,16 @@ class _BookmarksTab extends ConsumerWidget {
     int id,
     String label,
   ) {
+    final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove History Entry?'),
-        content: Text('Delete history entry for "$label"?'),
+        title: Text(loc.removeHistoryEntry),
+        content: Text(loc.deleteHistoryEntryConfirm(label)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -740,7 +744,7 @@ class _BookmarksTab extends ConsumerWidget {
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
-            child: const Text('Delete'),
+            child: Text(loc.delete),
           ),
         ],
       ),
@@ -906,15 +910,16 @@ class _HistorySection extends ConsumerWidget {
     int id,
     String label,
   ) {
+    final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove History Entry?'),
-        content: Text('Delete history entry for "$label"?'),
+        title: Text(loc.removeHistoryEntry),
+        content: Text(loc.deleteHistoryEntryConfirm(label)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(loc.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -928,7 +933,7 @@ class _HistorySection extends ConsumerWidget {
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
-            child: const Text('Delete'),
+            child: Text(loc.delete),
           ),
         ],
       ),
@@ -937,6 +942,7 @@ class _HistorySection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     final historyAsync = ref.watch(historyProvider);
 
     return Column(
@@ -964,7 +970,7 @@ class _HistorySection extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('Error loading history: $e'),
+            child: Text(loc.errorLoadingHistory + ' $e'),
           ),
           data: (history) {
             if (history.isEmpty) {

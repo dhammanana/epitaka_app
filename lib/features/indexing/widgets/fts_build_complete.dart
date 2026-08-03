@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 
 /// Displays the successful completion state of the FTS index build.
 class FtsBuildComplete extends StatelessWidget {
@@ -19,6 +20,7 @@ class FtsBuildComplete extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.marginMobile,
@@ -34,7 +36,7 @@ class FtsBuildComplete extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.md),
           Text(
-            'Index Built!',
+            loc.indexBuilt,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurface,
               fontWeight: FontWeight.w700,
@@ -42,8 +44,7 @@ class FtsBuildComplete extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            'Pāli + ${lang.toUpperCase()} translation indexed\n'
-            '$count sentences',
+            loc.indexedSentenceSummary(lang, count),
             textAlign: TextAlign.center,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
@@ -61,7 +62,7 @@ class FtsBuildComplete extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
               ),
             ),
-            child: const Text('Done'),
+            child: Text(loc.done),
           ),
           const Spacer(),
         ],

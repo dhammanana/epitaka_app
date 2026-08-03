@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 
 /// Displays an error state during FTS index building with retry/cancel.
 class FtsBuildError extends StatelessWidget {
@@ -20,6 +21,7 @@ class FtsBuildError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.marginMobile,
@@ -35,7 +37,7 @@ class FtsBuildError extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.md),
           Text(
-            'Build Failed',
+            loc.buildFailed,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurface,
               fontWeight: FontWeight.w700,
@@ -55,13 +57,13 @@ class FtsBuildError extends StatelessWidget {
             children: [
               OutlinedButton(
                 onPressed: onCancel,
-                child: const Text('Cancel'),
+                child: Text(loc.cancel),
               ),
               const SizedBox(width: AppDimensions.md),
               FilledButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                label: Text(loc.retry),
               ),
             ],
           ),

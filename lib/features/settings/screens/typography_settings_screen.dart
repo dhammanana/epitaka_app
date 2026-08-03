@@ -37,7 +37,7 @@ class TypographySettingsScreen extends ConsumerWidget {
               final langName = t.englishName;
               final fontSize = settings.typography.fontSizeFor(langCode);
               return Padding(padding: const EdgeInsets.only(bottom: AppDimensions.md), child: _TypographySection(
-                title: '$langName Translation', subtitle: t.nativeName, icon: Icons.translate, fontSize: fontSize, defaultFontSize: 17,
+                title: loc.translationTitle(langName), subtitle: t.nativeName, icon: Icons.translate, fontSize: fontSize, defaultFontSize: 17,
                 onFontSizeChanged: (v) => ref.read(settingsProvider.notifier).setLanguageTypography(langCode, LanguageTypography(fontSize: v))));
             }).toList();
           },
@@ -74,7 +74,7 @@ class _TypographySectionState extends State<_TypographySection> {
   }
   Widget _buildFontSizeControl(ColorScheme colors, int percent) {
     return Padding(padding: const EdgeInsets.fromLTRB(AppDimensions.md, 0, AppDimensions.md, AppDimensions.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Font Size', style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)),
+      Text(AppLocalizations.of(context).fontSize, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)),
       const SizedBox(height: 8),
       Row(children: [
         _FontSizeButton(icon: Icons.remove, onTap: () => widget.onFontSizeChanged((widget.fontSize - 1).clamp(12.0, 40.0)), colors: colors),

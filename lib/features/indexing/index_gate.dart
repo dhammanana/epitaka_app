@@ -6,6 +6,7 @@ import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/utils/app_localizations.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
 import '../../features/settings/widgets/color_picker_section.dart';
 import 'index_controller.dart';
@@ -106,6 +107,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
   Widget _buildLoadingScreen() {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     return Scaffold(
       body: Center(
         child: Column(
@@ -115,7 +117,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 size: 48, color: colors.primary.withValues(alpha: 0.5)),
             const SizedBox(height: AppDimensions.md),
             Text(
-              'Checking search index…',
+              loc.checkingIndex,
               style: AppTypography.labelMedium
                   .copyWith(color: colors.onSurfaceVariant),
             ),
@@ -136,6 +138,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
   Widget _buildErrorScreen(IndexState state) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -147,7 +150,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 Icon(Icons.error_outline, size: 64, color: colors.error),
                 const SizedBox(height: AppDimensions.md),
                 Text(
-                  'Something went wrong',
+                  loc.somethingWentWrong,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w600,
@@ -155,7 +158,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 ),
                 const SizedBox(height: AppDimensions.sm),
                 Text(
-                  state.errorMessage ?? 'Unknown error',
+                  state.errorMessage ?? loc.unknownError,
                   textAlign: TextAlign.center,
                   style: AppTypography.labelSmall
                       .copyWith(color: colors.onSurfaceVariant),
@@ -166,7 +169,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     ref.read(indexControllerProvider.notifier).retry();
                   },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
+                  label: Text(loc.retry),
                 ),
               ],
             ),
@@ -186,6 +189,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
     final colors = Theme.of(context).colorScheme;
     final brightness = Theme.of(context).brightness;
+    final loc = AppLocalizations.of(context);
     final settings = ref.watch(settingsProvider);
     final availableAsync = ref.watch(ftsAvailableVersionsProvider);
     final downloadableAsync = ref.watch(ftsDownloadableVersionsProvider);
@@ -290,7 +294,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     ),
                     const SizedBox(height: AppDimensions.md),
                     Text(
-                      'Welcome to ePitaka',
+                      loc.welcomeToEpitaka,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.w700,
@@ -298,13 +302,13 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Download the required databases to get started.',
+                      loc.downloadRequiredDatabases,
                       style: AppTypography.labelMedium
                           .copyWith(color: colors.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'You can add more translations later.',
+                      loc.addMoreTranslationsLater,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
@@ -324,8 +328,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     // ── Required Core Assets ──────────────────────
                     if (requiredCoreAssets.isNotEmpty) ...[
                       _buildRequiredSectionLabel(
-                        'Required Databases',
-                        'These are needed for the app to function.',
+                        loc.requiredDatabases,
+                        loc.requiredDatabasesDesc,
                         colors,
                       ),
                       const SizedBox(height: AppDimensions.sm),
@@ -342,8 +346,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     // ── Required Translations ─────────────────────
                     if (requiredTranslations.isNotEmpty) ...[
                       _buildRequiredSectionLabel(
-                        'Required Translations',
-                        'An English translation is needed for AI search features.',
+                        loc.requiredTranslations,
+                        loc.requiredTranslationsDesc,
                         colors,
                       ),
                       const SizedBox(height: AppDimensions.sm),
@@ -360,7 +364,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
                     // ── Optional translations ─────────────────────
                     Text(
-                      'Optional Translations',
+                      loc.optionalTranslations,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
@@ -383,7 +387,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
                     // ── Color pickers ──────────────────────────────
                     Text(
-                      'Text Colors',
+                      loc.textColors,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,
@@ -393,7 +397,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
                     // Pāli color
                     ColorPickerSection(
-                      title: 'Pāli Text Color',
+                      title: loc.paliTextColor,
                       icon: Icons.format_italic,
                       currentColor: paliColor,
                       selectedColor: paliLightColor,
@@ -406,7 +410,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                         setState(() {
                           _colorPickerConfig = _ColorPickerConfig(
                             currentColor: paliLightColor,
-                            label: 'Pick Pāli Text Color',
+                            label: loc.pickPaliTextColor,
                             onColorPicked: (c) {
                               ref
                                   .read(settingsProvider.notifier)
@@ -420,7 +424,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
 
                     // Translation color
                     ColorPickerSection(
-                      title: 'Translation Text Color',
+                      title: loc.translationTextColor,
                       icon: Icons.translate,
                       currentColor: transColor,
                       selectedColor: transLightColor,
@@ -435,7 +439,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                         setState(() {
                           _colorPickerConfig = _ColorPickerConfig(
                             currentColor: transLightColor,
-                            label: 'Pick Translation Text Color',
+                            label: loc.pickTranslationTextColor,
                             onColorPicked: (c) {
                               ref
                                   .read(settingsProvider.notifier)
@@ -468,8 +472,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       icon: const Icon(Icons.arrow_forward),
                       label: Text(
                         allReady
-                            ? 'Build Search Index'
-                            : 'Download required items first'),
+                            ? loc.buildSearchIndex
+                            : loc.downloadRequiredItemsFirst),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -510,6 +514,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
   }
 
   Widget _buildWizardLoading(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -526,7 +531,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
               ),
               const SizedBox(height: AppDimensions.md),
               Text(
-                'Loading available translations…',
+                loc.loadingAvailableTranslations,
                 style: AppTypography.labelSmall
                     .copyWith(color: colors.onSurfaceVariant),
               ),
@@ -538,6 +543,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
   }
 
   Widget _buildNoVersions(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(AppDimensions.lg),
       decoration: BoxDecoration(
@@ -551,7 +557,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
               color: colors.onSurfaceVariant.withValues(alpha: 0.5)),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            'No translations available.',
+            loc.noTranslationsAvailableShort,
             textAlign: TextAlign.center,
             style:
                 AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant),
@@ -566,6 +572,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
     required CoreAsset asset,
     required ColorScheme colors,
   }) {
+    final loc = AppLocalizations.of(context);
     final downloadStates = ref.watch(translationDownloadProvider);
     final assetKey = asset.slug;
     final downloadState = downloadStates[assetKey] ??
@@ -634,7 +641,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                                 BorderRadius.circular(AppDimensions.radiusSm),
                           ),
                           child: Text(
-                            'Required',
+                            loc.required,
                             style: AppTypography.labelSmall.copyWith(
                               fontSize: 10,
                               color: colors.error,
@@ -647,8 +654,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     const SizedBox(height: 2),
                     Text(
                       isComplete
-                          ? 'Installed'
-                          : 'Not installed',
+                          ? loc.installed
+                          : loc.notInstalled,
                       style: AppTypography.labelSmall.copyWith(
                         color: isComplete
                             ? AppColors.successGreen
@@ -694,7 +701,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     textStyle: AppTypography.labelSmall
                         .copyWith(fontWeight: FontWeight.w600),
                   ),
-                  child: const Text('Download'),
+                  child: Text(loc.download),
                 ),
             ],
           ),
@@ -729,6 +736,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
     required ColorScheme colors,
     bool isRequired = false,
   }) {
+    final loc = AppLocalizations.of(context);
     // Build version key for download state lookup
     final versionKey = version.suffix != null && version.suffix!.isNotEmpty
         ? '${version.languageCode}_${version.suffix}'
@@ -807,7 +815,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                                   BorderRadius.circular(AppDimensions.radiusSm),
                             ),
                             child: Text(
-                              'Required',
+                              loc.required,
                               style: AppTypography.labelSmall.copyWith(
                                 fontSize: 10,
                                 color: colors.error,
@@ -845,10 +853,10 @@ class _IndexGateState extends ConsumerState<IndexGate>
                           ),
                         Text(
                           isComplete
-                              ? 'Ready'
+                              ? loc.readyLabel
                               : version.hasDownloadUrl
-                                  ? 'Not installed'
-                                  : 'Coming soon',
+                                  ? loc.notInstalled
+                                  : loc.comingSoon,
                           style: AppTypography.labelSmall.copyWith(
                             color: isComplete
                                 ? AppColors.successGreen
@@ -888,7 +896,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     textStyle: AppTypography.labelSmall
                         .copyWith(fontWeight: FontWeight.w600),
                   ),
-                  child: const Text('Download'),
+                  child: Text(loc.download),
                 ),
             ],
           ),
@@ -938,6 +946,7 @@ class _IndexGateState extends ConsumerState<IndexGate>
   }
 
   Widget _buildBuildStep(IndexState state) {
+    final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
     final progress = state.progressFraction;
     final phaseColor = state.buildPhase == IndexBuildPhase.indexingCombined
@@ -1021,8 +1030,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
                   // ── Sentence count ───────────────────────────────
                   Text(
                     state.totalProgress > 0
-                        ? '${_fmt(state.currentProgress)} / ${_fmt(state.totalProgress)} sentences'
-                        : 'Preparing…',
+                        ? loc.sentenceProgress(
+                            state.currentProgress, state.totalProgress)
+                        : loc.preparing,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -1039,7 +1049,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
                             size: 12, color: colors.onSurfaceVariant),
                         const SizedBox(width: 4),
                         Text(
-                          'Batch ${state.batchCurrent} / ${state.batchTotal}',
+                          loc.batchProgress(
+                              state.batchCurrent, state.batchTotal),
                           style: AppTypography.labelSmall
                               .copyWith(color: colors.onSurfaceVariant),
                         ),
@@ -1087,19 +1098,6 @@ class _IndexGateState extends ConsumerState<IndexGate>
       default:
         return Icons.build;
     }
-  }
-
-  String _fmt(int n) {
-    if (n < 1000) return n.toString();
-    final s = n.toString();
-    final b = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) b.write(',');
-      b.write(s[i]);
-      count++;
-    }
-    return b.toString().split('').reversed.join();
   }
 
   // ── Inline Color Picker ──────────────────────────────────────────────

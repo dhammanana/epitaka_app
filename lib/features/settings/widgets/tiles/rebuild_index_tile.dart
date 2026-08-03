@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/app_localizations.dart';
 import '../../../indexing/index_controller.dart';
 import '../../../indexing/index_build_dialog.dart';
 import 'confirm_action_dialog.dart';
@@ -15,18 +16,16 @@ class RebuildIndexTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final indexState = ref.watch(indexControllerProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return InkWell(
       onTap: () async {
         if (indexState.isBuilt) {
           final confirmed = await showConfirmActionDialog(
             context,
-            title: 'Rebuild Search Index?',
-            message:
-                'This will clear the current search index and rebuild it from '
-                'scratch. Previously indexed data will be lost until the rebuild '
-                'completes.',
-            confirmLabel: 'Rebuild',
+            title: loc.rebuildSearchIndexTitle,
+            message: loc.clearIndexConfirmDesc,
+            confirmLabel: loc.rebuild,
           );
           if (!confirmed) return;
         }
@@ -51,17 +50,17 @@ class RebuildIndexTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Search Index',
+                    loc.searchIndexTitle,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                     ),
                   ),
                   Text(
                     indexState.isBuilt
-                        ? 'Indexed · ${indexState.indexedTranslationLang?.toUpperCase() ?? ""} · ${indexState.totalProgress} sentences'
+                        ? 'Indexed · ${indexState.indexedTranslationLang?.toUpperCase() ?? ""} · ${indexState.totalProgress} ${loc.sentences}'
                         : indexState.isBuilding
-                            ? 'Building…'
-                            : 'Not built',
+                            ? loc.buildingDots
+                            : loc.notBuilt,
                     style: AppTypography.labelSmall.copyWith(
                       color: indexState.isBuilt
                           ? Colors.green

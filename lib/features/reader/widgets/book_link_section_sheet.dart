@@ -7,6 +7,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -188,6 +189,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   }
 
   Widget _buildHeader(ColorScheme colors, BookLinkData link) {
+    final loc = AppLocalizations.of(context);
     final bookName = _content?.bookName ?? link.linkedBookId;
 
     return Row(
@@ -208,7 +210,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
-                'Linked from “${link.word}”',
+                '${loc.linkedFrom} “${link.word}”',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -235,7 +237,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                 }
               : null,
           icon: const Icon(Icons.open_in_new, size: 14),
-          label: const Text('Open', style: TextStyle(fontSize: 12)),
+          label: Text(loc.open, style: const TextStyle(fontSize: 12)),
           style: TextButton.styleFrom(
             foregroundColor: colors.primary,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -248,6 +250,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   }
 
   Widget _buildBody(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     // Memoization: return cached widget if data hasn't changed.
     // This prevents PreviewContent from being rebuilt on every
     // keyboard viewInsets animation frame while the sheet is open.
@@ -269,7 +272,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Could not load linked content.\n$_error',
+            '${loc.couldNotLoadLinked}\n$_error',
             style: AppTypography.bodyTranslation.copyWith(color: colors.error),
             textAlign: TextAlign.center,
           ),
@@ -280,7 +283,7 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Linked paragraph not found.',
+            loc.linkedParaNotFound,
             style: AppTypography.bodyTranslation.copyWith(
               color: colors.onSurfaceVariant,
               fontStyle: FontStyle.italic,

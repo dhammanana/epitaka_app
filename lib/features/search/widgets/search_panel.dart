@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_search_utils.dart';
@@ -183,6 +184,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Column(
       children: [
@@ -199,7 +201,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             focusNode: _focusNode,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Search Pāli…',
+              hintText: loc.searchPaliShort,
               isDense: true,
               prefixIcon: Icon(
                 Icons.search,
@@ -260,7 +262,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                 children: [
                   FilterChip(
                     label: Text(
-                      'Fuzzy',
+                      loc.fuzzy,
                       style: AppTypography.labelSmall.copyWith(
                         fontSize: 10,
                         color: _fuzzy
@@ -288,29 +290,29 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                       if (_searchController.text.isNotEmpty) _executeSearch();
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 0,
-                        child: Text('Any', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.anyShort, style: const TextStyle(fontSize: 13)),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 3,
-                        child: Text('Within 3', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.withinNShort(3), style: const TextStyle(fontSize: 13)),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 1,
-                        child: Text('Within 1', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.withinNShort(1), style: const TextStyle(fontSize: 13)),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 2,
-                        child: Text('Within 2', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.withinNShort(2), style: const TextStyle(fontSize: 13)),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 5,
-                        child: Text('Within 5', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.withinNShort(5), style: const TextStyle(fontSize: 13)),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 10,
-                        child: Text('Within 10', style: TextStyle(fontSize: 13)),
+                        child: Text(loc.withinNShort(10), style: const TextStyle(fontSize: 13)),
                       ),
                     ],
                     child: Container(
@@ -334,7 +336,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            'Dist',
+                            loc.dist,
                             style: AppTypography.labelSmall.copyWith(
                               fontSize: 10,
                               color: colors.onSurfaceVariant,
@@ -359,7 +361,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                     color: _showFilters ? colors.primary : colors.onSurfaceVariant,
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     padding: EdgeInsets.zero,
-                    tooltip: 'Toggle filters',
+                    tooltip: loc.toggleFilters,
                     onPressed: () => setState(() => _showFilters = !_showFilters),
                   ),
                   if (searchState is SearchResults)
@@ -476,6 +478,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final notifier = ref.read(searchProvider.notifier);
     final enabledCats = notifier.enabledCategories;
     final enabledNik = notifier.enabledNikayas;
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -493,7 +496,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             Row(
               children: [
                 Text(
-                  'Layer',
+                  loc.layer,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -520,7 +523,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             Row(
               children: [
                 Text(
-                  'Nikāya',
+                  loc.nikaya,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -549,6 +552,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   }
 
   Widget _buildResults(SearchState state, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     switch (state) {
       case SearchIdle():
         return Center(
@@ -562,7 +566,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
               ),
               const SizedBox(height: AppDimensions.sm),
               Text(
-                'Search the Pāli Tipiṭaka',
+                loc.searchTipitaka,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -610,7 +614,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Error: $message',
+              loc.errorMessage(message),
               style: AppTypography.labelSmall.copyWith(color: colors.error),
               textAlign: TextAlign.center,
             ),
@@ -625,6 +629,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     String query,
     int totalResults,
   ) {
+    final loc = AppLocalizations.of(context);
     if (summaries.isEmpty) {
       return Center(
         child: Column(
@@ -637,7 +642,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             ),
             const SizedBox(height: 4),
             Text(
-              'No results for "$query"',
+              loc.noResultsForQuery(query),
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -741,6 +746,7 @@ class _BookResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final displayName = summary.book.displayName;
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
@@ -840,7 +846,7 @@ class _BookResultCard extends StatelessWidget {
                     onPressed: onLoadMore,
                     icon: Icon(Icons.expand_more, size: 14),
                     label: Text(
-                      'Show ${summary.totalCount - summary.loadedCount} more',
+                      loc.showNMore(summary.totalCount - summary.loadedCount),
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.primary,
                         fontSize: 10,

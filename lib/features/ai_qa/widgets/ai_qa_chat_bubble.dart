@@ -8,6 +8,7 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../models/ai_qa_models.dart';
 import '../providers/ai_qa_provider.dart';
@@ -144,7 +145,7 @@ class AiQaMessageBubble extends ConsumerWidget {
             _buildToolCallsLog(context, ref, colors),
 
           // Thinking indicator
-          if (message.isThinking) _buildThinkingIndicator(colors),
+          if (message.isThinking) _buildThinkingIndicator(context, colors),
 
           // Message bubble
           if (!isAssistantWithToolCalls)
@@ -219,6 +220,7 @@ class AiQaMessageBubble extends ConsumerWidget {
     WidgetRef ref,
     ColorScheme colors,
   ) {
+    final loc = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -240,7 +242,7 @@ class AiQaMessageBubble extends ConsumerWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Researching...',
+                loc.researchingLabel,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w600,
@@ -282,7 +284,8 @@ class AiQaMessageBubble extends ConsumerWidget {
     );
   }
 
-  Widget _buildThinkingIndicator(ColorScheme colors) {
+  Widget _buildThinkingIndicator(BuildContext context, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
@@ -303,7 +306,7 @@ class AiQaMessageBubble extends ConsumerWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            'Thinking...',
+            loc.thinkingLabel,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
               fontStyle: FontStyle.italic,
@@ -334,7 +337,7 @@ class AiQaMessageBubble extends ConsumerWidget {
   ) {
     // If we are streaming but have no text yet, show a "Generating..." indicator
     if (isStreaming && displayText.isEmpty) {
-      return _buildGeneratingIndicator(colors);
+      return _buildGeneratingIndicator(context, colors);
     }
 
     return Column(
@@ -443,7 +446,8 @@ class AiQaMessageBubble extends ConsumerWidget {
     return SelectableText.rich(TextSpan(children: spans));
   }
 
-  Widget _buildGeneratingIndicator(ColorScheme colors) {
+  Widget _buildGeneratingIndicator(BuildContext context, ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -459,7 +463,7 @@ class AiQaMessageBubble extends ConsumerWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            'Generating answer...',
+            loc.generatingAnswer,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
               fontStyle: FontStyle.italic,
@@ -591,6 +595,7 @@ class AiQaMessageBubble extends ConsumerWidget {
     WidgetRef ref,
     ColorScheme colors,
   ) {
+    final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -605,7 +610,7 @@ class AiQaMessageBubble extends ConsumerWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                'Citations (${message.citations.length})',
+                loc.citationsCount(message.citations.length),
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary.withValues(alpha: 0.7),
                   fontSize: 10,
@@ -693,7 +698,7 @@ class _CopyButton extends StatelessWidget {
     return IconButton(
       icon: const Icon(Icons.content_copy, size: 13),
       color: colors.onSurfaceVariant.withValues(alpha: 0.35),
-      tooltip: 'Copy message',
+      tooltip: AppLocalizations.of(context).copyMessage,
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -702,7 +707,7 @@ class _CopyButton extends StatelessWidget {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Copied!'),
+            content: Text(AppLocalizations.of(context).copied),
             duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
             width: 100,

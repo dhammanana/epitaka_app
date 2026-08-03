@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../providers/tts_provider.dart';
 import '../providers/supertonic_download_provider.dart';
 import '../widgets/settings_app_bar.dart';
@@ -81,6 +82,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final downloadState = ref.watch(supertonicDownloadProvider);
     final ttsPlayback = ref.watch(ttsProvider);
 
@@ -97,7 +99,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
         ),
         children: [
           Text(
-            'Text-to-Speech',
+            loc.textToSpeech,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.onSurface,
             ),
@@ -106,7 +108,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
           // ── Engine Selection ─────────────────────────────────────────
           SettingsSection(
-            title: 'Engine',
+            title: loc.engine,
             colors: colors,
             children: [
               _EngineSelector(
@@ -123,7 +125,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
           // ── Supertonic: Download & Setup ─────────────────────────────
           if (isSupertonic) ...[
             SettingsSection(
-              title: 'Model Download',
+              title: loc.modelDownload,
               colors: colors,
               children: [
                 _SupertonicDownloadTile(
@@ -148,12 +150,12 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
             if (settings.ttsSupertonicDownloaded) ...[
               // Language selection
               SettingsSection(
-                title: 'Language',
+                title: loc.language,
                 colors: colors,
                 children: [
                   _DropdownTile(
                     icon: Icons.language,
-                    title: 'TTS Language',
+                    title: loc.ttsLanguageLabel2,
                     value: _supertonicLanguages.firstWhere(
                       (l) => l.$1 == settings.ttsSupertonicLanguage,
                       orElse: () => ('en', 'English'),
@@ -180,12 +182,12 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
               // Voice style selection
               SettingsSection(
-                title: 'Voice Style',
+                title: loc.voiceStyle,
                 colors: colors,
                 children: [
                   _DropdownTile(
                     icon: Icons.record_voice_over,
-                    title: 'Voice',
+                    title: loc.ttsVoiceLabel,
                     value: _supertonicVoices.firstWhere(
                       (v) => v.$1 == settings.ttsSupertonicVoice,
                       orElse: () => ('M1', 'Male Voice 1'),
@@ -215,12 +217,12 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
           // ── System TTS voice ─────────────────────────────────────────
           if (!isSupertonic) ...[
             SettingsSection(
-              title: 'Voice',
+              title: loc.ttsVoiceLabel,
               colors: colors,
               children: [
                 _DropdownTile(
                   icon: Icons.record_voice_over,
-                  title: 'Voice',
+                  title: loc.ttsVoiceLabel,
                   value: _voiceLabel(settings.ttsVoice),
                   options: _voiceOptions.map((o) => o.$2).toList(),
                   selectedValue: _voiceLabel(settings.ttsVoice),
@@ -240,7 +242,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
           // ── Speed ────────────────────────────────────────────────────
           SettingsSection(
-            title: 'Speed',
+            title: loc.ttsSpeed,
             colors: colors,
             children: [
               _SpeedSlider(
@@ -260,7 +262,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
           // ── Pitch ────────────────────────────────────────────────────
           SettingsSection(
-            title: 'Pitch',
+            title: loc.ttPitch,
             colors: colors,
             children: [
               _SpeedSlider(
@@ -280,7 +282,7 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
           // ── Preview ──────────────────────────────────────────────────
           SettingsSection(
-            title: 'Preview',
+            title: loc.preview,
             colors: colors,
             children: [
               Padding(
@@ -366,28 +368,30 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
   }
 
   String _testButtonLabel(TtsPlaybackState state) {
+    final loc = AppLocalizations.of(context);
     switch (state) {
       case TtsPlaybackState.playing:
-        return 'Playing…';
+        return loc.playing;
       case TtsPlaybackState.paused:
-        return 'Paused';
+        return loc.paused;
       case TtsPlaybackState.loading:
-        return 'Loading…';
+        return loc.loadingDots;
       case TtsPlaybackState.stopped:
-        return 'Test Speech';
+        return loc.testSpeech;
     }
   }
 
   String _testButtonSubtitle(TtsPlaybackState state) {
+    final loc = AppLocalizations.of(context);
     switch (state) {
       case TtsPlaybackState.playing:
-        return 'Tap pause or stop to control playback';
+        return loc.tapPauseOrStop;
       case TtsPlaybackState.paused:
-        return 'Tap resume to continue';
+        return loc.tapResume;
       case TtsPlaybackState.loading:
-        return 'Preparing audio…';
+        return loc.loadingAudio;
       case TtsPlaybackState.stopped:
-        return 'Hear a sample of the current voice & settings';
+        return loc.testHearSample;
     }
   }
 }
@@ -407,12 +411,13 @@ class _EngineSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Column(
       children: [
         _EngineOption(
           engine: 'system',
-          label: 'System TTS',
-          description: 'Platform-native text-to-speech (fast, no download)',
+          label: loc.systemTts,
+          description: loc.systemTtsDesc,
           icon: Icons.phone_android,
           isSelected: currentEngine == 'system',
           colors: colors,
@@ -421,8 +426,8 @@ class _EngineSelector extends StatelessWidget {
         const Divider(height: 1, indent: AppDimensions.md, endIndent: AppDimensions.md),
         _EngineOption(
           engine: 'supertonic',
-          label: 'SuperTonic',
-          description: 'Neural TTS with 31 languages (~400 MB model download)',
+          label: loc.supertonic,
+          description: loc.supertonicDesc,
           icon: Icons.auto_awesome,
           isSelected: currentEngine == 'supertonic',
           colors: colors,
@@ -519,6 +524,7 @@ class _SupertonicDownloadTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDownloaded = settings.ttsSupertonicDownloaded;
     final status = downloadState.status;
+    final loc = AppLocalizations.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -541,15 +547,15 @@ class _SupertonicDownloadTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isDownloaded ? 'Models Installed' : 'TTS Models',
+                      isDownloaded ? loc.modelsInstalled : loc.ttsModels,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.onSurface,
                       ),
                     ),
                     Text(
                       isDownloaded
-                          ? 'All models are ready for use'
-                          : 'Requires ~400 MB download for neural TTS',
+                          ? loc.allModelsReady
+                          : loc.requiresDownload,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -600,8 +606,8 @@ class _SupertonicDownloadTile extends StatelessWidget {
                         const SizedBox(width: 4),
                         Text(
                           status == SupertonicDownloadStatus.error
-                              ? 'Retry'
-                              : 'Download',
+                              ? loc.retry
+                              : loc.download,
                           style: AppTypography.labelSmall.copyWith(
                             color: colors.onPrimary,
                             fontWeight: FontWeight.w600,
@@ -625,7 +631,7 @@ class _SupertonicDownloadTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${downloadState.filesDone}/${downloadState.filesTotal} files',
+              '${downloadState.filesDone}/${downloadState.filesTotal} ${loc.filesLabel}',
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontSize: 11,
@@ -690,7 +696,7 @@ class _SpeedSlider extends StatelessWidget {
               const SizedBox(width: AppDimensions.md),
               Expanded(
                 child: Text(
-                  _labelForSlider(),
+                  _labelForSlider(context),
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.onSurface,
                   ),
@@ -722,13 +728,13 @@ class _SpeedSlider extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _minLabel(),
+                  _minLabel(context),
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
                 Text(
-                  _maxLabel(),
+                  _maxLabel(context),
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -741,19 +747,20 @@ class _SpeedSlider extends StatelessWidget {
     );
   }
 
-  String _labelForSlider() {
-    if (min == 0.5 && max == 4.0) return 'Speaking Rate';
-    return 'Pitch';
+  String _labelForSlider(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    if (min == 0.5 && max == 4.0) return loc.speakingRate;
+    return loc.ttPitch;
   }
 
-  String _minLabel() {
+  String _minLabel(BuildContext context) {
     if (min == 0.5 && max == 4.0) return '0.5×';
-    return 'Low';
+    return AppLocalizations.of(context).low;
   }
 
-  String _maxLabel() {
+  String _maxLabel(BuildContext context) {
     if (min == 0.5 && max == 4.0) return '4.0×';
-    return 'High';
+    return AppLocalizations.of(context).high;
   }
 }
 

@@ -295,8 +295,8 @@ class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
             controller: _controller,
             decoration: InputDecoration(
               hintText: '- {book_name} > {heading} VRI p.{vri_page}',
-              labelText: 'Template',
-              helperText: 'Customize the citation format. Use the variables shown below.',
+              labelText: loc.template,
+              helperText: loc.quoteFormatHelper,
               helperMaxLines: 5,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -323,8 +323,7 @@ class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppDimensions.md),
           child: Text(
-            'Available variables: {book_id}, {book_name}, {heading}, {para_id}, '
-            '{vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
+            loc.availableVariables,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
               height: 1.5,
@@ -335,7 +334,7 @@ class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
         // ── Page numbering system ──
         _DropdownTile(
           icon: Icons.numbers,
-          title: 'Page System',
+          title: loc.pageSystem,
           subtitle: pageSystemLabel(settings.quotePageNumberSystem),
           value: pageSystemLabel(settings.quotePageNumberSystem),
           options: [
@@ -373,7 +372,7 @@ class _QuoteFormatSectionState extends ConsumerState<_QuoteFormatSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Preview',
+                  loc.preview,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                     fontWeight: FontWeight.w600,

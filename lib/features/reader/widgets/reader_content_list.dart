@@ -3,6 +3,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
 import '../providers/reader_provider.dart';
 
@@ -121,12 +122,13 @@ class ReaderContentList extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final loc = AppLocalizations.of(context);
     if (data.error != null) {
-      return Center(child: Text('Error loading text: ${data.error}'));
+      return Center(child: Text('${loc.errorLoadingText} ${data.error}'));
     }
 
     if (data.paragraphs.isEmpty) {
-      return const Center(child: Text('No content found.'));
+      return Center(child: Text(loc.noContentFound));
     }
 
     final displayMode = _toParagraphDisplayMode(

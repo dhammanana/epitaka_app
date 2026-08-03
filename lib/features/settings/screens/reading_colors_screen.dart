@@ -69,11 +69,12 @@ class ReadingColorsScreen extends ConsumerWidget {
   /// Show a color picker dialog using the flutter_colorpicker package.
   static Future<void> _showColorPicker(BuildContext context, WidgetRef ref, Color current, ValueChanged<Color> onPicked) async {
     Color picked = current;
+    final loc = AppLocalizations.of(context);
     await showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Pick a color'),
+          title: Text(loc.pickAColor),
           content: SingleChildScrollView(
             child: ColorPicker(
               pickerColor: picked,
@@ -84,8 +85,8 @@ class ReadingColorsScreen extends ConsumerWidget {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () { onPicked(picked); Navigator.of(ctx).pop(); }, child: const Text('Apply')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(loc.cancel)),
+            FilledButton(onPressed: () { onPicked(picked); Navigator.of(ctx).pop(); }, child: Text(loc.apply)),
           ],
         );
       },

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../services/mention_service.dart';
 
 /// Shows a modal dialog with a progress bar during mention index rebuild.
@@ -35,7 +36,7 @@ class _MentionIndexBuildDialog extends ConsumerStatefulWidget {
 class _MentionIndexBuildDialogState
     extends ConsumerState<_MentionIndexBuildDialog> {
   double _progress = 0.0;
-  String _label = 'Preparing…';
+  String _label = '';
   bool _isComplete = false;
   String? _error;
 
@@ -79,6 +80,8 @@ class _MentionIndexBuildDialogState
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    if (_label.isEmpty) _label = loc.preparing;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(
@@ -123,10 +126,10 @@ class _MentionIndexBuildDialogState
             // Title
             Text(
               _error != null
-                  ? 'Build Failed'
+                  ? loc.buildFailed
                   : _isComplete
-                      ? 'Index Built'
-                      : 'Building Heading Index…',
+                      ? loc.indexBuiltShort
+                      : loc.buildingHeadingIndex,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.w600,
@@ -155,7 +158,7 @@ class _MentionIndexBuildDialogState
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(0),
-                child: const Text('Close'),
+                child: Text(loc.close),
               ),
             ] else ...[
               // Progress bar

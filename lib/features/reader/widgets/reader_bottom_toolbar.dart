@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../settings/providers/tts_provider.dart';
 
 /// Floating bottom toolbar for the reader with actions like contents, search,
@@ -37,23 +38,24 @@ class ReaderBottomToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     // Three-state display mode: hide translation → line-by-line → side-by-side
     IconData displayIcon;
     String displayLabel;
     if (!showTranslation) {
       displayIcon = Icons.visibility_off;
-      displayLabel = 'Hide';
+      displayLabel = loc.hideLabel;
     } else {
       switch (displayMode) {
         case TranslationDisplayMode.lineByLine:
           displayIcon = Icons.view_headline;
-          displayLabel = 'Line/L';
+          displayLabel = loc.lineByLineShort;
         case TranslationDisplayMode.sideBySide:
           displayIcon = Icons.view_column;
-          displayLabel = 'Side/S';
+          displayLabel = loc.sideBySideShort;
         case TranslationDisplayMode.hideJoinLines:
           displayIcon = Icons.visibility_off;
-          displayLabel = 'Hide';
+          displayLabel = loc.hideLabel;
       }
     }
 
@@ -81,26 +83,26 @@ class ReaderBottomToolbar extends StatelessWidget {
         children: [
           ToolbarButton(
             icon: Icons.format_list_bulleted,
-            label: 'Contents',
+            label: loc.contents,
             onTap: onContentsTap,
           ),
           const SizedBox(width: 8),
           // Search within current book
           ToolbarButton(
             icon: Icons.search,
-            label: 'Search',
+            label: loc.search,
             onTap: onSearchTap,
           ),
           const SizedBox(width: 8),
           ToolbarButton(
             icon: Icons.menu_book,
-            label: 'Dictionary',
+            label: loc.dictionary,
             onTap: onDictionaryTap,
           ),
           const SizedBox(width: 8),
           ToolbarButton(
             icon: Icons.open_in_new,
-            label: 'Jump',
+            label: loc.jumpLabel,
             onTap: onJumpTap,
           ),
           const SizedBox(width: 8),
@@ -114,13 +116,15 @@ class ReaderBottomToolbar extends StatelessWidget {
             icon: isPlaying
                 ? Icons.stop
                 : (isLoading ? Icons.hourglass_top : Icons.volume_up),
-            label: isPlaying ? 'Stop' : (isLoading ? 'Loading…' : 'Listen'),
+            label: isPlaying
+                ? loc.stopLabel
+                : (isLoading ? loc.loadingDots : loc.toolbarListen),
             onTap: isPlaying ? onStopTap : onListenTap,
           ),
           const SizedBox(width: 2),
           ToolbarButton(
             icon: Icons.bookmark,
-            label: 'Save',
+            label: loc.toolbarSave,
             onTap: onBookmarkTap,
           ),
         ],

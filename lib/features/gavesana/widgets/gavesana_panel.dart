@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 
 /// A compact Gavesana panel for the sidebar.
@@ -14,6 +15,7 @@ class GavesanaPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Center(
       child: Padding(
@@ -28,14 +30,14 @@ class GavesanaPanel extends ConsumerWidget {
             ),
             const SizedBox(height: AppDimensions.md),
             Text(
-              'Gavesana AI Search',
+              loc.gavesanaAiSearch,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: AppDimensions.sm),
             Text(
-              'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.',
+              loc.gavesanaPanelDesc,
               textAlign: TextAlign.center,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
@@ -49,7 +51,7 @@ class GavesanaPanel extends ConsumerWidget {
                 context.push('/gavesana');
               },
               icon: const Icon(Icons.open_in_new, size: 18),
-              label: const Text('Open Gavesana'),
+              label: Text(loc.openGavesana),
             ),
           ],
         ),

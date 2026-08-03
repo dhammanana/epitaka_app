@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../providers/gavesana_provider.dart';
 
 /// Modal dialog that builds the chunk-level BM25 FTS index (`vec_chunks_fts`)
@@ -60,8 +61,8 @@ class _GavesanaFtsBuildDialogState
       _error = null;
       _progress = 0.0;
       _status = widget.rebuild
-          ? 'Rebuilding BM25 index…'
-          : 'Preparing BM25 index…';
+          ? AppLocalizations.of(context).rebuildingBm25Index
+          : AppLocalizations.of(context).preparingBm25Index;
     });
 
     final ok = await (widget.rebuild
@@ -78,7 +79,7 @@ class _GavesanaFtsBuildDialogState
       if (ok) {
         _done = true;
         _progress = 1.0;
-        _status = 'BM25 index ready';
+        _status = AppLocalizations.of(context).bm25IndexReady;
       }
     });
   }
@@ -98,6 +99,7 @@ class _GavesanaFtsBuildDialogState
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final pct = (_progress * 100).round();
 
     return Container(
@@ -126,7 +128,7 @@ class _GavesanaFtsBuildDialogState
                 Icon(Icons.text_fields, color: colors.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Build BM25 Search Index',
+                  loc.buildBm25SearchIndex,
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(color: colors.onSurface),
@@ -149,6 +151,7 @@ class _GavesanaFtsBuildDialogState
   }
 
   Widget _buildContent(ColorScheme colors, int pct) {
+    final loc = AppLocalizations.of(context);
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -172,12 +175,12 @@ class _GavesanaFtsBuildDialogState
                 FilledButton.tonalIcon(
                   onPressed: _startBuild,
                   icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Retry'),
+                  label: Text(loc.retry),
                 ),
                 const SizedBox(width: 12),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Continue without BM25'),
+                  child: Text(loc.continueWithoutBm25),
                 ),
               ],
             ),
@@ -195,7 +198,7 @@ class _GavesanaFtsBuildDialogState
             Icon(Icons.check_circle, size: 48, color: colors.tertiary),
             const SizedBox(height: 12),
             Text(
-              'BM25 index ready',
+              loc.bm25IndexReady,
               style: AppTypography.bodyTranslation.copyWith(
                 color: colors.onSurface,
                 fontSize: 15,
@@ -204,7 +207,7 @@ class _GavesanaFtsBuildDialogState
             ),
             const SizedBox(height: 4),
             Text(
-              'Hybrid (vector + BM25) search is now enabled.',
+              loc.hybridSearchEnabled,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -213,7 +216,7 @@ class _GavesanaFtsBuildDialogState
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Done'),
+              child: Text(loc.done),
             ),
           ],
         ),
@@ -276,7 +279,7 @@ class _GavesanaFtsBuildDialogState
           ),
           const SizedBox(height: AppDimensions.lg),
           Text(
-            'This indexes Pāli text for keyword (BM25) search and runs once.',
+            loc.bm25IndexesOnce,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),

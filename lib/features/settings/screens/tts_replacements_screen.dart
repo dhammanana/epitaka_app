@@ -49,7 +49,7 @@ class _TtsReplacementsScreenState extends ConsumerState<TtsReplacementsScreen> {
   }
 
   void _confirmDelete(BuildContext context, TtsReplacement rule) { final loc = AppLocalizations.of(context);
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(loc.deleteReplacementRule), content: Text('Are you sure you want to delete this rule?\n\n"${rule.pattern}" → "${rule.replacement}"'),
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(loc.deleteReplacementRule), content: Text('${loc.deleteReplacementConfirm}\n\n"${rule.pattern}" → "${rule.replacement}"'),
       actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(loc.cancel)), FilledButton(onPressed: () { Navigator.of(ctx).pop(); ref.read(ttsReplacementsNotifierProvider.notifier).delete(rule.id); },
         style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error), child: Text(loc.delete))]));
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 
 /// A compact popup card shown when tapping the layout toggle button in the
 /// reader bottom toolbar. Displays three layout options (No translation,
@@ -13,6 +14,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final currentMode = settings.translationDisplayMode;
     final showTrans = settings.showTranslation;
 
@@ -46,7 +48,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Text(
-                'Display',
+                loc.display,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -59,8 +61,8 @@ class DisplayLayoutPopup extends ConsumerWidget {
             // ── Layout options ───────────────────────────────────────────
             _LayoutOptionTile(
               icon: Icons.visibility_off,
-              title: 'No translation',
-              subtitle: 'Hide all translations',
+              title: loc.displayNoTranslation,
+              subtitle: loc.displayNoTranslationSubtitle,
               isSelected: !showTrans,
               onTap: () {
                 ref.read(settingsProvider.notifier).setShowTranslation(false);
@@ -69,8 +71,8 @@ class DisplayLayoutPopup extends ConsumerWidget {
             ),
             _LayoutOptionTile(
               icon: Icons.view_headline,
-              title: 'Line by line',
-              subtitle: 'Pāli above translation',
+              title: loc.displayLineByLine,
+              subtitle: loc.displayLineByLineSubtitle,
               isSelected: showTrans && currentMode == TranslationDisplayMode.lineByLine,
               onTap: () {
                 ref.read(settingsProvider.notifier).setShowTranslation(true);
@@ -82,8 +84,8 @@ class DisplayLayoutPopup extends ConsumerWidget {
             ),
             _LayoutOptionTile(
               icon: Icons.view_column,
-              title: 'Side by side',
-              subtitle: 'Pāli beside translation',
+              title: loc.displaySideBySide,
+              subtitle: loc.displaySideBySideSubtitle,
               isSelected: showTrans && currentMode == TranslationDisplayMode.sideBySide,
               onTap: () {
                 ref.read(settingsProvider.notifier).setShowTranslation(true);
@@ -109,7 +111,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               child: Text(
-                'Font Size',
+                loc.fontSize,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

@@ -3,6 +3,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import 'color_swatch.dart';
 
 /// Predefined color options for Pāli text.
@@ -206,7 +207,7 @@ class _ColorPickerScreenState extends State<ColorPickerScreen> {
               widget.onApply(_pickedColor);
               _close();
             },
-            child: const Text('Apply'),
+            child: Text(AppLocalizations.of(context).apply),
           ),
         ],
       ),

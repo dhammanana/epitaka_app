@@ -32,21 +32,18 @@ Future<Directory> getDatabaseDirectory() async {
   return appDir;
 }
 
-/// Copies bundled database files from assets to the app's writable documents
+/// Copies bundled database files from assets to the app's writable database
 /// directory on first launch.
 ///
-/// On Android/iOS, Flutter assets are bundled inside the APK/IPA and are not
-/// directly accessible as file paths. This function extracts them so Drift
-/// (which needs a real file path) can open them.
-///
-/// On desktop (macOS/Windows/Linux), this is a no-op because the DB files
-/// are already accessible via the relative `data/` directory.
+/// CI bundles the core DBs (epitaka.db, dpd-dictionary.db) into `assets/db/`
+/// for every platform, so the built app contains them inside `flutter_assets`.
+/// Flutter assets are not directly accessible as file paths (mobile) or live
+/// inside the app bundle (desktop), so this function extracts them into
+/// [getDatabaseDirectory] where Drift (which needs a real writable file path)
+/// and the providers can open them — making the bundled DBs usable offline
+/// without re-downloading.
 Future<void> ensureBundledDatabases() async {
-  // On desktop, DB files are at ../data/ relative to the working directory.
-  // No need to copy from assets.
-  if (!Platform.isAndroid && !Platform.isIOS) return;
-
-  final appDir = await getApplicationDocumentsDirectory();
+  final appDir = await getDatabaseDirectory();
   final dbDir = Directory(appDir.path);
   if (!await dbDir.exists()) {
     await dbDir.create(recursive: true);
@@ -68,6 +65,16 @@ Future<void> ensureBundledDatabases() async {
     if (await File(destPath).exists()) continue;
 
     try {
+      // On desktop the assets are real files inside the app bundle — copy
+      // them directly (streamed) instead of loading hundreds of MB into
+      // memory through rootBundle.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        final onDisk = _assetOnDisk(assetPath);
+        if (onDisk != null) {
+          await onDisk.copy(destPath);
+          continue;
+        }
+      }
       final data = await rootBundle.load(assetPath);
       final file = File(destPath);
       await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
@@ -76,6 +83,38 @@ Future<void> ensureBundledDatabases() async {
       continue;
     }
   }
+}
+
+/// Resolves a Flutter asset to its on-disk path on desktop platforms, or
+/// null when the asset isn't stored as a plain file (e.g. debug runs where
+/// assets are served from the workspace).
+File? _assetOnDisk(String assetPath) {
+  try {
+    final exe = File(Platform.resolvedExecutable);
+    final exeDir = exe.parent;
+    final base = exeDir.path;
+
+    List<String> roots;
+    if (Platform.isMacOS) {
+      // Layout: <App>.app/Contents/MacOS/epitaka
+      // Assets live in <App>.app/Contents/Frameworks/App.framework/
+      // Resources/flutter_assets (some layouts: Contents/Resources/…).
+      roots = [
+        p.join(base, '..', 'Frameworks', 'App.framework', 'Resources',
+            'flutter_assets'),
+        p.join(base, '..', 'Resources', 'flutter_assets'),
+      ];
+    } else {
+      // Windows/Linux: <exe_dir>/data/flutter_assets
+      roots = [p.join(base, 'data', 'flutter_assets')];
+    }
+
+    for (final root in roots) {
+      final candidate = File(p.join(root, assetPath));
+      if (candidate.existsSync()) return candidate;
+    }
+  } catch (_) {}
+  return null;
 }
 
 /// Copies the core databases (epitaka.db, dpd-dictionary.db) out of the

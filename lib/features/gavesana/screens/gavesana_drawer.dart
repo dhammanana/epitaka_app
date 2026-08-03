@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 
 /// The main navigation drawer.
 ///
@@ -23,6 +24,7 @@ class _MainDrawerState extends State<MainDrawer> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Drawer(
       width: MediaQuery.sizeOf(context).width * 0.78,
@@ -76,13 +78,13 @@ class _MainDrawerState extends State<MainDrawer> {
                 const SizedBox(height: 4),
                 Padding(
                   padding: const EdgeInsets.only(left: 46),
-                  child: Text(
-                    'Pāli Tipiṭaka Reader',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                      fontSize: 11,
+                  child:                    Text(
+                      loc.paliTipitakaReader,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
                     ),
-                  ),
                 ),
               ],
             ),
@@ -96,7 +98,7 @@ class _MainDrawerState extends State<MainDrawer> {
                 // ── Tipitaka ─────────────────────────────────
                 _DrawerItem(
                   icon: Icons.menu_book,
-                  title: 'Tipitaka',
+                  title: loc.tipitaka,
                   trailing: Icon(
                     _tipitakaExpanded ? Icons.expand_less : Icons.expand_more,
                     size: 18,
@@ -120,7 +122,7 @@ class _MainDrawerState extends State<MainDrawer> {
                     padding: const EdgeInsets.only(left: 16),
                     child: _DrawerChildItem(
                       icon: Icons.tab,
-                      title: 'Reading',
+                      title: loc.reading,
                       onTap: () => _closeAndSwitchLibraryTab(context, 1),
                     ),
                   ),
@@ -128,7 +130,7 @@ class _MainDrawerState extends State<MainDrawer> {
                     padding: const EdgeInsets.only(left: 16),
                     child: _DrawerChildItem(
                       icon: Icons.bookmark,
-                      title: 'Bookmarks',
+                      title: loc.bookmarks,
                       onTap: () => _closeAndSwitchLibraryTab(context, 2),
                     ),
                   ),
@@ -146,7 +148,7 @@ class _MainDrawerState extends State<MainDrawer> {
                 // ── Search ───────────────────────────────────
                 _DrawerItem(
                   icon: Icons.search,
-                  title: 'Search',
+                  title: loc.search,
                   onTap: () => _closeAndGo(context, '/search?fromDrawer=true'),
                   selected: _isRouteActive(context, '/search'),
                 ),
@@ -163,8 +165,8 @@ class _MainDrawerState extends State<MainDrawer> {
                 // ── Gavesana ─────────────────────────────────
                 _DrawerItem(
                   icon: Icons.psychology,
-                  title: 'Gavesana',
-                  subtitle: 'Semantic search',
+                  title: loc.gavesana,
+                  subtitle: loc.semanticSearch,
                   onTap: () => _closeAndGo(context, '/gavesana'),
                   selected: _isRouteActive(context, '/gavesana'),
                 ),
@@ -181,8 +183,8 @@ class _MainDrawerState extends State<MainDrawer> {
                 // ── Vimaṃsa ───────────────────────────────────
                 _DrawerItem(
                   icon: Icons.auto_awesome,
-                  title: 'Vimaṃsa',
-                  subtitle: 'Investigation & exploration',
+                  title: loc.vimamsa,
+                  subtitle: loc.investigationExploration,
                   onTap: () => _closeAndGo(context, '/ai-qa'),
                   selected: _isRouteActive(context, '/ai-qa'),
                 ),
@@ -232,7 +234,7 @@ class _MainDrawerState extends State<MainDrawer> {
                       color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
                     label: Text(
-                      'Feedback',
+                      loc.feedback,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                       ),
@@ -250,7 +252,7 @@ class _MainDrawerState extends State<MainDrawer> {
                       color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
                     label: Text(
-                      'Settings',
+                      loc.settings,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                       ),

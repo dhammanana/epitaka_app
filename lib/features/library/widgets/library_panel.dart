@@ -7,6 +7,7 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -26,11 +27,11 @@ class LibraryPanel extends ConsumerStatefulWidget {
 class _LibraryPanelState extends ConsumerState<LibraryPanel> {
   int _selectedIndex = 0;
 
-  static const _tabs = ['Browse', 'Reading', 'Bookmarks'];
-
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final tabs = [loc.browse, loc.reading, loc.bookmarks];
 
     return Column(
       children: [
@@ -47,7 +48,7 @@ class _LibraryPanelState extends ConsumerState<LibraryPanel> {
             ),
             child: Row(
               children: [
-                for (final (i, label) in _tabs.indexed)
+                for (final (i, label) in tabs.indexed)
                   Expanded(
                     child: GestureDetector(
                       onTap: () => setState(() => _selectedIndex = i),
@@ -80,9 +81,9 @@ class _LibraryPanelState extends ConsumerState<LibraryPanel> {
                               Padding(
                                 padding: const EdgeInsets.only(right: 4),
                                 child: Icon(
-                                  label == 'Browse'
+                                  i == 0
                                       ? Icons.menu_book
-                                      : label == 'Reading'
+                                      : i == 1
                                           ? Icons.tab
                                           : Icons.bookmark,
                                   size: 12,
@@ -141,6 +142,7 @@ class _ReadingTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tabsState = ref.watch(readerTabsProvider);
+    final loc = AppLocalizations.of(context);
 
     if (tabsState.isEmpty) {
       return Center(
@@ -150,7 +152,7 @@ class _ReadingTab extends ConsumerWidget {
             Icon(Icons.tab, size: 32, color: colors.outlineVariant),
             const SizedBox(height: AppDimensions.sm),
             Text(
-              'No books open yet.',
+              loc.noBooksOpenShort,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -168,7 +170,7 @@ class _ReadingTab extends ConsumerWidget {
           child: Row(
             children: [
               Text(
-                'Open Tabs',
+                loc.openTabs,
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.primary,
                   fontWeight: FontWeight.w600,
@@ -272,6 +274,7 @@ class _BookmarksTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookmarksAsync = ref.watch(bookmarksProvider);
+    final loc = AppLocalizations.of(context);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
@@ -281,7 +284,7 @@ class _BookmarksTab extends ConsumerWidget {
           child: Row(children: [
             Icon(Icons.bookmark, size: 14, color: colors.primary),
             const SizedBox(width: 6),
-            Text('Bookmarks',
+            Text(loc.bookmarks,
                 style: AppTypography.labelMedium.copyWith(
                     color: colors.primary, fontWeight: FontWeight.w600)),
           ]),
@@ -293,7 +296,7 @@ class _BookmarksTab extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(16),
-            child: Text('Error: $e',
+            child: Text(loc.errorMessage('$e'),
                 style: AppTypography.labelSmall.copyWith(color: colors.error)),
           ),
           data: (bookmarks) {
@@ -301,7 +304,7 @@ class _BookmarksTab extends ConsumerWidget {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Center(
-                  child: Text('No bookmarks yet.',
+                  child: Text(loc.noBookmarksShort,
                       style: AppTypography.labelSmall.copyWith(
                           color: colors.onSurfaceVariant)),
                 ),
@@ -339,15 +342,16 @@ class _BookmarksTab extends ConsumerWidget {
 
   void _confirmDeleteBookmark(
       BuildContext context, WidgetRef ref, int id, String name) {
+    final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Bookmark?'),
-        content: Text('Delete bookmark "$name"?'),
+        title: Text(loc.removeBookmark),
+        content: Text(loc.deleteBookmarkConfirm(name)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel')),
+              child: Text(loc.cancel)),
           FilledButton(
             onPressed: () {
               Navigator.of(ctx).pop();
@@ -359,7 +363,7 @@ class _BookmarksTab extends ConsumerWidget {
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Delete'),
+            child: Text(loc.delete),
           ),
         ],
       ),

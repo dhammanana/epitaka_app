@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../models/ai_qa_models.dart';
@@ -27,7 +28,6 @@ import '../widgets/mention_index_build_dialog.dart';
 import '../widgets/mention_overlay.dart';
 
 const _featureName = 'Vimaṃsa';
-const _featureSubtitle = 'Investigation & Exploration';
 
 class VimamsaScreen extends ConsumerStatefulWidget {
   final String? initialThreadId;
@@ -271,7 +271,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(Icons.menu, color: colors.onSurfaceVariant),
-          tooltip: 'Navigation menu',
+          tooltip: AppLocalizations.of(context).navigationMenu,
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: Row(
@@ -312,7 +312,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                   Text(
                     currentThreadTitle.isNotEmpty
                         ? currentThreadTitle
-                        : _featureSubtitle,
+                        : AppLocalizations.of(context).investigationExploration,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                       fontSize: 10,
@@ -328,7 +328,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
           // History button
           IconButton(
             icon: Icon(Icons.history, size: 20, color: colors.onSurfaceVariant),
-            tooltip: 'Chat history',
+            tooltip: AppLocalizations.of(context).chatHistory,
             onPressed: _showHistorySheet,
           ),
           // New chat button
@@ -338,7 +338,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               size: 20,
               color: colors.onSurfaceVariant,
             ),
-            tooltip: 'New chat',
+            tooltip: AppLocalizations.of(context).newChat,
             onPressed: _startNewChat,
           ),
           if (messages.isNotEmpty)
@@ -348,7 +348,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 size: 20,
                 color: colors.onSurfaceVariant,
               ),
-              tooltip: 'Clear chat',
+              tooltip: AppLocalizations.of(context).clearChat,
               onPressed: () {
                 ref.read(aiQaProvider.notifier).clearChat();
               },
@@ -359,7 +359,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               color: settings.isValid ? colors.onSurfaceVariant : Colors.orange,
               size: 20,
             ),
-            tooltip: 'Vimaṃsa Settings',
+            tooltip: AppLocalizations.of(context).vimamsaSettings,
             onPressed: () => showAiQaSettingsSheet(context),
           ),
         ],
@@ -451,8 +451,8 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
           Expanded(
             child: Text(
               _mentionIndexBuilding
-                  ? 'Building heading index…'
-                  : 'Heading index needed for @ — build now?',
+                  ? AppLocalizations.of(context).buildingHeadingIndex
+                  : AppLocalizations.of(context).headingIndexNeeded,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onTertiaryContainer,
                 fontSize: 11,
@@ -474,7 +474,10 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               child: TextButton.icon(
                 onPressed: _buildMentionIndex,
                 icon: const Icon(Icons.build, size: 12),
-                label: const Text('Build', style: TextStyle(fontSize: 10)),
+                label: Text(
+                  AppLocalizations.of(context).buildShort,
+                  style: const TextStyle(fontSize: 10),
+                ),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   visualDensity: VisualDensity.compact,
@@ -502,7 +505,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 Icon(Icons.info_outline, size: 12, color: Colors.orange[700]),
                 const SizedBox(width: 6),
                 Text(
-                  '$remaining query${remaining == 1 ? '' : 's'} remaining in this thread',
+                  AppLocalizations.of(context).queriesRemainingInThread(remaining),
                   style: AppTypography.labelSmall.copyWith(
                     color: Colors.orange[700],
                     fontSize: 10,
@@ -597,7 +600,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Ask about the Tipitaka',
+                AppLocalizations.of(context).askAboutTipitakaShort,
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
@@ -605,10 +608,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Vimaṃsa — investigation through questioning.\n'
-                'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
-                'and provides detailed answers with clickable citations.\n'
-                'Each chat thread is saved — you can continue later.',
+                AppLocalizations.of(context).vimamsaIntro,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.onSurfaceVariant,
@@ -647,7 +647,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'API key required',
+                        AppLocalizations.of(context).apiKeyRequired,
                         style: AppTypography.labelMedium.copyWith(
                           color: Colors.orange[700],
                           fontWeight: FontWeight.w600,
@@ -660,14 +660,14 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 FilledButton.tonalIcon(
                   onPressed: () => showAiQaSettingsSheet(context),
                   icon: const Icon(Icons.tune, size: 18),
-                  label: const Text('Configure API Key'),
+                  label: Text(AppLocalizations.of(context).configureApiKey),
                 ),
               ],
               if (settings.isValid && !isLoading)
                 FilledButton.tonalIcon(
                   onPressed: () => _focusNode.requestFocus(),
                   icon: const Icon(Icons.chat, size: 18),
-                  label: const Text('Start asking'),
+                  label: Text(AppLocalizations.of(context).startAsking),
                 ),
 
               // History quick access
@@ -676,7 +676,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 onPressed: _showHistorySheet,
                 icon: Icon(Icons.history, size: 16, color: colors.primary),
                 label: Text(
-                  'View past conversations',
+                  AppLocalizations.of(context).viewPastConversations,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.primary,
                   ),
@@ -776,7 +776,7 @@ class _ThreadHistorySheet extends ConsumerWidget {
                     Icon(Icons.history, size: 20, color: colors.primary),
                     const SizedBox(width: 8),
                     Text(
-                      'Chat History',
+                      AppLocalizations.of(context).chatHistoryTitle,
                       style: AppTypography.headlineSmall.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.bold,
@@ -790,9 +790,9 @@ class _ThreadHistorySheet extends ConsumerWidget {
                         ref.read(aiQaProvider.notifier).startNewThread();
                       },
                       icon: const Icon(Icons.add, size: 16),
-                      label: const Text(
-                        'New Chat',
-                        style: TextStyle(fontSize: 12),
+                      label: Text(
+                        AppLocalizations.of(context).newChatTitle,
+                        style: const TextStyle(fontSize: 12),
                       ),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
@@ -828,14 +828,14 @@ class _ThreadHistorySheet extends ConsumerWidget {
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'No conversations yet',
+                                AppLocalizations.of(context).noConversationsYet,
                                 style: AppTypography.labelMedium.copyWith(
                                   color: colors.onSurfaceVariant,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Start a new chat to begin',
+                                AppLocalizations.of(context).startNewChatToBegin,
                                 style: AppTypography.labelSmall.copyWith(
                                   color: colors.onSurfaceVariant.withValues(
                                     alpha: 0.6,
@@ -860,7 +860,9 @@ class _ThreadHistorySheet extends ConsumerWidget {
                   },
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(child: Text('Error: $e')),
+                  error: (e, _) => Center(
+                    child: Text(AppLocalizations.of(context).errorMessage(e.toString())),
+                  ),
                 ),
               ),
             ],
@@ -948,7 +950,7 @@ class _ThreadHistoryTile extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Active',
+                AppLocalizations.of(context).activeLabel,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary,
                   fontSize: 9,
@@ -967,19 +969,19 @@ class _ThreadHistoryTile extends ConsumerWidget {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: const Text('Delete conversation?'),
+                      title: Text(AppLocalizations.of(context).deleteConversation),
                       content: Text(
-                        'Delete "${thread.title}" and all its messages?',
+                        AppLocalizations.of(context).deleteThreadConfirm(thread.title),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
+                          child: Text(AppLocalizations.of(context).cancel),
                         ),
                         TextButton(
                           onPressed: () => Navigator.of(ctx).pop(true),
                           child: Text(
-                            'Delete',
+                            AppLocalizations.of(context).delete,
                             style: TextStyle(color: colors.error),
                           ),
                         ),
@@ -994,13 +996,13 @@ class _ThreadHistoryTile extends ConsumerWidget {
                 }
               },
               itemBuilder: (ctx) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'delete',
                   child: Row(
                     children: [
-                      Icon(Icons.delete_outline, size: 16),
-                      SizedBox(width: 8),
-                      Text('Delete'),
+                      const Icon(Icons.delete_outline, size: 16),
+                      const SizedBox(width: 8),
+                      Text(AppLocalizations.of(context).delete),
                     ],
                   ),
                 ),
@@ -1124,7 +1126,7 @@ class _AnswerModeToggle extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Orthodox',
+                    AppLocalizations.of(context).orthodox,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -1133,8 +1135,8 @@ class _AnswerModeToggle extends ConsumerWidget {
                   ),
                   Text(
                     settings.orthodoxMode
-                        ? 'Answers use only the passages found in the Tipitaka.'
-                        : 'The AI may also use its own knowledge alongside the found passages.',
+                        ? AppLocalizations.of(context).orthodoxDesc
+                        : AppLocalizations.of(context).unorthodoxDesc,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
                       fontSize: 10,
@@ -1212,7 +1214,7 @@ class _AiQaInputBar extends ConsumerWidget {
           // Tip: @ to attach
           if (!mentionState.isActive)
             Tooltip(
-              message: 'Type @ to attach a heading',
+              message: AppLocalizations.of(context).typeAtToAttach,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 10, right: 4),
                 child: Icon(
@@ -1240,8 +1242,8 @@ class _AiQaInputBar extends ConsumerWidget {
                   style: TextStyle(color: colors.onSurface, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: isThreadFull
-                        ? 'Thread is full — start a new chat'
-                        : 'Ask about the Tipitaka, or type @ to attach a heading…',
+                        ? AppLocalizations.of(context).threadIsFull
+                        : AppLocalizations.of(context).askTipitakaOrAttach,
                     hintStyle: TextStyle(
                       color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                       fontSize: 15,

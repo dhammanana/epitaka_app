@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/utils/app_localizations.dart';
+import 'core/utils/l10n/app_strings.dart';
 import 'core/providers/settings_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/deep_links/deep_link_service.dart';
@@ -152,14 +153,13 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     super.dispose();
   }
 
-  /// Map [AppLanguage] to a Flutter [Locale].
+  /// Map [AppLanguage] to a Flutter [Locale]. Registry-driven: any
+  /// language in `AppStrings.supportedCodes` resolves to its locale code.
   Locale _resolveLocale(AppLanguage lang) {
-    switch (lang) {
-      case AppLanguage.vietnamese:
-        return const Locale('vi', 'VN');
-      default:
-        return const Locale('en', 'US');
+    if (AppStrings.supportedCodes.contains(lang.code)) {
+      return Locale(lang.code);
     }
+    return const Locale('en');
   }
 
   @override

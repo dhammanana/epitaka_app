@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/utils/app_localizations.dart';
+
 /// Shows a confirmation dialog before performing a destructive action.
 /// Returns true if the user confirmed.
 Future<bool> showConfirmActionDialog(
@@ -18,7 +20,7 @@ Future<bool> showConfirmActionDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(ctx).cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/gavesana_download_provider.dart';
@@ -90,6 +91,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
     final state = ref.watch(gavesanaProvider);
     final notifier = ref.read(gavesanaProvider.notifier);
     final assetsReady = ref.watch(gavesanaAssetsReadyProvider);
@@ -119,7 +121,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Gavesana',
+              loc.gavesana,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.onSurface,
                 fontWeight: FontWeight.bold,
@@ -137,7 +139,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                   : GestureDetector(
                       onTap: () => _navigateToSettings(context),
                       child: Tooltip(
-                        message: 'Download AI assets in Settings',
+                        message: loc.downloadAiAssetsInSettings,
                         child: Icon(
                           Icons.cloud_download,
                           size: 16,
@@ -171,11 +173,11 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
               focusNode: _focusNode,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Ask about the Tipitaka…',
+                hintText: loc.askAboutTipitaka,
                 prefixIcon: IconButton(
                   icon: Icon(Icons.search, color: colors.onSurfaceVariant),
                   onPressed: _executeSearch,
-                  tooltip: 'Search',
+                  tooltip: loc.search,
                 ),
                 suffixIcon: _queryController.text.isNotEmpty
                     ? Row(
@@ -185,14 +187,14 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                             icon: const Icon(Icons.search),
                             color: colors.primary,
                             onPressed: _executeSearch,
-                            tooltip: 'Search',
+                            tooltip: loc.search,
                           ),
                           IconButton(
                             icon: const Icon(Icons.clear),
                             onPressed: () {
                               _queryController.clear();
                             },
-                            tooltip: 'Clear',
+                            tooltip: loc.clear,
                           ),
                         ],
                       )
@@ -230,29 +232,17 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                 PopupMenuButton<int>(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  tooltip: 'Number of results',
+                  tooltip: loc.numberOfResults,
                   initialValue: _topK,
                   onSelected: (val) {
                     setState(() => _topK = val);
                     if (_queryController.text.isNotEmpty) _executeSearch();
                   },
                   itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 5,
-                      child: Text('Show 5 results'),
-                    ),
-                    const PopupMenuItem(
-                      value: 10,
-                      child: Text('Show 10 results'),
-                    ),
-                    const PopupMenuItem(
-                      value: 20,
-                      child: Text('Show 20 results'),
-                    ),
-                    const PopupMenuItem(
-                      value: 50,
-                      child: Text('Show 50 results'),
-                    ),
+                    PopupMenuItem(value: 5, child: Text(loc.showNResults(5))),
+                    PopupMenuItem(value: 10, child: Text(loc.showNResults(10))),
+                    PopupMenuItem(value: 20, child: Text(loc.showNResults(20))),
+                    PopupMenuItem(value: 50, child: Text(loc.showNResults(50))),
                   ],
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -273,7 +263,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '$_topK results',
+                          loc.nResults(_topK),
                           style: AppTypography.labelSmall.copyWith(
                             color: colors.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
@@ -303,7 +293,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                     size: 14,
                   ),
                   label: Text(
-                    notifier.isBm25IndexBuilt ? 'Rebuild BM25' : 'Build BM25',
+                    notifier.isBm25IndexBuilt ? loc.rebuildBm25 : loc.buildBm25,
                   ),
                   style: TextButton.styleFrom(
                     foregroundColor: colors.primary,
@@ -325,7 +315,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                       ),
                     ),
                     child: Text(
-                      '${notifier.results.length} result${notifier.results.length == 1 ? '' : 's'}',
+                      loc.resultsCount(notifier.results.length),
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.primary,
                         fontWeight: FontWeight.w600,
@@ -402,13 +392,14 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
   ) {
     // Initializing
     if (_initializing) {
-      return const Center(
+      final loc = AppLocalizations.of(context);
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(strokeWidth: 2),
-            SizedBox(height: 12),
-            Text('Loading Gavesana…'),
+            const CircularProgressIndicator(strokeWidth: 2),
+            const SizedBox(height: 12),
+            Text(loc.loadingGavesana),
           ],
         ),
       );
@@ -416,6 +407,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
 
     // Error state
     if (state == GavesanaState.error) {
+      final loc = AppLocalizations.of(context);
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -425,7 +417,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
               Icon(Icons.error_outline, size: 48, color: colors.error),
               const SizedBox(height: 12),
               Text(
-                notifier.errorMessage ?? 'An error occurred',
+                notifier.errorMessage ?? loc.anErrorOccurred,
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.error,
                   fontSize: 13,
@@ -441,7 +433,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                   });
                 },
                 icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Retry'),
+                label: Text(loc.retry),
               ),
             ],
           ),
@@ -453,6 +445,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     return assetsReady.when(
       data: (ready) {
         if (!ready) {
+          final loc = AppLocalizations.of(context);
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -466,7 +459,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Gavesana AI assets not found.',
+                    loc.gavesanaAssetsNotFound,
                     style: AppTypography.bodyTranslation.copyWith(
                       color: colors.onSurfaceVariant,
                       fontSize: 13,
@@ -474,7 +467,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Download them in Settings.',
+                    loc.downloadInSettingsHint,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
@@ -487,39 +480,42 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
 
         // Loading states
         if (state == GavesanaState.loadingModel) {
-          return const Center(
+          final loc = AppLocalizations.of(context);
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(strokeWidth: 2),
-                SizedBox(height: 12),
-                Text('Loading models…'),
+                const CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(height: 12),
+                Text(loc.loadingModels),
               ],
             ),
           );
         }
 
         if (state == GavesanaState.embedding) {
-          return const Center(
+          final loc = AppLocalizations.of(context);
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(strokeWidth: 2),
-                SizedBox(height: 12),
-                Text('Computing query embedding…'),
+                const CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(height: 12),
+                Text(loc.computingEmbedding),
               ],
             ),
           );
         }
 
         if (state == GavesanaState.searching) {
-          return const Center(
+          final loc = AppLocalizations.of(context);
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(strokeWidth: 2),
-                SizedBox(height: 12),
-                Text('Searching vector database…'),
+                const CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(height: 12),
+                Text(loc.searchingVectorDb),
               ],
             ),
           );
@@ -555,6 +551,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
   }
 
   Widget _buildIdleState(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -566,7 +563,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Search semantically across the Tipitaka',
+            loc.searchSemantically,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
               fontSize: 16,
@@ -576,8 +573,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
           SizedBox(
             width: 280,
             child: Text(
-              'Gavesana uses AI to find passages related to your\n'
-              'query, even if they don\'t share exact words.',
+              loc.gavesanaDesc,
               textAlign: TextAlign.center,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,

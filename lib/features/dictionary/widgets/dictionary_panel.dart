@@ -9,6 +9,7 @@ import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
@@ -154,6 +155,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Column(
       children: [
@@ -170,7 +172,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             focusNode: _focusNode,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Search Pāḷi…',
+              hintText: loc.searchPali,
               isDense: true,
               prefixIcon: Icon(
                 Icons.search,
@@ -252,6 +254,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   Widget _buildIdleState(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -263,7 +266,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
           ),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            'Dictionary',
+            loc.dictionary,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -274,6 +277,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   Widget _buildResults(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return ref
         .watch(dpdDictionaryLookupProvider(_query))
         .when(
@@ -283,7 +287,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Error: $e',
+                loc.errorMessage(e.toString()),
                 style: AppTypography.labelSmall.copyWith(color: colors.error),
               ),
             ),
@@ -298,6 +302,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   Widget _buildPrefixSuggestions(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     return ref
         .watch(dpdDictionarySearchProvider(_query))
         .when(
@@ -307,7 +312,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Error: $e',
+                loc.errorMessage(e.toString()),
                 style: AppTypography.labelSmall.copyWith(color: colors.error),
               ),
             ),
@@ -327,7 +332,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                       ),
                       const SizedBox(height: AppDimensions.sm),
                       Text(
-                        'No matches for "$_query"',
+                        loc.noMatchesForQuery(_query),
                         style: AppTypography.labelSmall.copyWith(
                           color: colors.onSurfaceVariant,
                         ),
@@ -342,7 +347,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               padding: const EdgeInsets.all(AppDimensions.sm),
               children: [
                 Text(
-                  'Did you mean…',
+                  loc.didYouMean,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -435,6 +440,7 @@ class _DpdSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final loc = AppLocalizations.of(context);
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final paliFontFamily = pali.fontFamily.fontFamily;
@@ -446,7 +452,7 @@ class _DpdSection extends ConsumerWidget {
             Icon(Icons.auto_stories, size: 14, color: colors.primary),
             const SizedBox(width: 4),
             Text(
-              'DPD Dictionary',
+              loc.dpdDictionary,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w700,

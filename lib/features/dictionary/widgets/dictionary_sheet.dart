@@ -10,6 +10,7 @@ import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -325,7 +326,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                   autofocus: _shouldAutofocus,
                                   textInputAction: TextInputAction.search,
                                   decoration: InputDecoration(
-                                    hintText: 'Search Pāḷi…',
+                                    hintText: AppLocalizations.of(context).searchPali,
                                     prefixIcon: Icon(
                                       Icons.search,
                                       color: colors.onSurfaceVariant,
@@ -458,7 +459,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           ),
           const SizedBox(height: AppDimensions.md),
           Text(
-            'Dictionary',
+            AppLocalizations.of(context).dictionary,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.onSurfaceVariant,
               fontSize: paliSize,
@@ -466,7 +467,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           ),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            'Search for a Pāḷi word to see\ndefinitions across multiple dictionaries',
+            AppLocalizations.of(context).dictIdlePrompt,
             textAlign: TextAlign.center,
             style: AppTypography.bodyTranslation.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.7),
@@ -491,7 +492,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                'Error: $e',
+                AppLocalizations.of(context).errorMessage(e.toString()),
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.error,
                 ),
@@ -527,7 +528,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                'Error: $e',
+                AppLocalizations.of(context).errorMessage(e.toString()),
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.error,
                 ),
@@ -549,7 +550,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       ),
                       const SizedBox(height: AppDimensions.md),
                       Text(
-                        'No matches found for "$_query"',
+                        AppLocalizations.of(context).noMatchesFoundForQuery(_query),
                         style: AppTypography.bodyTranslation.copyWith(
                           color: colors.onSurfaceVariant,
                         ),
@@ -573,7 +574,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       0,
                     ),
                     child: Text(
-                      'Did you mean…',
+                      AppLocalizations.of(context).didYouMean,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                         fontSize: transSize,
@@ -732,7 +733,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               Icon(Icons.auto_stories, size: 16, color: colors.primary),
               const SizedBox(width: 6),
               Text(
-                'dpd dictionary',
+                AppLocalizations.of(context).dpdDictionary,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.primary,
                   fontWeight: FontWeight.w700,
@@ -796,7 +797,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             Icon(Icons.call_split, size: 14, color: colors.onSurfaceVariant),
             const SizedBox(width: 6),
             Text(
-              'Compound breakdown',
+              AppLocalizations.of(context).compoundBreakdown,
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
@@ -1029,7 +1030,9 @@ class _SheetPinButton extends ConsumerWidget {
         right.openPanel == SidePanelType.dictionary && right.isPinned;
 
     return Tooltip(
-      message: isPinned ? 'Unpin from side panel' : 'Pin to side panel',
+      message: isPinned
+          ? AppLocalizations.of(context).unpinFromSidePanel
+          : AppLocalizations.of(context).pinToSidePanel,
       child: InkWell(
         onTap: () {
           final notifier = ref.read(sidePanelProvider.notifier);
