@@ -20,7 +20,9 @@ const _kPrefsKey = 'ai_qa_settings';
 /// StateNotifier that manages [AiQaSettings] with SharedPreferences
 /// persistence.
 class AiQaSettingsNotifier extends StateNotifier<AiQaSettings> {
-  AiQaSettingsNotifier() : super(const AiQaSettings());
+  AiQaSettingsNotifier() : super(const AiQaSettings()) {
+    load();
+  }
 
   /// Load settings from SharedPreferences. Call once at startup.
   Future<void> load() async {
