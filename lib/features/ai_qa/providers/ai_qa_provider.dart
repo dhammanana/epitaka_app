@@ -723,7 +723,11 @@ $grounding''';
 
     try {
       // ── 1. Validate settings ────────────────────────────────────
-      final settings = _ref.read(aiQaSettingsProvider);
+      var settings = _ref.read(aiQaSettingsProvider);
+      if (!settings.isValid) {
+        await _ref.read(aiQaSettingsProvider.notifier).load();
+        settings = _ref.read(aiQaSettingsProvider);
+      }
       if (!settings.isValid) {
         state = state.copyWith(
           isLoading: false,

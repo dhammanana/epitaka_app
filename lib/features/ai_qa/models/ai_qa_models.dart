@@ -152,9 +152,8 @@ class AiQaSettings {
   });
 
   bool get isValid {
-    if (apiKey.isEmpty) return false;
-    if (provider == AiProvider.gemini) return apiKey.startsWith('AI');
-    return apiKey.length >= 20;
+    final trimmed = apiKey.trim();
+    return trimmed.length >= 5;
   }
 
   AiQaSettings copyWith({
