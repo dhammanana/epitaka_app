@@ -32,6 +32,27 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "environment"
+
+    productFlavors {
+        // Dev flavor: a SEPARATE app (com.dn.epitaka.dev, "-dev" version) so
+        // it can coexist with the production app on the same device.
+        // Run it with: flutter run --flavor dev
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
+        // Production flavor: plain app id/version. The CI workflow MUST build
+        // with `--flavor prod` — once flavors are declared, a bare
+        // `flutter build appbundle --release` emits AABs under
+        // bundle/<Flavor>Release/ (e.g. bundle/prodRelease/) and the Flutter
+        // tool then fails because it looks for bundle/release/.
+        create("prod") {
+            dimension = "environment"
+        }
+    }
+
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties.getProperty("keyAlias")
@@ -42,20 +63,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            // Dev/debug installs get a distinct app id (com.dn.epitaka.dev)
-            // so they can coexist with the Play Store release on the same
-            // device. This is a build-type suffix, NOT a product flavor — a
-            // flavor would rename the release variant to "devRelease" and
-            // break `flutter build appbundle --release` (the Flutter tool
-            // then can't find app-release.aab under bundle/release/).
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-        }
-        // NOTE: a `profile` build type cannot be configured here — `profile`
-        // collides with a Kotlin DSL extension on NamedDomainObjectContainer
-        // and fails script compilation. Flutter's implicit profile build type
-        // is used as-is (no .dev suffix).
         release {
             signingConfig = signingConfigs.getByName("release")
         }

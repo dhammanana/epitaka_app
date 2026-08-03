@@ -84,18 +84,22 @@ jobs:
           find /tmp/dpd_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
           ls -la android/packs/core_db/src/main/assets/
 
-      - name: Build Android App Bundle
-        run: flutter build appbundle --release
+      - name: Build Android App Bundle (prod flavor)
+        # MUST pass --flavor prod: now that product flavors are declared in
+        # android/app/build.gradle.kts, a bare `flutter build appbundle
+        # --release` emits AABs under bundle/<Flavor>Release/ and the Flutter
+        # tool fails to find them at bundle/release/.
+        run: flutter build appbundle --release --flavor prod
 
-      - name: Build Android APK
-        run: flutter build apk --release
+      - name: Build Android APK (prod flavor)
+        run: flutter build apk --release --flavor prod
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: |
-            build/app/outputs/bundle/release/*.aab
+            build/app/outputs/bundle/prodRelease/*.aab
             build/app/outputs/flutter-apk/*.apk
   # -------------------------------------------------------------
   # 2. iOS BUILD

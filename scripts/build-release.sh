@@ -15,4 +15,4 @@ sed -i '' -E "s/^version: (.*)\+[0-9]+/version: \1+$NEXT/" "$PUBSPEC"
 
 echo "Building version with build number: $NEXT"
 
-flutter build appbundle --release
+flutter build appbundle --release --flavor prod
