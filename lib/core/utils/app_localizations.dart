@@ -72,9 +72,6 @@ class AppLocalizations {
   String get appearanceSubtitle => _t('Theme & accent');
   String get dataAndContent => _t('Data & Content');
   String get translationsDownloads => _t('Translations & Downloads');
-  String get translationDisplay => _t('Translation Display');
-  String get translationDisplaySubtitle =>
-      _t('Layout, mode & typography');
   String get readingPreferences => _t('Reading Preferences');
   String get readingOptions => _t('Reading Options');
   String get readingOptionsSubtitle =>
@@ -333,6 +330,14 @@ class AppLocalizations {
   String get systemDefault => _t('System Default');
   String get config => _t('Config');
   String get ttsLanguageLabel2 => _t('TTS Language');
+  String get quality => _t('Quality');
+  String get qualitySubtitle => _t(
+    'Synthesis quality — higher sounds better but is slower',
+  );
+  String get medium => _t('Medium');
+  String get ttsLanguageAutoNote => _t(
+    'Follows the reading language (first enabled translation)',
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN

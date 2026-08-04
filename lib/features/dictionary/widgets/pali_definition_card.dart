@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/providers/pali_definition_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
@@ -183,10 +184,27 @@ class PaliDefinitionCard extends ConsumerWidget {
     );
   }
 
+  /// A faded context line (before/after the main sentence) rendered with
+  /// `Html` so inline markup like `<b>` / `<i>` is honoured, matching the
+  /// main Pāli sentence and translation above.
   Widget _contextLine(String line, TextStyle style) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: Text(line, style: style),
+      child: Html(
+        data: line,
+        style: {
+          'body': Style(
+            margin: Margins.zero,
+            padding: HtmlPaddings.zero,
+            fontSize: FontSize(style.fontSize ?? 11),
+            lineHeight: LineHeight(style.height ?? 1.4),
+            color: style.color,
+            fontFamily: style.fontFamily,
+          ),
+          'b': Style(fontWeight: FontWeight.bold),
+          'i': Style(fontStyle: FontStyle.italic),
+        },
+      ),
     );
   }
 
@@ -206,8 +224,15 @@ class PaliDefinitionCard extends ConsumerWidget {
   }
 }
 
+/// Number of `pali_definition` cards shown before the "Show more" button.
+const int _paliDefinitionInitialCount = 3;
+
 /// Section wrapper that loads and displays pali_definition results for a word.
-class PaliDefinitionSection extends ConsumerWidget {
+///
+/// Results are sorted by the provider so the closest words appear first;
+/// only the first [_paliDefinitionInitialCount] cards are shown by default,
+/// with a "Show more" button to reveal the rest.
+class PaliDefinitionSection extends ConsumerStatefulWidget {
   final String searchWord;
   final String bookName;
   final ColorScheme colors;
@@ -220,8 +245,26 @@ class PaliDefinitionSection extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final resultsAsync = ref.watch(paliDefinitionProvider(searchWord));
+  ConsumerState<PaliDefinitionSection> createState() =>
+      _PaliDefinitionSectionState();
+}
+
+class _PaliDefinitionSectionState extends ConsumerState<PaliDefinitionSection> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant PaliDefinitionSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A new search word starts collapsed again.
+    if (oldWidget.searchWord != widget.searchWord) {
+      _expanded = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final resultsAsync = ref.watch(paliDefinitionProvider(widget.searchWord));
+    final colors = widget.colors;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -248,14 +291,35 @@ class PaliDefinitionSection extends ConsumerWidget {
         error: (_, _) => const SizedBox.shrink(),
         data: (results) {
           if (results.isEmpty) return const SizedBox.shrink();
+
+          final visible = _expanded
+              ? results
+              : results.take(_paliDefinitionInitialCount).toList();
+          final hiddenCount = results.length - visible.length;
+          // Show the toggle whenever there is something to collapse back
+          // (i.e. when expanded, or when hidden cards remain collapsed).
+          final showToggle = _expanded || hiddenCount > 0;
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _header(),
               const SizedBox(height: 4),
-              ...results.map(
+              ...visible.map(
                 (r) => PaliDefinitionCard(result: r, colors: colors),
               ),
+              if (showToggle)
+                _PaliMoreButton(
+                  label: _expanded
+                      ? AppLocalizations.of(context).lessLabel
+                      : AppLocalizations.of(context)
+                            .showNMore(hiddenCount),
+                  icon: _expanded
+                      ? Icons.expand_less
+                      : Icons.expand_more,
+                  colors: colors,
+                  onTap: () => setState(() => _expanded = !_expanded),
+                ),
             ],
           );
         },
@@ -265,16 +329,70 @@ class PaliDefinitionSection extends ConsumerWidget {
 
   Widget _header() => Row(
     children: [
-      Icon(Icons.auto_stories, size: 12, color: colors.onSurfaceVariant),
+      Icon(Icons.auto_stories, size: 12, color: widget.colors.onSurfaceVariant),
       const SizedBox(width: 4),
       Text(
-        bookName,
+        widget.bookName,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
-          color: colors.onSurfaceVariant,
+          color: widget.colors.onSurfaceVariant,
         ),
       ),
     ],
   );
+}
+
+/// A compact "Show N more" / "Less" toggle for the pali_definition section.
+class _PaliMoreButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final ColorScheme colors;
+  final VoidCallback onTap;
+
+  const _PaliMoreButton({
+    required this.label,
+    required this.icon,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: SelectionContainer.disabled(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.outlineVariant.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: colors.outlineVariant.withValues(alpha: 0.3),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: colors.onSurfaceVariant),
+                const SizedBox(width: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

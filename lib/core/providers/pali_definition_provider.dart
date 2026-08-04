@@ -1,12 +1,47 @@
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../utils/pali_stemmer.dart';
 import 'database_provider.dart';
 import 'settings_provider.dart';
+
+// ── Search prefix ─────────────────────────────────────────────────────────
+
+/// Pāli vowels (short + long). Used to trim the search word into a prefix.
+const String _paliVowels = 'aāiīuūeo';
+
+/// Maximum number of distinct matched words kept for a search (closest
+/// words first). Variant forms (e.g. the sandhi "gacchatīti") are guaranteed
+/// a slot even when the exact word has hundreds of occurrences.
+const int _maxPaliDefinitionWords = 25;
+
+/// Maximum number of canon occurrences shown per distinct word.
+const int _maxPaliDefinitionPerWord = 5;
+
+/// Build the prefix used to search `pali_definition.word` for [word].
+///
+/// The canon may spell a word slightly differently from the searched
+/// lemma (e.g. the sandhi form "gacchatīti" for "gacchati"). To catch
+/// those variants we stem the word, then — when the result is longer than
+/// 5 characters — drop the trailing vowel so a prefix search (`gacchat%`)
+/// also matches closely-related forms.
+String paliDefinitionSearchPrefix(String word) {
+  var prefix = PaliStemmer.getStem(word.trim().toLowerCase());
+  if (prefix.length > 5 && _paliVowels.contains(prefix[prefix.length - 1])) {
+    prefix = prefix.substring(0, prefix.length - 1);
+  }
+  return prefix;
+}
 
 // ── Data models ────────────────────────────────────────────────────────────
 
 /// A single row from the `pali_definition` table.
+///
+/// NOTE: The `pali_definition` table shipped in the core DB has the columns
+/// `book_id, para_id, line_id, word, plain, ending` — there is NO `stem`
+/// column. Selecting a non-existent column makes the whole query fail
+/// (`no such column: stem`), which the section widget silently swallows,
+/// hiding the Bold Definition results entirely.
 class PaliDefinitionEntry {
   final String bookId;
   final int paraId;
@@ -14,7 +49,6 @@ class PaliDefinitionEntry {
   final String word;
   final String plain;
   final String? ending;
-  final String stem;
 
   const PaliDefinitionEntry({
     required this.bookId,
@@ -23,7 +57,6 @@ class PaliDefinitionEntry {
     required this.word,
     required this.plain,
     this.ending,
-    required this.stem,
   });
 
   factory PaliDefinitionEntry.fromRow(Map<String, dynamic> row) {
@@ -34,7 +67,6 @@ class PaliDefinitionEntry {
       word: row['word'] as String,
       plain: row['plain'] as String,
       ending: row['ending'] as String?,
-      stem: row['stem'] as String,
     );
   }
 }
@@ -87,11 +119,38 @@ final paliDefinitionProvider = FutureProvider.autoDispose
           ? settings.enabledTranslations.toList()
           : [settings.primaryTranslationLang];
 
+      // Prefix search (not exact) so the word is found even when the canon
+      // spells it differently (e.g. searching "gacchati" also matches the
+      // sandhi form "gacchatīti"). Rows are picked shortest-first so the
+      // closest words survive the row limit: we rank distinct words by
+      // (length, word) and keep at most [_maxPaliDefinitionWords] of them,
+      // each with up to [_maxPaliDefinitionPerWord] canon occurrences.
+      final prefix = paliDefinitionSearchPrefix(trimmed);
+      if (prefix.isEmpty) return [];
+
       final rows = await db
           .customSelect(
-            'SELECT book_id, para_id, line_id, word, plain, ending, stem '
-            'FROM pali_definition WHERE word = ? LIMIT 20',
-            variables: [Variable.withString(trimmed)],
+            'WITH ranked AS ( '
+            '  SELECT book_id, para_id, line_id, word, plain, ending, '
+            '         DENSE_RANK() OVER ('
+            '           ORDER BY length(word), word) AS word_rank, '
+            '         ROW_NUMBER() OVER ('
+            '           PARTITION BY word ORDER BY book_id, para_id, line_id) AS rn '
+            '  FROM pali_definition WHERE word LIKE ? '
+            ') '
+            'SELECT book_id, para_id, line_id, word, plain, ending '
+            'FROM ranked '
+            // The exact word is always included even when it is long enough
+            // to fall outside the closest-words cap (e.g. searching the
+            // sandhi form itself); variants fill the remaining slots.
+            'WHERE (word_rank <= ? OR word = ?) AND rn <= ? '
+            'ORDER BY length(word), word, book_id, para_id, line_id',
+            variables: [
+              Variable.withString('$prefix%'),
+              Variable.withInt(_maxPaliDefinitionWords),
+              Variable.withString(trimmed),
+              Variable.withInt(_maxPaliDefinitionPerWord),
+            ],
           )
           .get();
 
@@ -158,7 +217,7 @@ final paliDefinitionProvider = FutureProvider.autoDispose
             final lid = r.data['line_id'] as int;
             final text = (r.data['translation'] as String?) ?? '';
             if (text.trim().isEmpty) continue;
-            final key = '$pid' + ':' + '$lid';
+            final key = '$pid:$lid';
             // Keep the first (highest-priority) language's translation.
             translationByLine.putIfAbsent(key, () => text);
           }
@@ -195,6 +254,26 @@ final paliDefinitionProvider = FutureProvider.autoDispose
           }
         }
       }
+
+      // Closest words first: exact matches, then by word length (shortest =
+      // nearest to the searched term — e.g. "gacchatīti" before the
+      // two-word combination "gacchati buddhaṃ"), then alphabetically,
+      // then canon location.
+      results.sort((a, b) {
+        final aExact = a.entry.word == trimmed ? 0 : 1;
+        final bExact = b.entry.word == trimmed ? 0 : 1;
+        if (aExact != bExact) return aExact - bExact;
+        final lenCmp = a.entry.word.length.compareTo(b.entry.word.length);
+        if (lenCmp != 0) return lenCmp;
+        final wordCmp = a.entry.word.compareTo(b.entry.word);
+        if (wordCmp != 0) return wordCmp;
+        final bookCmp = a.entry.bookId.compareTo(b.entry.bookId);
+        if (bookCmp != 0) return bookCmp;
+        if (a.entry.paraId != b.entry.paraId) {
+          return a.entry.paraId - b.entry.paraId;
+        }
+        return a.entry.lineId - b.entry.lineId;
+      });
 
       return results;
     });

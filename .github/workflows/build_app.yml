@@ -89,10 +89,14 @@ jobs:
         # android/app/build.gradle.kts, a bare `flutter build appbundle
         # --release` emits AABs under bundle/<Flavor>Release/ and the Flutter
         # tool fails to find them at bundle/release/.
-        run: flutter build appbundle --release --flavor prod
+        #
+        # --target-platform android-arm64: sqlite_vector 1.0.0 only ships an
+        # arm64-v8a Android binary; without this the native-assets hook fails
+        # looking for vector_android_arm.so (see android/app/build.gradle.kts).
+        run: flutter build appbundle --release --flavor prod --target-platform android-arm64
 
       - name: Build Android APK (prod flavor)
-        run: flutter build apk --release --flavor prod
+        run: flutter build apk --release --flavor prod --target-platform android-arm64
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4

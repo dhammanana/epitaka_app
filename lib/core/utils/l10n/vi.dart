@@ -85,8 +85,6 @@ const Map<String, String> vi = {
   'Theme & accent': 'Chủ đề & màu sắc',
   'Data & Content': 'Dữ liệu & Nội dung',
   'Translations & Downloads': 'Bản dịch & Tải về',
-  'Translation Display': 'Hiển thị bản dịch',
-  'Layout, mode & typography': 'Bố cục, chế độ & kiểu chữ',
   'Reading Preferences': 'Tùy chỉnh đọc',
   'Reading Options': 'Tùy chọn đọc',
   'Layout, numbering & scroll': 'Bố cục, đánh số & cuộn',
@@ -280,6 +278,12 @@ const Map<String, String> vi = {
   'System Default': 'Mặc định hệ thống',
   'Config': 'Cấu hình',
   'TTS Language': 'Ngôn ngữ TTS',
+  'Quality': 'Chất lượng',
+  'Synthesis quality — higher sounds better but is slower':
+      'Chất lượng tổng hợp — cao hơn nghe hay hơn nhưng chậm hơn',
+  'Medium': 'Trung bình',
+  'Follows the reading language (first enabled translation)':
+      'Theo ngôn ngữ đang đọc (bản dịch được bật đầu tiên)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

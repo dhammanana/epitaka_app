@@ -30,6 +30,24 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // sqlite_vector 1.0.0 only ships a prebuilt Android binary for
+        // arm64-v8a (native_libraries/android/vector_android_arm64.so).
+        // Without this filter the default build targets armeabi-v7a and
+        // x86_64 as well, and the package's native-assets hook fails with
+        // "Pre-built binary not found: vector_android_arm.so". arm64-v8a
+        // covers all modern devices (Google Play has required 64-bit
+        // support since Aug 2019).
+        //
+        // If other ABIs are ever needed, the missing binaries can be
+        // fetched from the sqlite-vector GitHub release (tag 1.0.0):
+        //   vector-android-armeabi-v7a-1.0.0.zip  -> vector_android_arm.so
+        //   vector-android-x86_64-1.0.0.zip       -> vector_android_x64.so
+        // extracted into the pub cache package dir at
+        //   ~/.pub-cache/hosted/pub.dev/sqlite_vector-1.0.0/native_libraries/android/
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     flavorDimensions += "environment"

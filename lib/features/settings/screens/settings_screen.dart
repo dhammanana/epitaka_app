@@ -87,12 +87,6 @@ class SettingsScreen extends ConsumerWidget {
                 title: loc.translationsDownloads,
                 onTap: () => context.push('/settings/translation'),
               ),
-              _SettingsTile(
-                icon: Icons.translate,
-                title: loc.translationDisplay,
-                subtitle: loc.translationDisplaySubtitle,
-                onTap: () => context.push('/settings/translation'),
-              ),
             ],
           ),
 

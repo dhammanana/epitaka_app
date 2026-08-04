@@ -87,8 +87,6 @@ const Map<String, String> en = {
   'Theme & accent': 'Theme & accent',
   'Data & Content': 'Data & Content',
   'Translations & Downloads': 'Translations & Downloads',
-  'Translation Display': 'Translation Display',
-  'Layout, mode & typography': 'Layout, mode & typography',
   'Reading Preferences': 'Reading Preferences',
   'Reading Options': 'Reading Options',
   'Layout, numbering & scroll': 'Layout, numbering & scroll',
@@ -282,6 +280,12 @@ const Map<String, String> en = {
   'System Default': 'System Default',
   'Config': 'Config',
   'TTS Language': 'TTS Language',
+  'Quality': 'Quality',
+  'Synthesis quality — higher sounds better but is slower':
+      'Synthesis quality — higher sounds better but is slower',
+  'Medium': 'Medium',
+  'Follows the reading language (first enabled translation)':
+      'Follows the reading language (first enabled translation)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

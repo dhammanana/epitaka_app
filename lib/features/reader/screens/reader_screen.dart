@@ -193,6 +193,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // App lifecycle state for background TTS optimization
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
+  /// Reader display mode before TTS started, restored when reading stops.
+  ///
+  /// TTS temporarily forces [TranslationDisplayMode.lineByLine] because it
+  /// is the only display mode that renders per-line widgets — and therefore
+  /// the only one where the per-line GlobalKeys used by the fine-scroll
+  /// ([_fineScrollToLine]) can be attached. null = TTS is not forcing a mode.
+  TranslationDisplayMode? _ttsModeBefore;
+
   // Silverbar: collapsible app bar on scroll
   // Using ValueNotifier so only the app bar/toolbar rebuild, not the full screen.
   final ValueNotifier<bool> _appBarCollapsed = ValueNotifier(false);
@@ -740,16 +748,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           (l) => l.lineId == effectiveLineId,
         );
         if (lineIndex >= 0 && para.lines.length > 1) {
-          // Invert: early lines (top of paragraph) need HIGHER
-          // alignment to push the paragraph down so the first line
-          // appears in the upper portion of the viewport, not at
-          // center. Late lines need LOWER alignment to push the
-          // paragraph up so the last line stays visible.
-          //   first line → 0.65 (upper ~third)
-          //   middle     → 0.50 (centered)
-          //   last line  → 0.35 (lower ~third)
+          // Place the target line near the top ~third of the viewport so
+          // the spoken line is always built & visible, then the per-line
+          // fine-scroll (Scrollable.ensureVisible alignment 0.3) corrects
+          // to exactly 30%. For a paragraph roughly one screen tall the
+          // line at fraction f sits at a*H_v + f*H_p, so choosing
+          // a = 0.3 - f lands it at ~30% regardless of f (clamped so the
+          // paragraph top never drops below the viewport top).
+          //   first line → 0.30 (line at ~30% from top)
+          //   middle     → ~0.15
+          //   last line  → 0.0  (paragraph top at viewport top)
           final lineFraction = lineIndex / (para.lines.length - 1);
-          return (0.65 - lineFraction * 0.3).clamp(0.0, 1.0);
+          return (0.3 - lineFraction).clamp(0.0, 0.3);
         }
       }
       return alignment;
@@ -2091,6 +2101,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       TtsReadingState? prev,
       TtsReadingState next,
     ) {
+      // Auto-switch the reader to line-by-line while TTS plays — it is the
+      // only display mode that renders per-line widgets (and thus per-line
+      // GlobalKeys for the fine-scroll), so the spoken line can be followed
+      // precisely. Restore the previous mode when reading stops.
+      final wasActive = prev?.isActive ?? false;
+      final isActive = next.isActive;
+      if (isActive && !wasActive && _ttsModeBefore == null) {
+        _ttsModeBefore = ref.read(settingsProvider).translationDisplayMode;
+        if (_ttsModeBefore != TranslationDisplayMode.lineByLine) {
+          // Temporary (non-persisting) override so the user's saved mode
+          // is untouched even if this is never undone.
+          ref
+              .read(settingsProvider.notifier)
+              .setTranslationDisplayModeTemporary(
+                TranslationDisplayMode.lineByLine,
+              );
+        }
+      } else if (!isActive && wasActive && _ttsModeBefore != null) {
+        final currentMode = ref.read(settingsProvider).translationDisplayMode;
+        // Respect a manual display-mode change made during playback;
+        // otherwise restore what the reader used before TTS started.
+        if (currentMode == TranslationDisplayMode.lineByLine ||
+            currentMode == _ttsModeBefore) {
+          ref.read(settingsProvider.notifier).setTranslationDisplayModeTemporary(
+            _ttsModeBefore!,
+          );
+        }
+        _ttsModeBefore = null;
+      }
+
       final prevParaId = prev?.currentParaId;
       final nextParaId = next.currentParaId;
       final prevLineId = prev?.currentLineId;
@@ -2127,6 +2167,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           name: 'epitaka.tts',
         );
         if (mounted) setState(() {});
+        return;
+      }
+
+      // Same-paragraph line change: the paragraph is already on screen, so a
+      // full paragraph-level re-scroll would re-anchor it at a new alignment
+      // (causing visible jumping / the "line not following" effect). Instead
+      // fine-scroll directly to the new line via its GlobalKey.
+      if (!paraChanged && nextLineId != null) {
+        final ttsSyncNotifier =
+            ref.read(ttsSyncProvider(currentBookId).notifier);
+        ttsSyncNotifier.setJumpInProgress();
+        ttsSyncNotifier.clearTargetLineKeys();
+        ttsSyncNotifier.setTargetParaId(nextParaId);
+        ttsSyncNotifier.setTargetLineKey(nextLineId, GlobalKey());
+        if (mounted) setState(() {});
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final jumpToken = (_jumpTokens[currentBookId] ?? 0) + 1;
+          _jumpTokens[currentBookId] = jumpToken;
+          developer.log(
+            '[TTS_UI] fine-scroll same-para to line=$nextLineId '
+            'token=$jumpToken',
+            name: 'epitaka.tts',
+          );
+          _fineScrollToLine(currentBookId, nextLineId, jumpToken: jumpToken);
+        });
         return;
       }
 

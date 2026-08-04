@@ -59,6 +59,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   double _cachedRate = -1.0;  // sentinel — never a valid rate
   double _cachedPitch = -1.0;
   String _cachedLanguage = '';
+  String _cachedVoice = '';
 
   TtsNotifier(this._ref) : super(TtsPlaybackState.stopped);
 
@@ -339,6 +340,34 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       _cachedLanguage = ttsLocale;
     }
 
+    // TTS voice — apply the user's chosen voice from the system voice
+    // list, if one is set. Voices come from [getVoices] (name + locale).
+    // Only re-apply when the voice name actually changed to avoid
+    // redundant platform calls per line.
+    final voiceName = settings.ttsVoice;
+    if (voiceName.isNotEmpty &&
+        voiceName != 'default' &&
+        voiceName != _cachedVoice) {
+      try {
+        final voices = await getVoices();
+        final match = voices.where((v) => v['name'] == voiceName);
+        if (match.isNotEmpty) {
+          await tts.setVoice(match.first);
+          _cachedVoice = voiceName;
+          developer.log('[TTS] Applied system voice "$voiceName"',
+              name: 'epitaka.tts');
+        } else {
+          developer.log(
+            '[TTS] Voice "$voiceName" not found in system voices — '
+            'keeping default',
+            name: 'epitaka.tts',
+          );
+        }
+      } catch (e) {
+        developer.log('[TTS] setVoice failed: $e', name: 'epitaka.tts');
+      }
+    }
+
     // Set completion handler with speech-ID guard to prevent stale
     // completions from resolving the wrong line's completer.
     tts.setCompletionHandler(() {
@@ -384,10 +413,22 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     await tts.speak(text);
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     developer.log('[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId', name: 'epitaka.tts');
-  }
-
-/// Whether the current engine supports look-ahead synthesis.
+  }  /// Whether the current engine supports look-ahead synthesis.
   bool get supportsPrefetch => _engineType == TtsEngineType.supertonic;
+
+  /// Map the quality preset to Supertonic denoising steps.
+  /// Lower steps = faster synthesis on slower devices; higher = better
+  /// quality but slower. 'low'=2, 'medium'=4, 'high'=8.
+  static int _denoisingStepsForQuality(String quality) {
+    switch (quality) {
+      case 'low':
+        return 2;
+      case 'high':
+        return 8;
+      default:
+        return 4;
+    }
+  }
 
   /// Synthesize [text] via Supertonic WITHOUT playing it.
   Future<dynamic> synthesizePrepared(String text) async {
@@ -398,10 +439,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     final settings = _ref.read(settingsProvider);
     return _supertonicTts!.synthesize(
       text,
-      language: settings.ttsSupertonicLanguage,
+      // Follow the reading language (first enabled translation).
+      language: _ttsLanguageFromSettings(settings),
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
-        // denoisingSteps: 4,
+        denoisingSteps:
+            _denoisingStepsForQuality(settings.ttsSupertonicQuality),
         speechSpeed: settings.ttsSpeed,
       ),
     );
@@ -434,10 +477,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     final result = await _supertonicTts!.synthesize(
       text,
-      language: settings.ttsSupertonicLanguage,
+      // Follow the reading language (first enabled translation).
+      language: _ttsLanguageFromSettings(settings),
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
-        denoisingSteps: 4,
+        denoisingSteps:
+            _denoisingStepsForQuality(settings.ttsSupertonicQuality),
         speechSpeed: settings.ttsSpeed,
       ),
     );

@@ -349,6 +349,12 @@ class AppSettings {
   final double ttsPitch;
   final String ttsSupertonicVoice;
   final String ttsSupertonicLanguage;
+
+  /// Supertonic synthesis quality preset: 'low' | 'medium' | 'high'.
+  /// Maps to the neural model's denoising steps (2 / 4 / 8). Lower
+  /// values synthesize faster on slower devices; higher values sound
+  /// better but take longer.
+  final String ttsSupertonicQuality;
   final bool ttsSupertonicDownloaded;
 
   /// Quote/citation format when copying text.
@@ -410,6 +416,7 @@ class AppSettings {
     this.ttsPitch = 1.0,
     this.ttsSupertonicVoice = 'M1',
     this.ttsSupertonicLanguage = 'en',
+    this.ttsSupertonicQuality = 'medium',
     this.ttsSupertonicDownloaded = false,
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
@@ -445,6 +452,7 @@ class AppSettings {
     double? ttsPitch,
     String? ttsSupertonicVoice,
     String? ttsSupertonicLanguage,
+    String? ttsSupertonicQuality,
     bool? ttsSupertonicDownloaded,
     CopyQuoteFormat? copyQuoteFormat,
     CopyScope? copyDefaultScope,
@@ -483,6 +491,7 @@ class AppSettings {
       ttsSupertonicVoice: ttsSupertonicVoice ?? this.ttsSupertonicVoice,
       ttsSupertonicLanguage:
           ttsSupertonicLanguage ?? this.ttsSupertonicLanguage,
+      ttsSupertonicQuality: ttsSupertonicQuality ?? this.ttsSupertonicQuality,
       ttsSupertonicDownloaded:
           ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
@@ -671,6 +680,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsPitch: prefs.getDouble('tts_pitch') ?? 1.0,
       ttsSupertonicVoice: prefs.getString('tts_supertonic_voice') ?? 'M1',
       ttsSupertonicLanguage: prefs.getString('tts_supertonic_language') ?? 'en',
+      ttsSupertonicQuality:
+          prefs.getString('tts_supertonic_quality') ?? 'medium',
       ttsSupertonicDownloaded:
           prefs.getBool('tts_supertonic_downloaded') ?? false,
       copyQuoteFormat: _parseCopyQuoteFormat(
@@ -740,6 +751,17 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setTranslationDisplayMode(TranslationDisplayMode mode) async {
     state = state.copyWith(translationDisplayMode: mode);
     await _prefs?.setString('translation_display_mode', mode.name);
+  }
+
+  /// Set the display mode for the current session WITHOUT persisting it.
+  ///
+  /// Used for transient, programmatic overrides — e.g. TTS temporarily
+  /// forcing line-by-line (the only mode with per-line anchors for the
+  /// fine-scroll) — so the user's saved preference is never clobbered,
+  /// even if the override is never explicitly undone (app killed, screen
+  /// disposed, etc.).
+  void setTranslationDisplayModeTemporary(TranslationDisplayMode mode) {
+    state = state.copyWith(translationDisplayMode: mode);
   }
 
   /// Toggle a translation language on/off in the enabled ordered list.
@@ -900,6 +922,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setTtsSupertonicLanguage(String language) async {
     state = state.copyWith(ttsSupertonicLanguage: language);
     await _prefs?.setString('tts_supertonic_language', language);
+  }
+
+  Future<void> setTtsSupertonicQuality(String quality) async {
+    state = state.copyWith(ttsSupertonicQuality: quality);
+    await _prefs?.setString('tts_supertonic_quality', quality);
   }
 
   Future<void> setTtsSupertonicDownloaded(bool downloaded) async {

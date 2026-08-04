@@ -15,4 +15,6 @@ sed -i '' -E "s/^version: (.*)\+[0-9]+/version: \1+$NEXT/" "$PUBSPEC"
 
 echo "Building version with build number: $NEXT"
 
-flutter build appbundle --release --flavor prod
+# sqlite_vector 1.0.0 only ships an arm64-v8a Android binary, so the build
+# must target android-arm64 only (see android/app/build.gradle.kts).
+flutter build appbundle --release --flavor prod --target-platform android-arm64

@@ -293,34 +293,55 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             ),
           ),
           data: (lookup) {
-            if (lookup.hasHeadwords || lookup.hasDeconstructor) {
-              return _buildDictionaryResults(colors, lookup);
-            }
-            return _buildPrefixSuggestions(colors);
+            final hasDpdMatch =
+                lookup.hasHeadwords || lookup.hasDeconstructor;
+            // DPD is not the only dictionary: the enabled Bold Definition
+            // and other books can match words DPD has no entry for. When DPD
+            // misses, still render those sections and append DPD's
+            // "Did you mean?" suggestions underneath.
+            return _buildDictionaryResults(
+              colors,
+              lookup,
+              includePrefixSuggestions: !hasDpdMatch,
+            );
           },
         );
   }
 
-  Widget _buildPrefixSuggestions(ColorScheme colors) {
+  /// Children for DPD "Did you mean?" prefix suggestions.
+  ///
+  /// Rendered below the enabled dictionary sections when DPD has no exact
+  /// match for the searched word.
+  List<Widget> _prefixSuggestionChildren(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
     return ref
         .watch(dpdDictionarySearchProvider(_query))
         .when(
-          loading: () =>
-              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          error: (e, _) => Center(
-            child: Padding(
+          loading: () => [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          ],
+          error: (e, _) => [
+            Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
                 loc.errorMessage(e.toString()),
                 style: AppTypography.labelSmall.copyWith(color: colors.error),
               ),
             ),
-          ),
+          ],
           data: (results) {
             if (results.isEmpty) {
-              return Center(
-                child: Padding(
+              return [
+                Padding(
                   padding: const EdgeInsets.all(32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -340,34 +361,34 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                     ],
                   ),
                 ),
-              );
+              ];
             }
-            return ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(AppDimensions.sm),
-              children: [
-                Text(
-                  loc.didYouMean,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+            return [
+              Text(
+                loc.didYouMean,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
                 ),
-                const SizedBox(height: 4),
-                ...results.map(
-                  (r) => SuggestionTile(
-                    word: r.lemma1,
-                    meaningPreview: r.meaningHtml,
-                    onTap: () => _selectWord(r.lemma1),
-                    colors: colors,
-                  ),
+              ),
+              const SizedBox(height: 4),
+              ...results.map(
+                (r) => SuggestionTile(
+                  word: r.lemma1,
+                  meaningPreview: r.meaningHtml,
+                  onTap: () => _selectWord(r.lemma1),
+                  colors: colors,
                 ),
-              ],
-            );
+              ),
+            ];
           },
         );
   }
 
-  Widget _buildDictionaryResults(ColorScheme colors, DpdFullLookup lookup) {
+  Widget _buildDictionaryResults(
+    ColorScheme colors,
+    DpdFullLookup lookup, {
+    bool includePrefixSuggestions = false,
+  }) {
     String searchWord = _query;
     if (lookup.headwords.isNotEmpty) {
       searchWord = lookup.headwords.first.cleanLemma1;
@@ -413,10 +434,14 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                 );
               }
             }
+            if (includePrefixSuggestions) {
+              children.addAll(_prefixSuggestionChildren(colors));
+            }
+            children.add(const SizedBox(height: 24));
             return ListView(
               controller: _scrollController,
               padding: const EdgeInsets.all(AppDimensions.sm),
-              children: [...children, const SizedBox(height: 24)],
+              children: children,
             );
           },
         );

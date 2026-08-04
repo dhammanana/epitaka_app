@@ -10,38 +10,6 @@ import '../providers/supertonic_download_provider.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
-/// Languages supported by Supertonic TTS.
-const _supertonicLanguages = [
-  ('en', 'English'),
-  ('th', 'Thai'),
-  ('si', 'Sinhala'),
-  ('my', 'Burmese'),
-  ('bn', 'Bengali'),
-  ('de', 'German'),
-  ('es', 'Spanish'),
-  ('fr', 'French'),
-  ('hi', 'Hindi'),
-  ('id', 'Indonesian'),
-  ('ja', 'Japanese'),
-  ('jv', 'Javanese'),
-  ('km', 'Khmer'),
-  ('ko', 'Korean'),
-  ('lo', 'Lao'),
-  ('ml', 'Malayalam'),
-  ('mn', 'Mongolian'),
-  ('ms', 'Malay'),
-  ('ne', 'Nepali'),
-  ('nl', 'Dutch'),
-  ('pt', 'Portuguese'),
-  ('ru', 'Russian'),
-  ('ta', 'Tamil'),
-  ('te', 'Telugu'),
-  ('tr', 'Turkish'),
-  ('ur', 'Urdu'),
-  ('vi', 'Vietnamese'),
-  ('zh', 'Chinese'),
-];
-
 /// Voice styles available in Supertonic TTS.
 const _supertonicVoices = [
   ('M1', 'Male Voice 1'),
@@ -148,32 +116,15 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
             const SizedBox(height: AppDimensions.md),
 
             if (settings.ttsSupertonicDownloaded) ...[
-              // Language selection
+              // Language — now follows the reading language automatically.
               SettingsSection(
                 title: loc.language,
                 colors: colors,
                 children: [
-                  _DropdownTile(
+                  _InfoTile(
                     icon: Icons.language,
                     title: loc.ttsLanguageLabel2,
-                    value: _supertonicLanguages.firstWhere(
-                      (l) => l.$1 == settings.ttsSupertonicLanguage,
-                      orElse: () => ('en', 'English'),
-                    ).$2,
-                    options: _supertonicLanguages.map((l) => l.$2).toList(),
-                    selectedValue: _supertonicLanguages.firstWhere(
-                      (l) => l.$1 == settings.ttsSupertonicLanguage,
-                      orElse: () => ('en', 'English'),
-                    ).$2,
-                    onSelected: (label) {
-                      final entry = _supertonicLanguages.firstWhere(
-                        (l) => l.$2 == label,
-                        orElse: () => ('en', 'English'),
-                      );
-                      ref
-                          .read(settingsProvider.notifier)
-                          .setTtsSupertonicLanguage(entry.$1);
-                    },
+                    subtitle: loc.ttsLanguageAutoNote,
                     colors: colors,
                   ),
                 ],
@@ -207,6 +158,43 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
                           .setTtsSupertonicVoice(entry.$1);
                     },
                     colors: colors,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimensions.md),
+
+              // Synthesis quality (denoising steps).
+              SettingsSection(
+                title: loc.quality,
+                colors: colors,
+                children: [
+                  _DropdownTile(
+                    icon: Icons.tune,
+                    title: loc.quality,
+                    value: _qualityLabel(settings.ttsSupertonicQuality),
+                    options: const ['Low', 'Medium', 'High'],
+                    selectedValue: _qualityLabel(settings.ttsSupertonicQuality),
+                    onSelected: (label) {
+                      final code = label.toLowerCase();
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setTtsSupertonicQuality(code);
+                    },
+                    colors: colors,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimensions.md,
+                      0,
+                      AppDimensions.md,
+                      AppDimensions.md,
+                    ),
+                    child: Text(
+                      loc.qualitySubtitle,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -849,4 +837,69 @@ String _voiceLabel(String voice) {
     (o) => o.$1 == voice,
     orElse: () => ('default', 'System Default'),
   ).$2;
+}
+
+/// Display label for a Supertonic quality preset ('low' | 'medium' | 'high').
+String _qualityLabel(String quality) {
+  switch (quality) {
+    case 'low':
+      return 'Low';
+    case 'high':
+      return 'High';
+    default:
+      return 'Medium';
+  }
+}
+
+// ── Info Tile ───────────────────────────────────────────────────────────
+
+/// A read-only settings tile (icon + title + subtitle, no interaction).
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final ColorScheme colors;
+
+  const _InfoTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

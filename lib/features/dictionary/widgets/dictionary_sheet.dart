@@ -500,20 +500,27 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
           ),
           data: (lookup) {
-            if (lookup.hasHeadwords || lookup.hasDeconstructor) {
-              return _buildDictionaryResults(colors, lookup, scrollController);
-            }
-            // No exact match — show prefix search suggestions
-            return _buildPrefixSuggestions(colors, scrollController);
+            final hasDpdMatch =
+                lookup.hasHeadwords || lookup.hasDeconstructor;
+            // DPD is not the only dictionary: the enabled Bold Definition
+            // and other books can match words DPD has no entry for. When DPD
+            // misses, still render those sections and append DPD's
+            // "Did you mean?" suggestions underneath.
+            return _buildDictionaryResults(
+              colors,
+              lookup,
+              scrollController,
+              includePrefixSuggestions: !hasDpdMatch,
+            );
           },
         );
   }
 
-  /// Show prefix search results as "Did you mean?" suggestions.
-  Widget _buildPrefixSuggestions(
-    ColorScheme colors,
-    ScrollController scrollController,
-  ) {
+  /// Slivers for DPD "Did you mean?" prefix suggestions.
+  ///
+  /// Rendered below the enabled dictionary sections when DPD has no exact
+  /// match for the searched word.
+  List<Widget> _prefixSuggestionsSlivers(ColorScheme colors, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final trans = settings.typography.typographyFor(
       settings.primaryTranslationLang,
@@ -523,90 +530,111 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     return ref
         .watch(dpdDictionarySearchProvider(_query))
         .when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                AppLocalizations.of(context).errorMessage(e.toString()),
-                style: AppTypography.bodyTranslation.copyWith(
-                  color: colors.error,
+          loading: () => [
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
+          error: (e, _) => [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  AppLocalizations.of(context).errorMessage(e.toString()),
+                  style: AppTypography.bodyTranslation.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ),
+            ),
+          ],
           data: (results) {
             if (results.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(48.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        size: 48,
-                        color: colors.outlineVariant,
+              return [
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 24),
+                ),
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(48.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: colors.outlineVariant,
+                          ),
+                          const SizedBox(height: AppDimensions.md),
+                          Text(
+                            AppLocalizations.of(
+                              context,
+                            ).noMatchesFoundForQuery(_query),
+                            style: AppTypography.bodyTranslation.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: AppDimensions.md),
-                      Text(
-                        AppLocalizations.of(context).noMatchesFoundForQuery(_query),
-                        style: AppTypography.bodyTranslation.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              );
+              ];
             }
 
-            return CustomScrollView(
-              controller: scrollController,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimensions.marginMobile,
-                      AppDimensions.sm,
-                      AppDimensions.marginMobile,
-                      0,
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context).didYouMean,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant,
-                        fontSize: transSize,
-                      ),
-                    ),
-                  ),
-                ),
-                SliverPadding(
+            return [
+              SliverToBoxAdapter(
+                child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     AppDimensions.marginMobile,
                     AppDimensions.sm,
                     AppDimensions.marginMobile,
-                    32,
+                    0,
                   ),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final result = results[index];
-                      // Note: meaningPreview is plain text (stripped inside
-                      // SuggestionTile via _stripHtml), not flutter_html —
-                      // no WidgetSpan risk here, so this one doesn't need
-                      // ExcludeSemantics like the DPD cards below do.
-                      return SuggestionTile(
-                        word: result.lemma1,
-                        meaningPreview: result.meaningHtml,
-                        onTap: () => _selectWord(result.lemma1),
-                        colors: colors,
-                      );
-                    }, childCount: results.length),
+                  child: Text(
+                    AppLocalizations.of(context).didYouMean,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: transSize,
+                    ),
                   ),
                 ),
-              ],
-            );
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.marginMobile,
+                  AppDimensions.sm,
+                  AppDimensions.marginMobile,
+                  32,
+                ),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final result = results[index];
+                    // Note: meaningPreview is plain text (stripped inside
+                    // SuggestionTile via _stripHtml), not flutter_html —
+                    // no WidgetSpan risk here, so this one doesn't need
+                    // ExcludeSemantics like the DPD cards below do.
+                    return SuggestionTile(
+                      word: result.lemma1,
+                      meaningPreview: result.meaningHtml,
+                      onTap: () => _selectWord(result.lemma1),
+                      colors: colors,
+                    );
+                  }, childCount: results.length),
+                ),
+              ),
+            ];
           },
         );
   }
@@ -619,8 +647,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   Widget _buildDictionaryResults(
     ColorScheme colors,
     DpdFullLookup lookup,
-    ScrollController scrollController,
-  ) {
+    ScrollController scrollController, {
+    bool includePrefixSuggestions = false,
+  }) {
     // Get the cleaned lemma_1 for cross-dictionary search
     String searchWord = _query;
     if (lookup.headwords.isNotEmpty) {
@@ -644,6 +673,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                   searchWord,
                   enabledBooks,
                 ),
+                if (includePrefixSuggestions)
+                  ..._prefixSuggestionsSlivers(colors, ref),
                 const SliverToBoxAdapter(child: SizedBox(height: 40)),
               ],
             );
