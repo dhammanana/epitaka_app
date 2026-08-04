@@ -190,6 +190,27 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Extract version from pubspec
+        shell: pwsh
+        run: |
+          # Single source of truth for the build number: pubspec.yaml
+          # `version: <major>.<minor>.<patch>+<build>` (e.g. 1.0.10+12).
+          $pubspec = Get-Content -Raw pubspec.yaml
+          # (?m) anchors '^' to each line so only the top-level `version:`
+          # entry (never a dependency line) is matched.
+          if ($pubspec -match '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
+            $versionName = $Matches[1]
+            $buildNumber = $Matches[2]
+          } elseif ($pubspec -match '(?m)^version:\s*(\d+\.\d+\.\d+)') {
+            $versionName = $Matches[1]
+            $buildNumber = '0'
+          } else {
+            throw 'Could not parse version from pubspec.yaml'
+          }
+          Write-Host "pubspec version: $versionName (build $buildNumber)"
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$versionName"
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_BUILD_NUMBER=$buildNumber"
+
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
@@ -255,7 +276,12 @@ jobs:
       - name: Build Microsoft Store MSIX
         shell: pwsh
         run: |
-          dart run msix:create --store --build-windows false
+          # Sync the MSIX package version with pubspec.yaml. The pubspec
+          # build number maps to the 4th MSIX component so it matches the
+          # exe's file version (e.g. pubspec 1.0.10+12 -> MSIX 1.0.10.12).
+          $msixVersion = "$($env:APP_VERSION).$($env:APP_BUILD_NUMBER)"
+          Write-Host "MSIX version: $msixVersion"
+          dart run msix:create --store --build-windows false --version $msixVersion
 
           Get-ChildItem -Path . -Filter *.msix -Recurse
 
@@ -278,8 +304,11 @@ jobs:
       - name: Build NSIS Installer
         shell: pwsh
         run: |
+          # DisplayVersion in the registry comes from pubspec.yaml (the
+          # version before '+'), NOT the tag name: GITHUB_REF_NAME is
+          # 'v1.0.10' on tag pushes and the branch name on manual dispatch.
           pushd install/windows
-          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$env:GITHUB_REF_NAME" epitaka.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$env:APP_VERSION" epitaka.nsi
           popd
 
           Get-ChildItem install/windows/epitaka-windows-x64-setup.exe
@@ -499,6 +528,17 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Extract version from pubspec
+        run: |
+          # Single source of truth for the version: pubspec.yaml
+          APP_VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          if [ -z "$APP_VERSION" ]; then
+            echo "ERROR: could not parse version from pubspec.yaml" >&2
+            exit 1
+          fi
+          echo "pubspec version: $APP_VERSION"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
 
@@ -548,7 +588,9 @@ jobs:
           # Plugins are discovered via PATH (not cwd) when extracted, so
           # add the current directory to PATH before invoking linuxdeploy.
           export APPIMAGE_EXTRACT_AND_RUN=1
-          export VERSION="${GITHUB_REF_NAME}"
+          # AppImage version comes from pubspec.yaml, not the git ref (the
+          # ref is 'v1.0.10' on tags and a branch name on manual dispatch).
+          export VERSION="${APP_VERSION}"
           export ARCH=x86_64
           export PATH="$PWD:$PATH"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
