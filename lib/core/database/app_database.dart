@@ -4,9 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../features/ai_qa/models/ai_qa_models.dart' show ChatThread, ChatMessageRecord;
+import '../utils/database_initializer.dart';
 import '../utils/pali_search_utils.dart';
 import 'epitaka_database.dart';
 import 'translation_database.dart';
@@ -327,7 +327,7 @@ class AppDatabase extends _$AppDatabase {
   /// silently deleting anything, so the UI can offer an explicit
   /// "Clear data & rebuild" action.
   static Future<AppDatabase> open() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getDatabaseDirectory();
     final dbPath = p.join(dir.path, 'app_data.db');
     final file = File(dbPath);
 
@@ -371,7 +371,7 @@ class AppDatabase extends _$AppDatabase {
   /// codepath creates the fresh database, rather than this method
   /// silently creating a second connection to the same file.
   static Future<void> deleteDatabaseFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getDatabaseDirectory();
     final dbPath = p.join(dir.path, 'app_data.db');
     final file = File(dbPath);
 

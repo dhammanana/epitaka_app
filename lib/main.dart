@@ -64,6 +64,12 @@ Future<void> main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Desktop only: copy databases/downloads left in the old locations
+  // (Documents or an exe-adjacent data/ folder) into the canonical per-user
+  // database directory, so existing users never have to re-download and
+  // bookmarks/history are preserved. Must run before any DB is opened.
+  await migrateLegacyDatabases();
+
   // Copy bundled databases from assets to writable storage (needed on
   // Android/iOS where assets aren't directly file-system accessible).
   await ensureBundledDatabases();

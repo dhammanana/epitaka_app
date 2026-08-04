@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../database/dpd_dictionary_database.dart';
+import '../utils/database_initializer.dart';
 
 // ── Helper: run synchronous computation after frame ───────────────────────
 
@@ -50,26 +49,11 @@ final dpdDictionaryDbProvider = FutureProvider<DpdDictionaryDatabase>((
   return db;
 });
 
-/// Resolve the path to dpd-dictionary.db.
+/// Resolve the path to dpd-dictionary.db (always the canonical database
+/// directory — the same one downloads and the startup wizard use).
 Future<String> _resolveDpdDictionaryDbPath() async {
-  final envDbPath = Platform.environment['EPITAKA_DB_PATH'];
-  if (envDbPath != null && envDbPath.isNotEmpty) {
-    final dir = Directory(envDbPath);
-    if (await dir.exists()) {
-      return p.join(dir.path, 'dpd-dictionary.db');
-    }
-  }
-
-  if (!Platform.isAndroid && !Platform.isIOS) {
-    final cwd = Directory.current;
-    final dataDir = Directory(p.join(cwd.path, 'data'));
-    if (await dataDir.exists()) {
-      return p.join(dataDir.path, 'dpd-dictionary.db');
-    }
-  }
-
-  final appDir = await getApplicationDocumentsDirectory();
-  return p.join(appDir.path, 'dpd-dictionary.db');
+  final dbDir = await getDatabaseDirectory();
+  return p.join(dbDir.path, 'dpd-dictionary.db');
 }
 
 // ── Search Provider ─────────────────────────────────────────────────────────

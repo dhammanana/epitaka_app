@@ -17,10 +17,10 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import '../../../core/database/dpd_dictionary_database.dart';
+import '../../../core/utils/database_initializer.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
@@ -79,8 +79,8 @@ class AiQaToolService {
     if (_epiDb != null) return _epiDb;
 
     try {
-      final appDocDir = await getApplicationDocumentsDirectory();
-      final epiDbPath = p.join(appDocDir.path, 'epitaka.db');
+      final dbDir = await getDatabaseDirectory();
+      final epiDbPath = p.join(dbDir.path, 'epitaka.db');
       final epiDbFile = File(epiDbPath);
 
       if (!await epiDbFile.exists()) {

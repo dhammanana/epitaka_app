@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/providers/app_db_provider.dart';
 import '../../../../core/theme/app_dimensions.dart';
+import '../../../../core/utils/database_initializer.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/app_localizations.dart';
 import '../index_progress_screen.dart';
@@ -64,7 +64,7 @@ class ResetDataTile extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
 
     // Determine database path
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getDatabaseDirectory();
     final dbPath = p.join(dir.path, 'app_data.db');
 
     final confirmed = await showDialog<bool>(
@@ -225,7 +225,7 @@ class ResetDataTile extends ConsumerWidget {
 
       final json = const JsonEncoder.withIndent('  ').convert(backup);
 
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getDatabaseDirectory();
       final timestamp = DateTime.now()
           .toIso8601String()
           .replaceAll(':', '-')

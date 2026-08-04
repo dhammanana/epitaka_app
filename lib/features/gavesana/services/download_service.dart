@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../../core/utils/database_initializer.dart';
 import '../../settings/services/download_notification_service.dart';
 
 /// Represents the download status for Gavesana assets.
@@ -46,8 +46,10 @@ class GavesanaDownloadService {
   };
 
   Future<String> get _appDir async {
-    final appDocDir = await getApplicationDocumentsDirectory();
-    final gavesanaDir = Directory(p.join(appDocDir.path, 'gavesana'));
+    // Gavesana assets live in a gavesana/ subfolder of the canonical
+    // database directory (per-user, always writable — never Program Files).
+    final dbDir = await getDatabaseDirectory();
+    final gavesanaDir = Directory(p.join(dbDir.path, 'gavesana'));
     if (!await gavesanaDir.exists()) {
       await gavesanaDir.create(recursive: true);
     }

@@ -30,10 +30,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/utils/database_initializer.dart';
 import '../../shared/models/ai_provider.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
@@ -379,7 +379,7 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
   Future<void> _saveDebugLog() async {
     if (_debugLog.isEmpty) return;
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getDatabaseDirectory();
       final filePath = p.join(dir.path, 'vimamsa_debug.json');
       final file = File(filePath);
       const encoder = JsonEncoder.withIndent('  ');
