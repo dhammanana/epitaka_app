@@ -1600,6 +1600,10 @@ class _SearchResultItemTile extends ConsumerWidget {
     final matchingLines = item.lines.where((l) => l.isMatch).toList();
     if (matchingLines.isEmpty) return const SizedBox.shrink();
 
+    // Raw Roman query (before fuzzy normalization), used to re-convert the
+    // Pāli snippet terms into the display script for highlighting.
+    final rawQuery = searchState is SearchResults ? searchState.query : '';
+
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -1657,6 +1661,7 @@ class _SearchResultItemTile extends ConsumerWidget {
               child: _LineTile(
                 line: line,
                 searchTerms: searchTerms,
+                query: rawQuery,
                 paliTextStyle: paliTextStyle,
                 transTextStyle: transTextStyle,
                 colors: colors,
@@ -1674,6 +1679,11 @@ class _SearchResultItemTile extends ConsumerWidget {
 class _LineTile extends StatelessWidget {
   final SearchResultLine line;
   final List<String> searchTerms;
+
+  /// The raw (Roman) search query, used to convert the Pāli snippet terms
+  /// into the display script for highlighting.
+  final String query;
+
   final TextStyle paliTextStyle;
   final TextStyle transTextStyle;
   final ColorScheme colors;
@@ -1682,6 +1692,7 @@ class _LineTile extends StatelessWidget {
   const _LineTile({
     required this.line,
     required this.searchTerms,
+    required this.query,
     required this.paliTextStyle,
     required this.transTextStyle,
     required this.colors,
@@ -1713,6 +1724,7 @@ class _LineTile extends StatelessWidget {
             _buildHighlightedPaliText(
               text: line.pali,
               searchTerms: searchTerms,
+              query: query,
               script: script,
               style: paliTextStyle.copyWith(
                 fontSize: paliTextStyle.fontSize ?? 14,
@@ -1746,6 +1758,7 @@ class _LineTile extends StatelessWidget {
   Widget _buildHighlightedPaliText({
     required String text,
     required List<String> searchTerms,
+    required String query,
     required Script script,
     required TextStyle style,
     required Color highlightColor,
@@ -1763,10 +1776,19 @@ class _LineTile extends StatelessWidget {
       );
     }
 
+    // The snippet text is converted to the display script, so the terms
+    // must be too — otherwise a Roman query never matches Tamil/Myanmar
+    // text and the found word stays unhighlighted.
+    final List<String> terms = script == Script.roman
+        ? searchTerms
+        : (normalizePaliFuzzy(
+                convertSearchQueryForScript(query, script),
+              ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList());
+
     final spans = buildSearchSnippetSpans(
       html: converted,
       baseStyle: effStyle,
-      terms: searchTerms,
+      terms: terms.isEmpty ? searchTerms : terms,
       isPali: true,
       highlightColor: highlightColor,
       beforeChars: 40,

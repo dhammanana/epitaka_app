@@ -64,6 +64,7 @@ String? scriptFontFamily(Script script) {
     case Script.thai:
     case Script.khmer:
     case Script.tibetan:
+    case Script.tamil:
       // No dedicated font bundled yet — let the platform font handle these
       // scripts (it has the required glyphs and OpenType shaping).
       return null;

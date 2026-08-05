@@ -276,10 +276,11 @@ jobs:
       - name: Build Microsoft Store MSIX
         shell: pwsh
         run: |
-          # Sync the MSIX package version with pubspec.yaml. The pubspec
-          # build number maps to the 4th MSIX component so it matches the
-          # exe's file version (e.g. pubspec 1.0.10+12 -> MSIX 1.0.10.12).
-          $msixVersion = "$($env:APP_VERSION).$($env:APP_BUILD_NUMBER)"
+          # The Microsoft Store requires MSIX package versions in the form
+          # major.minor.build.0 — the 4th (revision) component must be 0
+          # (pubspec 1.0.10+12 -> MSIX 1.0.10.0). The exe's file version
+          # (Runner.rc, derived from pubspec) still carries the build number.
+          $msixVersion = "$($env:APP_VERSION).0"
           Write-Host "MSIX version: $msixVersion"
           dart run msix:create --store --build-windows false --version $msixVersion
 

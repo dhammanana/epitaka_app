@@ -4,7 +4,7 @@
 
 // ported to dart by pndaza 2022
 
-// total 17 languages
+// total 18 languages
 // scripts are ordered
 
 enum Script {
@@ -25,6 +25,7 @@ enum Script {
   brahmi,
   tibetan,
   cyrillic,
+  tamil,
 }
 
 class _CodePointRange {
@@ -181,6 +182,13 @@ const List<ScriptInfo> listOfScripts = [
     ],
     index: 17,
   ), //charCodeAt returns two codes for each letter [[0x11000, 0x1107F]]
+  ScriptInfo(
+    script: Script.tamil,
+    nameInLocale: 'தமிழ்',
+    localeCode: 'ta',
+    codePointRanges: [_CodePointRange(start: 0x0B80, end: 0x0BFF)],
+    index: 18,
+  ),
 ];
 
 Script? _getScriptForCode(int charCode) {
@@ -215,6 +223,7 @@ const specials = [
     '𑀅',
     'ཨ',
     'а',
+    'அ',
   ],
   [
     'ආ',
@@ -234,6 +243,7 @@ const specials = [
     '𑀆',
     'ཨཱ',
     'а̄',
+    'ஆ',
   ],
   [
     'ඉ',
@@ -253,6 +263,7 @@ const specials = [
     '𑀇',
     'ཨི',
     'и',
+    'இ',
   ],
   [
     'ඊ',
@@ -272,6 +283,7 @@ const specials = [
     '𑀈',
     'ཨཱི',
     'ӣ',
+    'ஈ',
   ],
   [
     'උ',
@@ -291,6 +303,7 @@ const specials = [
     '𑀉',
     'ཨུ',
     'у',
+    'உ',
   ],
   [
     'ඌ',
@@ -310,6 +323,7 @@ const specials = [
     '𑀊',
     'ཨཱུ',
     'ӯ',
+    'ஊ',
   ],
   [
     'එ',
@@ -329,6 +343,7 @@ const specials = [
     '𑀏',
     'ཨེ',
     'е',
+    'ஏ',
   ],
   [
     'ඔ',
@@ -348,6 +363,7 @@ const specials = [
     '𑀑',
     'ཨོ',
     'о',
+    'ஓ',
   ],
   // various signs
   [
@@ -368,6 +384,7 @@ const specials = [
     '𑀁',
     '\u0F7E',
     'м̣',
+    'ங்',
   ], // niggahita - anusawara
   // visarga - not in pali but deva original text has it (thai/lao/tt - not found. using the closest equivalent per wikipedia)
   [
@@ -388,6 +405,7 @@ const specials = [
     '𑀂',
     '\u0F7F',
     'х̣',
+    'ஃ',
   ],
   // virama (al - hal). roman/cyrillic need special handling
   [
@@ -408,6 +426,7 @@ const specials = [
     '\uD804\uDC46',
     '\u0F84',
     '',
+    '்',
   ],
   // digits
   [
@@ -428,6 +447,7 @@ const specials = [
     '𑁦',
     '༠',
     '0',
+    '0',
   ],
   [
     '1',
@@ -446,6 +466,7 @@ const specials = [
     '൧',
     '𑁧',
     '༡',
+    '1',
     '1',
   ],
   [
@@ -466,6 +487,7 @@ const specials = [
     '𑁨',
     '༢',
     '2',
+    '2',
   ],
   [
     '3',
@@ -484,6 +506,7 @@ const specials = [
     '൩',
     '𑁩',
     '༣',
+    '3',
     '3',
   ],
   [
@@ -504,6 +527,7 @@ const specials = [
     '𑁪',
     '༤',
     '4',
+    '4',
   ],
   [
     '5',
@@ -522,6 +546,7 @@ const specials = [
     '൫',
     '𑁫',
     '༥',
+    '5',
     '5',
   ],
   [
@@ -542,6 +567,7 @@ const specials = [
     '𑁬',
     '༦',
     '6',
+    '6',
   ],
   [
     '7',
@@ -560,6 +586,7 @@ const specials = [
     '൭',
     '𑁭',
     '༧',
+    '7',
     '7',
   ],
   [
@@ -580,6 +607,7 @@ const specials = [
     '𑁮',
     '༨',
     '8',
+    '8',
   ],
   [
     '9',
@@ -598,6 +626,7 @@ const specials = [
     '൯',
     '𑁯',
     '༩',
+    '9',
     '9',
   ],
 ];
@@ -622,6 +651,7 @@ const consos = [
     '𑀓',
     'ཀ',
     'к',
+    'க',
   ],
   [
     'ඛ',
@@ -641,6 +671,7 @@ const consos = [
     '𑀔',
     'ཁ',
     'кх',
+    'க²',
   ],
   [
     'ග',
@@ -660,6 +691,7 @@ const consos = [
     '𑀕',
     'ག',
     'г',
+    'க³',
   ],
   [
     'ඝ',
@@ -679,6 +711,7 @@ const consos = [
     '𑀖',
     'གྷ',
     'гх',
+    'க⁴',
   ],
   [
     'ඞ',
@@ -698,6 +731,7 @@ const consos = [
     '𑀗',
     'ང',
     'н̇',
+    'ங',
   ],
   // palatal stops
   [
@@ -718,6 +752,7 @@ const consos = [
     '𑀘',
     'ཙ',
     'ч',
+    'ச',
   ],
   [
     'ඡ',
@@ -737,6 +772,7 @@ const consos = [
     '𑀙',
     'ཚ',
     'чх',
+    'ச²',
   ],
   [
     'ජ',
@@ -756,6 +792,7 @@ const consos = [
     '𑀚',
     'ཛ',
     'дж',
+    'ஜ',
   ],
   [
     'ඣ',
@@ -775,6 +812,7 @@ const consos = [
     '𑀛',
     'ཛྷ',
     'джх',
+    'ஜ²',
   ],
   [
     'ඤ',
@@ -794,6 +832,7 @@ const consos = [
     '𑀜',
     'ཉ',
     'н̃',
+    'ஞ',
   ],
   // retroflex stops
   [
@@ -814,6 +853,7 @@ const consos = [
     '𑀝',
     'ཊ',
     'т̣',
+    'ட',
   ],
   [
     'ඨ',
@@ -833,6 +873,7 @@ const consos = [
     '𑀞',
     'ཋ',
     'т̣х',
+    'ட²',
   ],
   [
     'ඩ',
@@ -852,6 +893,7 @@ const consos = [
     '𑀟',
     'ཌ',
     'д̣',
+    'ட³',
   ],
   [
     'ඪ',
@@ -871,6 +913,7 @@ const consos = [
     '𑀠',
     'ཌྷ',
     'д̣х',
+    'ட⁴',
   ],
   [
     'ණ',
@@ -890,6 +933,7 @@ const consos = [
     '𑀡',
     'ཎ',
     'н̣',
+    'ண',
   ],
   // dental stops
   [
@@ -910,6 +954,7 @@ const consos = [
     '𑀢',
     'ཏ',
     'т',
+    'த',
   ],
   [
     'ථ',
@@ -929,6 +974,7 @@ const consos = [
     '𑀣',
     'ཐ',
     'тх',
+    'த²',
   ],
   [
     'ද',
@@ -948,6 +994,7 @@ const consos = [
     '𑀤',
     'ད',
     'д',
+    'த³',
   ],
   [
     'ධ',
@@ -967,6 +1014,7 @@ const consos = [
     '𑀥',
     'དྷ',
     'дх',
+    'த⁴',
   ],
   [
     'න',
@@ -986,6 +1034,7 @@ const consos = [
     '𑀦',
     'ན',
     'н',
+    'ந',
   ],
   // labial stops
   [
@@ -1006,6 +1055,7 @@ const consos = [
     '𑀧',
     'པ',
     'п',
+    'ப',
   ],
   [
     'ඵ',
@@ -1025,6 +1075,7 @@ const consos = [
     '𑀨',
     'ཕ',
     'пх',
+    'ப²',
   ],
   [
     'බ',
@@ -1044,6 +1095,7 @@ const consos = [
     '𑀩',
     'བ',
     'б',
+    'ப³',
   ],
   [
     'භ',
@@ -1063,6 +1115,7 @@ const consos = [
     '𑀪',
     'བྷ',
     'бх',
+    'ப⁴',
   ],
   [
     'ම',
@@ -1082,6 +1135,7 @@ const consos = [
     '𑀫',
     'མ',
     'м',
+    'ம',
   ],
   // liquids, fricatives, etc.
   [
@@ -1102,6 +1156,7 @@ const consos = [
     '𑀬',
     'ཡ',
     'й',
+    'ய',
   ],
   [
     'ර',
@@ -1121,6 +1176,7 @@ const consos = [
     '𑀭',
     'ར',
     'р',
+    'ர',
   ],
   [
     'ල',
@@ -1140,6 +1196,7 @@ const consos = [
     '𑀮',
     'ལ',
     'л',
+    'ல',
   ],
   [
     'ළ',
@@ -1159,6 +1216,7 @@ const consos = [
     '𑀴',
     'ལ༹',
     'л̣',
+    'ள',
   ],
   [
     'ව',
@@ -1178,6 +1236,7 @@ const consos = [
     '𑀯',
     'ཝ',
     'в',
+    'வ',
   ],
   [
     'ස',
@@ -1197,6 +1256,7 @@ const consos = [
     '𑀲',
     'ས',
     'с',
+    'ஸ',
   ],
   [
     'හ',
@@ -1216,6 +1276,7 @@ const consos = [
     '𑀳',
     'ཧ',
     'х',
+    'ஹ',
   ],
 ];
 
@@ -1239,6 +1300,7 @@ const vowels = [
     '𑀸',
     '\u0F71',
     'а̄',
+    'ா',
   ],
   [
     'ි',
@@ -1258,6 +1320,7 @@ const vowels = [
     '𑀺',
     '\u0F72',
     'и',
+    'ி',
   ],
   [
     'ී',
@@ -1277,6 +1340,7 @@ const vowels = [
     '𑀻',
     '\u0F71\u0F72',
     'ӣ',
+    'ீ',
   ],
   [
     'ු',
@@ -1296,6 +1360,7 @@ const vowels = [
     '𑀼',
     '\u0F74',
     'у',
+    'ு',
   ],
   [
     'ූ',
@@ -1315,6 +1380,7 @@ const vowels = [
     '𑀽',
     '\u0F71\u0F74',
     'ӯ',
+    'ூ',
   ],
   [
     'ෙ',
@@ -1334,6 +1400,7 @@ const vowels = [
     '𑁂',
     '\u0F7A',
     'е',
+    'ே',
   ], //for th/lo - should appear in front
   [
     'ො',
@@ -1353,6 +1420,7 @@ const vowels = [
     '𑁄',
     '\u0F7C',
     'о',
+    'ோ',
   ], //for th/lo - should appear in front
 ];
 const sinhalaConsonantRange = 'ක-ෆ';
@@ -1368,7 +1436,7 @@ String beautifySinhala(String text, {Script? script, String rendType = ''}) {
   );
 }
 
-String unbeautifySinhala(String text) {
+String unbeautifySinhala(String text, {Script? script}) {
   // long vowels replaced by short vowels as sometimes people type long vowels by mistake
   text = text.replaceAll('ඒ', 'එ').replaceAll('ඕ', 'ඔ');
   return text.replaceAll('ේ', 'ෙ').replaceAll('ෝ', 'ො');
@@ -1410,7 +1478,7 @@ String beautifyMyanmar(String text, {Script? script, String rendType = ''}) {
   return text.replaceAll('သင်္ဃ', 'သံဃ');
 }
 
-String unbeautifyMyanmar(String text) {
+String unbeautifyMyanmar(String text, {Script? script}) {
   // reverse of beautify above
   text = text.replaceAll('\u102B', 'ာ');
   text = text.replaceAll('ှ', '္ဟ'); // al + ha - hahto
@@ -1485,7 +1553,7 @@ String capitalize(String text, {Script? script, String rendType = ''}) {
   return text;
 }
 
-String unCapitalize(String text) => text.toLowerCase();
+String unCapitalize(String text, {Script? script}) => text.toLowerCase();
 // for thai text - this can also be done in the convert stage
 
 String swapEO(String text, {Script? script, String rendType = ''}) {
@@ -1554,7 +1622,7 @@ String unbeautifykhmer(String text, {Script? script}) {
 /* zero-width joiners - replace both ways
 ['\u200C', ''], // ZWNJ (remove) not in sinh (or deva?)
 ['\u200D', ''], // ZWJ (remove) will be added when displaying*/
-String cleanupZWJ(String inputText) {
+String cleanupZWJ(String inputText, {Script? script}) {
   return inputText.replaceAll(RegExp('\u200C|\u200D'), '');
 }
 
@@ -1599,6 +1667,88 @@ String unbeautifyTibet(String text, {Script? script}) {
   return text; // todo undo the subjoining done above
 }
 
+// ── Tamil ──────────────────────────────────────────────────────────────
+// Convention from the tipitaka-xml Deva2Taml.cs conversion:
+//  * aspirated/voiced consonants are marked with a superscript after the
+//    consonant (² ³ ⁴): kha க², ga க³, bha ப⁴
+//  * superscripts are moved after the following vowel sign / virama
+//  * short எ/ஒ/ெ/ொ are used before a doubled consonant, long ஏ/ஓ/ே/ோ
+//    elsewhere (Pāli e/o are long)
+//  * dental ந becomes alveolar ன within a word, except before dental stops
+//  * anusvara is written ங் and Tamil has no inherent vowel ("a" is
+//    unwritten)
+//
+// Notes:
+//  * ங் is ambiguous — it stands for both the anusvara and ṅ+virama (the
+//    tipitaka-xml files write both identically), so converting Tamil back
+//    to Sinhala turns saṅgha -> ஸங்க⁴ into සංඝ (the ඞ is lost). This
+//    matches the reference conversion and is not a bug.
+//  * the superscripts ² ³ ⁴ are NOT Tamil codepoints (²/³ fall in roman's
+//    range, ⁴ in none), so mixed-script detection (convertFromMixed) splits
+//    Tamil runs at them — the same is true of every superscript-using script
+//    today.
+const String _tamlVowelSigns = 'ா-ௌ'; // dependent vowel signs U+0BBE–U+0BCC
+
+const Map<String, String> _tamlShortVowels = {
+  'එ': 'எ', // independent e (short)
+  'ඔ': 'ஒ', // independent o (short)
+  'ෙ': 'ெ', // dependent e (short)
+  'ො': 'ொ', // dependent o (short)
+};
+
+/// Replaces a Sinhala e/o directly followed by a doubled consonant
+/// (consonant + virama + consonant) with the Tamil short vowels, mirroring
+/// the placeholder regexes in Deva2Taml.cs. Runs on the Sinhala
+/// intermediate before the character map; the inserted Tamil characters
+/// pass through the map unchanged.
+String _tamilShortEO(String text, Script script) {
+  return text.replaceAllMapped(
+    RegExp('([එඔෙො])([ක-හ]්[ක-හ])'),
+    // group(1) is always one of the four keys (the regex char class)
+    (match) => '${_tamlShortVowels[match.group(1)!]}${match.group(2)}',
+  );
+}
+
+String beautifyTamil(String text, {Script? script, String rendType = ''}) {
+  // move superscript (² ³ ⁴) after the following dependent vowel sign (க²ா → கா²)
+  text = text.replaceAllMapped(
+    RegExp('([²³⁴])([$_tamlVowelSigns])'),
+    (match) => '${match.group(2)}${match.group(1)}',
+  );
+  // move superscript after the following virama (க²் → க்²)
+  text = text.replaceAllMapped(
+    RegExp('([²³⁴])(்)'),
+    (match) => '${match.group(2)}${match.group(1)}',
+  );
+  // dental ந → alveolar ன when preceded by a Tamil letter/sign
+  text = text.replaceAllMapped(
+    RegExp('([\u0B82-\u0BCD²³⁴])ந'),
+    (match) => '${match.group(1)}ன',
+  );
+  // ...except before a dental stop (ன்த → ந்த)
+  return text.replaceAll('ன்த', 'ந்த');
+}
+
+String unbeautifyTamil(String text, {Script? script}) {
+  // reverse the superscript moves above (கா² → க²ா, க்² → க²்)
+  text = text.replaceAllMapped(
+    RegExp('([$_tamlVowelSigns])([²³⁴])'),
+    (match) => '${match.group(2)}${match.group(1)}',
+  );
+  text = text.replaceAllMapped(
+    RegExp('(்)([²³⁴])'),
+    (match) => '${match.group(2)}${match.group(1)}',
+  );
+  // alveolar ன back to dental ந (Pāli n is always dental)
+  text = text.replaceAll('ன', 'ந');
+  // short e/o (before doubled consonants) stand for Pāli long e/o
+  return text
+      .replaceAll('எ', 'ஏ')
+      .replaceAll('ஒ', 'ஓ')
+      .replaceAll('ெ', 'ே')
+      .replaceAll('ொ', 'ோ');
+}
+
 List<Function> beautifyFunc(Script script) {
   switch (script) {
     case Script.sinhala:
@@ -1627,6 +1777,8 @@ List<Function> beautifyFunc(Script script) {
       return [beautifyTibet];
     case Script.cyrillic:
       return [beautifyCommon];
+    case Script.tamil:
+      return [beautifyTamil, beautifyCommon];
     default:
       return [];
   }
@@ -1651,6 +1803,8 @@ List<Function> unbeautifyFucn(Script script) {
       return [unbeautifyMyanmar];
     case Script.tibetan:
       return [unbeautifyTibet];
+    case Script.tamil:
+      return [unbeautifyTamil];
     default:
       return [];
   }
@@ -1795,6 +1949,9 @@ List<Function> convertToFunc(Script script) {
       return [insertA, _convertTo];
     case Script.cyrillic:
       return [insertA, _convertTo];
+    case Script.tamil:
+      // short e/o before doubled consonants first, then the char map
+      return [_tamilShortEO, _convertTo];
     default:
       return [_convertTo];
   }
@@ -1862,29 +2019,55 @@ class TextProcessor {
 
   // from other script to Sinhala - one script
   static convertFrom(String text, Script script) {
-    unbeautifyFucn(script).forEach((func) => text = func(text));
-    // (un_beautify_func[script] || un_beautify_func_default).forEach(func => text = func(text, script));
+    // Pass the script so script-dependent un-beautification runs (e.g. the
+    // Thai/Lao e/o vowel reordering in [unSwapEO]) actually applies.
+    unbeautifyFucn(script).forEach((func) => text = func(text, script: script));
     return basicConvertFrom(text, script);
   }
 
+  /// Whether [code] is one of the superscript markers ² ³ ⁴ used by the
+  /// Tamil convention for aspirated/voiced consonants. ² (U+00B2) and ³
+  /// (U+00B3) fall inside the Latin-1 (Roman) code point range, so script
+  /// detection would otherwise split a Tamil word at every superscript and
+  /// break the two-codepoint mappings (க² → ඛ, ப³ → බ).
+  static bool _isTamilSuperscript(int code) =>
+      code == 0x00B2 || code == 0x00B3 || code == 0x2074;
+
   // from other scripts (mixed) to Sinhala
   static convertFromMixed(String mixedText) {
-    // zwj messes with computing runs + hack to process last char
-    mixedText = '${cleanupZWJ(mixedText)} ';
+    mixedText = cleanupZWJ(mixedText);
     Script? curScript;
     String run = '', output = '';
     for (int i = 0, length = mixedText.length; i < length; i++) {
-      final newScript = _getScriptForCode(mixedText.codeUnitAt(i));
-      if (newScript != curScript || (i == mixedText.length - 1)) {
-        // make sure to process the last run
-        output += convertFrom(run, curScript!);
+      final code = mixedText.codeUnitAt(i);
+      final newScript = _getScriptForCode(code);
+      // A Tamil superscript marker stays glued to the surrounding non-Roman
+      // run so pair mappings still apply (see [_isTamilSuperscript]).
+      final isTamilMarker =
+          _isTamilSuperscript(code) &&
+          curScript != null &&
+          curScript != Script.roman;
+      if (!isTamilMarker && newScript != null && newScript != curScript) {
+        output += _convertFromMixedRun(run, curScript);
         curScript = newScript;
         run = mixedText[i];
       } else {
+        // Same script as before, a space, a superscript marker, or a
+        // character with no known script — accumulate it into the current
+        // run. Keeping unrecognized characters inside the run lets
+        // multi-codepoint mappings (like Tamil "த⁴" → "ධ") still apply,
+        // and avoids flushing an empty run through a null script.
         run += mixedText[i];
       }
     }
+    output += _convertFromMixedRun(run, curScript);
     return output;
+  }
+
+  static String _convertFromMixedRun(String run, Script? script) {
+    if (run.isEmpty) return '';
+    if (script == null) return run; // unrecognized script: pass through
+    return convertFrom(run, script);
   }
 }
 

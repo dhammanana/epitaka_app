@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../core/utils/velthuis.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 
@@ -138,9 +139,16 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     final activeTab = _ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
 
-    _lastSearchQuery = query;
+    // Convert the query from any Pali script (and Velthuis notation) to
+    // Roman IAST. The reader always searches against Roman-script text
+    // (the database stores Pāli in romanised form regardless of the
+    // display script), so a word typed in Myanmar, Thai, Tamil, etc.
+    // must be converted to Roman before it can match.
+    final romanQuery = velthuis(query);
 
-    if (query.trim().isEmpty) {
+    _lastSearchQuery = romanQuery;
+
+    if (romanQuery.trim().isEmpty) {
       state = state.copyWith(
         query: '',
         clearMatches: true,
@@ -149,7 +157,7 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     }
 
     try {
-      final words = query
+      final words = romanQuery
           .trim()
           .split(RegExp(r'\s+'))
           .where((w) => w.isNotEmpty)
@@ -213,17 +221,20 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
       }
 
       // Guard against stale results
-      if (_lastSearchQuery != query) return;
+      if (_lastSearchQuery != romanQuery) return;
 
+      // Store the Roman query so the paragraph highlight can convert it
+      // back to the display script for matching (see
+      // convertSearchQueryForScript in reading_paragraph.dart).
       state = state.copyWith(
-        query: query,
+        query: romanQuery,
         matchParaIds: matchParas,
         matchLineIds: matchLines,
         matchIndex: matchParas.isEmpty ? -1 : 0,
       );
     } catch (e) {
       developer.log('[SEARCH] Error: $e', name: 'epitaka.reader.search');
-      if (_lastSearchQuery == query) {
+      if (_lastSearchQuery == romanQuery) {
         state = state.copyWith(query: '', clearMatches: true);
       }
     }

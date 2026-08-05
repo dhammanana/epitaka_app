@@ -196,7 +196,9 @@ msix_config:
   publisher: CN=BE133D0C-D2FF-4B94-9E9D-C47919B43CBC
   # msix_version intentionally omitted: the msix tool then derives the version
   # from the top-level `version:` field (1.0.10+12 -> 1.0.10.0). The CI
-  # workflow additionally passes --version 1.0.10.12 to include the build
-  # number, keeping the package in sync with the exe file version.
+  # workflow passes --version <version>.0 so the Store package keeps the
+  # required revision 0 (the Microsoft Store rejects MSIX versions whose
+  # 4th component is non-zero) while the exe file version (Runner.rc) still
+  # carries the build number.
   logo_path: assets/icon.png
   store: true
