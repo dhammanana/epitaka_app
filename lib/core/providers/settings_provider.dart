@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
+import '../models/context_menu_action.dart';
 import '../theme/app_colors.dart';
 import '../theme/color_pair.dart';
 import '../utils/pali_script_converter.dart';
@@ -397,6 +398,11 @@ class AppSettings {
   /// Defaults to true (hidden) for a cleaner reading/search display.
   final bool stripVariantAnnotations;
 
+  /// Whether inlined book-link chips (links to commentaries and other
+  /// connected books shown under the relevant Pāli lines) are rendered in
+  /// the reader. Defaults to true.
+  final bool showBookLinks;
+
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
 
@@ -412,6 +418,14 @@ class AppSettings {
   /// 0 means the user never resized it, so the screen-size-aware default
   /// is used instead.
   final double rightPanelWidth;
+
+  /// The reader text-selection context menu: which actions appear, in what
+  /// order, plus any added external apps / custom AI prompts.
+  final List<ContextMenuAction> contextMenuActions;
+
+  /// Whether the user has already been shown the one-time Feature Guide
+  /// welcome (during first-run indexing or on the Library screen).
+  final bool featureGuideSeen;
 
   static const Color defaultPaliColor = Color(0xFF7A2E1D);
   static const Color defaultTranslationColor = Color(0xFF33312E);
@@ -444,10 +458,13 @@ class AppSettings {
     this.copyDefaultScope = CopyScope.both,
     this.paliScript = Script.roman,
     this.stripVariantAnnotations = true,
+    this.showBookLinks = true,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.translationVersionMap = const {},
     this.leftPanelWidth = 0,
     this.rightPanelWidth = 0,
+    this.contextMenuActions = const [],
+    this.featureGuideSeen = false,
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
     this.useBookName = true,
     this.includeHeading = true,
@@ -483,9 +500,12 @@ class AppSettings {
     Script? paliScript,
     LibraryExpandLevel? libraryExpandLevel,
     bool? stripVariantAnnotations,
+    bool? showBookLinks,
     Map<String, String>? translationVersionMap,
     double? leftPanelWidth,
     double? rightPanelWidth,
+    List<ContextMenuAction>? contextMenuActions,
+    bool? featureGuideSeen,
     String? quoteTemplate,
     bool? useBookName,
     bool? includeHeading,
@@ -526,10 +546,13 @@ class AppSettings {
       libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
       stripVariantAnnotations:
           stripVariantAnnotations ?? this.stripVariantAnnotations,
+      showBookLinks: showBookLinks ?? this.showBookLinks,
       translationVersionMap:
           translationVersionMap ?? this.translationVersionMap,
       leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
       rightPanelWidth: rightPanelWidth ?? this.rightPanelWidth,
+      contextMenuActions: contextMenuActions ?? this.contextMenuActions,
+      featureGuideSeen: featureGuideSeen ?? this.featureGuideSeen,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
       useBookName: useBookName ?? this.useBookName,
       includeHeading: includeHeading ?? this.includeHeading,
@@ -640,6 +663,25 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     return raw;
   }
 
+  List<ContextMenuAction> _loadContextMenuActions() {
+    final prefs = _prefs;
+    if (prefs == null) return defaultContextMenuActions();
+    final raw = prefs.getString('context_menu_actions');
+    if (raw == null || raw.isEmpty) return defaultContextMenuActions();
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final actions = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(ContextMenuAction.fromJson)
+          .where((a) => a.id.isNotEmpty)
+          .toList();
+      if (actions.isEmpty) return defaultContextMenuActions();
+      return actions;
+    } catch (_) {
+      return defaultContextMenuActions();
+    }
+  }
+
   Map<String, String> _loadTranslationVersionMap() {
     final prefs = _prefs;
     if (prefs == null) return const {};
@@ -724,9 +766,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
               LibraryExpandLevel.category.index],
       stripVariantAnnotations:
           prefs.getBool('strip_variant_annotations') ?? true,
+      showBookLinks: prefs.getBool('show_book_links') ?? true,
       translationVersionMap: _loadTranslationVersionMap(),
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
+      contextMenuActions: _loadContextMenuActions(),
+      featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
       quoteTemplate:
           prefs.getString('quote_template') ??
           '- {book_name} > {heading} VRI p.{vri_page}',
@@ -999,6 +1044,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setBool('strip_variant_annotations', value);
   }
 
+  /// Toggle the inlined book-link chips (commentary links) in the reader.
+  Future<void> setShowBookLinks(bool value) async {
+    state = state.copyWith(showBookLinks: value);
+    await _prefs?.setBool('show_book_links', value);
+  }
+
   Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
     state = state.copyWith(libraryExpandLevel: level);
     await _prefs?.setInt('library_expand_level', level.index);
@@ -1034,6 +1085,53 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setRightPanelWidth(double width) async {
     state = state.copyWith(rightPanelWidth: width);
     await _prefs?.setDouble('right_panel_width', width);
+  }
+
+  /// Replace the full ordered context-menu action list.
+  Future<void> setContextMenuActions(List<ContextMenuAction> actions) async {
+    state = state.copyWith(contextMenuActions: actions);
+    await _prefs?.setString(
+      'context_menu_actions',
+      jsonEncode(actions.map((a) => a.toJson()).toList()),
+    );
+  }
+
+  /// Toggle whether a context-menu action is enabled.
+  Future<void> setContextMenuActionEnabled(String id, bool enabled) async {
+    final actions = state.contextMenuActions
+        .map((a) => a.id == id ? a.copyWith(enabled: enabled) : a)
+        .toList();
+    await setContextMenuActions(actions);
+  }
+
+  /// Update a custom AI prompt action's name/text.
+  Future<void> updateContextMenuPrompt(
+    String id, {
+    required String promptName,
+    required String prompt,
+  }) async {
+    final actions = state.contextMenuActions
+        .map(
+          (a) => a.id == id
+              ? a.copyWith(promptName: promptName, prompt: prompt)
+              : a,
+        )
+        .toList();
+    await setContextMenuActions(actions);
+  }
+
+  /// Remove a context-menu action (external app or custom prompt).
+  Future<void> removeContextMenuAction(String id) async {
+    final actions = state.contextMenuActions
+        .where((a) => a.id != id)
+        .toList();
+    await setContextMenuActions(actions);
+  }
+
+  /// Mark the one-time Feature Guide welcome as shown (or reset it).
+  Future<void> setFeatureGuideSeen(bool seen) async {
+    state = state.copyWith(featureGuideSeen: seen);
+    await _prefs?.setBool('feature_guide_seen', seen);
   }
 
   /// Set the translation version (suffix) to use for a language code.

@@ -10,13 +10,16 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ProcessTextService;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/models/context_menu_action.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart' show Script;
+import '../../../core/utils/process_text_service.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
 import '../../../core/utils/responsive_breakpoint.dart';
@@ -82,6 +85,7 @@ class ReaderCopyService {
     required String? selectedText,
     VoidCallback? onExplainTap,
     VoidCallback? onSummarizeChapterTap,
+    void Function(String prompt)? onAiPrompt,
   }) {
     TextSelectionToolbarAnchors anchors;
     try {
@@ -97,14 +101,86 @@ class ReaderCopyService {
     }
     final settings = ref.read(settingsProvider);
     final script = settings.paliScript;
+    final loc = AppLocalizations.of(context);
+
+    // Render the user's configured, enabled actions in their chosen order.
+    // Never show an empty toolbar — fall back to Copy alone when every
+    // action has been disabled.
+    var actions = settings.contextMenuActions.where((a) => a.enabled).toList();
+    if (actions.isEmpty) {
+      actions = defaultContextMenuActions()
+          .where((a) => a.builtinId == ContextMenuBuiltins.copy)
+          .toList();
+    }
 
     return AdaptiveTextSelectionToolbar(
       anchors: anchors,
       children: [
+        for (final action in actions)
+          switch (action.kind) {
+            ContextMenuActionKind.builtin => _builtinButton(
+                context: context,
+                ref: ref,
+                loc: loc,
+                colors: colors,
+                selectableRegionState: selectableRegionState,
+                lastSelectedContent: lastSelectedContent,
+                visibleStartIndex: visibleStartIndex,
+                visibleEndIndex: visibleEndIndex,
+                bookId: bookId,
+                currentParaId: currentParaId,
+                currentLineId: currentLineId,
+                selectedText: selectedText,
+                script: script,
+                builtinId: action.builtinId,
+                onExplainTap: onExplainTap,
+                onSummarizeChapterTap: onSummarizeChapterTap,
+              ),
+            ContextMenuActionKind.externalApp => _externalAppButton(
+                context: context,
+                colors: colors,
+                selectableRegionState: selectableRegionState,
+                action: action,
+                selectedText: selectedText,
+              ),
+            ContextMenuActionKind.aiPrompt => _aiPromptButton(
+                context: context,
+                colors: colors,
+                selectableRegionState: selectableRegionState,
+                action: action,
+                selectedText: selectedText,
+                onAiPrompt: onAiPrompt,
+              ),
+          },
+      ],
+    );
+  }
+
+  /// Build the toolbar button for one of the app's built-in actions.
+  static Widget _builtinButton({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppLocalizations loc,
+    required ColorScheme colors,
+    required SelectableRegionState selectableRegionState,
+    required SelectedContent? lastSelectedContent,
+    required int visibleStartIndex,
+    required int visibleEndIndex,
+    required String bookId,
+    required int? currentParaId,
+    required int? currentLineId,
+    required String? selectedText,
+    required Script script,
+    required String? builtinId,
+    VoidCallback? onExplainTap,
+    VoidCallback? onSummarizeChapterTap,
+  }) {
+    switch (builtinId) {
+      case ContextMenuBuiltins.copy:
         // ── Copy (same as Cmd+C) ────────────────────────────────────
-        ContextMenuButton(
+        return ContextMenuButton(
           icon: Icons.copy,
-          label: 'Copy',
+          label: loc.copy,
           onTap: () async {
             try {
               await copySelectedContent(
@@ -132,11 +208,12 @@ class ReaderCopyService {
             }
           },
           colors: colors,
-        ),
+        );
+      case ContextMenuBuiltins.excerpt:
         // ── Excerpt (copy with citation) ────────────────────────────
-        ContextMenuButton(
+        return ContextMenuButton(
           icon: Icons.format_quote,
-          label: 'Excerpt',
+          label: loc.excerpt,
           onTap: () async {
             try {
               await copySelectedContent(
@@ -163,11 +240,12 @@ class ReaderCopyService {
             }
           },
           colors: colors,
-        ),
+        );
+      case ContextMenuBuiltins.copyLink:
         // ── Copy Link (with lineId and selected text) ───────────────
-        ContextMenuButton(
+        return ContextMenuButton(
           icon: Icons.link,
-          label: 'Copy Link',
+          label: loc.copyLink,
           onTap: () async {
             try {
               await copyLink(
@@ -192,11 +270,12 @@ class ReaderCopyService {
             }
           },
           colors: colors,
-        ),
+        );
+      case ContextMenuBuiltins.dictionary:
         // ── Look up in Dictionary ──────────────────────────────────
-        ContextMenuButton(
+        return ContextMenuButton(
           icon: Icons.menu_book,
-          label: 'Dictionary',
+          label: loc.dictionary,
           onTap: () async {
             final word = _extractLookupWord(lastSelectedContent);
             if (word != null) {
@@ -205,33 +284,36 @@ class ReaderCopyService {
             selectableRegionState.clearSelection();
           },
           colors: colors,
-        ),
+        );
+      case ContextMenuBuiltins.explain:
         // ── Explain (send to Vimaṃsa AI) ────────────────────────────
-        if (onExplainTap != null)
-          ContextMenuButton(
-            icon: Icons.auto_awesome,
-            label: 'Explain',
-            onTap: () {
-              onExplainTap();
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
+        if (onExplainTap == null) return const SizedBox.shrink();
+        return ContextMenuButton(
+          icon: Icons.auto_awesome,
+          label: loc.explain,
+          onTap: () {
+            onExplainTap();
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
+      case ContextMenuBuiltins.summarizeChapter:
         // ── Summarize Chapter (send to Vimaṃsa AI) ──────────────────
-        if (onSummarizeChapterTap != null)
-          ContextMenuButton(
-            icon: Icons.notes,
-            label: 'Summarize Ch.',
-            onTap: () {
-              onSummarizeChapterTap();
-              selectableRegionState.clearSelection();
-            },
-            colors: colors,
-          ),
+        if (onSummarizeChapterTap == null) return const SizedBox.shrink();
+        return ContextMenuButton(
+          icon: Icons.notes,
+          label: loc.summarizeChapter,
+          onTap: () {
+            onSummarizeChapterTap();
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
+      case ContextMenuBuiltins.share:
         // ── Share (with quote like excerpt) ─────────────────────────
-        ContextMenuButton(
+        return ContextMenuButton(
           icon: Icons.share,
-          label: 'Share',
+          label: loc.share,
           onTap: () async {
             try {
               await shareText(
@@ -254,8 +336,67 @@ class ReaderCopyService {
             }
           },
           colors: colors,
-        ),
-      ],
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  /// Build the toolbar button that launches an installed external app
+  /// (dictionary, translator, …) with the selected text.
+  static Widget _externalAppButton({
+    required BuildContext context,
+    required ColorScheme colors,
+    required SelectableRegionState selectableRegionState,
+    required ContextMenuAction action,
+    required String? selectedText,
+  }) {
+    final loc = AppLocalizations.of(context);
+    return ContextMenuButton(
+      icon: Icons.extension_outlined,
+      label: action.appLabel ?? action.appPackage ?? loc.externalApp,
+      onTap: () async {
+        final text = selectedText ?? '';
+        if (text.isNotEmpty) {
+          final ok = await ProcessTextService.launch(
+            ProcessTextApp(
+              packageName: action.appPackage ?? '',
+              label: action.appLabel ?? '',
+            ),
+            text,
+          );
+          if (!ok) _showSnackBar(context, 'Could not open the app.');
+        }
+        selectableRegionState.clearSelection();
+      },
+      colors: colors,
+    );
+  }
+
+  /// Build the toolbar button that runs a saved AI prompt against the
+  /// selected text. The `{selectedText}` placeholder (if present) is
+  /// replaced with the actual selection before handing the prompt over.
+  static Widget _aiPromptButton({
+    required BuildContext context,
+    required ColorScheme colors,
+    required SelectableRegionState selectableRegionState,
+    required ContextMenuAction action,
+    required String? selectedText,
+    void Function(String prompt)? onAiPrompt,
+  }) {
+    final loc = AppLocalizations.of(context);
+    return ContextMenuButton(
+      icon: Icons.smart_toy_outlined,
+      label: action.promptName ?? loc.prompt,
+      onTap: () {
+        final text = selectedText ?? '';
+        final prompt = (action.prompt ?? '').replaceAll('{selectedText}', text);
+        if (prompt.isNotEmpty && onAiPrompt != null) {
+          onAiPrompt(prompt);
+        }
+        selectableRegionState.clearSelection();
+      },
+      colors: colors,
     );
   }
 

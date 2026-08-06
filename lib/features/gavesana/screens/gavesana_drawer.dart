@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../router/app_router.dart' show AppRoutes;
 
 /// The main navigation drawer.
 ///
@@ -235,6 +236,27 @@ class _MainDrawerState extends State<MainDrawer> {
                     ),
                     label: Text(
                       loc.feedback,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ),
+                // Feature Guide (reopen the new-user instructions anytime)
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => _closeAndGo(
+                      context,
+                      AppRoutes.featureGuide,
+                    ),
+                    icon: Icon(
+                      Icons.explore_outlined,
+                      size: 16,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                    label: Text(
+                      loc.featureGuide,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                       ),

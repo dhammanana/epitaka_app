@@ -167,6 +167,9 @@ const Map<String, String> vi = {
   'Keep Screen On': 'Giữ màn hình sáng',
   'Prevent screen from dimming while reading':
       'Không cho màn hình tối khi đọc',
+  'Show Book Links': 'Hiện liên kết sách',
+  'Show links to inlined commentaries & connected books':
+      'Hiện liên kết đến chú giải chèn trong văn bản và sách liên kết',
   'Book ID': 'Mã sách',
   'Book Name': 'Tên sách',
   'Full Citation': 'Trích dẫn đầy đủ',
@@ -734,6 +737,122 @@ const Map<String, String> vi = {
   'queries': 'lượt hỏi',
   'remaining in this thread': 'còn lại trong cuộc trò chuyện này',
   'Translation': 'Bản dịch',
+
+  // ── Context Menu ────────────────────────────────────────────────────
+  'Context Menu': 'Menu ngữ cảnh',
+  'Customize the selection toolbar': 'Tùy chỉnh thanh công cụ chọn văn bản',
+  'Customize the actions shown when you select text in the reader. Drag to reorder, toggle to hide, and add apps or AI prompts.':
+      'Tùy chỉnh các thao tác hiển thị khi bạn chọn văn bản trong trình đọc. Kéo để sắp xếp lại, gạt để ẩn, và thêm ứng dụng hoặc lời nhắc AI.',
+  'Add Prompt': 'Thêm lời nhắc',
+  'Add App': 'Thêm ứng dụng',
+  'Prompt Name': 'Tên lời nhắc',
+  'Prompt': 'Lời nhắc',
+  'Use {selectedText} as a placeholder for the selected text.':
+      'Dùng {selectedText} làm chỗ chứa văn bản đã chọn.',
+  'Edit Prompt': 'Sửa lời nhắc',
+  'Installed Apps': 'Ứng dụng đã cài',
+  'No context menu actions yet. Add apps or prompts below.':
+      'Chưa có thao tác menu ngữ cảnh nào. Thêm ứng dụng hoặc lời nhắc bên dưới.',
+  'External app': 'Ứng dụng ngoài',
+  'Copy': 'Sao chép',
+  'Copy the selected text': 'Sao chép văn bản đã chọn',
+  'Excerpt': 'Trích đoạn',
+  'Copy with citation': 'Sao chép kèm trích dẫn',
+  'Copy Link': 'Sao chép liên kết',
+  'Copy a link to this passage': 'Sao chép liên kết đến đoạn này',
+  'Explain': 'Giải thích',
+  'Explain the selected text with AI': 'Giải thích văn bản đã chọn bằng AI',
+  'Summarize Ch.': 'Tóm tắt chương',
+  'Summarize the current chapter with AI': 'Tóm tắt chương hiện tại bằng AI',
+  'Share': 'Chia sẻ',
+  'Share the selected text': 'Chia sẻ văn bản đã chọn',
+  'Look up the selected word': 'Tra từ đã chọn',
+
+  // ── Feature Guide ──────────────────────────────────────────────────
+  'Feature Guide': 'Hướng dẫn tính năng',
+  'Learn what ePitaka can do': 'Tìm hiểu những gì ePitaka có thể làm',
+  'Step-by-step instructions for the reader toolbar, text selection, settings and the AI assistant.':
+      'Hướng dẫn từng bước cho thanh công cụ trình đọc, chọn văn bản, cài đặt và trợ lý AI.',
+  'Take a quick tour of the main features — you can reopen this guide anytime from the menu.':
+      'Xem nhanh các tính năng chính — bạn có thể mở lại hướng dẫn này bất cứ lúc nào từ menu.',
+  'Explore features': 'Khám phá tính năng',
+  'Got it': 'Đã hiểu',
+  'While you wait…': 'Trong lúc chờ…',
+  'While you wait, here is a quick tour of what you can do with ePitaka.':
+      'Trong lúc chờ, đây là một vòng tham quan nhanh những gì bạn có thể làm với ePitaka.',
+
+  // ── Feature Guide: Reader Toolbar ─────────────────────────────────
+  'Reader Toolbar': 'Thanh công cụ đọc',
+  'The floating toolbar at the bottom of the reader puts every action one tap away.':
+      'Thanh công cụ nổi ở cuối màn hình đọc đưa mọi thao tác chỉ cách một chạm.',
+  'Contents — jump between sections from the table of contents.':
+      'Mục lục — nhảy giữa các phần từ bảng mục lục.',
+  'Search — find a word or phrase inside the current book.':
+      'Tìm kiếm — tìm từ hoặc cụm từ trong sách hiện tại.',
+  'Dictionary — look up any Pāli word instantly.':
+      'Từ điển — tra bất kỳ từ Pāli nào ngay lập tức.',
+  'Jump — go to a page number or a connected book.':
+      'Nhảy tới — đến một số trang hoặc sách liên kết.',
+  'Display layout — switch between hide-translation, line-by-line and side-by-side views.':
+      'Bố cục hiển thị — chuyển giữa ẩn bản dịch, từng dòng và song song.',
+  'Listen — read the passage aloud with text-to-speech; tap again to stop.':
+      'Nghe — đọc to đoạn văn bằng giọng nói; chạm lần nữa để dừng.',
+  'Bookmark — save your place and return to it later from the Library.':
+      'Đánh dấu — lưu vị trí đọc và quay lại sau từ Thư viện.',
+
+  // ── Feature Guide: Context Menu ───────────────────────────────────
+  'Select any text in the reader and a toolbar of smart actions appears above it.':
+      'Chọn bất kỳ văn bản nào trong trình đọc và một thanh công cụ thao tác thông minh sẽ hiện ra phía trên.',
+  'Select text — tap and drag, or double-tap a word.':
+      'Chọn văn bản — chạm và kéo, hoặc chạm hai lần vào một từ.',
+  'Copy — copy the selection as plain text.': 'Sao chép — sao chép vùng chọn dạng văn bản thường.',
+  'Excerpt — copy with a formatted citation.': 'Trích đoạn — sao chép kèm trích dẫn có định dạng.',
+  'Copy Link — copy a shareable link to this exact passage.':
+      'Sao chép liên kết — sao chép liên kết chia sẻ đến đúng đoạn này.',
+  'Dictionary — look up the selected word.': 'Từ điển — tra từ đã chọn.',
+  'Explain — ask Vimaṃsa AI to explain the selection.':
+      'Giải thích — nhờ AI Vimaṃsa giải thích vùng chọn.',
+  'Summarize Ch. — summarize the current chapter with AI.':
+      'Tóm tắt chương — tóm tắt chương hiện tại bằng AI.',
+  'Share — share the selection via the system share sheet.':
+      'Chia sẻ — chia sẻ vùng chọn qua bảng chia sẻ hệ thống.',
+  'Customize — Settings → Context Menu lets you reorder, hide, or add apps and AI prompts.':
+      'Tùy chỉnh — Cài đặt → Menu ngữ cảnh cho phép sắp xếp lại, ẩn, hoặc thêm ứng dụng và lời nhắc AI.',
+
+  // ── Feature Guide: Settings ───────────────────────────────────────
+  'Everything you need to personalize ePitaka.':
+      'Mọi thứ bạn cần để cá nhân hóa ePitaka.',
+  'Language & script — choose the UI language and the Pāli script (Roman, Devanagari, Sinhala, Myanmar, Thai…).':
+      'Ngôn ngữ & chữ viết — chọn ngôn ngữ giao diện và chữ viết Pāli (Latin, Devanagari, Sinhala, Myanmar, Thái…).',
+  'Appearance — themes, accent color and reading colors.':
+      'Giao diện — chủ đề, màu nhấn và màu đọc.',
+  'Translations & Downloads — download, update and reorder translation databases.':
+      'Bản dịch & Tải về — tải, cập nhật và sắp xếp cơ sở dữ liệu bản dịch.',
+  'Reading Options — layout, page numbering, quote format and auto-scroll.':
+      'Tùy chọn đọc — bố cục, đánh số trang, định dạng trích dẫn và tự cuộn.',
+  'Text-to-Speech — voice, speed, pitch and word replacements.':
+      'Văn bản thành giọng nói — giọng đọc, tốc độ, cao độ và thay thế từ.',
+  'Dictionaries — enable, disable and reorder dictionaries.':
+      'Từ điển — bật, tắt và sắp xếp từ điển.',
+  'AI Q&A — enter your API key and pick models for Vimaṃsa.':
+      'AI Q&A — nhập khóa API và chọn mô hình cho Vimaṃsa.',
+
+  // ── Feature Guide: AI (Vimaṃsa) ───────────────────────────────────
+  'AI — Vimaṃsa': 'AI — Vimaṃsa',
+  'Ask the AI about the Tipiṭaka. It searches the Canon and answers with citations.':
+      'Hỏi AI về Tipiṭaka. AI tìm kiếm trong Kinh điển và trả lời kèm trích dẫn.',
+  'Ask a question — open Vimaṃsa from the menu and ask anything.':
+      'Đặt câu hỏi — mở Vimaṃsa từ menu và hỏi bất cứ điều gì.',
+  'Explain — select text in the reader and tap Explain for a commentary-grounded explanation.':
+      'Giải thích — chọn văn bản trong trình đọc và chạm Giải thích để có lời giải thích dựa trên chú giải.',
+  'Summarize — tap Summarize Ch. to get an overview of the current chapter.':
+      'Tóm tắt — chạm Tóm tắt chương để có tổng quan về chương hiện tại.',
+  'Attach a passage — type @ to attach a sutta or heading to your question.':
+      'Đính kèm đoạn — gõ @ để đính kèm một bài kinh hoặc tiêu đề vào câu hỏi.',
+  'Chat history — your conversations are saved; continue them anytime.':
+      'Lịch sử trò chuyện — cuộc trò chuyện được lưu lại; tiếp tục bất cứ lúc nào.',
+  'Custom prompts — add your own AI prompts in Settings → Context Menu; use {selectedText} as a placeholder.':
+      'Lời nhắc tùy chỉnh — thêm lời nhắc AI của riêng bạn trong Cài đặt → Menu ngữ cảnh; dùng {selectedText} làm chỗ chứa.',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'Nghe',

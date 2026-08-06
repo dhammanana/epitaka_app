@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.0.12+14
+version: 1.0.12+15
 
 environment:
   sdk: ^3.12.2

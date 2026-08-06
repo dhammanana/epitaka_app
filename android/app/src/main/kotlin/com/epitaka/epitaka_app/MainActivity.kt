@@ -1,6 +1,10 @@
 package com.dn.epitaka
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
@@ -65,6 +69,62 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PROCESS_TEXT_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "queryProcessTextApps" -> {
+                        val apps = queryProcessTextApps()
+                        result.success(apps)
+                    }
+                    "launchProcessTextApp" -> {
+                        val packageName = call.argument<String>("packageName")
+                        val text = call.argument<String>("text") ?: ""
+                        if (packageName == null || text.isEmpty()) {
+                            result.error("BAD_ARGS", "packageName and text required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            startActivity(processTextIntent(packageName, text))
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("LAUNCH_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * Queries installed apps that handle [Intent.ACTION_PROCESS_TEXT] with a
+     * `text/plain` type (dictionaries, translators, note apps, …) and returns
+     * them as a list of `{packageName, label}` maps.
+     */
+    private fun queryProcessTextApps(): List<Map<String, String>> {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PackageManager.MATCH_ALL.toLong()
+        } else {
+            0L
+        }
+        val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
+            type = "text/plain"
+        }
+        val infos: List<ResolveInfo> =
+            packageManager.queryIntentActivities(intent, flags.toInt())
+        return infos.mapNotNull { info ->
+            val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
+            val label = info.loadLabel(packageManager)?.toString() ?: pkg
+            mapOf("packageName" to pkg, "label" to label)
+        }.distinctBy { it["packageName"] }
+    }
+
+    /** Builds an ACTION_PROCESS_TEXT intent targeting [packageName]. */
+    private fun processTextIntent(packageName: String, text: String): Intent {
+        return Intent(Intent.ACTION_PROCESS_TEXT).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_PROCESS_TEXT, text)
+            setPackage(packageName)
+        }
     }
 
     /**
@@ -113,6 +173,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "epitaka/asset_pack"
+        private const val PROCESS_TEXT_CHANNEL = "epitaka/process_text"
         private val CORE_DB_FILES = listOf("epitaka.db", "dpd-dictionary.db")
     }
 }

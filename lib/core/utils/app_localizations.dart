@@ -27,6 +27,10 @@ class AppLocalizations {
     return AppStrings.tableFor(locale.languageCode)[key] ?? key;
   }
 
+  /// Resolve any key in the current language (used by data-driven content
+  /// such as the Feature Guide, whose text keys are English source strings).
+  String t(String key) => _t(key);
+
   // ═══════════════════════════════════════════════════════════════════════
   //  COMMON / SHARED
   // ═══════════════════════════════════════════════════════════════════════
@@ -85,6 +89,10 @@ class AppLocalizations {
   String get stripVariantAnnotations => _t('Show variant readings');
   String get stripVariantAnnotationsSubtitle => _t(
     'Show variant readings from other textual versions',
+  );
+  String get showBookLinks => _t('Show Book Links');
+  String get showBookLinksSubtitle => _t(
+    'Show links to inlined commentaries & connected books',
   );
   String get libraryBrowser => _t('Library Browser');
   String get defaultExpandLevel => _t('Default expand level');
@@ -279,6 +287,57 @@ class AppLocalizations {
   String get translationOrder => _t('Translation Order');
   String get pickColor => _t('Pick Color');
   String get updateCheckComplete => _t('Update check complete.');
+
+  // ── Context Menu (reader selection toolbar) ───────────────────────────
+  String get contextMenu => _t('Context Menu');
+  String get contextMenuSubtitle => _t('Customize the selection toolbar');
+  String get contextMenuDesc => _t(
+        'Customize the actions shown when you select text in the reader. '
+        'Drag to reorder, toggle to hide, and add apps or AI prompts.',
+      );
+  String get addPrompt => _t('Add Prompt');
+  String get addApp => _t('Add App');
+  String get promptName => _t('Prompt Name');
+  String get prompt => _t('Prompt');
+  String get promptPlaceholderHint =>
+      _t('Use {selectedText} as a placeholder for the selected text.');
+  String get editPrompt => _t('Edit Prompt');
+  String get installedApps => _t('Installed Apps');
+  String get noContextMenuActions =>
+      _t('No context menu actions yet. Add apps or prompts below.');
+  String get externalApp => _t('External app');
+  String get copy => _t('Copy');
+  String get copyDesc => _t('Copy the selected text');
+  String get excerpt => _t('Excerpt');
+  String get excerptDesc => _t('Copy with citation');
+  String get copyLink => _t('Copy Link');
+  String get copyLinkDesc => _t('Copy a link to this passage');
+  String get dictionaryDesc => _t('Look up the selected word');
+  String get explain => _t('Explain');
+  String get explainDesc => _t('Explain the selected text with AI');
+  String get summarizeChapter => _t('Summarize Ch.');
+  String get summarizeChapterDesc =>
+      _t('Summarize the current chapter with AI');
+  String get share => _t('Share');
+  String get shareDesc => _t('Share the selected text');
+
+  // ── Feature Guide (new-user instructions) ─────────────────────────────
+  String get featureGuide => _t('Feature Guide');
+  String get featureGuideSubtitle => _t('Learn what ePitaka can do');
+  String get featureGuideIntro => _t(
+        'Step-by-step instructions for the reader toolbar, text selection, '
+        'settings and the AI assistant.',
+      );
+  String get featureGuideWelcomeDesc => _t(
+        'Take a quick tour of the main features — you can reopen this guide '
+        'anytime from the menu.',
+      );
+  String get exploreFeatures => _t('Explore features');
+  String get gotIt => _t('Got it');
+  String get exploreWhileWaiting => _t('While you wait…');
+  String get exploreWhileWaitingDesc => _t(
+        'While you wait, here is a quick tour of what you can do with ePitaka.',
+      );
 
   // ── Display modes (Translation settings) ──────────────────────────────
   String get hideTranslationMode => _t('Hide Translation');

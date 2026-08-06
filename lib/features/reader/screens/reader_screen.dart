@@ -462,9 +462,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // item indices from the layout.
   void _onPositionsChanged(String bookId) {
     // ── Sheet-open guard: skip provider writes when a modal bottom sheet
-    // is open. The dictionary sheet sets dictionarySheetOpenProvider to true.
+    // is open. The dictionary and book-link sheets increment
+    // dictionarySheetOpenProvider while open.
     final dictSheetOpen = ref.read(dictionarySheetOpenProvider);
-    if (dictSheetOpen) {
+    if (dictSheetOpen > 0) {
       return;
     }
 
@@ -1740,6 +1741,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           ? _onExplainTap
           : null,
       onSummarizeChapterTap: _onSummarizeChapterTap,
+      // Custom AI prompts run against the selected text (see the Context
+      // Menu settings screen). {selectedText} is already substituted in
+      // by ReaderCopyService — just stage the prompt and open Vimaṃsa AI.
+      onAiPrompt: (prompt) {
+        ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
+        if (context.mounted) context.push('/ai-qa');
+      },
     );
   }
 
@@ -2592,7 +2600,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightParaId,
     int initialScrollIndex,
   ) {
-    final dictSheetOpen = ref.watch(dictionarySheetOpenProvider);
+    final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
 
     Widget content = ReaderContentWithSelection(
       bookId: activeTab.bookId,

@@ -201,6 +201,15 @@ class ReadingOptionsScreen extends ConsumerWidget {
                     .setStripVariantAnnotations(v),
                 colors: colors,
               ),
+              _SwitchTile(
+                icon: Icons.link,
+                title: loc.showBookLinks,
+                subtitle: loc.showBookLinksSubtitle,
+                value: settings.showBookLinks,
+                onChanged: (v) =>
+                    ref.read(settingsProvider.notifier).setShowBookLinks(v),
+                colors: colors,
+              ),
             ],
           ),
         ],

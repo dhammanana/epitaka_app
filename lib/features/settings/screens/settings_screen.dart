@@ -9,6 +9,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../../../router/app_router.dart' show AppRoutes;
 import '../../gavesana/providers/gavesana_download_provider.dart';
 import '../../search/providers/search_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
@@ -115,6 +116,12 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: loc.ttsReplacementsSubtitle,
                 onTap: () => context.push('/settings/tts/replacements'),
               ),
+              _SettingsTile(
+                icon: Icons.touch_app,
+                title: loc.contextMenu,
+                subtitle: loc.contextMenuSubtitle,
+                onTap: () => context.push('/settings/context-menu'),
+              ),
             ],
           ),
 
@@ -179,6 +186,12 @@ class SettingsScreen extends ConsumerWidget {
             colors: colors,
             showDividers: true,
             children: [
+              _SettingsTile(
+                icon: Icons.explore_outlined,
+                title: loc.featureGuide,
+                subtitle: loc.featureGuideSubtitle,
+                onTap: () => context.push(AppRoutes.featureGuide),
+              ),
               _SettingsTile(
                 icon: Icons.help_outline,
                 title: loc.help,

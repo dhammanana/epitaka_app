@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../features/ai_qa/screens/ai_qa_screen.dart';
 import '../features/gavesana/screens/gavesana_screen.dart';
+import '../features/guide/screens/feature_guide_screen.dart';
 import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
 import '../features/search/widgets/search_screen.dart';
 import '../features/settings/screens/appearance_settings_screen.dart';
+import '../features/settings/screens/context_menu_settings_screen.dart';
 import '../features/settings/screens/dictionary_settings_screen.dart';
 import '../features/settings/screens/help_screen.dart';
 import '../features/settings/screens/reading_options_screen.dart';
@@ -31,11 +33,13 @@ class AppRoutes {
   static const translationSettings = '/settings/translation';
   static const ttsSettings = '/settings/tts';
   static const ttsReplacements = '/settings/tts/replacements';
+  static const contextMenuSettings = '/settings/context-menu';
   static const dictionarySettings = '/settings/dictionary';
   static const help = '/settings/help';
   static const contents = '/contents/:bookId';
   static const gavesana = '/gavesana';
   static const aiQa = '/ai-qa';
+  static const featureGuide = '/guide';
 }
 
 /// The `_buildRouter()` function is called from `app.dart`.
@@ -96,6 +100,11 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             ],
           ),
           GoRoute(
+            path: 'context-menu',
+            name: 'contextMenuSettings',
+            builder: (context, state) => const ContextMenuSettingsScreen(),
+          ),
+          GoRoute(
             path: 'dictionary',
             name: 'dictionarySettings',
             builder: (context, state) => const DictionarySettingsScreen(),
@@ -118,6 +127,15 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
         builder: (context, state) {
           final threadId = state.uri.queryParameters['thread'];
           return VimamsaScreen(initialThreadId: threadId);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.featureGuide,
+        name: 'featureGuide',
+        builder: (context, state) {
+          final showIntro =
+              state.uri.queryParameters['intro'] == 'true';
+          return FeatureGuideScreen(showIntro: showIntro);
         },
       ),
       GoRoute(

@@ -1,5 +1,8 @@
 import 'en.dart';
 import 'vi.dart';
+import 'my.dart';
+import 'si.dart';
+import 'lo.dart';
 
 /// Registry of all supported UI languages.
 ///
@@ -14,13 +17,15 @@ abstract final class AppStrings {
   static const Map<String, Map<String, String>> all = {
     'en': en,
     'vi': vi,
+    'my': my,
+    'si': si,
+    'lo': lo,
   };
 
   /// Locale codes shown in the language picker, in display order.
-  static const List<String> supportedCodes = ['en', 'vi'];
+  static const List<String> supportedCodes = ['en', 'vi', 'my', 'si', 'lo'];
 
   /// Resolve the string table for a locale code, falling back to English
   /// when the code is unknown.
-  static Map<String, String> tableFor(String code) =>
-      all[code] ?? en;
+  static Map<String, String> tableFor(String code) => all[code] ?? en;
 }

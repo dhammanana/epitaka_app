@@ -9,6 +9,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../features/guide/widgets/feature_guide_welcome_sheet.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_dialog.dart';
@@ -42,7 +43,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     // Check if a tab index was passed via query parameter (from drawer)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleTabQueryParam();
+      _maybeShowFeatureGuideWelcome();
     });
+  }
+
+  /// One-time new-user welcome: shows the Feature Guide welcome sheet on the
+  /// first app start (index already built) or right after the initial index
+  /// build completes. Gated by the persisted `featureGuideSeen` flag, and
+  /// skipped when embedded in the desktop library dialog.
+  Future<void> _maybeShowFeatureGuideWelcome() async {
+    // Only auto-show on the routed full-screen Library (not the dialog copy).
+    if (!widget.showAppBar) return;
+    final settings = ref.read(settingsProvider);
+    if (settings.featureGuideSeen) return;
+    // Mark as seen immediately so a rebuild can't double-show it.
+    await ref.read(settingsProvider.notifier).setFeatureGuideSeen(true);
+    if (!mounted) return;
+    // Small delay so the first frame of the Library isn't competing with the
+    // sheet's entrance animation.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    await showFeatureGuideWelcome(context);
   }
 
   void _handleTabQueryParam() {

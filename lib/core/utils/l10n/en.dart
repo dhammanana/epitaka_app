@@ -168,6 +168,9 @@ const Map<String, String> en = {
   'Keep Screen On': 'Keep Screen On',
   'Prevent screen from dimming while reading':
       'Prevent screen from dimming while reading',
+  'Show Book Links': 'Show Book Links',
+  'Show links to inlined commentaries & connected books':
+      'Show links to inlined commentaries & connected books',
   'Book ID': 'Book ID',
   'Book Name': 'Book Name',
   'Full Citation': 'Full Citation',
@@ -736,6 +739,125 @@ const Map<String, String> en = {
   'queries': 'queries',
   'remaining in this thread': 'remaining in this thread',
   'Translation': 'Translation',
+
+  // ── Context Menu ────────────────────────────────────────────────────
+  'Context Menu': 'Context Menu',
+  'Customize the selection toolbar': 'Customize the selection toolbar',
+  'Customize the actions shown when you select text in the reader. Drag to reorder, toggle to hide, and add apps or AI prompts.':
+      'Customize the actions shown when you select text in the reader. Drag to reorder, toggle to hide, and add apps or AI prompts.',
+  'Add Prompt': 'Add Prompt',
+  'Add App': 'Add App',
+  'Prompt Name': 'Prompt Name',
+  'Prompt': 'Prompt',
+  'Use {selectedText} as a placeholder for the selected text.':
+      'Use {selectedText} as a placeholder for the selected text.',
+  'Edit Prompt': 'Edit Prompt',
+  'Installed Apps': 'Installed Apps',
+  'No context menu actions yet. Add apps or prompts below.':
+      'No context menu actions yet. Add apps or prompts below.',
+  'External app': 'External app',
+  'Copy': 'Copy',
+  'Copy the selected text': 'Copy the selected text',
+  'Excerpt': 'Excerpt',
+  'Copy with citation': 'Copy with citation',
+  'Copy Link': 'Copy Link',
+  'Copy a link to this passage': 'Copy a link to this passage',
+  'Explain': 'Explain',
+  'Explain the selected text with AI': 'Explain the selected text with AI',
+  'Summarize Ch.': 'Summarize Ch.',
+  'Summarize the current chapter with AI':
+      'Summarize the current chapter with AI',
+  'Share': 'Share',
+  'Share the selected text': 'Share the selected text',
+  'Look up the selected word': 'Look up the selected word',
+
+  // ── Feature Guide ──────────────────────────────────────────────────
+  'Feature Guide': 'Feature Guide',
+  'Learn what ePitaka can do': 'Learn what ePitaka can do',
+  'Step-by-step instructions for the reader toolbar, text selection, settings and the AI assistant.':
+      'Step-by-step instructions for the reader toolbar, text selection, settings and the AI assistant.',
+  'Take a quick tour of the main features — you can reopen this guide anytime from the menu.':
+      'Take a quick tour of the main features — you can reopen this guide anytime from the menu.',
+  'Explore features': 'Explore features',
+  'Got it': 'Got it',
+  'While you wait…': 'While you wait…',
+  'While you wait, here is a quick tour of what you can do with ePitaka.':
+      'While you wait, here is a quick tour of what you can do with ePitaka.',
+
+  // ── Feature Guide: Reader Toolbar ─────────────────────────────────
+  'Reader Toolbar': 'Reader Toolbar',
+  'The floating toolbar at the bottom of the reader puts every action one tap away.':
+      'The floating toolbar at the bottom of the reader puts every action one tap away.',
+  'Contents — jump between sections from the table of contents.':
+      'Contents — jump between sections from the table of contents.',
+  'Search — find a word or phrase inside the current book.':
+      'Search — find a word or phrase inside the current book.',
+  'Dictionary — look up any Pāli word instantly.':
+      'Dictionary — look up any Pāli word instantly.',
+  'Jump — go to a page number or a connected book.':
+      'Jump — go to a page number or a connected book.',
+  'Display layout — switch between hide-translation, line-by-line and side-by-side views.':
+      'Display layout — switch between hide-translation, line-by-line and side-by-side views.',
+  'Listen — read the passage aloud with text-to-speech; tap again to stop.':
+      'Listen — read the passage aloud with text-to-speech; tap again to stop.',
+  'Bookmark — save your place and return to it later from the Library.':
+      'Bookmark — save your place and return to it later from the Library.',
+
+  // ── Feature Guide: Context Menu ───────────────────────────────────
+  'Select any text in the reader and a toolbar of smart actions appears above it.':
+      'Select any text in the reader and a toolbar of smart actions appears above it.',
+  'Select text — tap and drag, or double-tap a word.':
+      'Select text — tap and drag, or double-tap a word.',
+  'Copy — copy the selection as plain text.': 'Copy — copy the selection as plain text.',
+  'Excerpt — copy with a formatted citation.':
+      'Excerpt — copy with a formatted citation.',
+  'Copy Link — copy a shareable link to this exact passage.':
+      'Copy Link — copy a shareable link to this exact passage.',
+  'Dictionary — look up the selected word.':
+      'Dictionary — look up the selected word.',
+  'Explain — ask Vimaṃsa AI to explain the selection.':
+      'Explain — ask Vimaṃsa AI to explain the selection.',
+  'Summarize Ch. — summarize the current chapter with AI.':
+      'Summarize Ch. — summarize the current chapter with AI.',
+  'Share — share the selection via the system share sheet.':
+      'Share — share the selection via the system share sheet.',
+  'Customize — Settings → Context Menu lets you reorder, hide, or add apps and AI prompts.':
+      'Customize — Settings → Context Menu lets you reorder, hide, or add apps and AI prompts.',
+
+  // ── Feature Guide: Settings ───────────────────────────────────────
+  'Everything you need to personalize ePitaka.':
+      'Everything you need to personalize ePitaka.',
+  'Language & script — choose the UI language and the Pāli script (Roman, Devanagari, Sinhala, Myanmar, Thai…).':
+      'Language & script — choose the UI language and the Pāli script (Roman, Devanagari, Sinhala, Myanmar, Thai…).',
+  'Appearance — themes, accent color and reading colors.':
+      'Appearance — themes, accent color and reading colors.',
+  'Translations & Downloads — download, update and reorder translation databases.':
+      'Translations & Downloads — download, update and reorder translation databases.',
+  'Reading Options — layout, page numbering, quote format and auto-scroll.':
+      'Reading Options — layout, page numbering, quote format and auto-scroll.',
+  'Text-to-Speech — voice, speed, pitch and word replacements.':
+      'Text-to-Speech — voice, speed, pitch and word replacements.',
+  'Dictionaries — enable, disable and reorder dictionaries.':
+      'Dictionaries — enable, disable and reorder dictionaries.',
+  'AI Q&A — enter your API key and pick models for Vimaṃsa.':
+      'AI Q&A — enter your API key and pick models for Vimaṃsa.',
+
+  // ── Feature Guide: AI (Vimaṃsa) ───────────────────────────────────
+  'AI — Vimaṃsa': 'AI — Vimaṃsa',
+  'Ask the AI about the Tipiṭaka. It searches the Canon and answers with citations.':
+      'Ask the AI about the Tipiṭaka. It searches the Canon and answers with citations.',
+  'Ask a question — open Vimaṃsa from the menu and ask anything.':
+      'Ask a question — open Vimaṃsa from the menu and ask anything.',
+  'Explain — select text in the reader and tap Explain for a commentary-grounded explanation.':
+      'Explain — select text in the reader and tap Explain for a commentary-grounded explanation.',
+  'Summarize — tap Summarize Ch. to get an overview of the current chapter.':
+      'Summarize — tap Summarize Ch. to get an overview of the current chapter.',
+  'Attach a passage — type @ to attach a sutta or heading to your question.':
+      'Attach a passage — type @ to attach a sutta or heading to your question.',
+  'Chat history — your conversations are saved; continue them anytime.':
+      'Chat history — your conversations are saved; continue them anytime.',
+  'Custom prompts — add your own AI prompts in Settings → Context Menu; use {selectedText} as a placeholder.':
+      'Custom prompts — add your own AI prompts in Settings → Context Menu; use {selectedText} as a placeholder.',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'Listen',

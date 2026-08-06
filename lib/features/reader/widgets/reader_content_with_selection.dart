@@ -109,6 +109,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       ttsHighlightParaId: ttsHighlightParaId,
       ttsTargetParaId: ttsTargetParaId,
       ttsTargetLineKeys: ttsTargetLineKeys,
+      showBookLinks: settings.showBookLinks,
       searchQuery: searchQuery,
       onFirstContentFrame: onFirstContentFrame,
       initialScrollIndex: initialScrollIndex,

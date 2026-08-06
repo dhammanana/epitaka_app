@@ -36,6 +36,7 @@ class ReaderContentList extends StatelessWidget {
     this.ttsHighlightParaId,
     this.ttsTargetParaId,
     this.ttsTargetLineKeys = const {},
+    this.showBookLinks = true,
     this.searchQuery,
     this.onFirstContentFrame,
     this.initialScrollIndex,
@@ -85,6 +86,9 @@ class ReaderContentList extends StatelessWidget {
 
   /// Per-line GlobalKeys for fine-scroll to a specific line.
   final Map<int, GlobalKey> ttsTargetLineKeys;
+
+  /// Whether inlined book-link chips (commentary links) are rendered.
+  final bool showBookLinks;
 
   // ── Search ──────────────────────────────────────────────────────────
 
@@ -192,6 +196,7 @@ class ReaderContentList extends StatelessWidget {
           langTypographies: langTypographies,
           enabledLangCodes: enabledLangs,
           bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
+          showBookLinks: showBookLinks,
           searchQuery: searchQuery,
           ttsHighlightLineId: ttsHighlightLineId,
           ttsHighlightParaId: ttsHighlightParaId,

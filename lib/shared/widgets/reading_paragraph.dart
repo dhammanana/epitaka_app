@@ -57,6 +57,10 @@ class ReadingParagraph extends StatelessWidget {
   /// When non-empty, chips are rendered below the linked lines.
   final ParaBookLinks bookLinks;
 
+  /// Whether inlined book-link chips (commentary links) are rendered.
+  /// When false, linked words are shown as plain text with no chips.
+  final bool showBookLinks;
+
   /// Per-language version badge labels (e.g. "EN", "MY-N", "TH-V2").
   /// When non-empty, small chips are shown next to each translation block.
   final Map<String, String> translationVersionLabels;
@@ -91,6 +95,7 @@ class ReadingParagraph extends StatelessWidget {
     this.langTypographies = const {},
     this.enabledLangCodes = const [],
     this.bookLinks = const {},
+    this.showBookLinks = true,
     this.translationVersionLabels = const {},
     this.searchQuery,
     this.ttsHighlightLineId,
@@ -333,7 +338,7 @@ class ReadingParagraph extends StatelessWidget {
                   colors,
                   isHighlighted,
                 ),
-              if (lineLinks != null && lineLinks.isNotEmpty)
+              if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4),
                   child: _buildChips(lineLinks, colors, context),

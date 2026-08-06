@@ -27,7 +27,7 @@ Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
   // reading_paragraph.dart). A modal sheet is exactly the case where the
   // behind-content should not be in the accessibility tree.
   final container = ProviderScope.containerOf(context);
-  container.read(dictionarySheetOpenProvider.notifier).state = true;
+  container.read(dictionarySheetOpenProvider.notifier).state++;
   return showModalBottomSheet<T>(
     context: context,
     // Route the sheet through the root navigator so it lives in its own
@@ -43,14 +43,15 @@ Future<T?> showDictionarySheet<T>(BuildContext context, String word) {
     enableDrag: false,
     builder: (_) => DictionarySheet(initialWord: word),
   ).whenComplete(() {
-    container.read(dictionarySheetOpenProvider.notifier).state = false;
+    container.read(dictionarySheetOpenProvider.notifier).state--;
   });
 }
 
 // ── Sheet sizing ────────────────────────────────────────────────────────
 // The sheet follows the finger (no snap) so the user can freely:
 //   • drag up    → the sheet grows and its content scrolls (see more info)
-//   • drag down  → when released below [_sheetCloseExtent] the sheet closes
+//   • drag down  → a quick flick (or dragging below [_sheetCloseExtent])
+//     dismisses the sheet — see [_isFlingClose]
 //
 // We dismiss via a single guarded route pop (see the notification listener)
 // which avoids the previous bug where a repeated maybePop also closed the
@@ -59,7 +60,18 @@ const double _sheetMinSize = 0.25;
 const double _sheetInitialSize = 0.7;
 const double _sheetMaxSize = 0.95;
 // Dragging the sheet below this extent dismisses it.
-const double _sheetCloseExtent = 0.3;
+const double _sheetCloseExtent = 0.4;
+// A downward swipe faster than this (in extents per second) dismisses the
+// sheet even if it never reaches [_sheetCloseExtent] — a quick flick only
+// travels a small fraction of the screen, so the extent-based check alone
+// makes "swipe down to close" feel dead.
+const double _kFlingCloseExtentPerSec = 2.0;
+// How far back to look when estimating the flick velocity from extent
+// samples. Mirrors the reader's tab-swipe window.
+const int _kFlingSampleWindowMs = 120;
+// Header drag: a downward drag ending faster than this (px/s) dismisses the
+// sheet regardless of its current size.
+const double _kHeaderFlingVelocityPxPerSec = 700;
 
 // ── Main Sheet Widget ──────────────────────────────────────────────────────
 
@@ -78,6 +90,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   final _sheetController = DraggableScrollableController();
   Timer? _debounce;
   bool _isConverting = false;
+
+  // ── Swipe-down-to-close tracking ──────────────────────────────────
+  // DraggableScrollableSheet reports no drag velocity, so we sample the
+  // sheet extent while a pointer is down and estimate the flick speed
+  // ourselves (same approach as the reader's tab-swipe velocity).
+  int _pointersDown = 0;
+  final List<({double extent, int ms})> _swipeSamples = [];
 
   // Guards the single dismiss of this sheet's route so that a continuous
   // drag gesture can't pop the reader route underneath as well.
@@ -228,6 +247,57 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _initiateSearch(converted);
   }
 
+  // ── Swipe-down-to-close helpers ──────────────────────────────────────
+
+  void _onSheetPointerDown(PointerDownEvent _) {
+    _pointersDown++;
+    _swipeSamples.clear();
+  }
+
+  void _onSheetPointerUp(PointerUpEvent _) {
+    if (_pointersDown > 0) _pointersDown--;
+    // Decide on release, not mid-drag: a deliberate quick drag to shrink the
+    // sheet for a peek can briefly exceed the flick threshold, so closing
+    // mid-gesture would be surprising. On release, the last samples capture
+    // a real flick. Guarded by [_dismissed] so the pop happens only once.
+    final flicked =
+        _swipeSamples.length >= 2 &&
+        _swipeDownVelocity() > _kFlingCloseExtentPerSec;
+    _swipeSamples.clear();
+    if (!_dismissed && flicked) {
+      _dismissed = true;
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _onSheetPointerCancel(PointerCancelEvent _) {
+    if (_pointersDown > 0) _pointersDown--;
+    _swipeSamples.clear();
+  }
+
+  /// Records the current sheet extent with a timestamp, pruning samples
+  /// older than the flick window. Called from the notification listener while
+  /// the sheet moves.
+  void _recordSwipeSample(double extent) {
+    final ms = DateTime.now().millisecondsSinceEpoch;
+    _swipeSamples.add((extent: extent, ms: ms));
+    final cutoff = ms - _kFlingSampleWindowMs;
+    while (_swipeSamples.length > 1 && _swipeSamples.first.ms < cutoff) {
+      _swipeSamples.removeAt(0);
+    }
+  }
+
+  /// Downward speed of the sheet (extents per second) over the recent
+  /// sample window. Extent decreasing = sheet moving down = positive.
+  double _swipeDownVelocity() {
+    if (_swipeSamples.length < 2) return 0;
+    final first = _swipeSamples.first;
+    final last = _swipeSamples.last;
+    final dtSec = (last.ms - first.ms) / 1000.0;
+    if (dtSec <= 0) return 0;
+    return (first.extent - last.extent) / dtSec;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -238,18 +308,31 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
 
-    return NotificationListener<DraggableScrollableNotification>(
-      // Dismiss when the user drags the sheet below the smallest snap level.
-      // Guarded by [_dismissed] so the pop only happens once per gesture,
-      // preventing the reader route underneath from also being closed.
-      onNotification: (notification) {
-        if (!_dismissed && notification.extent <= _sheetCloseExtent) {
-          _dismissed = true;
-          Navigator.of(context).pop();
-        }
-        return false;
-      },
-      child: DraggableScrollableSheet(
+    return Listener(
+      // Track fingers on the whole sheet so the flick velocity can be
+      // estimated from extent samples on release (DraggableScrollableSheet
+      // gives no velocity on drag end).
+      onPointerDown: _onSheetPointerDown,
+      onPointerUp: _onSheetPointerUp,
+      onPointerCancel: _onSheetPointerCancel,
+      child: NotificationListener<DraggableScrollableNotification>(
+        // Dismiss when the user drags the sheet below the close extent, or
+        // flicks it down fast from any height. Guarded by [_dismissed] so
+        // the pop only happens once per gesture, preventing the reader
+        // route underneath from also being closed.
+        onNotification: (notification) {
+          if (!_dismissed) {
+            // Feed the fling estimator; the actual flick decision happens on
+            // pointer-up so a quick deliberate drag can't close mid-gesture.
+            _recordSwipeSample(notification.extent);
+            if (notification.extent <= _sheetCloseExtent) {
+              _dismissed = true;
+              Navigator.of(context).pop();
+            }
+          }
+          return false;
+        },
+        child: DraggableScrollableSheet(
         controller: _sheetController,
         initialChildSize: _sheetInitialSize,
         minChildSize: _sheetMinSize,
@@ -282,8 +365,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       _sheetController.jumpTo(newSize);
                     },
                     onVerticalDragEnd: (details) {
-                      if (_sheetController.size <= _sheetCloseExtent &&
-                          !_dismissed) {
+                      final flick = details.primaryVelocity ?? 0;
+                      if (!_dismissed &&
+                          (flick > _kHeaderFlingVelocityPxPerSec ||
+                              _sheetController.size <= _sheetCloseExtent)) {
                         _dismissed = true;
                         Navigator.of(context).pop();
                       }
@@ -430,6 +515,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             );
           },
         ),
+      ),
     );
   }
 

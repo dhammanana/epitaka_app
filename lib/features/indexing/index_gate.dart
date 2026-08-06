@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/app_localizations.dart';
+import '../../features/guide/widgets/feature_guide_while_waiting.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
 import '../../features/settings/widgets/color_picker_section.dart';
 import 'index_controller.dart';
@@ -450,6 +451,10 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       },
                     ),
 
+                    const SizedBox(height: AppDimensions.lg),
+
+                    // ── Fill the waiting gap: Feature Guide preview ──
+                    const FeatureGuideWhileWaiting(),
                     const SizedBox(height: AppDimensions.xl),
                   ],
                 ),
@@ -959,13 +964,21 @@ class _IndexGateState extends ConsumerState<IndexGate>
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
-          child: Center(
-            child: Padding(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
               padding: const EdgeInsets.all(AppDimensions.marginMobile),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Phase label chip ──────────────────────────────
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  // Clamp so a tiny/landscape viewport can't produce a
+                  // negative minHeight (which asserts in BoxConstraints).
+                  minHeight: (constraints.maxHeight -
+                          2 * AppDimensions.marginMobile)
+                      .clamp(0.0, double.infinity),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Phase label chip ──────────────────────────────
                   if (state.phaseLabel != null && state.phaseLabel!.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -1080,11 +1093,16 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       valueColor: AlwaysStoppedAnimation(colors.primary),
                     ),
                   ),
+
+                  // ── Fill the waiting gap: Feature Guide preview ──
+                  const SizedBox(height: AppDimensions.lg),
+                  const FeatureGuideWhileWaiting(),
                 ],
               ),
             ),
           ),
         ),
+      ),
       ),
     );
   }

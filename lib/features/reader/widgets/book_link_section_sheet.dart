@@ -8,6 +8,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -24,12 +25,24 @@ Future<void> showBookLinkSectionSheet(
   BuildContext context, {
   required BookLinkData link,
 }) {
+  // Mark the sheet as open so the reader behind it drops the expensive work
+  // it would otherwise keep doing (position-writes, viewInsets re-layout,
+  // semantics collection on its huge ScrollablePositionedList) — the same
+  // guard the dictionary sheet uses. Without it, this sheet — which is
+  // always opened on top of a reading book — makes scrolling janky.
+  final container = ProviderScope.containerOf(context);
+  container.read(dictionarySheetOpenProvider.notifier).state++;
   return showModalBottomSheet(
     context: context,
+    // Route through the root navigator so the sheet lives in its own overlay
+    // entry, away from the reader's focus/semantics subtree.
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _BookLinkSectionSheet(link: link),
-  );
+  ).whenComplete(() {
+    container.read(dictionarySheetOpenProvider.notifier).state--;
+  });
 }
 
 class _BookLinkSectionSheet extends ConsumerStatefulWidget {
