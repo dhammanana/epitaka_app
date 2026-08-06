@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/widgets/font_size_adjuster.dart';
 
 /// A compact popup card shown when tapping the layout toggle button in the
 /// reader bottom toolbar. Displays three layout options (No translation,
@@ -17,9 +18,6 @@ class DisplayLayoutPopup extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
     final currentMode = settings.translationDisplayMode;
     final showTrans = settings.showTranslation;
-
-    // Current font size (use Pali size as representative value).
-    final currentFontSize = settings.typography.pali.fontSize;
 
     return Material(
       color: Colors.transparent,
@@ -122,45 +120,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  // Decrease button
-                  _FontSizeButton(
-                    icon: Icons.remove,
-                    onTap: () {
-                      ref.read(settingsProvider.notifier).decreaseFontSize();
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  // Size display
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${currentFontSize.round()}',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: colors.onSurface,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Increase button
-                  _FontSizeButton(
-                    icon: Icons.add,
-                    onTap: () {
-                      ref.read(settingsProvider.notifier).increaseFontSize();
-                    },
-                  ),
-                ],
-              ),
+              child: FontSizeAdjuster(),
             ),
             const SizedBox(height: 8),
           ],
@@ -259,31 +219,4 @@ class _LayoutOptionTile extends StatelessWidget {
   }
 }
 
-/// A small circular button for font size +/-.
-class _FontSizeButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
 
-  const _FontSizeButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(9999),
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
-          ),
-          child: Icon(icon, size: 22, color: colors.onSurfaceVariant),
-        ),
-      ),
-    );
-  }
-}

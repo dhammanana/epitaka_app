@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/app_localizations.dart';
@@ -21,12 +24,15 @@ import 'app_shell.dart';
 /// ┌──────────┬──────────────────────┬──────────┐
 /// │  Left    │   Main Content       │  Right   │
 /// │  Panel   │   (Reader/Screen)    │  Panel   │
-/// │ (TOC,    │                      │ (Dict,   │
-/// │  Search, │                      │  AI)     │
+/// │ (TOC,    │         │            │ (Dict,   │
+/// │  Search, │    divider           │  AI)     │
 /// │  Library)│                      │          │
 /// └──────────┴──────────────────────┴──────────┘
 /// ```
-/// Side panels are collapsible (animated) and can be pinned open.
+/// Side panels are collapsible (animated) and can be pinned open. Each open
+/// panel is separated from the main content by a draggable divider, so the
+/// panel width is user-adjustable; the chosen widths persist via
+/// [settingsProvider].
 class ResponsiveScaffold extends ConsumerStatefulWidget {
   /// The main content widget (e.g. [ReaderScreen] or [LibraryScreen]).
   final Widget child;
@@ -51,12 +57,23 @@ class ResponsiveScaffold extends ConsumerStatefulWidget {
 
 class _ResponsiveScaffoldState extends ConsumerState<ResponsiveScaffold>
     with TickerProviderStateMixin {
+  /// Smallest width a side panel can be dragged to.
+  static const double _minPanelWidth = 260;
+
+  /// Hard cap for a single side panel width.
+  static const double _maxPanelWidth = 640;
+
   late AnimationController _leftAnimController;
   late AnimationController _rightAnimController;
 
-  // User-resizable panel widths (persisted only for the session).
+  // User-resizable panel widths. 0 = not initialized yet; the first build
+  // seeds them from persisted settings (or the screen-size-aware default).
   double _leftWidth = 0;
   double _rightWidth = 0;
+
+  /// Becomes true once the user drags a divider, so persisted settings that
+  /// arrive later (async prefs init) never overwrite the in-session choice.
+  bool _userResized = false;
 
   @override
   void initState() {
@@ -78,9 +95,33 @@ class _ResponsiveScaffoldState extends ConsumerState<ResponsiveScaffold>
     super.dispose();
   }
 
-  void _initWidths(double defaultWidth) {
-    _leftWidth = _leftWidth == 0 ? defaultWidth : _leftWidth;
-    _rightWidth = _rightWidth == 0 ? defaultWidth : _rightWidth;
+  /// Seeds the panel widths from persisted settings, falling back to the
+  /// screen-size-aware default when the user never resized a panel. Once the
+  /// user drags a divider, the local widths win and are no longer re-synced.
+  void _initWidths() {
+    if (_userResized) return;
+    final settings = ref.read(settingsProvider);
+    final defaultWidth = ResponsiveBreakpoint.panelWidth(context);
+    _leftWidth = settings.leftPanelWidth > 0
+        ? settings.leftPanelWidth
+        : defaultWidth;
+    _rightWidth = settings.rightPanelWidth > 0
+        ? settings.rightPanelWidth
+        : defaultWidth;
+  }
+
+  /// Largest width a panel may have so the main content keeps at least
+  /// [minContentWidth] and the opposite panel (when open) still fits.
+  double _maxPanelWidthFor(
+    double availableWidth,
+    double minContentWidth,
+    double otherPanelWidth,
+  ) {
+    final cap = math.min(
+      _maxPanelWidth,
+      availableWidth - minContentWidth - otherPanelWidth,
+    );
+    return math.max(_minPanelWidth, cap);
   }
 
   @override
@@ -117,69 +158,136 @@ class _ResponsiveScaffoldState extends ConsumerState<ResponsiveScaffold>
     }
 
     // ── Desktop layout ─────────────────────────────────────────────────
-    final defaultWidth = ResponsiveBreakpoint.panelWidth(context);
-    _initWidths(defaultWidth);
+    // Sync persisted widths when SharedPreferences init completes (async),
+    // without rebuilding this whole subtree on every settings change.
+    ref.listen(settingsProvider, (AppSettings? prev, AppSettings next) {
+      if (!mounted || _userResized) return;
+      final defaultWidth = ResponsiveBreakpoint.panelWidth(context);
+      final newLeft = next.leftPanelWidth > 0
+          ? next.leftPanelWidth
+          : defaultWidth;
+      final newRight = next.rightPanelWidth > 0
+          ? next.rightPanelWidth
+          : defaultWidth;
+      if (newLeft != _leftWidth || newRight != _rightWidth) {
+        setState(() {
+          _leftWidth = newLeft;
+          _rightWidth = newRight;
+        });
+      }
+    });
+    _initWidths();
     final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       drawer: widget.drawer,
       backgroundColor: colors.surface,
       body: SafeArea(
-        child: Row(
-          children: [
-            // ── Left sidebar (resizable) ───────────────────────────
-            _buildResizablePanel(
-              context: context,
-              colors: colors,
-              slot: PanelSlot.left,
-              isExpanded: panels.isLeftExpanded,
-              animController: _leftAnimController,
-              width: _leftWidth,
-              onWidthChanged: (w) => setState(() => _leftWidth = w),
-              panel: panels.left.openPanel != null
-                  ? _SidebarPanel(
-                      slot: PanelSlot.left,
-                      width: _leftWidth,
-                      panelType: panels.left.openPanel!,
-                      panelData: panels.left.panelData,
-                    )
-                  : const SizedBox.shrink(),
-            ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = constraints.maxWidth;
+            final leftExpanded = panels.isLeftExpanded;
+            final rightExpanded = panels.isRightExpanded;
+            final minContentWidth =
+                ResponsiveBreakpoint.minContentWidth(context);
 
-            // ── Main content ──────────────────────────────────────────
-            Expanded(
-              child: Column(
-                children: [
-                  // Thin header bar on desktop
-                  if (widget.appBar != null)
-                    SizedBox(
-                      height: AppDimensions.appBarHeight,
-                      child: widget.appBar,
-                    ),
-                  Expanded(child: widget.child),
-                ],
-              ),
-            ),
-
-            // ── Right sidebar (resizable) ────────────────────────────
-            _buildResizablePanel(
-              context: context,
-              colors: colors,
-              slot: PanelSlot.right,
-              isExpanded: panels.isRightExpanded,
-              animController: _rightAnimController,
-              width: _rightWidth,
-              onWidthChanged: (w) => setState(() => _rightWidth = w),
-              panel: panels.right.openPanel != null
-                  ? _SidebarPanel(
-                      slot: PanelSlot.right,
-                      width: _rightWidth,
-                      panelType: panels.right.openPanel!,
-                      panelData: panels.right.panelData,
+            // Two passes so each panel's max accounts for the other panel's
+            // *effective* (clamped) width, not its raw preference. Stored
+            // preferences are left untouched — these are layout-only values.
+            var leftWidth = _leftWidth.clamp(_minPanelWidth, _maxPanelWidth);
+            var rightWidth = _rightWidth.clamp(_minPanelWidth, _maxPanelWidth);
+            double leftMax = leftWidth;
+            double rightMax = rightWidth;
+            for (var pass = 0; pass < 2; pass++) {
+              leftMax = leftExpanded
+                  ? _maxPanelWidthFor(
+                      availableWidth,
+                      minContentWidth,
+                      rightExpanded ? rightWidth : 0,
                     )
-                  : const SizedBox.shrink(),
-            ),
-          ],
+                  : leftWidth;
+              rightMax = rightExpanded
+                  ? _maxPanelWidthFor(
+                      availableWidth,
+                      minContentWidth,
+                      leftExpanded ? leftWidth : 0,
+                    )
+                  : rightWidth;
+              leftWidth = leftWidth.clamp(_minPanelWidth, leftMax);
+              rightWidth = rightWidth.clamp(_minPanelWidth, rightMax);
+            }
+
+            return Row(
+              children: [
+                // ── Left sidebar (resizable) ───────────────────────────
+                _buildResizablePanel(
+                  colors: colors,
+                  slot: PanelSlot.left,
+                  animController: _leftAnimController,
+                  width: leftWidth,
+                  maxWidth: leftMax,
+                  onResize: (w) {
+                    _userResized = true;
+                    setState(() => _leftWidth = w);
+                  },
+                  onResizeEnd: () {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setLeftPanelWidth(_leftWidth.roundToDouble());
+                  },
+                  panel: panels.left.openPanel != null
+                      ? _SidebarPanel(
+                          slot: PanelSlot.left,
+                          width: leftWidth,
+                          panelType: panels.left.openPanel!,
+                          panelData: panels.left.panelData,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+
+                // ── Main content ──────────────────────────────────────
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Thin header bar on desktop
+                      if (widget.appBar != null)
+                        SizedBox(
+                          height: AppDimensions.appBarHeight,
+                          child: widget.appBar,
+                        ),
+                      Expanded(child: widget.child),
+                    ],
+                  ),
+                ),
+
+                // ── Right sidebar (resizable) ──────────────────────────
+                _buildResizablePanel(
+                  colors: colors,
+                  slot: PanelSlot.right,
+                  animController: _rightAnimController,
+                  width: rightWidth,
+                  maxWidth: rightMax,
+                  onResize: (w) {
+                    _userResized = true;
+                    setState(() => _rightWidth = w);
+                  },
+                  onResizeEnd: () {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setRightPanelWidth(_rightWidth.roundToDouble());
+                  },
+                  panel: panels.right.openPanel != null
+                      ? _SidebarPanel(
+                          slot: PanelSlot.right,
+                          width: rightWidth,
+                          panelType: panels.right.openPanel!,
+                          panelData: panels.right.panelData,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -187,17 +295,19 @@ class _ResponsiveScaffoldState extends ConsumerState<ResponsiveScaffold>
 
   /// Builds a hideable + resizable side panel.
   ///
-  /// Visibility is animated via [animController] (sizeFactor). Width is
-  /// user-adjustable by dragging the [VerticalDivider] handle; [onWidthChanged]
-  /// reports the new width back to the parent for state persistence.
+  /// Visibility is animated via [animController] (sizeFactor). The drag
+  /// divider sits between the panel and the main content: on the panel's
+  /// right edge for the left slot, on its left edge for the right slot.
+  /// Dragging the divider reports the new width through [onResize], and
+  /// [onResizeEnd] fires once the drag is released (used to persist).
   Widget _buildResizablePanel({
-    required BuildContext context,
     required ColorScheme colors,
     required PanelSlot slot,
-    required bool isExpanded,
     required AnimationController animController,
     required double width,
-    required ValueChanged<double> onWidthChanged,
+    required double maxWidth,
+    required ValueChanged<double> onResize,
+    required VoidCallback onResizeEnd,
     required Widget panel,
   }) {
     final isLeft = slot == PanelSlot.left;
@@ -211,50 +321,131 @@ class _ResponsiveScaffoldState extends ConsumerState<ResponsiveScaffold>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isLeft)
-            _ResizeHandle(
+          if (isLeft) ...[
+            SizedBox(width: width, child: panel),
+            _PanelDivider(
+              key: const Key('left-panel-divider'),
               colors: colors,
-              onDrag: (delta) =>
-                  onWidthChanged((width + delta).clamp(240.0, 560.0)),
+              growsRightward: true,
+              width: width,
+              minWidth: _minPanelWidth,
+              maxWidth: maxWidth,
+              onResize: onResize,
+              onResizeEnd: onResizeEnd,
             ),
-          SizedBox(width: width, child: panel),
-          if (!isLeft)
-            _ResizeHandle(
+          ] else ...[
+            _PanelDivider(
+              key: const Key('right-panel-divider'),
               colors: colors,
-              onDrag: (delta) =>
-                  onWidthChanged((width - delta).clamp(240.0, 560.0)),
+              growsRightward: false,
+              width: width,
+              minWidth: _minPanelWidth,
+              maxWidth: maxWidth,
+              onResize: onResize,
+              onResizeEnd: onResizeEnd,
             ),
+            SizedBox(width: width, child: panel),
+          ],
         ],
       ),
     );
   }
 }
 
-/// A thin vertical drag handle used to resize a side panel.
-class _ResizeHandle extends StatelessWidget {
+/// A draggable vertical divider separating a side panel from the main
+/// content. Shows a hairline that highlights on hover / while dragging, and
+/// resizes the adjacent panel via horizontal drags.
+class _PanelDivider extends StatefulWidget {
   final ColorScheme colors;
-  final ValueChanged<double> onDrag;
 
-  const _ResizeHandle({required this.colors, required this.onDrag});
+  /// True for the left slot (divider on the panel's right edge, so dragging
+  /// rightward grows the panel); false for the right slot (opposite).
+  final bool growsRightward;
+
+  /// Current panel width — used as the drag baseline on drag start.
+  final double width;
+
+  final double minWidth;
+  final double maxWidth;
+
+  /// Called with the new panel width while dragging.
+  final ValueChanged<double> onResize;
+
+  /// Called once when the drag gesture ends.
+  final VoidCallback onResizeEnd;
+
+  const _PanelDivider({
+    super.key,
+    required this.colors,
+    required this.growsRightward,
+    required this.width,
+    required this.minWidth,
+    required this.maxWidth,
+    required this.onResize,
+    required this.onResizeEnd,
+  });
+
+  @override
+  State<_PanelDivider> createState() => _PanelDividerState();
+}
+
+class _PanelDividerState extends State<_PanelDivider> {
+  /// Panel width captured when the drag started, so width changes are
+  /// computed from a stable baseline instead of accumulated deltas.
+  double? _dragStartWidth;
+  bool _hovered = false;
+
+  void _onDragStart(DragStartDetails _) {
+    _dragStartWidth = widget.width;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final start = _dragStartWidth ?? widget.width;
+    final target = widget.growsRightward
+        ? start + details.delta.dx
+        : start - details.delta.dx;
+    widget.onResize(target.clamp(widget.minWidth, widget.maxWidth));
+  }
+
+  void _onDragEnd(DragEndDetails _) {
+    _dragStartWidth = null;
+    widget.onResizeEnd();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        child: Container(
-          width: 6,
-          color: colors.outlineVariant.withValues(alpha: 0.4),
-          child: Center(
+    final colors = widget.colors;
+    final lineColor = _hovered
+        ? colors.primary.withValues(alpha: 0.8)
+        : colors.outlineVariant;
+
+    return Semantics(
+      label: 'Resize panel',
+      container: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: _onDragStart,
+        onHorizontalDragUpdate: _onDragUpdate,
+        onHorizontalDragEnd: _onDragEnd,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeColumn,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: Container(
+            width: 12,
+            color: _hovered
+                ? colors.surfaceContainerHighest.withValues(alpha: 0.6)
+                : Colors.transparent,
+            // Anchor the hairline to the panel edge so it reads as the pane
+            // boundary; the grab area extends toward the main content.
+            alignment: widget.growsRightward
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
             child: Container(
-              width: 2,
-              height: 32,
-              decoration: BoxDecoration(
-                color: colors.onSurfaceVariant.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(1),
-              ),
+              width: _hovered ? 2.5 : 1,
+              color: lineColor,
+              // Full height: bounded by the panel row's height.
+              height: double.infinity,
             ),
           ),
         ),

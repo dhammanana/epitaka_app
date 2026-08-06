@@ -125,6 +125,12 @@ class _CategoryTabBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final script = ref.watch(settingsProvider).paliScript;
+    // The tab labels are converted to the display script (see the `text:`
+    // below), so they must be rendered with the script-specific font too —
+    // otherwise scripts with a dedicated bundled font (Lao, Myanmar, …)
+    // fall back to the platform default and render incorrectly, unlike the
+    // book/nikaya names in the library which go through [PaliTextStatic].
+    final scriptFont = scriptFontFamily(script);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppDimensions.marginMobile),
@@ -152,9 +158,11 @@ class _CategoryTabBar extends ConsumerWidget {
         unselectedLabelColor: colors.onSurfaceVariant,
         labelStyle: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w600,
+          fontFamily: scriptFont,
         ),
         unselectedLabelStyle: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w500,
+          fontFamily: scriptFont,
         ),
         tabs: [
           for (final filter in filters)

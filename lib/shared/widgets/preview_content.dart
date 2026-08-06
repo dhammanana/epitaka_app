@@ -28,11 +28,19 @@ class PreviewLineData {
 /// settings as the reader (LanguageTypography, color pairs, script).
 ///
 /// Used by [ParagraphPreviewSheet] (book-link sections and search previews).
-/// Highlights the matched paragraph with a left border + background tint.
+/// Highlights the matched paragraph (or, when [highlightLineId] is given,
+/// only the exact matched line) with a left border + background tint.
 /// Supports optional Pāli word tap via [onPaliWordTap] (e.g. dictionary lookup).
 class PreviewContent extends ConsumerWidget {
   final List<PreviewLineData> lines;
+
+  /// Paragraph to highlight. When [highlightLineId] is null the whole
+  /// paragraph is highlighted; otherwise only the matching line is.
   final int? highlightParaId;
+
+  /// When set together with [highlightParaId], only this line of that
+  /// paragraph gets the highlight (used by search previews).
+  final int? highlightLineId;
   final int? firstSnippetIndex;
   final String? paliSnippet;
 
@@ -52,6 +60,7 @@ class PreviewContent extends ConsumerWidget {
     super.key,
     required this.lines,
     this.highlightParaId,
+    this.highlightLineId,
     this.firstSnippetIndex,
     this.paliSnippet,
     this.scrollToParaId,
@@ -89,9 +98,17 @@ class PreviewContent extends ConsumerWidget {
       children: lines.asMap().entries.map((entry) {
         final index = entry.key;
         final line = entry.value;
-        final isMatch = line.paraId == highlightParaId;
+        final isTargetPara = line.paraId == highlightParaId;
+        // When [highlightLineId] is given (search previews) highlight only
+        // the exact matched line; otherwise keep the paragraph-level
+        // highlight used by book-link / AI-citation previews.
+        final isMatch =
+            isTargetPara &&
+            (highlightLineId == null || line.lineId == highlightLineId);
+        // The snippet (with <mark> highlights) always shows on the line the
+        // caller pointed at, independent of which line is highlighted.
         final isFirstSnippetLine =
-            isMatch && firstSnippetIndex != null && index == firstSnippetIndex;
+            isTargetPara && firstSnippetIndex != null && index == firstSnippetIndex;
 
         final isNewPara = index == 0 || line.paraId != lines[index - 1].paraId;
 
@@ -142,8 +159,12 @@ class PreviewContent extends ConsumerWidget {
                   // Translations
                   ...line.translations.entries.map((tEntry) {
                     if (tEntry.value.isEmpty) return const SizedBox.shrink();
-                    final langTypo =
-                        settings.typography.languageOverrides[tEntry.key];
+                    // Resolve the effective typography (override or scaled
+                    // default) so previews follow the global font-size
+                    // controls, matching the reader.
+                    final langTypo = settings.typography.typographyFor(
+                      tEntry.key,
+                    );
                     return _buildTranslationLine(
                       tEntry.value,
                       transColor,

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../providers/search_provider.dart';
 import 'search_result_item_tile.dart';
 
 /// A collapsible group of search results for a single book.
-class BookResultGroup extends StatefulWidget {
+class BookResultGroup extends ConsumerStatefulWidget {
   final String bookId;
   final String? bookName;
   final List<SearchResultItem> results;
@@ -23,15 +26,16 @@ class BookResultGroup extends StatefulWidget {
   });
 
   @override
-  State<BookResultGroup> createState() => _BookResultGroupState();
+  ConsumerState<BookResultGroup> createState() => _BookResultGroupState();
 }
 
-class _BookResultGroupState extends State<BookResultGroup> {
+class _BookResultGroupState extends ConsumerState<BookResultGroup> {
   bool _expanded = true;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final script = ref.watch(settingsProvider).paliScript;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,8 +58,11 @@ class _BookResultGroupState extends State<BookResultGroup> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
+                  // Book names are Pāli — render in the user's script
+                  // with the script font, like the library.
+                  child: PaliTextStatic(
                     widget.bookName ?? widget.bookId,
+                    script,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,

@@ -326,6 +326,18 @@ class AppSettings {
   /// Translation text color pair (light + dark mode).
   final ColorPair translationColorPair;
 
+  /// Languages whose translations are currently shown to the user: the
+  /// explicitly enabled ones, or the primary translation when none are
+  /// enabled (and translations are shown). Shared by the font-size controls
+  /// and the reader so every surface resolves the same set.
+  List<String> get visibleTranslationLangs {
+    if (enabledTranslations.isNotEmpty) {
+      return List<String>.of(enabledTranslations);
+    }
+    if (showTranslation) return [primaryTranslationLang];
+    return const [];
+  }
+
   /// Convenience: resolve Pāli color for the current brightness.
   Color paliColorFor(Brightness brightness) =>
       paliColorPair.resolve(brightness);
@@ -391,6 +403,16 @@ class AppSettings {
   /// Per-language selected translation version suffix (null/empty = default).
   final Map<String, String> translationVersionMap;
 
+  /// Persisted width of the left desktop side panel (search, contents,
+  /// library). 0 means the user never resized it, so the screen-size-aware
+  /// default is used instead.
+  final double leftPanelWidth;
+
+  /// Persisted width of the right desktop side panel (dictionary).
+  /// 0 means the user never resized it, so the screen-size-aware default
+  /// is used instead.
+  final double rightPanelWidth;
+
   static const Color defaultPaliColor = Color(0xFF7A2E1D);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
@@ -424,6 +446,8 @@ class AppSettings {
     this.stripVariantAnnotations = true,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.translationVersionMap = const {},
+    this.leftPanelWidth = 0,
+    this.rightPanelWidth = 0,
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
     this.useBookName = true,
     this.includeHeading = true,
@@ -460,6 +484,8 @@ class AppSettings {
     LibraryExpandLevel? libraryExpandLevel,
     bool? stripVariantAnnotations,
     Map<String, String>? translationVersionMap,
+    double? leftPanelWidth,
+    double? rightPanelWidth,
     String? quoteTemplate,
     bool? useBookName,
     bool? includeHeading,
@@ -502,6 +528,8 @@ class AppSettings {
           stripVariantAnnotations ?? this.stripVariantAnnotations,
       translationVersionMap:
           translationVersionMap ?? this.translationVersionMap,
+      leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
+      rightPanelWidth: rightPanelWidth ?? this.rightPanelWidth,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
       useBookName: useBookName ?? this.useBookName,
       includeHeading: includeHeading ?? this.includeHeading,
@@ -697,6 +725,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       stripVariantAnnotations:
           prefs.getBool('strip_variant_annotations') ?? true,
       translationVersionMap: _loadTranslationVersionMap(),
+      leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
+      rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
       quoteTemplate:
           prefs.getString('quote_template') ??
           '- {book_name} > {heading} VRI p.{vri_page}',
@@ -824,12 +854,27 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final newPali = typography.pali.copyWith(
       fontSize: (typography.pali.fontSize + delta).clamp(12.0, 40.0),
     );
+
+    final visibleLangs = state.visibleTranslationLangs;
+
+    // Scale EVERY visible translation in lockstep with the Pāli size, plus
+    // any previously customized language. Translations without an override
+    // get one created here (seeded from their current effective size, i.e.
+    // the 17px default) so they keep scaling on subsequent adjustments.
+    // Without this, `typographyFor` fell back to the fixed default and the
+    // translation font size never changed.
+    final langsToScale = <String>{
+      ...typography.languageOverrides.keys,
+      ...visibleLangs,
+    };
     final newOverrides = <String, LanguageTypography>{};
-    typography.languageOverrides.forEach((lang, t) {
-      newOverrides[lang] = t.copyWith(
-        fontSize: (t.fontSize + delta).clamp(12.0, 40.0),
+    for (final lang in langsToScale) {
+      final effective = typography.typographyFor(lang);
+      newOverrides[lang] = effective.copyWith(
+        fontSize: (effective.fontSize + delta).clamp(12.0, 40.0),
       );
-    });
+    }
+
     final newTypo = typography.copyWith(
       pali: newPali,
       languageOverrides: newOverrides,
@@ -977,6 +1022,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setQuotePageNumberSystem(String system) async {
     state = state.copyWith(quotePageNumberSystem: system);
     await _prefs?.setString('quote_page_system', system);
+  }
+
+  /// Persist the width of the left desktop side panel.
+  Future<void> setLeftPanelWidth(double width) async {
+    state = state.copyWith(leftPanelWidth: width);
+    await _prefs?.setDouble('left_panel_width', width);
+  }
+
+  /// Persist the width of the right desktop side panel.
+  Future<void> setRightPanelWidth(double width) async {
+    state = state.copyWith(rightPanelWidth: width);
+    await _prefs?.setDouble('right_panel_width', width);
   }
 
   /// Set the translation version (suffix) to use for a language code.

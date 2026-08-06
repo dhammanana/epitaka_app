@@ -534,10 +534,18 @@ class ReadingParagraph extends StatelessWidget {
     if (query != null && query.isNotEmpty) {
       final convertedText = convertPaliToScriptPreservingHtml(text, script);
       final convertedQuery = convertSearchQueryForScript(query, script);
+      // The non-search path renders through [PaliTextWithVariants], which
+      // applies the script-specific font. The highlight path builds spans
+      // directly from [baseStyle], so the script font must be applied here
+      // too — otherwise scripts with a dedicated bundled font (Lao,
+      // Myanmar, Sinhala, …) fall back to the platform default and render
+      // incorrectly (e.g. missing the Pali-specific Lao characters).
+      final scriptStyle =
+          baseStyle.copyWith(fontFamily: scriptFontFamily(script));
       return _buildHighlightedText(
         convertedText,
         convertedQuery,
-        baseStyle,
+        scriptStyle,
         colors,
       );
     }
@@ -564,7 +572,7 @@ class ReadingParagraph extends StatelessWidget {
       return _buildHighlightedText(text, query, style, colors);
     }
 
-    final spans = _parseHtml(text, style);
+    final spans = _parseHtml(text);
     return Text.rich(TextSpan(style: style, children: spans));
   }
 
@@ -575,11 +583,11 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
   ) {
     if (query.isEmpty) {
-      final spans = _parseHtml(text, baseStyle);
+      final spans = _parseHtml(text);
       return Text.rich(TextSpan(style: baseStyle, children: spans));
     }
 
-    final spans = _parseHtml(text, baseStyle);
+    final spans = _parseHtml(text);
     final result = <InlineSpan>[];
     for (final span in spans) {
       if (span is TextSpan) {
@@ -680,7 +688,7 @@ class ReadingParagraph extends StatelessWidget {
 
     final terms = normalizePaliFuzzy(
       query,
-    ).toLowerCase().split(RegExp(r'\\s+')).where((t) => t.isNotEmpty).toList();
+    ).toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
     if (terms.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
     final intervals = _findTermIntervals(text, terms);
@@ -742,22 +750,32 @@ class ReadingParagraph extends StatelessWidget {
   /// Parse HTML tags into [InlineSpan]s.
   /// Supports: `<b>`, `<i>`, `<u>`, `<h1-6>`, `<br>`
   ///
+  /// The produced spans carry only the markup indicator (bold/italic/…);
+  /// every other style property inherits from the root [TextSpan] at paint
+  /// time, so the per-HTML cache stays correct across callers with
+  /// different base styles (Pāli lines, translations, …).
+  ///
   /// Caches results per input HTML string to avoid redundant regex work
   /// when the same text appears on multiple rebuilds.
   static final LinkedHashMap<String, List<InlineSpan>> _htmlParseCache =
       LinkedHashMap<String, List<InlineSpan>>();
   static const int _htmlParseCacheLimit = 3000;
 
-  List<InlineSpan> _parseHtml(String html, TextStyle base) {
+  List<InlineSpan> _parseHtml(String html) {
     if (!html.contains('<')) return [TextSpan(text: html)];
 
     final cached = _htmlParseCache[html];
     if (cached != null) return cached;
 
     final spans = <InlineSpan>[];
-    final boldStyle = base.copyWith(fontWeight: FontWeight.w700);
-    final italicStyle = base.copyWith(fontStyle: FontStyle.italic);
-    final underlineStyle = base.copyWith(decoration: TextDecoration.underline);
+    // Marker-only styles: spans are cached by HTML string and shared across
+    // callers with different base styles (Pāli lines with script fonts,
+    // translations, …), so only the markup property is baked in here. Font
+    // family, size, color, etc. inherit from the root TextSpan style when
+    // the paragraph is painted, keeping the cache correct for every base.
+    final boldStyle = TextStyle(fontWeight: FontWeight.w700);
+    final italicStyle = TextStyle(fontStyle: FontStyle.italic);
+    final underlineStyle = TextStyle(decoration: TextDecoration.underline);
 
     final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
     final pattern = RegExp(

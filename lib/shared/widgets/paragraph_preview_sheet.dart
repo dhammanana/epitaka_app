@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
 import '../../features/dictionary/widgets/dictionary_sheet.dart';
+import 'pali_text.dart';
 import 'preview_content.dart';
 
 Future<void> showParagraphPreviewSheet(
@@ -13,6 +15,7 @@ Future<void> showParagraphPreviewSheet(
   String? subtitle,
   required List<PreviewLineData> lines,
   int? highlightParaId,
+  int? highlightLineId,
   int? firstSnippetIndex,
   String? paliSnippet,
   String? actionLabel,
@@ -30,6 +33,7 @@ Future<void> showParagraphPreviewSheet(
       subtitle: subtitle ?? '',
       lines: lines,
       highlightParaId: highlightParaId,
+      highlightLineId: highlightLineId,
       firstSnippetIndex: firstSnippetIndex,
       paliSnippet: paliSnippet ?? '',
       actionLabel: actionLabel,
@@ -46,6 +50,7 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
   final String subtitle;
   final List<PreviewLineData> lines;
   final int? highlightParaId;
+  final int? highlightLineId;
   final int? firstSnippetIndex;
   final String paliSnippet;
   final String? actionLabel;
@@ -63,6 +68,7 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
     this.subtitle = '',
     required this.lines,
     this.highlightParaId,
+    this.highlightLineId,
     this.firstSnippetIndex,
     this.paliSnippet = '',
     this.actionLabel,
@@ -121,6 +127,7 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final script = ref.watch(settingsProvider).paliScript;
     final w = widget;
 
     return Container(
@@ -162,8 +169,11 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        // Heading titles and book names are Pāli — render
+                        // them in the user's script, like the reader does.
+                        PaliTextStatic(
                           w.title,
+                          script,
                           style: AppTypography.labelSmall.copyWith(
                             color: colors.primary,
                             fontWeight: FontWeight.w600,
@@ -172,8 +182,9 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (w.subtitle.isNotEmpty)
-                          Text(
+                          PaliTextStatic(
                             w.subtitle,
+                            script,
                             style: AppTypography.labelSmall.copyWith(
                               color: colors.onSurfaceVariant,
                             ),
@@ -221,6 +232,7 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                       child: PreviewContent(
                         lines: w.lines,
                         highlightParaId: w.highlightParaId,
+                        highlightLineId: w.highlightLineId,
                         firstSnippetIndex: w.firstSnippetIndex,
                         paliSnippet: w.paliSnippet,
                         scrollToParaId: w.scrollToParaId,

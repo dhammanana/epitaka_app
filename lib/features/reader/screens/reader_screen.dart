@@ -37,6 +37,7 @@ import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
 import '../services/reader_copy_service.dart';
+import '../utils/reader_word_hit_test.dart' show wordRangeAt;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
@@ -151,6 +152,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Offset? _swipeStartPos;
   bool _isSwiping = false;
   double _lastSwipeDx = 0;
+
+  /// (dx, timestamp-ms) samples captured during an in-progress swipe, used
+  /// to estimate a fling velocity on release. Raw pointer events carry no
+  /// velocity, so without this a quick flick could never commit a tab
+  /// switch — only slow drags past the distance threshold would. This
+  /// restores the fling behaviour the old GestureDetector-based swipe had
+  /// (its [DragEndDetails] came with a real [Velocity]).
+  final List<({double dx, int ms})> _swipeSamples = [];
+
+  /// Time window (ms) used to estimate fling velocity on release.
+  static const int _kSwipeVelocityWindowMs = 120;
+
+  /// Fling speed (px/s) that commits a tab switch even for short travel.
+  static const double _kSwipeFlingVelocity = 500;
+
+  /// Fraction of screen width a slow drag must cover to commit.
+  static const double _kSwipeCommitFraction = 0.2;
 
   // ── Auto-scroll when dragging selection handle near viewport edge ──
   //
@@ -968,9 +986,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final velocity = details.primaryVelocity ?? 0; // px/s, <0 = left
     final target = _dragTargetIndex;
 
+    // Commit on either a quick fling (the natural swipe gesture) or a slow
+    // drag past [_kSwipeCommitFraction] of the screen width.
     final committed =
         target != null &&
-        (_dragDxNotifier.value.abs() > width * 0.3 || velocity.abs() > 600);
+        (_dragDxNotifier.value.abs() > width * _kSwipeCommitFraction ||
+            velocity.abs() > _kSwipeFlingVelocity);
 
     if (committed) {
       final forward = target > active; // next → exit left
@@ -1191,6 +1212,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _swipeStartPos = event.localPosition;
       _isSwiping = false;
       _lastSwipeDx = 0;
+      _swipeSamples.clear();
     }
 
     final now = event.timeStamp.inMilliseconds;
@@ -1301,22 +1323,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return;
     }
 
+    // Extract the word with a script-aware expansion instead of
+    // [RenderParagraph.getWordBoundary], which splits words in scripts like
+    // Myanmar/Thai/Tamil (e.g. "ဘဂဝတော" → "ဘ","ဂ","ဝ","တော") and would
+    // look up only part of the word.
     final textPosition = paragraph.getPositionForOffset(localInParagraph);
-    final boundary = paragraph.getWordBoundary(textPosition);
-    if (!boundary.isValid || boundary.isCollapsed) return;
-
     final fullText = paragraph.text.toPlainText();
-    if (boundary.end > fullText.length) {
-      developer.log(
-        '[DBG] _selectWordAt: boundary.end(${boundary.end}) > text len '
-        '(${fullText.length})',
-        name: 'epitaka.dict',
-      );
-      return;
-    }
-    final rawWord = fullText.substring(boundary.start, boundary.end);
+    final range = wordRangeAt(fullText, textPosition.offset);
+    if (range.isCollapsed) return;
+    final rawWord = fullText.substring(range.start, range.end);
     developer.log(
-      '[DBG] _selectWordAt: rawWord="$rawWord" boundary=$boundary',
+      '[DBG] _selectWordAt: rawWord="$rawWord" range=$range',
       name: 'epitaka.dict',
     );
 
@@ -1382,6 +1399,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (dx.abs() < 10 || dx.abs() < dy) return;
       _isSwiping = true;
       _lastSwipeDx = dx;
+      _swipeSamples.clear();
+      _swipeSamples.add((dx: dx, ms: event.timeStamp.inMilliseconds));
       _onDragStart(
         DragStartDetails(
           globalPosition: event.position,
@@ -1393,6 +1412,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final deltaDx = dx - _lastSwipeDx;
     _lastSwipeDx = dx;
+    _swipeSamples.add((dx: dx, ms: event.timeStamp.inMilliseconds));
 
     if (deltaDx != 0) {
       _onDragUpdate(
@@ -1496,21 +1516,55 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// Handle raw pointer cancel (e.g. system gesture interrupts).
+  /// A cancelled gesture never commits a tab switch — see [_finishTabSwipe].
   void _handlePointerCancelForTabSwipe(PointerCancelEvent event) {
-    _finishTabSwipe();
+    _finishTabSwipe(cancelled: true);
+  }
+
+  /// Estimate horizontal fling velocity (px/s, negative = left) from the
+  /// raw pointer samples of the swipe currently in progress. Uses the
+  /// movement over the last ~120ms so a quick flick registers as a fast
+  /// fling even when its total travel is short.
+  double _estimateSwipeVelocity() {
+    if (_swipeSamples.length < 2) return 0;
+    final last = _swipeSamples.last;
+    final cutoff = last.ms - _kSwipeVelocityWindowMs;
+    while (_swipeSamples.length > 1 && _swipeSamples.first.ms < cutoff) {
+      _swipeSamples.removeAt(0);
+    }
+    if (_swipeSamples.length < 2) return 0;
+    final first = _swipeSamples.first;
+    final dtMs = last.ms - first.ms;
+    if (dtMs <= 0) return 0;
+    return (last.dx - first.dx) / (dtMs / 1000.0);
   }
 
   /// Common cleanup for tab-swipe completion/cancellation.
-  /// Velocity from raw pointer events is unreliable, so we rely on the
-  /// position-based threshold (_dragDxNotifier.abs() > width * 0.3).
-  void _finishTabSwipe() {
+  /// A fling velocity is estimated from the raw pointer samples so quick
+  /// flicks commit a tab switch, not just slow drags past the distance
+  /// threshold. A [cancelled] gesture (system back-swipe, notification
+  /// shade, …) must never switch tabs — it always snaps back.
+  void _finishTabSwipe({bool cancelled = false}) {
     _stopAutoScroll();
     if (_isSwiping) {
-      _onDragEnd(DragEndDetails(velocity: Velocity.zero, primaryVelocity: 0));
+      if (cancelled) {
+        _isDragging = false;
+        _dragTargetIndex = null;
+        _animateSettle(from: _dragDxNotifier.value, to: 0);
+      } else {
+        final velocity = _estimateSwipeVelocity();
+        _onDragEnd(
+          DragEndDetails(
+            velocity: Velocity(pixelsPerSecond: Offset(velocity, 0)),
+            primaryVelocity: velocity,
+          ),
+        );
+      }
     }
     _swipeStartPos = null;
     _isSwiping = false;
     _lastSwipeDx = 0;
+    _swipeSamples.clear();
   }
 
   String _cleanPali(String text) {
@@ -1927,11 +1981,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       brightness,
     );
 
-    final enabledLangs = settings.enabledTranslations.isNotEmpty
-        ? settings.enabledTranslations.toList()
-        : (settings.showTranslation
-              ? [settings.primaryTranslationLang]
-              : <String>[]);
+    final enabledLangs = settings.visibleTranslationLangs;
 
     final langTypographies = <String, LanguageTypography>{};
     for (final langCode in enabledLangs) {

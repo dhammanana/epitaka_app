@@ -14,6 +14,7 @@ import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/html_text_parser.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
@@ -727,7 +728,7 @@ class _PanelFilterChip extends StatelessWidget {
 
 // ── Book Result Card ───────────────────────────────────────────────────
 
-class _BookResultCard extends StatelessWidget {
+class _BookResultCard extends ConsumerWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
   final String query;
@@ -745,8 +746,9 @@ class _BookResultCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
+    final script = ref.watch(settingsProvider).paliScript;
     final displayName = summary.book.displayName;
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
@@ -772,8 +774,11 @@ class _BookResultCard extends StatelessWidget {
                   Icon(Icons.import_contacts, size: 14, color: colors.primary),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
+                    // Book names are Pāli — render in the user's script
+                    // with the script font, like the library.
+                    child: PaliTextStatic(
                       displayName,
+                      script,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurface,
                         fontWeight: FontWeight.w600,

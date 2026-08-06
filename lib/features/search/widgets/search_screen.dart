@@ -14,15 +14,28 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/html_text_parser.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/font_size_adjuster.dart';
+import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 import 'search_result_highlight.dart';
+
+/// Phone-only horizontal padding budget for one search result line.
+///
+/// On phones the Pāli snippet must end up exactly 5px from each screen
+/// edge (10px total), split across the nested layers as
+/// 0 (list) + 2 (tile) + 3 (line). Desktop/tablet keep their own wider
+/// margins and ignore these.
+const double _phoneListHPad = 10;
+const double _phoneTileHPad = 3;
+const double _phoneLineHPad = 10;
 
 /// The full-page search screen.
 class SearchScreen extends ConsumerStatefulWidget {
@@ -236,9 +249,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
       if (headingRows.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(loc.noHeadingFound)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(loc.noHeadingFound)));
         }
         return;
       }
@@ -281,7 +294,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final translationMap = <String, Map<String, String>>{};
       if (activeLang != null) {
         try {
-          final transDb = await ref.read(translationDbProvider(activeLang).future);
+          final transDb = await ref.read(
+            translationDbProvider(activeLang).future,
+          );
           if (transDb != null) {
             final transRows = await transDb
                 .customSelect(
@@ -320,10 +335,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         );
       }).toList();
 
-      // Find the first snippet line index
-      final firstSnippetIndex = previewLines.indexWhere(
-        (l) => l.paraId == item.paraId,
-      );
+      // The line holding the match — the quickview scrolls here and
+      // highlights exactly this line (not the whole paragraph).
+      final firstMatchLine = item.lines.isNotEmpty
+          ? item.lines.firstWhere(
+              (l) => l.isMatch,
+              orElse: () => item.lines.first,
+            )
+          : null;
+      final targetLineKey = GlobalKey();
+
+      // Find the snippet line index: prefer the matched line itself so the
+      // visible <mark>-highlighted snippet sits on the highlighted line.
+      final firstSnippetIndex = firstMatchLine == null
+          ? previewLines.indexWhere((l) => l.paraId == item.paraId)
+          : previewLines.indexWhere(
+              (l) =>
+                  l.paraId == item.paraId && l.lineId == firstMatchLine.lineId,
+            );
 
       if (!mounted) return;
 
@@ -337,6 +366,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             : null,
         lines: previewLines,
         highlightParaId: item.paraId,
+        highlightLineId: firstMatchLine?.lineId,
+        scrollToParaId: item.paraId,
+        scrollToLineId: firstMatchLine?.lineId,
+        targetLineKey: targetLineKey,
         firstSnippetIndex: firstSnippetIndex >= 0 ? firstSnippetIndex : null,
         paliSnippet: item.lines.isNotEmpty
             ? item.lines.where((l) => l.isMatch).map((l) => l.pali).join(' ')
@@ -373,9 +406,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('${loc.failedToLoadPreview} $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${loc.failedToLoadPreview} $e')),
+        );
       }
     }
   }
@@ -547,7 +580,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     value: 3,
                     child: Row(
                       children: [
-                        const Icon(Icons.check, size: 16, color: Colors.transparent),
+                        const Icon(
+                          Icons.check,
+                          size: 16,
+                          color: Colors.transparent,
+                        ),
                         const SizedBox(width: 8),
                         Text(loc.withinNWords(3)),
                       ],
@@ -559,7 +596,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   PopupMenuItem(value: 10, child: Text(loc.withinNWords(10))),
                 ],
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _wordDistance > 0
                         ? colors.secondaryContainer
@@ -568,7 +608,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               : colors.surfaceContainerHighest),
                     borderRadius: BorderRadius.circular(16),
                     border: _isMultiWord && _wordDistance == 0
-                        ? Border.all(color: colors.tertiary.withValues(alpha: 0.5))
+                        ? Border.all(
+                            color: colors.tertiary.withValues(alpha: 0.5),
+                          )
                         : null,
                   ),
                   child: Row(
@@ -643,7 +685,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               // Result count
               if (searchState is SearchResults)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: colors.primaryContainer.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
@@ -679,7 +724,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         decoration: BoxDecoration(
           color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-          border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -703,12 +750,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   child: Wrap(
                     spacing: 4,
                     runSpacing: 4,
-                    children: kAllCategories.map((key) => _FilterChip(
-                      label: key,
-                      selected: enabledCats.contains(key),
-                      colors: colors,
-                      onTap: () => notifier.toggleCategory(key),
-                    )).toList(),
+                    children: kAllCategories
+                        .map(
+                          (key) => _FilterChip(
+                            label: key,
+                            selected: enabledCats.contains(key),
+                            colors: colors,
+                            onTap: () => notifier.toggleCategory(key),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -733,12 +784,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   child: Wrap(
                     spacing: 4,
                     runSpacing: 4,
-                    children: kAllNikayas.map((key) => _FilterChip(
-                      label: key,
-                      selected: enabledNik.contains(key),
-                      colors: colors,
-                      onTap: () => notifier.toggleNikaya(key),
-                    )).toList(),
+                    children: kAllNikayas
+                        .map(
+                          (key) => _FilterChip(
+                            label: key,
+                            selected: enabledNik.contains(key),
+                            colors: colors,
+                            onTap: () => notifier.toggleNikaya(key),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -842,7 +897,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         :final headings,
       ):
         return _buildResultList(
-          colors, bookSummaries, query, totalResults, headings,
+          colors,
+          bookSummaries,
+          query,
+          totalResults,
+          headings,
         );
       case SearchError(:final message):
         return _buildErrorState(colors, message);
@@ -1011,11 +1070,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     final totalItems = summaries.length + (headings.isNotEmpty ? 1 : 0);
 
+    // On phones the result cards go edge-to-edge (no outer screen margin)
+    // so the long snippet lines get as much width as possible. Together
+    // with the tile paddings below the Pāli text ends up 5px from each
+    // screen edge (10px total, see _phoneListHPad). Desktop keeps the
+    // wider margins.
+    final isPhone = ResponsiveBreakpoint.isPhone(context);
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
+      padding: EdgeInsets.fromLTRB(
+        isPhone ? _phoneListHPad : AppDimensions.marginMobile,
         AppDimensions.sm,
-        AppDimensions.marginMobile,
+        isPhone ? _phoneListHPad : AppDimensions.marginMobile,
         AppDimensions.bottomToolbarHeight + AppDimensions.lg,
       ),
       itemCount: totalItems,
@@ -1083,16 +1148,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 /// (the same path used by the typography settings screen and the keyboard
 /// shortcuts), so the change is reflected everywhere — including the search
 /// results, which follow the app's typography settings.
-class _FontSizeButton extends ConsumerWidget {
+class _FontSizeButton extends StatelessWidget {
   const _FontSizeButton();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final settings = ref.watch(settingsProvider);
-    final paliSize = settings.typography.pali.fontSize.round();
-
-    return PopupMenuButton<String>(
+    return IconButton(
       tooltip: AppLocalizations.of(context).fontSizeLabel,
       icon: Text(
         'A',
@@ -1102,72 +1164,80 @@ class _FontSizeButton extends ConsumerWidget {
           color: colors.onSurfaceVariant,
         ),
       ),
-      offset: const Offset(0, 48),
-      onSelected: (value) {
-        final notifier = ref.read(settingsProvider.notifier);
-        if (value == 'inc') {
-          notifier.increaseFontSize();
-        } else {
-          notifier.decreaseFontSize();
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Text(
-                  'Pāli ${paliSize}px',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  'Ctrl/Cmd + / −',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
+      onPressed: () {
+        // A persistent popup (like the reader's display popup) so the sizes
+        // stay visible while tapping +/− — a menu would dismiss each tap.
+        showDialog<void>(
+          context: context,
+          barrierColor: Colors.transparent,
+          barrierDismissible: true,
+          builder: (dialogContext) => Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: EdgeInsets.only(
+                // Dialogs overlay the full screen including the status-bar
+                // area, so offset by it plus the toolbar height.
+                top:
+                    MediaQuery.paddingOf(dialogContext).top +
+                    AppDimensions.appBarHeight +
+                    8,
+                right: 12,
+              ),
+              child: const _FontSizePopup(),
             ),
           ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem<String>(
-          value: 'inc',
-          child: Row(
-            children: [
-              const Icon(Icons.add, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                AppLocalizations.of(context).increaseFontSize,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                ),
-              ),
-            ],
+        );
+      },
+    );
+  }
+}
+
+/// Compact popup card with the shared [FontSizeAdjuster] (Pāli + translation
+/// sizes with +/− buttons), mirroring the reader's display popup.
+class _FontSizePopup extends StatelessWidget {
+  const _FontSizePopup();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 230,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.3),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        PopupMenuItem<String>(
-          value: 'dec',
-          child: Row(
-            children: [
-              const Icon(Icons.remove, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                AppLocalizations.of(context).decreaseFontSize,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              loc.fontSize,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: colors.onSurfaceVariant,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            const FontSizeAdjuster(),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -1222,7 +1292,7 @@ class _FilterChip extends StatelessWidget {
 
 // ── Book Result Card ─────────────────────────────────────────────────────
 
-class _BookResultCard extends StatelessWidget {
+class _BookResultCard extends ConsumerWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
   final void Function(SearchResultItem item) onTapResult;
@@ -1240,9 +1310,14 @@ class _BookResultCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
+    final script = ref.watch(settingsProvider).paliScript;
     final displayName = _displayBookName(summary.book);
+    final subtitleStyle = AppTypography.labelSmall.copyWith(
+      color: colors.onSurfaceVariant,
+      fontSize: 10,
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppDimensions.sm),
@@ -1284,8 +1359,11 @@ class _BookResultCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        // Book names are Pāli — render them in the user's
+                        // script with the script font, like the library.
+                        PaliTextStatic(
                           displayName,
+                          script,
                           style: AppTypography.labelMedium.copyWith(
                             color: colors.onSurface,
                             fontWeight: FontWeight.w600,
@@ -1293,20 +1371,33 @@ class _BookResultCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        // Convert each Pāli name separately so the '·'
+                        // separator stays plain text (it has no glyph in the
+                        // script fonts and must not be run through the
+                        // converter).
                         if (summary.book.nikaya != null ||
                             summary.book.category != null)
-                          Text(
-                            [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                               if (summary.book.nikaya != null)
-                                summary.book.nikaya,
+                                PaliTextStatic(
+                                  summary.book.nikaya!,
+                                  script,
+                                  style: subtitleStyle,
+                                  maxLines: 1,
+                                ),
+                              if (summary.book.nikaya != null &&
+                                  summary.book.category != null)
+                                Text(' · ', style: subtitleStyle),
                               if (summary.book.category != null)
-                                summary.book.category,
-                            ].join(' · '),
-                            style: AppTypography.labelSmall.copyWith(
-                              color: colors.onSurfaceVariant,
-                              fontSize: 10,
-                            ),
-                            maxLines: 1,
+                                PaliTextStatic(
+                                  summary.book.category!,
+                                  script,
+                                  style: subtitleStyle,
+                                  maxLines: 1,
+                                ),
+                            ],
                           ),
                       ],
                     ),
@@ -1414,7 +1505,7 @@ class _BookResultCard extends StatelessWidget {
 
 // ── Heading Results Card ──────────────────────────────────────────────────
 
-class _HeadingResultsCard extends StatelessWidget {
+class _HeadingResultsCard extends ConsumerWidget {
   final List<HeadingResult> headings;
   final ColorScheme colors;
   final void Function(HeadingResult heading) onTap;
@@ -1426,16 +1517,15 @@ class _HeadingResultsCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final script = ref.watch(settingsProvider).paliScript;
     return Card(
       margin: const EdgeInsets.only(bottom: AppDimensions.sm),
       elevation: 0,
       color: colors.tertiaryContainer.withValues(alpha: 0.2),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        side: BorderSide(
-          color: colors.tertiary.withValues(alpha: 0.4),
-        ),
+        side: BorderSide(color: colors.tertiary.withValues(alpha: 0.4)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -1444,15 +1534,14 @@ class _HeadingResultsCard extends StatelessWidget {
           // ── Header ───────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppDimensions.md, 10, AppDimensions.md, 6,
+              AppDimensions.md,
+              10,
+              AppDimensions.md,
+              6,
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.toc,
-                  size: 16,
-                  color: colors.tertiary,
-                ),
+                Icon(Icons.toc, size: 16, color: colors.tertiary),
                 const SizedBox(width: 8),
                 Text(
                   'Section headings',
@@ -1464,7 +1553,8 @@ class _HeadingResultsCard extends StatelessWidget {
                 const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 2,
+                    horizontal: 8,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
                     color: colors.tertiaryContainer,
@@ -1484,57 +1574,63 @@ class _HeadingResultsCard extends StatelessWidget {
           ),
           const Divider(height: 1, indent: 12, endIndent: 12),
           // ── Heading items ─────────────────────────────────────────
-          ...headings.map((heading) => InkWell(
-            onTap: () => onTap(heading),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.md,
-                vertical: 10,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.subdirectory_arrow_right,
-                    size: 14,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          heading.title,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (heading.bookName != null &&
-                            heading.bookName!.isNotEmpty)
-                          Text(
-                            heading.bookName!,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: colors.onSurfaceVariant,
-                              fontSize: 10,
+          ...headings.map(
+            (heading) => InkWell(
+              onTap: () => onTap(heading),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.md,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.subdirectory_arrow_right,
+                      size: 14,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Heading titles and book names are Pāli — render
+                          // them in the user's script, like the reader does.
+                          PaliTextStatic(
+                            heading.title,
+                            script,
+                            style: AppTypography.labelMedium.copyWith(
+                              color: colors.onSurface,
+                              fontWeight: FontWeight.w500,
                             ),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                      ],
+                          if (heading.bookName != null &&
+                              heading.bookName!.isNotEmpty)
+                            PaliTextStatic(
+                              heading.bookName!,
+                              script,
+                              style: AppTypography.labelSmall.copyWith(
+                                color: colors.onSurfaceVariant,
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                ],
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ],
+                ),
               ),
             ),
-          )),
+          ),
         ],
       ),
     );
@@ -1569,32 +1665,31 @@ class _SearchResultItemTile extends ConsumerWidget {
     final List<String> searchTerms;
     if (searchState is SearchResults) {
       final query = searchState.query;
-      searchTerms = normalizePaliFuzzy(query)
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
+      searchTerms = normalizePaliFuzzy(
+        query,
+      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     } else {
       searchTerms = const [];
     }
 
     // Get typography for Pali
     final paliTypo = settings.typography.pali;
-    final paliTextStyle = paliTypo.toTextStyle(
-      fallbackColor: colors.onSurface,
-    );
+    final paliTextStyle = paliTypo.toTextStyle(fallbackColor: colors.onSurface);
 
     // Get typography for translation
     final transTypo = activeLang != null
         ? settings.typography.typographyFor(activeLang)
         : null;
-    final transTextStyle = transTypo?.toTextStyle(
-      fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
-    ) ?? TextStyle(
-      fontSize: 12,
-      color: colors.onSurfaceVariant.withValues(alpha: 0.8),
-      fontStyle: FontStyle.italic,
-      height: 1.3,
-    );
+    final transTextStyle =
+        transTypo?.toTextStyle(
+          fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
+        ) ??
+        TextStyle(
+          fontSize: 12,
+          color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+          fontStyle: FontStyle.italic,
+          height: 1.3,
+        );
 
     // Only show lines that actually match the search
     final matchingLines = item.lines.where((l) => l.isMatch).toList();
@@ -1604,14 +1699,16 @@ class _SearchResultItemTile extends ConsumerWidget {
     // Pāli snippet terms into the display script for highlighting.
     final rawQuery = searchState is SearchResults ? searchState.query : '';
 
+    final isPhone = ResponsiveBreakpoint.isPhone(context);
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.md,
+        // 5px per side on phones: 0 (list) + 2 (tile) + 3 (line).
+        padding: EdgeInsets.fromLTRB(
+          isPhone ? _phoneTileHPad : AppDimensions.md,
           8,
-          AppDimensions.md,
+          isPhone ? _phoneTileHPad : AppDimensions.md,
           8,
         ),
         child: Column(
@@ -1650,24 +1747,30 @@ class _SearchResultItemTile extends ConsumerWidget {
                       ),
                     ),
                   const Spacer(),
-                  Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
                 ],
               ),
             ),
 
             // ── Matching lines with Pali + Translation ──────────────
-            ...matchingLines.map((line) => Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: _LineTile(
-                line: line,
-                searchTerms: searchTerms,
-                query: rawQuery,
-                paliTextStyle: paliTextStyle,
-                transTextStyle: transTextStyle,
-                colors: colors,
-                script: script,
+            ...matchingLines.map(
+              (line) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: _LineTile(
+                  line: line,
+                  searchTerms: searchTerms,
+                  query: rawQuery,
+                  paliTextStyle: paliTextStyle,
+                  transTextStyle: transTextStyle,
+                  colors: colors,
+                  script: script,
+                ),
               ),
-            )),
+            ),
           ],
         ),
       ),
@@ -1703,9 +1806,11 @@ class _LineTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final highlightColor = colors.primary.withValues(alpha: 0.25);
 
+    // 5px per side on phones: 0 (list) + 2 (tile) + 3 (this line).
+    final isPhone = ResponsiveBreakpoint.isPhone(context);
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
+      padding: EdgeInsets.symmetric(
+        horizontal: isPhone ? _phoneLineHPad : 8,
         vertical: 3,
       ),
       decoration: BoxDecoration(
@@ -1782,8 +1887,8 @@ class _LineTile extends StatelessWidget {
     final List<String> terms = script == Script.roman
         ? searchTerms
         : (normalizePaliFuzzy(
-                convertSearchQueryForScript(query, script),
-              ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList());
+            convertSearchQueryForScript(query, script),
+          ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList());
 
     final spans = buildSearchSnippetSpans(
       html: converted,

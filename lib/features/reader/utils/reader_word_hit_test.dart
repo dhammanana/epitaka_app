@@ -13,6 +13,44 @@ String cleanPali(String text) {
       .trim();
 }
 
+/// Characters that terminate a Pāli word in ANY script: whitespace and
+/// sentence punctuation (Latin, plus script-specific marks: Devanagari/
+/// Sinhala dandas, Tibetan tsheg + dandas, Sinhala kunddaliya). Everything
+/// else — letters of any script, combining marks, the Tamil superscripts
+/// ² ³ ⁴, ZWJ/ZWNJ, digits — belongs inside the word.
+final RegExp _kWordTerminator = RegExp(
+  r'''[\s.,;:!?()\[\]{}“”"«»‘’'…*·।॥<>།༎་෴§\u2013\u2014]''',
+);
+
+/// Returns the word range covering [tapOffset] in [text], expanding outward
+/// across every adjacent character that belongs to a word.
+///
+/// This deliberately does NOT rely on [RenderParagraph.getWordBoundary]:
+/// that engine API splits words in several scripts — e.g. Myanmar
+/// "ဘဂဝတော" → "ဘ", "ဂ", "ဝ", "တော", Thai "ภควโต" → "ภคว", "โต" and
+/// Tamil "த⁴ம்ம" → "த", "⁴", "ம்ம" — so a double-tap would only extract
+/// part of the word. Words in this app are always space-separated (the
+/// source Pāli is romanised with spaces and conversion preserves them), so
+/// expanding to the nearest whitespace/punctuation on both sides is exact
+/// for every script.
+///
+/// Returns [TextRange.empty] when [tapOffset] falls on whitespace or
+/// punctuation (there is no word to look up there) or when [text] is empty.
+TextRange wordRangeAt(String text, int tapOffset) {
+  if (text.isEmpty) return TextRange.empty;
+  final offset = tapOffset.clamp(0, text.length - 1);
+  if (_kWordTerminator.hasMatch(text[offset])) return TextRange.empty;
+  var start = offset;
+  var end = offset;
+  while (start > 0 && !_kWordTerminator.hasMatch(text[start - 1])) {
+    start--;
+  }
+  while (end < text.length && !_kWordTerminator.hasMatch(text[end])) {
+    end++;
+  }
+  return TextRange(start: start, end: end);
+}
+
 /// Hit-tests the render tree under [contentHitTestKey] at [globalPosition]
 /// and returns the word at that position, or `null` if no word is found.
 ///
@@ -71,13 +109,11 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
   }
 
   final textPosition = paragraph.getPositionForOffset(localInParagraph);
-  final boundary = paragraph.getWordBoundary(textPosition);
-  if (!boundary.isValid || boundary.isCollapsed) return null;
-
   final fullText = paragraph.text.toPlainText();
-  if (boundary.end > fullText.length) return null;
+  final range = wordRangeAt(fullText, textPosition.offset);
+  if (range.isCollapsed) return null;
 
-  final rawWord = fullText.substring(boundary.start, boundary.end);
+  final rawWord = fullText.substring(range.start, range.end);
   // Convert from any Pali script to Roman for dictionary lookup.
   final romanWord = convertToRomanPali(rawWord);
   return cleanPali(romanWord);
