@@ -113,9 +113,11 @@ class BookLinkService {
     int paraId, {
     Map<String, TranslationDatabase>? translationDbs,
   }) async {
-    // Find the nearest level=10 heading at or before paraId — this marks the
-    // start of the section we want to display.
-    final sectionRow = await _db
+    // ── Parallelize the independent queries ────────────────────────────
+    // The section heading, the book name, and (later) the sentences all
+    // touch different tables; running them concurrently cuts the sheet's
+    // open latency by roughly one serial query round-trip.
+    final sectionRowFuture = _db
         .customSelect(
           'SELECT para_id, title, level FROM headings '
           'WHERE book_id = ? AND para_id <= ? AND level = 10 '
@@ -123,6 +125,16 @@ class BookLinkService {
           variables: [Variable.withString(bookId), Variable.withInt(paraId)],
         )
         .get();
+    final bookRowFuture = _db
+        .customSelect(
+          'SELECT book_name FROM books WHERE book_id = ? LIMIT 1',
+          variables: [Variable.withString(bookId)],
+        )
+        .get();
+
+    final results = await Future.wait([sectionRowFuture, bookRowFuture]);
+    final sectionRow = results[0];
+    final bookRow = results[1];
 
     final int sectionStartParaId;
     String? headingTitle;
@@ -233,14 +245,7 @@ class BookLinkService {
       );
     }).toList();
 
-    // Get the book name
-    final bookRow = await _db
-        .customSelect(
-          'SELECT book_name FROM books WHERE book_id = ? LIMIT 1',
-          variables: [Variable.withString(bookId)],
-        )
-        .get();
-
+    // Book name was fetched concurrently with the section heading above.
     final bookName = bookRow.isNotEmpty
         ? (bookRow.first.data['book_name'] as String? ?? bookId)
         : bookId;

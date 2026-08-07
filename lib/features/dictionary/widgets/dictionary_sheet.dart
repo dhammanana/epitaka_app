@@ -132,6 +132,29 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   int _cachedDpdSectionTokenIndex = -2;
   int _cachedDpdSectionSubLookupVersion = -1;
 
+  /// Memoized *whole* results body (all dictionary sections + suggestions).
+  ///
+  /// The DPD-section cache above only covers the DPD block; the other
+  /// sections (Pāli definition cards with flutter_html, plain dict sections)
+  /// were still rebuilt on every DraggableScrollableSheet builder call — i.e.
+  /// per keyboard-animation and drag frame while the query is unchanged.
+  /// Caching the assembled results keyed by (query, lookup, searchWord,
+  /// enabled-books) means those frames just return the cached widget tree
+  /// instead of rebuilding it.
+  Widget? _cachedResultsWidget;
+  String? _cachedResultsQuery;
+  DpdFullLookup? _cachedResultsLookup;
+  String? _cachedResultsSearchWord;
+  String? _cachedResultsBooksKey;
+  AsyncValue<List<DpdHeadwordRow>>? _cachedResultsSuggestions;
+  // The DPD section's interactive state is also part of the results key:
+  // without it, tapping a deconstructor card (setState) would be swallowed
+  // by the memo (the cached tree still shows the collapsed card) and the
+  // tap would appear to do nothing.
+  int _cachedResultsCardIndex = -2;
+  int _cachedResultsTokenIndex = -2;
+  int _cachedResultsSubLookupVersion = -1;
+
   // Search history
   late final List<String> _searchHistory = [];
   static const _historyPrefsKey = 'dict_search_history';
@@ -236,6 +259,17 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _activeDeconCardIndex = -1;
       _activeDeconTokenIndex = 0;
       _subLookupCache.clear();
+      // A new search invalidates the memoized results body so it rebuilds
+      // with the fresh query.
+      _cachedResultsWidget = null;
+      _cachedResultsQuery = null;
+      _cachedResultsLookup = null;
+      _cachedResultsSearchWord = null;
+      _cachedResultsBooksKey = null;
+      _cachedResultsSuggestions = null;
+      _cachedResultsCardIndex = -2;
+      _cachedResultsTokenIndex = -2;
+      _cachedResultsSubLookupVersion = -1;
     });
   }
 
@@ -745,12 +779,40 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     return Consumer(
       builder: (context, ref, _) {
         final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
+        // When DPD misses, the "Did you mean?" suggestions are a nested
+        // provider; watch it here (instead of inside a cached subtree) so a
+        // resolve invalidates the memoized results and rebuilds them.
+        final suggestionsAsync = includePrefixSuggestions
+            ? ref.watch(dpdDictionarySearchProvider(_query))
+            : null;
         return booksAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => const SizedBox.shrink(),
           data: (books) {
             final enabledBooks = books.where((b) => b.userChoice).toList();
-            return CustomScrollView(
+            // Memoize: skip rebuilding when nothing changed. The sheet's
+            // builder re-runs on every drag/keyboard frame, and rebuilding
+            // flutter_html definitions each time is the dictionary's biggest
+            // per-frame cost.
+            final booksKey = enabledBooks
+                .map((b) => '${b.id}:${b.userChoice}:${b.userOrder}')
+                .join('|');
+            // Suggestions value identity is part of the key: when it
+            // transitions loading → data, the builder re-runs (watch above)
+            // and this comparison fails, forcing a rebuild with fresh data.
+            if (_cachedResultsWidget != null &&
+                _cachedResultsQuery == _query &&
+                identical(_cachedResultsLookup, lookup) &&
+                _cachedResultsSearchWord == searchWord &&
+                _cachedResultsBooksKey == booksKey &&
+                identical(_cachedResultsSuggestions, suggestionsAsync) &&
+                _cachedResultsCardIndex == _activeDeconCardIndex &&
+                _cachedResultsTokenIndex == _activeDeconTokenIndex &&
+                _cachedResultsSubLookupVersion == _subLookupVersion) {
+              return _cachedResultsWidget!;
+            }
+
+            final built = CustomScrollView(
               controller: scrollController,
               slivers: [
                 ..._buildDictionarySections(
@@ -764,6 +826,16 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 const SliverToBoxAdapter(child: SizedBox(height: 40)),
               ],
             );
+            _cachedResultsWidget = built;
+            _cachedResultsQuery = _query;
+            _cachedResultsLookup = lookup;
+            _cachedResultsSearchWord = searchWord;
+            _cachedResultsBooksKey = booksKey;
+            _cachedResultsSuggestions = suggestionsAsync;
+            _cachedResultsCardIndex = _activeDeconCardIndex;
+            _cachedResultsTokenIndex = _activeDeconTokenIndex;
+            _cachedResultsSubLookupVersion = _subLookupVersion;
+            return built;
           },
         );
       },

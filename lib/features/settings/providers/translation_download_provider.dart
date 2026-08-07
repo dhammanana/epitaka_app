@@ -14,6 +14,7 @@ import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
+import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/utils/database_initializer.dart';
 
 /// Download state for a specific translation version.
@@ -418,6 +419,14 @@ class TranslationDownloadNotifier
         dbEntry.content as List<int>,
         flush: true,
       );
+
+      // If the DPD dictionary was just replaced on disk, drop the memoized
+      // lookup/headword results in the open handle so it never serves stale
+      // rows for words the user looks up again after the update.
+      if (filename == 'dpd-dictionary.db') {
+        final db = await ref.read(dpdDictionaryDbProvider.future);
+        db.clearCaches();
+      }
 
       state = {
         ...state,

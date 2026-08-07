@@ -92,12 +92,44 @@ class PaliSegment {
 ///
 /// This is the variant-aware counterpart to [convertPaliToScriptPreservingHtml]
 /// and is used by [PaliTextWithVariants] to render variants as chips.
+///
+/// ## Performance
+///
+/// Called from inside `build()` for every visible Pāli line on every reader
+/// rebuild. The (regex split + per-segment HTML preservation) work is pure
+/// w.r.t. `(text, targetScript, stripVariantAnnotations)`, so the result is
+/// memoized — a scroll frame that re-renders the same lines skips the whole
+/// pipeline instead of redoing it. Bounded, FIFO eviction.
 List<PaliSegment> convertPaliToScriptSegments(
   String text,
   Script? targetScript,
 ) {
   if (text.isEmpty) return const [];
 
+  // stripVariantAnnotations is a mutable global pushed by the display
+  // widgets; it changes the output, so it must be part of the cache key.
+  final key = '$stripVariantAnnotations\u0000'
+      '${targetScript?.index ?? -1}\u0000$text';
+  final cached = _segmentsCache[key];
+  if (cached != null) return cached;
+
+  final segments = _convertPaliToScriptSegmentsUncached(text, targetScript);
+  final unmodifiable = List<PaliSegment>.unmodifiable(segments);
+  if (_segmentsCache.length >= _kSegmentsCacheCap) {
+    final removeCount = _kSegmentsCacheCap ~/ 4;
+    final keys = _segmentsCache.keys.toList();
+    for (var i = 0; i < removeCount; i++) {
+      _segmentsCache.remove(keys[i]);
+    }
+  }
+  _segmentsCache[key] = unmodifiable;
+  return unmodifiable;
+}
+
+List<PaliSegment> _convertPaliToScriptSegmentsUncached(
+  String text,
+  Script? targetScript,
+) {
   final segments = <PaliSegment>[];
   final variantPattern = RegExp(r'\[([^\[\]]*)\]');
   int lastEnd = 0;
@@ -141,6 +173,9 @@ List<PaliSegment> convertPaliToScriptSegments(
 
   return segments;
 }
+
+const int _kSegmentsCacheCap = 8000;
+final Map<String, List<PaliSegment>> _segmentsCache = {};
 
 /// Memoizes [convertPaliToScript] results, keyed by "scriptIndex\u0000text".
 ///
@@ -215,7 +250,42 @@ String convertPaliToScript(String text, Script? targetScript) {
 /// and re-inserts them after, so only the Pāli text between tags is
 /// converted. This prevents corruption of HTML markup during script
 /// conversion.
+///
+/// ## Performance
+///
+/// Runs inside widget `build()` for every Pāli line on every reader rebuild
+/// (via [PaliText], [PaliHtmlText], [PaliTextWithVariants] and the copy
+/// service). The inner `convertPaliToScript` steps are cached, but the HTML
+/// tag split/join was redone on every call; the whole result is now memoized
+/// too (keyed by script + strip flag + text), so repeated renders of the same
+/// line are a map lookup. Bounded, FIFO eviction.
 String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
+  if (text.isEmpty) return text;
+
+  final key = '$stripVariantAnnotations\u0000'
+      '${targetScript?.index ?? -1}\u0000$text';
+  final cached = _preserveCache[key];
+  if (cached != null) return cached;
+
+  final result = _convertPaliToScriptPreservingHtmlUncached(
+    text,
+    targetScript,
+  );
+  if (_preserveCache.length >= _kPreserveCacheCap) {
+    final removeCount = _kPreserveCacheCap ~/ 4;
+    final keys = _preserveCache.keys.toList();
+    for (var i = 0; i < removeCount; i++) {
+      _preserveCache.remove(keys[i]);
+    }
+  }
+  _preserveCache[key] = result;
+  return result;
+}
+
+String _convertPaliToScriptPreservingHtmlUncached(
+  String text,
+  Script? targetScript,
+) {
   if (text.isEmpty) return text;
   // Strip variant annotations first. We remove them from the raw text
   // before splitting on HTML tags so bracketed variants inside or outside
@@ -289,6 +359,9 @@ String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
 
   return result;
 }
+
+const int _kPreserveCacheCap = 8000;
+final Map<String, String> _preserveCache = {};
 
 /// Converts a search [query] (in Roman Pali) to [script] so that the
 /// converted terms can be matched against Pāli text that was also converted

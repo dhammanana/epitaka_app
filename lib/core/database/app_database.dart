@@ -5,7 +5,8 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
-import '../../features/ai_qa/models/ai_qa_models.dart' show ChatThread, ChatMessageRecord;
+import '../../features/ai_qa/models/ai_qa_models.dart'
+    show ChatThread, ChatMessageRecord;
 import '../utils/database_initializer.dart';
 import '../utils/pali_search_utils.dart';
 import 'epitaka_database.dart';
@@ -43,7 +44,6 @@ class Bookmarks extends Table {
   TextColumn get pageNumber => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
-
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,6 @@ class ReadingHistory extends Table {
   DateTimeColumn get openedAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
   IntColumn get readCount => integer().withDefault(const Constant(1))();
-
 }
 
 // ---------------------------------------------------------------------------
@@ -139,14 +138,18 @@ class AppDatabase extends _$AppDatabase {
     final rows = await customSelect(
       'SELECT * FROM chat_threads ORDER BY updated_at DESC',
     ).get();
-    return rows.map((r) => ChatThread.fromJson({
-          'id': r.data['id'] as String,
-          'title': r.data['title'] as String,
-          'created_at': r.data['created_at'] as String,
-          'updated_at': r.data['updated_at'] as String,
-          'message_count': r.data['message_count'] as int,
-          'max_messages': r.data['max_messages'] as int,
-        })).toList();
+    return rows
+        .map(
+          (r) => ChatThread.fromJson({
+            'id': r.data['id'] as String,
+            'title': r.data['title'] as String,
+            'created_at': r.data['created_at'] as String,
+            'updated_at': r.data['updated_at'] as String,
+            'message_count': r.data['message_count'] as int,
+            'max_messages': r.data['max_messages'] as int,
+          }),
+        )
+        .toList();
   }
 
   /// Get a single thread by ID.
@@ -190,7 +193,9 @@ class AppDatabase extends _$AppDatabase {
   /// Delete a chat thread and all its messages.
   Future<void> deleteChatThread(String id) async {
     await _ensureChatTables();
-    await customStatement('DELETE FROM chat_messages WHERE thread_id = ?', [id]);
+    await customStatement('DELETE FROM chat_messages WHERE thread_id = ?', [
+      id,
+    ]);
     await customStatement('DELETE FROM chat_threads WHERE id = ?', [id]);
   }
 
@@ -264,13 +269,18 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Update an assistant message's content (for stream finalization).
-  Future<void> updateAssistantMessage(int messageId, String content, String metadata) async {
+  Future<void> updateAssistantMessage(
+    int messageId,
+    String content,
+    String metadata,
+  ) async {
     await _ensureChatTables();
     await customStatement(
       'UPDATE chat_messages SET content = ?, metadata = ? WHERE id = ?',
       [content, metadata, messageId],
     );
   }
+
   AppDatabase(super.e);
 
   @override
@@ -331,7 +341,9 @@ class AppDatabase extends _$AppDatabase {
     final dbPath = p.join(dir.path, 'app_data.db');
     final file = File(dbPath);
 
-    debugPrint('[DB] Opening app_data.db at: $dbPath (exists: ${file.existsSync()})');
+    debugPrint(
+      '[DB] Opening app_data.db at: $dbPath (exists: ${file.existsSync()})',
+    );
 
     try {
       final db = AppDatabase._create(file);
@@ -341,7 +353,9 @@ class AppDatabase extends _$AppDatabase {
       debugPrint('[DB] AppDatabase opened successfully');
       return db;
     } catch (e) {
-      debugPrint('[DB] First open failed: $e — clearing stale WAL/SHM and retrying once…');
+      debugPrint(
+        '[DB] First open failed: $e — clearing stale WAL/SHM and retrying once…',
+      );
     }
 
     // Retry once after clearing journals left behind by an unclean
@@ -352,7 +366,9 @@ class AppDatabase extends _$AppDatabase {
     try {
       final db = AppDatabase._create(file);
       await db.customSelect('PRAGMA user_version').get();
-      debugPrint('[DB] AppDatabase opened successfully after clearing journals');
+      debugPrint(
+        '[DB] AppDatabase opened successfully after clearing journals',
+      );
       return db;
     } catch (e) {
       debugPrint('[DB] AppDatabase still will not open: $e');
@@ -395,10 +411,13 @@ class AppDatabase extends _$AppDatabase {
       final exists = await customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_fts'",
       ).get();
-      if (exists.isEmpty) return true; // nothing built yet, nothing to be corrupt
+      if (exists.isEmpty)
+        return true; // nothing built yet, nothing to be corrupt
       // FTS5's built-in self-check: throws if the shadow tables disagree
       // with the index content.
-      await customStatement("INSERT INTO search_fts(search_fts) VALUES('integrity-check')");
+      await customStatement(
+        "INSERT INTO search_fts(search_fts) VALUES('integrity-check')",
+      );
       return true;
     } catch (e) {
       debugPrint('[DB] Search index integrity check failed: $e');
@@ -428,7 +447,7 @@ class AppDatabase extends _$AppDatabase {
           db.execute('PRAGMA foreign_keys=ON');
         } catch (_) {}
         try {
-          db.execute('PRAGMA mmap_size=0');   // ← add this line
+          db.execute('PRAGMA mmap_size=0'); // ← add this line
         } catch (_) {}
       },
       logStatements: false,
@@ -447,18 +466,22 @@ class AppDatabase extends _$AppDatabase {
     String? pageNumber,
   }) async {
     final now = DateTime.now();
-    final id = await into(bookmarks).insert(BookmarksCompanion(
-      name: Value(name),
-      bookId: Value(bookId),
-      paraId: Value(paraId),
-      lineId: Value(lineId),
-      bookName: Value(bookName),
-      pageNumber: Value(pageNumber),
-      createdAt: Value(now),
-      updatedAt: Value(now),
-    ));
+    final id = await into(bookmarks).insert(
+      BookmarksCompanion(
+        name: Value(name),
+        bookId: Value(bookId),
+        paraId: Value(paraId),
+        lineId: Value(lineId),
+        bookName: Value(bookName),
+        pageNumber: Value(pageNumber),
+        createdAt: Value(now),
+        updatedAt: Value(now),
+      ),
+    );
 
-    return (await (select(bookmarks)..where((b) => b.id.equals(id))).get()).first;
+    return (await (select(
+      bookmarks,
+    )..where((b) => b.id.equals(id))).get()).first;
   }
 
   /// Delete a bookmark by ID.
@@ -468,14 +491,20 @@ class AppDatabase extends _$AppDatabase {
 
   /// Get all bookmarks, ordered by most recent first.
   Future<List<Bookmark>> getAllBookmarks() async {
-    return (select(bookmarks)..orderBy([(b) => OrderingTerm(expression: b.createdAt, mode: OrderingMode.desc)])).get();
+    return (select(bookmarks)..orderBy([
+          (b) => OrderingTerm(expression: b.createdAt, mode: OrderingMode.desc),
+        ]))
+        .get();
   }
 
   /// Get bookmarks for a specific book.
   Future<List<Bookmark>> getBookmarksForBook(String bookId) async {
     return (select(bookmarks)
           ..where((b) => b.bookId.equals(bookId))
-          ..orderBy([(b) => OrderingTerm(expression: b.createdAt, mode: OrderingMode.desc)]))
+          ..orderBy([
+            (b) =>
+                OrderingTerm(expression: b.createdAt, mode: OrderingMode.desc),
+          ]))
         .get();
   }
 
@@ -489,39 +518,50 @@ class AppDatabase extends _$AppDatabase {
     final now = DateTime.now();
 
     // Check if an entry for this book already exists (not just updated today)
-    final existing = await (select(readingHistory)
-          ..where((h) => h.bookId.equals(bookId))
-          ..orderBy([(h) => OrderingTerm(expression: h.updatedAt, mode: OrderingMode.desc)])
-          ..limit(1))
-        .get();
+    final existing =
+        await (select(readingHistory)
+              ..where((h) => h.bookId.equals(bookId))
+              ..orderBy([
+                (h) => OrderingTerm(
+                  expression: h.updatedAt,
+                  mode: OrderingMode.desc,
+                ),
+              ])
+              ..limit(1))
+            .get();
 
     if (existing.isNotEmpty) {
       final entry = existing.first;
       // Update the existing entry with new location and timestamp
-      await (update(readingHistory)..where((h) => h.id.equals(entry.id))).write(ReadingHistoryCompanion(
-        bookName: Value(bookName ?? entry.bookName),
-        paraId: Value(paraId ?? entry.paraId),
-        lineId: Value(lineId ?? entry.lineId),
-        updatedAt: Value(now),
-        readCount: Value(entry.readCount + 1),
-      ));
+      await (update(readingHistory)..where((h) => h.id.equals(entry.id))).write(
+        ReadingHistoryCompanion(
+          bookName: Value(bookName ?? entry.bookName),
+          paraId: Value(paraId ?? entry.paraId),
+          lineId: Value(lineId ?? entry.lineId),
+          updatedAt: Value(now),
+          readCount: Value(entry.readCount + 1),
+        ),
+      );
     } else {
-      await into(readingHistory).insert(ReadingHistoryCompanion(
-        bookId: Value(bookId),
-        bookName: Value(bookName),
-        paraId: Value(paraId),
-        lineId: Value(lineId),
-        openedAt: Value(now),
-        updatedAt: Value(now),
-        readCount: const Value(1),
-      ));
+      await into(readingHistory).insert(
+        ReadingHistoryCompanion(
+          bookId: Value(bookId),
+          bookName: Value(bookName),
+          paraId: Value(paraId),
+          lineId: Value(lineId),
+          openedAt: Value(now),
+          updatedAt: Value(now),
+          readCount: const Value(1),
+        ),
+      );
     }
   }
 
   /// Get all reading history, ordered by most recently updated first.
   Future<List<ReadingHistoryData>> getAllHistory() async {
-    return (select(readingHistory)
-          ..orderBy([(h) => OrderingTerm(expression: h.updatedAt, mode: OrderingMode.desc)]))
+    return (select(readingHistory)..orderBy([
+          (h) => OrderingTerm(expression: h.updatedAt, mode: OrderingMode.desc),
+        ]))
         .get();
   }
 
@@ -534,8 +574,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// Get all TTS replacement rules, ordered by creation date.
   Future<List<TtsReplacement>> getAllTtsReplacements() async {
-    return (select(ttsReplacements)
-          ..orderBy([(r) => OrderingTerm(expression: r.createdAt, mode: OrderingMode.desc)]))
+    return (select(ttsReplacements)..orderBy([
+          (r) => OrderingTerm(expression: r.createdAt, mode: OrderingMode.desc),
+        ]))
         .get();
   }
 
@@ -546,13 +587,15 @@ class AppDatabase extends _$AppDatabase {
     bool isRegex = false,
     bool enabled = true,
   }) async {
-    return into(ttsReplacements).insert(TtsReplacementsCompanion(
-      pattern: Value(pattern),
-      replacement: Value(replacement),
-      isRegex: Value(isRegex),
-      enabled: Value(enabled),
-      createdAt: Value(DateTime.now()),
-    ));
+    return into(ttsReplacements).insert(
+      TtsReplacementsCompanion(
+        pattern: Value(pattern),
+        replacement: Value(replacement),
+        isRegex: Value(isRegex),
+        enabled: Value(enabled),
+        createdAt: Value(DateTime.now()),
+      ),
+    );
   }
 
   /// Update an existing TTS replacement rule.
@@ -563,19 +606,21 @@ class AppDatabase extends _$AppDatabase {
     required bool isRegex,
     required bool enabled,
   }) async {
-    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(TtsReplacementsCompanion(
-      pattern: Value(pattern),
-      replacement: Value(replacement),
-      isRegex: Value(isRegex),
-      enabled: Value(enabled),
-    ));
+    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(
+      TtsReplacementsCompanion(
+        pattern: Value(pattern),
+        replacement: Value(replacement),
+        isRegex: Value(isRegex),
+        enabled: Value(enabled),
+      ),
+    );
   }
 
   /// Toggle a TTS replacement rule's enabled state.
   Future<void> toggleTtsReplacement(int id, bool enabled) async {
-    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(TtsReplacementsCompanion(
-      enabled: Value(enabled),
-    ));
+    await (update(ttsReplacements)..where((r) => r.id.equals(id))).write(
+      TtsReplacementsCompanion(enabled: Value(enabled)),
+    );
   }
 
   /// Delete a TTS replacement rule by ID.
@@ -586,9 +631,9 @@ class AppDatabase extends _$AppDatabase {
   /// Apply all enabled TTS replacement rules to [text]. Returns the
   /// transformed text.
   Future<String> applyTtsReplacements(String text) async {
-    final rules = await (select(ttsReplacements)
-          ..where((r) => r.enabled.equals(true)))
-        .get();
+    final rules = await (select(
+      ttsReplacements,
+    )..where((r) => r.enabled.equals(true))).get();
     if (rules.isEmpty) return text;
 
     var result = text;
@@ -632,7 +677,9 @@ class AppDatabase extends _$AppDatabase {
           "SELECT name, type FROM sqlite_master WHERE name='search_fts'",
         ).get();
         if (fallback.isNotEmpty) {
-          debugPrint('[INDEX_CHECK] search_fts found with type=${fallback.first.data['type']}');
+          debugPrint(
+            '[INDEX_CHECK] search_fts found with type=${fallback.first.data['type']}',
+          );
         }
         return false;
       }
@@ -676,13 +723,15 @@ class AppDatabase extends _$AppDatabase {
     // JOIN is needed afterwards to work out where on the page the match
     // actually occurred.
     debugPrint('[INDEX] Querying sentences from epitaka.db…');
-    final pageRows = await epitakaDb.customSelect(
-      "SELECT book_id, para_id, group_concat(pali, ' ') as pali_text "
-      'FROM sentences '
-      'WHERE para_id IS NOT NULL '
-      'GROUP BY book_id, para_id '
-      'ORDER BY book_id, para_id',
-    ).get();
+    final pageRows = await epitakaDb
+        .customSelect(
+          "SELECT book_id, para_id, group_concat(pali, ' ') as pali_text "
+          'FROM sentences '
+          'WHERE para_id IS NOT NULL '
+          'GROUP BY book_id, para_id '
+          'ORDER BY book_id, para_id',
+        )
+        .get();
 
     debugPrint('[INDEX] Found ${pageRows.length} para_id groups to index');
     final totalPages = pageRows.length;
@@ -705,7 +754,7 @@ class AppDatabase extends _$AppDatabase {
         '  book_id UNINDEXED,'
         '  para_id UNINDEXED,'
         '  pali_text,'
-        "  tokenize='unicode61 remove_diacritics 0'"
+        "  tokenize='unicode61 remove_diacritics 1 prefix=\"3 4\"'"
         ')',
       );
       await customStatement(
@@ -716,8 +765,12 @@ class AppDatabase extends _$AppDatabase {
         '  count INTEGER NOT NULL DEFAULT 0'
         ')',
       );
-      await customStatement('CREATE INDEX idx_search_words_pali ON search_words(pali)');
-      await customStatement('CREATE INDEX idx_search_words_fuzzy ON search_words(fuzzy)');
+      await customStatement(
+        'CREATE INDEX idx_search_words_pali ON search_words(pali)',
+      );
+      await customStatement(
+        'CREATE INDEX idx_search_words_fuzzy ON search_words(fuzzy)',
+      );
 
       const yieldInterval = 200;
       int yieldCounter = 0;
@@ -748,7 +801,10 @@ class AppDatabase extends _$AppDatabase {
 
         if (insertedPages % 50 == 0 || insertedPages == totalPages) {
           final p = 0.02 + (insertedPages / totalPages) * 0.50;
-          onProgress?.call(p.clamp(0.02, 0.52), 'Indexing Pāli texts… $insertedPages / $totalPages pages');
+          onProgress?.call(
+            p.clamp(0.02, 0.52),
+            'Indexing Pāli texts… $insertedPages / $totalPages pages',
+          );
         }
 
         // Yielding inside a transaction still keeps the UI responsive
@@ -771,7 +827,10 @@ class AppDatabase extends _$AppDatabase {
 
         if (wordCount % 200 == 0 || wordCount == wordTotal) {
           final p = 0.55 + (wordCount / wordTotal) * 0.45;
-          onProgress?.call(p.clamp(0.55, 1.0), 'Building word index… $wordCount / $wordTotal words');
+          onProgress?.call(
+            p.clamp(0.55, 1.0),
+            'Building word index… $wordCount / $wordTotal words',
+          );
         }
         if (wordCount % 200 == 0) {
           await Future.delayed(Duration.zero);
@@ -780,7 +839,9 @@ class AppDatabase extends _$AppDatabase {
     });
 
     stopwatch.stop();
-    debugPrint('[INDEX] Pāli index built: $insertedPages pages, $wordCount words in ${stopwatch.elapsed.inSeconds}s');
+    debugPrint(
+      '[INDEX] Pāli index built: $insertedPages pages, $wordCount words in ${stopwatch.elapsed.inSeconds}s',
+    );
     return (pages: insertedPages, words: wordCount);
   }
 
@@ -797,19 +858,26 @@ class AppDatabase extends _$AppDatabase {
     final tableName = 'search_fts_$langCode';
 
     debugPrint('[INDEX] Querying $langCode translation sentences…');
-    final sentenceRows = await translationDb.customSelect(
-      "SELECT book_id, para_id, group_concat(translation, ' ') as translation_text "
-      'FROM sentences '
-      "WHERE translation IS NOT NULL AND translation != '' "
-      'GROUP BY book_id, para_id '
-      'ORDER BY book_id, para_id',
-    ).get();
+    final sentenceRows = await translationDb
+        .customSelect(
+          "SELECT book_id, para_id, group_concat(translation, ' ') as translation_text "
+          'FROM sentences '
+          "WHERE translation IS NOT NULL AND translation != '' "
+          'GROUP BY book_id, para_id '
+          'ORDER BY book_id, para_id',
+        )
+        .get();
 
-    debugPrint('[INDEX] Found ${sentenceRows.length} $langCode paragraphs to index');
+    debugPrint(
+      '[INDEX] Found ${sentenceRows.length} $langCode paragraphs to index',
+    );
     if (sentenceRows.isEmpty) return 0;
 
     final totalRows = sentenceRows.length;
-    onProgress?.call(0.0, 'Indexing $totalRows ${langCode.toUpperCase()} translation paragraphs…');
+    onProgress?.call(
+      0.0,
+      'Indexing $totalRows ${langCode.toUpperCase()} translation paragraphs…',
+    );
 
     int count = 0;
     final wordCounts = <String, int>{};
@@ -823,7 +891,7 @@ class AppDatabase extends _$AppDatabase {
         '  book_id UNINDEXED,'
         '  para_id UNINDEXED,'
         '  translation_text,'
-        "  tokenize='unicode61 remove_diacritics 0'"
+        "  tokenize='unicode61 remove_diacritics 1'"
         ')',
       );
       // Word suggestions for THIS language. Kept per-language (rather than
@@ -855,8 +923,14 @@ class AppDatabase extends _$AppDatabase {
         translationText = translationText
             .toLowerCase()
             .replaceAll(RegExp(r'<[^>]*>'), '')
-            .replaceAll(RegExp(r'[\[\](){}⟨⟩:;.,!?…—–\-"«»“”' "'"
-                r']'), '')
+            .replaceAll(
+              RegExp(
+                r'[\[\](){}⟨⟩:;.,!?…—–\-"«»“”'
+                "'"
+                r']',
+              ),
+              '',
+            )
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
         if (translationText.isEmpty) continue;
@@ -880,7 +954,10 @@ class AppDatabase extends _$AppDatabase {
         // "translation indexing is slow" complaint.
         if (count % 50 == 0 || count == totalRows) {
           final p = (count / totalRows).clamp(0.0, 1.0);
-          onProgress?.call(p, 'Indexing ${langCode.toUpperCase()} translation… $count / $totalRows paragraphs');
+          onProgress?.call(
+            p,
+            'Indexing ${langCode.toUpperCase()} translation… $count / $totalRows paragraphs',
+          );
         }
         if (yieldCounter >= yieldInterval) {
           await Future.delayed(Duration.zero);
@@ -897,8 +974,10 @@ class AppDatabase extends _$AppDatabase {
     });
 
     stopwatch.stop();
-    debugPrint('[INDEX] $langCode translation index built: $count paragraphs, '
-        '${wordCounts.length} words in ${stopwatch.elapsed.inSeconds}s');
+    debugPrint(
+      '[INDEX] $langCode translation index built: $count paragraphs, '
+      '${wordCounts.length} words in ${stopwatch.elapsed.inSeconds}s',
+    );
     return count;
   }
 
@@ -970,12 +1049,14 @@ class AppDatabase extends _$AppDatabase {
       ).get();
 
       return rows
-          .map((r) => SearchResultRow(
-                bookId: r.data['book_id'] as String,
-                vripage: '',
-                snippet: r.data['snippet_text'] as String? ?? '',
-                firstParaId: r.data['para_id'] as int?,
-              ))
+          .map(
+            (r) => SearchResultRow(
+              bookId: r.data['book_id'] as String,
+              vripage: '',
+              snippet: r.data['snippet_text'] as String? ?? '',
+              firstParaId: r.data['para_id'] as int?,
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -999,12 +1080,16 @@ class AppDatabase extends _$AppDatabase {
         variables: [Variable.withString('%$normalized%')],
       ).get();
 
-      return rows.map((r) => SearchResultRow(
-            bookId: r.data['book_id'] as String,
-            vripage: '',
-            snippet: '...$normalized...',
-            firstParaId: r.data['para_id'] as int?,
-          )).toList();
+      return rows
+          .map(
+            (r) => SearchResultRow(
+              bookId: r.data['book_id'] as String,
+              vripage: '',
+              snippet: '...$normalized...',
+              firstParaId: r.data['para_id'] as int?,
+            ),
+          )
+          .toList();
     } catch (_) {
       return [];
     }
@@ -1063,8 +1148,9 @@ class AppDatabase extends _$AppDatabase {
       // Build group queries: each group is (var1* OR var2* OR …)
       // meaning ANY diacritic variant of that word is accepted.
       final groupQueries = wordGroups.map((vars) {
-        final escaped =
-            vars.map((v) => '${v.replaceAll('"', '""')}*').join(' OR ');
+        final escaped = vars
+            .map((v) => '${v.replaceAll('"', '""')}*')
+            .join(' OR ');
         return '($escaped)';
       }).toList();
 
@@ -1113,7 +1199,11 @@ class AppDatabase extends _$AppDatabase {
     bool fuzzy = false,
     int distance = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    final ftsQuery = await _buildFtsQuery(
+      query,
+      fuzzy: fuzzy,
+      distance: distance,
+    );
     if (ftsQuery.isEmpty) return {};
 
     try {
@@ -1126,7 +1216,10 @@ class AppDatabase extends _$AppDatabase {
         variables: [Variable.withString(ftsQuery)],
       ).get();
 
-      return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+      return {
+        for (final r in rows)
+          r.data['book_id'] as String: (r.data['cnt'] as num).toInt(),
+      };
     } catch (_) {
       return {};
     }
@@ -1155,13 +1248,20 @@ class AppDatabase extends _$AppDatabase {
           'ORDER BY book_id',
           variables: [Variable.withString(normalized)],
         ).get();
-        return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+        return {
+          for (final r in rows)
+            r.data['book_id'] as String: (r.data['cnt'] as num).toInt(),
+        };
       } catch (_) {
         return {};
       }
     }
 
-    final ftsQuery = await _buildFtsQuery(query, fuzzy: false, distance: distance);
+    final ftsQuery = await _buildFtsQuery(
+      query,
+      fuzzy: false,
+      distance: distance,
+    );
     if (ftsQuery.isEmpty) return {};
 
     try {
@@ -1173,7 +1273,10 @@ class AppDatabase extends _$AppDatabase {
         'ORDER BY book_id',
         variables: [Variable.withString(ftsQuery)],
       ).get();
-      return {for (final r in rows) r.data['book_id'] as String: (r.data['cnt'] as num).toInt()};
+      return {
+        for (final r in rows)
+          r.data['book_id'] as String: (r.data['cnt'] as num).toInt(),
+      };
     } catch (_) {
       return {};
     }
@@ -1189,7 +1292,11 @@ class AppDatabase extends _$AppDatabase {
     int limit = 30,
     int offset = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    final ftsQuery = await _buildFtsQuery(
+      query,
+      fuzzy: fuzzy,
+      distance: distance,
+    );
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1210,13 +1317,15 @@ class AppDatabase extends _$AppDatabase {
       ).get();
 
       return rows
-          .map((r) => SearchResultRow(
-                bookId: r.data['book_id'] as String,
-                vripage: '',
-                firstParaId: r.data['para_id'] as int?,
-                snippet: r.data['snippet_text'] as String? ?? '',
-                paliText: r.data['pali_text'] as String? ?? '',
-              ))
+          .map(
+            (r) => SearchResultRow(
+              bookId: r.data['book_id'] as String,
+              vripage: '',
+              firstParaId: r.data['para_id'] as int?,
+              snippet: r.data['snippet_text'] as String? ?? '',
+              paliText: r.data['pali_text'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -1257,20 +1366,26 @@ class AppDatabase extends _$AppDatabase {
           ],
         ).get();
         return rows
-            .map((r) => SearchResultRow(
-                  bookId: r.data['book_id'] as String,
-                  vripage: '',
-                  firstParaId: r.data['para_id'] as int?,
-                  snippet: r.data['snippet_text'] as String? ?? '',
-                  translation: r.data['translation_text'] as String? ?? '',
-                ))
+            .map(
+              (r) => SearchResultRow(
+                bookId: r.data['book_id'] as String,
+                vripage: '',
+                firstParaId: r.data['para_id'] as int?,
+                snippet: r.data['snippet_text'] as String? ?? '',
+                translation: r.data['translation_text'] as String? ?? '',
+              ),
+            )
             .toList();
       } catch (_) {
         return [];
       }
     }
 
-    final ftsQuery = await _buildFtsQuery(query, fuzzy: false, distance: distance);
+    final ftsQuery = await _buildFtsQuery(
+      query,
+      fuzzy: false,
+      distance: distance,
+    );
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1291,13 +1406,15 @@ class AppDatabase extends _$AppDatabase {
       ).get();
 
       return rows
-          .map((r) => SearchResultRow(
-                bookId: r.data['book_id'] as String,
-                vripage: '',
-                firstParaId: r.data['para_id'] as int?,
-                snippet: r.data['snippet_text'] as String? ?? '',
-                translation: r.data['translation_text'] as String? ?? '',
-              ))
+          .map(
+            (r) => SearchResultRow(
+              bookId: r.data['book_id'] as String,
+              vripage: '',
+              firstParaId: r.data['para_id'] as int?,
+              snippet: r.data['snippet_text'] as String? ?? '',
+              translation: r.data['translation_text'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -1315,7 +1432,11 @@ class AppDatabase extends _$AppDatabase {
     bool fuzzy = false,
     int distance = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(query, fuzzy: fuzzy, distance: distance);
+    final ftsQuery = await _buildFtsQuery(
+      query,
+      fuzzy: fuzzy,
+      distance: distance,
+    );
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1331,13 +1452,15 @@ class AppDatabase extends _$AppDatabase {
       ).get();
 
       return rows
-          .map((r) => SearchResultRow(
-                bookId: r.data['book_id'] as String,
-                vripage: '',
-                firstParaId: r.data['para_id'] as int?,
-                snippet: r.data['snippet_text'] as String? ?? '',
-                paliText: r.data['pali_text'] as String? ?? '',
-              ))
+          .map(
+            (r) => SearchResultRow(
+              bookId: r.data['book_id'] as String,
+              vripage: '',
+              firstParaId: r.data['para_id'] as int?,
+              snippet: r.data['snippet_text'] as String? ?? '',
+              paliText: r.data['pali_text'] as String? ?? '',
+            ),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -1368,12 +1491,14 @@ class AppDatabase extends _$AppDatabase {
     ).get();
 
     final suggestions = rows
-        .map((r) => SearchSuggestion(
-              pali: r.data['pali'] as String,
-              fuzzy: r.data['fuzzy'] as String,
-              count: r.data['count'] as int,
-              source: SuggestionSource.pali,
-            ))
+        .map(
+          (r) => SearchSuggestion(
+            pali: r.data['pali'] as String,
+            fuzzy: r.data['fuzzy'] as String,
+            count: r.data['count'] as int,
+            source: SuggestionSource.pali,
+          ),
+        )
         .toList();
 
     // Also pull translation-word suggestions for the active language, if
@@ -1398,12 +1523,16 @@ class AppDatabase extends _$AppDatabase {
               Variable.withInt(limit),
             ],
           ).get();
-          suggestions.addAll(tRows.map((r) => SearchSuggestion(
+          suggestions.addAll(
+            tRows.map(
+              (r) => SearchSuggestion(
                 pali: r.data['word'] as String,
                 fuzzy: r.data['word'] as String,
                 count: r.data['count'] as int,
                 source: SuggestionSource.translation,
-              )));
+              ),
+            ),
+          );
         }
       } catch (_) {
         // Translation suggestions are optional.

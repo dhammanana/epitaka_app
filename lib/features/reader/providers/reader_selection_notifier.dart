@@ -56,7 +56,16 @@ class ReaderSelectionNotifier extends StateNotifier<ReaderSelectionState> {
   }
 
   /// Update visible paragraph range (from scroll position tracking).
+  ///
+  /// No-ops when the range is unchanged: this is called on EVERY scroll
+  /// frame, and writing identical state would still notify listeners / bump
+  /// the notifier, forcing downstream rebuilds during a scroll that never
+  /// actually moved the visible range.
   void updateVisibleRange(int startIndex, int endIndex) {
+    if (state.visibleStartIndex == startIndex &&
+        state.visibleEndIndex == endIndex) {
+      return;
+    }
     state = state.copyWith(
       visibleStartIndex: startIndex,
       visibleEndIndex: endIndex,

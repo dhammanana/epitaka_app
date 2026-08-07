@@ -121,8 +121,12 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     // Avoid setState if the thumb is being dragged by the user
     if (_dragOffset != null) return;
 
+    final newRatio = topIndex / (total - 1);
+    // Skip identical updates: this listener fires on every scroll frame and
+    // a setState per frame (even with the same value) rebuilds the thumb.
+    if (newRatio == _scrollRatio) return;
     setState(() {
-      _scrollRatio = topIndex / (total - 1);
+      _scrollRatio = newRatio;
     });
   }
 
