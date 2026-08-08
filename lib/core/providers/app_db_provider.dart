@@ -20,3 +20,10 @@ final historyProvider = FutureProvider<List<ReadingHistoryData>>((ref) async {
   return db.getAllHistory();
 });
 
+/// Provider that fetches listening history (books played with TTS).
+final listeningHistoryProvider =
+    FutureProvider<List<ListeningHistoryData>>((ref) async {
+  final db = await ref.watch(appDbProvider.future);
+  return db.getAllListeningHistory();
+});
+

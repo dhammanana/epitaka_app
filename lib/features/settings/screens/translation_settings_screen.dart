@@ -101,6 +101,14 @@ class _TranslationSettingsScreenState
                 },
                 colors: colors,
               ),
+              const SizedBox(height: 4),
+              _ShowBookLinksTile(
+                value: settings.showBookLinks,
+                onChanged: (v) {
+                  ref.read(settingsProvider.notifier).setShowBookLinks(v);
+                },
+                colors: colors,
+              ),
             ],
           ),
           const SizedBox(height: AppDimensions.lg),
@@ -2047,6 +2055,82 @@ class _TextPreview extends StatelessWidget {
 }
 
 // ── Display mode selector ────────────────────────────────────────────────────
+
+/// Checkbox row toggling the inlined commentary/book-link chips (persisted).
+class _ShowBookLinksTile extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final ColorScheme colors;
+
+  const _ShowBookLinksTile({
+    required this.value,
+    required this.onChanged,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.sm,
+        vertical: 2,
+      ),
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.sm + 2,
+            vertical: AppDimensions.sm + 2,
+          ),
+          decoration: BoxDecoration(
+            color: value
+                ? colors.primary.withValues(alpha: 0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Checkbox(
+                value: value,
+                onChanged: (v) => onChanged(v ?? false),
+                activeColor: colors.primary,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              Icon(Icons.link, size: 20, color: colors.onSurfaceVariant),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      loc.showBookLinks,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: value ? FontWeight.w600 : FontWeight.w400,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      loc.showBookLinksSubtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ModeSelector extends StatelessWidget {
   final TranslationDisplayMode? currentMode;

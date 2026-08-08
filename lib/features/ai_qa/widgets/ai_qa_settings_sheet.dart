@@ -239,6 +239,12 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     final loc = AppLocalizations.of(context);
 
     return DraggableScrollableSheet(
+      // Don't fill the whole screen (see dictionary_sheet.dart): with the
+      // default `expand: true` the sheet's scrollable covers the full
+      // screen and swallows taps above the sheet, so tapping outside can
+      // no longer dismiss the modal. `expand: false` keeps the top space
+      // as the dismissible modal barrier.
+      expand: false,
       initialChildSize: 0.85,
       minChildSize: 0.5,
       maxChildSize: 0.95,

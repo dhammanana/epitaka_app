@@ -368,6 +368,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         },
         child: DraggableScrollableSheet(
         controller: _sheetController,
+        // Don't expand to fill the whole screen: with `expand: true` (the
+        // default) the sheet's internal scrollable covers the full screen
+        // and swallows taps in the space above the sheet, so tapping
+        // outside no longer dismisses the modal (the barrier never sees
+        // the tap). With `expand: false` the scrollable only covers the
+        // sheet itself and the top space returns to the modal barrier.
+        expand: false,
         initialChildSize: _sheetInitialSize,
         minChildSize: _sheetMinSize,
         maxChildSize: _sheetMaxSize,

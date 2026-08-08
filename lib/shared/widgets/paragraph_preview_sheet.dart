@@ -5,6 +5,7 @@ import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
+import '../../features/dictionary/widgets/dictionary_open.dart';
 import '../../features/dictionary/widgets/dictionary_sheet.dart';
 import 'pali_text.dart';
 import 'preview_content.dart';
@@ -238,8 +239,19 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                         scrollToParaId: w.scrollToParaId,
                         scrollToLineId: w.scrollToLineId,
                         targetLineKey: w.targetLineKey,
-                        onPaliWordTap: (word) =>
-                            showDictionarySheet(context, word.trim()),
+                        onPaliWordTap: (word) {
+                          // Desktop: close the preview sheet and open the
+                          // dictionary in the shell's panel instead.
+                          if (openDictionaryInPanel(
+                            context,
+                            ref,
+                            word,
+                            closeSheet: true,
+                          )) {
+                            return;
+                          }
+                          showDictionarySheet(context, word.trim());
+                        },
                       ),
                     ),
             ),

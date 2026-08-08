@@ -22,9 +22,8 @@ import '../../../core/utils/pali_script_converter.dart' show Script;
 import '../../../core/utils/process_text_service.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
-import '../../../core/utils/responsive_breakpoint.dart';
-import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/utils/reading_clipboard.dart';
+import '../../dictionary/widgets/dictionary_open.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart' show showDictionarySheet;
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -443,15 +442,9 @@ class ReaderCopyService {
   ) {
     if (word.trim().isEmpty) return;
 
-    final sidePanels = ref.read(sidePanelProvider);
-    final isDictionaryPinned =
-        sidePanels.right.openPanel == SidePanelType.dictionary &&
-        sidePanels.right.isPinned;
-
-    if (ResponsiveBreakpoint.isDesktop(context) && isDictionaryPinned) {
-      ref.read(sidePanelProvider.notifier).updateDictionaryWord(word.trim());
-      return;
-    }
+    // Desktop: route the lookup into the shell's dictionary panel (sidebar
+    // dock or right column) instead of the bottom sheet.
+    if (openDictionaryInPanel(context, ref, word)) return;
 
     // Show as a bottom sheet
     WidgetsBinding.instance.addPostFrameCallback((_) async {

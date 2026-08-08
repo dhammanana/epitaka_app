@@ -48,9 +48,16 @@ String cleanPaliForIndexing(String text) {
 }
 
 /// Normalize a Pali string for fuzzy matching by replacing diacritics with
-/// their base ASCII equivalents (e.g. ā→a, ṃ→m) and lowercasing.
+/// their base ASCII equivalents (e.g. ā→a, ṃ→m), stripping the same
+/// punctuation/annotations as [cleanPaliForIndexing], and lowercasing.
+///
+/// Kept in sync with [cleanPaliForIndexing] so that a query pasted from a
+/// book (which may contain commas, dashes, quotes, brackets, page refs,
+/// HTML tags …) normalizes to the same words that were indexed — otherwise
+/// FTS5 MATCH syntax errors (on `,` `'` etc.) or plain mismatches would
+/// silently produce zero results.
 String normalizePaliFuzzy(String text) {
-  return text
+  return cleanPaliForIndexing(text)
       .toLowerCase()
       .replaceAll('ā', 'a')
       .replaceAll('ī', 'i')
@@ -64,16 +71,10 @@ String normalizePaliFuzzy(String text) {
       .replaceAll('ḷ', 'l')
       .replaceAll('ṃ', 'm')
       .replaceAll('ṁ', 'm')
-      .replaceAll('[', '')
-      .replaceAll(']', '')
-      .replaceAll('(', '')
-      .replaceAll(')', '')
-      .replaceAll(':', '')
-      .replaceAll(';', '')
-      .replaceAll('.', '')
-      .replaceAll(',', '')
-      .replaceAll('"', '')
-      .replaceAll("'", '')
+      // FTS5 operator characters that would otherwise break a MATCH query.
+      .replaceAll('*', '')
+      .replaceAll('^', '')
+      .replaceAll('~', '')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 }

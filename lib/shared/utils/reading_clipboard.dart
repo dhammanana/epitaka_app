@@ -5,8 +5,10 @@
 // falls back to plain text (with real newlines) for apps that don't
 // accept rich formats.
 
+import 'package:clipboard/clipboard.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 import 'copy_types.dart';
 import '../../features/reader/providers/reader_provider.dart';
@@ -187,18 +189,30 @@ class ReadingClipboard {
     final plainText = plain.toString().trim();
     final htmlDoc = _wrapHtmlDocument(html.toString());
 
-    final clipboard = SystemClipboard.instance;
-    if (clipboard != null) {
-      // Prefer rich clipboard (HTML + plain text fallback) via super_clipboard
-      final item = DataWriterItem();
-      item.add(Formats.plainText(plainText));
-      item.add(Formats.htmlText(htmlDoc));
-      await clipboard.write([item]);
+    // The `clipboard` package has no Linux implementation, so on Linux write
+    // plain text only (real newlines preserved) via the Flutter system
+    // clipboard instead of going through the channel-error fallback.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      await _writePlainText(plainText);
       return;
     }
 
-    // Fallback: super_clipboard not available on this platform.
-    // Write plain text only via the Flutter system clipboard.
+    try {
+      // Rich copy: writes both the native HTML format (colors/italics for
+      // Word/Google Docs) and plain text (real newlines for plain editors).
+      await FlutterClipboard.copyRichText(text: plainText, html: htmlDoc);
+    } catch (e) {
+      // Fallback: plugin unavailable on this platform — plain text only.
+      debugPrint(
+        'ReadingClipboard: rich copy failed (${e.runtimeType}), '
+        'falling back to plain text',
+      );
+      await _writePlainText(plainText);
+    }
+  }
+
+  /// Writes [plainText] via the Flutter system clipboard, preserving newlines.
+  static Future<void> _writePlainText(String plainText) async {
     if (plainText.isNotEmpty) {
       await Clipboard.setData(ClipboardData(text: plainText));
     }

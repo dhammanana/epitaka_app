@@ -105,6 +105,26 @@ class DisplayLayoutPopup extends ConsumerWidget {
               ),
             ),
 
+            // ── Show book links (temporary toggle) ───────────────────────
+            _CheckboxTile(
+              icon: Icons.link,
+              title: loc.showBookLinks,
+              value: settings.showBookLinks,
+              onChanged: (v) =>
+                  ref.read(settingsProvider.notifier).setShowBookLinksTemporary(v),
+            ),
+
+            // ── Divider ──────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Divider(
+                height: 1,
+                indent: 16,
+                endIndent: 16,
+                color: colors.outlineVariant.withValues(alpha: 0.2),
+              ),
+            ),
+
             // ── Font size ────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -123,6 +143,59 @@ class DisplayLayoutPopup extends ConsumerWidget {
               child: FontSizeAdjuster(),
             ),
             const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A checkbox-style toggle row (e.g. "Show book links") in the layout popup.
+/// Toggling it applies immediately but does NOT persist — the reader toolbar
+/// is meant for quick, temporary adjustments.
+class _CheckboxTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _CheckboxTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: (v) => onChanged(v ?? false),
+              activeColor: colors.primary,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            const SizedBox(width: 4),
+            Icon(icon, size: 20, color: colors.onSurfaceVariant),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: value ? FontWeight.w600 : FontWeight.w400,
+                  color: colors.onSurface,
+                ),
+              ),
+            ),
           ],
         ),
       ),

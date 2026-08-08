@@ -8,6 +8,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
 /// A card showing a single `pali_definition` match: the Pāli sentence that
@@ -220,7 +221,9 @@ class PaliDefinitionCard extends ConsumerWidget {
             initialLineId: entry.lineId,
           ),
         );
-    context.push('/reader');
+    if (!ResponsiveBreakpoint.isDesktop(context)) {
+      context.push('/reader');
+    }
   }
 }
 

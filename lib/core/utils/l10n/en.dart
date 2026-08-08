@@ -191,26 +191,25 @@ const Map<String, String> en = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'Gavesana (AI Search)',
-  'AI Search Assets': 'AI Search Assets',
-  'Not downloaded — tap to download': 'Not downloaded — tap to download',
-  'Gavesana AI Assets': 'Gavesana AI Assets',
-  'The AI search model and vector database are ready to use.\n\n'
-      'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'The AI search model and vector database are ready to use.\n\n'
-          'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.',
-  'Download Gavesana Assets?': 'Download Gavesana Assets?',
-  'This will download approximately 670 MB of data:\n'
-      '- AI model (270 MB)\n'
-      '- Vector database (364 MB)\n'
-      '- Tokenizer config (33 MB)\n\n'
-      'A Wi-Fi connection is recommended.':
-      'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.',
-  'Download AI assets in Settings': 'Download AI assets in Settings',
+
+  
+
+  
+
   'Open Gavesana': 'Open Gavesana',
+  'found': 'found',
+  'Section headings': 'Section headings',
+  'Describe what you\u2019re looking for — the AI will search the Tipitaka for relevant passages.':
+      'Describe what you\u2019re looking for — the AI will search the Tipitaka for relevant passages.',
+  'Search with AI': 'Search with AI',
+  'AI is searching the Tipitaka…': 'AI is searching the Tipitaka…',
+  'AI search steps': 'AI search steps',
+  'AI-found passages': 'AI-found passages',
+  'The AI could not find any relevant passages. Try a different description.':
+      'The AI could not find any relevant passages. Try a different description.',
+  'Configure AI in Settings': 'Configure AI in Settings',
+  'Gavesana AI search needs an API key. Configure it in Settings → AI Q&A.':
+      'Gavesana AI search needs an API key. Configure it in Settings → AI Q&A.',
 
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'Display Mode',
@@ -356,6 +355,8 @@ const Map<String, String> en = {
       'No bookmarks yet.\nSave your reading position from the reader.',
   'No bookmarks yet.': 'No bookmarks yet.',
   'No reading history yet.': 'No reading history yet.',
+  'Listening': 'Listening',
+  'No listening history yet.': 'No listening history yet.',
   'Remove Bookmark?': 'Remove Bookmark?',
   'Remove History Entry?': 'Remove History Entry?',
   'Just now': 'Just now',
@@ -380,9 +381,9 @@ const Map<String, String> en = {
   'Dist': 'Dist',
   'Search the Pāli Tipiṭaka': 'Search the Pāli Tipiṭaka',
   'Search across both Pāli text and translations.\n'
-      'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).':
+      'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).':
       'Search across both Pāli text and translations.\n'
-          'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).',
+          'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).',
   'Building Search Index': 'Building Search Index',
   'complete': 'complete',
   'Starting…': 'Starting…',
@@ -533,22 +534,12 @@ const Map<String, String> en = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'Ask about the Tipitaka…',
-  'Number of results': 'Number of results',
-  'Loading Gavesana…': 'Loading Gavesana…',
-  'Loading models…': 'Loading models…',
-  'Computing query embedding…': 'Computing query embedding…',
-  'Searching vector database…': 'Searching vector database…',
+
   'Search semantically across the Tipitaka':
       'Search semantically across the Tipitaka',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.",
-  'Gavesana AI assets not found.': 'Gavesana AI assets not found.',
-  'Download them in Settings.': 'Download them in Settings.',
-  'An error occurred': 'An error occurred',
-  'Show 5 results': 'Show 5 results',
-  'Show 10 results': 'Show 10 results',
-  'Show 20 results': 'Show 20 results',
-  'Show 50 results': 'Show 50 results',
+
   'Semantic search': 'Semantic search',
   'Investigation & exploration': 'Investigation & exploration',
   'Tipitaka': 'Tipitaka',
@@ -557,15 +548,9 @@ const Map<String, String> en = {
   'Vimaṃsa': 'Vimaṃsa',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'Build BM25 Search Index',
-  'Rebuilding BM25 index…': 'Rebuilding BM25 index…',
-  'Preparing BM25 index…': 'Preparing BM25 index…',
-  'BM25 index ready': 'BM25 index ready',
-  'Continue without BM25': 'Continue without BM25',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'Hybrid (vector + BM25) search is now enabled.',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'This indexes Pāli text for keyword (BM25) search and runs once.',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'Available Translations',
@@ -693,14 +678,13 @@ const Map<String, String> en = {
   'Stop': 'Stop',
   'Less': 'Less',
   'Library': 'Library',
+  'Reset layout': 'Reset layout',
 
   // ── Gavesana ────────────────────────────────────────────────────────
   'Gavesana': 'Gavesana',
   'Gavesana AI Search': 'Gavesana AI Search',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.',
-  'Build BM25': 'Build BM25',
-  'Rebuild BM25': 'Rebuild BM25',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'Navigation menu',

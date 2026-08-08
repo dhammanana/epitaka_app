@@ -419,6 +419,10 @@ class AppSettings {
   /// is used instead.
   final double rightPanelWidth;
 
+  /// Serialized desktop docking layout (the `docking` package's stringify
+  /// format). Empty string = never customized, use the default layout.
+  final String desktopLayout;
+
   /// The reader text-selection context menu: which actions appear, in what
   /// order, plus any added external apps / custom AI prompts.
   final List<ContextMenuAction> contextMenuActions;
@@ -463,6 +467,7 @@ class AppSettings {
     this.translationVersionMap = const {},
     this.leftPanelWidth = 0,
     this.rightPanelWidth = 0,
+    this.desktopLayout = '',
     this.contextMenuActions = const [],
     this.featureGuideSeen = false,
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
@@ -504,6 +509,7 @@ class AppSettings {
     Map<String, String>? translationVersionMap,
     double? leftPanelWidth,
     double? rightPanelWidth,
+    String? desktopLayout,
     List<ContextMenuAction>? contextMenuActions,
     bool? featureGuideSeen,
     String? quoteTemplate,
@@ -551,6 +557,7 @@ class AppSettings {
           translationVersionMap ?? this.translationVersionMap,
       leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
       rightPanelWidth: rightPanelWidth ?? this.rightPanelWidth,
+      desktopLayout: desktopLayout ?? this.desktopLayout,
       contextMenuActions: contextMenuActions ?? this.contextMenuActions,
       featureGuideSeen: featureGuideSeen ?? this.featureGuideSeen,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
@@ -770,6 +777,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       translationVersionMap: _loadTranslationVersionMap(),
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
+      desktopLayout: prefs.getString('desktop_layout') ?? '',
       contextMenuActions: _loadContextMenuActions(),
       featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
       quoteTemplate:
@@ -1050,6 +1058,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setBool('show_book_links', value);
   }
 
+  /// Temporarily toggle book links for the current session WITHOUT
+  /// persisting. Used by the reader toolbar's quick "Show book links"
+  /// checkbox so a temporary hide never changes the user's saved
+  /// preference — the persisted value returns on the next app start.
+  void setShowBookLinksTemporary(bool value) {
+    state = state.copyWith(showBookLinks: value);
+  }
+
   Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
     state = state.copyWith(libraryExpandLevel: level);
     await _prefs?.setInt('library_expand_level', level.index);
@@ -1085,6 +1101,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setRightPanelWidth(double width) async {
     state = state.copyWith(rightPanelWidth: width);
     await _prefs?.setDouble('right_panel_width', width);
+  }
+
+  /// Persist the serialized desktop docking layout (or clear it by passing
+  /// an empty string, which resets the layout to the default).
+  Future<void> setDesktopLayout(String layout) async {
+    state = state.copyWith(desktopLayout: layout);
+    await _prefs?.setString('desktop_layout', layout);
   }
 
   /// Replace the full ordered context-menu action list.

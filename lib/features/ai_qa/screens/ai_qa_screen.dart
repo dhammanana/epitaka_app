@@ -32,7 +32,12 @@ const _featureName = 'Vimaṃsa';
 class VimamsaScreen extends ConsumerStatefulWidget {
   final String? initialThreadId;
 
-  const VimamsaScreen({super.key, this.initialThreadId});
+  /// When true, renders as a compact dockable panel (desktop docking tab)
+  /// instead of a full screen: no Scaffold/AppBar/drawer, just a slim
+  /// header row + the chat body. Reuses the exact same chat state/logic.
+  final bool panelMode;
+
+  const VimamsaScreen({super.key, this.initialThreadId, this.panelMode = false});
 
   @override
   ConsumerState<VimamsaScreen> createState() => _VimamsaScreenState();
@@ -259,6 +264,32 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       }
     });
 
+    final body = _buildChatBody(
+      colors: colors,
+      messages: messages,
+      isLoading: isLoading,
+      error: error,
+      settings: settings,
+      currentThreadId: currentThreadId,
+      attachments: attachments,
+    );
+
+    if (widget.panelMode) {
+      // Compact dockable panel: slim header + chat body (no Scaffold).
+      return Column(
+        children: [
+          _buildPanelHeader(
+            colors: colors,
+            currentThreadTitle: currentThreadTitle,
+            messages: messages,
+            settings: settings,
+          ),
+          const Divider(height: 1),
+          Expanded(child: body),
+        ],
+      );
+    }
+
     return Scaffold(
       key: _scaffoldKey,
       drawer: const MainDrawer(),
@@ -364,55 +395,165 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Main content column (messages + attachment bar + input)
-          Column(
-            children: [
-              if (error != null) _buildErrorBanner(error, colors),
-              _buildMentionIndexBanner(colors),
-              if (currentThreadId != null && messages.isNotEmpty)
-                _buildThreadIndicator(currentThreadId, colors),
-              Expanded(
-                child: messages.isEmpty
-                    ? _buildEmptyState(context, isLoading, settings, colors)
-                    : AiQaMessageListView(
-                        scrollController: _scrollController,
-                        messages: messages,
-                      ),
-              ),
+      body: body,
+    );
+  } // ── Build helpers ─────────────────────────────────────────────────────
 
-              // ── Answer mode (orthodox / knowledge) ────────────────────
-              _AnswerModeToggle(colors: colors),
-
-              // ── Attachment chips bar ──────────────────────────────────
-              if (attachments.isNotEmpty) const AttachmentBar(),
-
-              // ── Input bar ─────────────────────────────────────────────
-              _AiQaInputBar(
-                isLoading: isLoading,
-                textController: _textController,
-                focusNode: _focusNode,
-                onSend: _sendMessage,
-                layerLink: _mentionLayerLink,
-                onKeyEvent: _handleKeyEvent,
-              ),
-            ],
-          ),
-
-          // ── @ Mention Overlay (floats above input bar, positioned via LayerLink) ─
-          if (_mentionActive)
-            CompositedTransformFollower(
-              link: _mentionLayerLink,
-              offset: const Offset(0, -8),
-              targetAnchor: Alignment.topLeft,
-              followerAnchor: Alignment.bottomLeft,
-              child: const MentionOverlay(),
+  /// Shared chat body (messages + banners + input + @ mention overlay).
+  /// Used by both the full-screen Scaffold and the compact panel mode.
+  Widget _buildChatBody({
+    required ColorScheme colors,
+    required List<AiQaMessage> messages,
+    required bool isLoading,
+    required String? error,
+    required AiQaSettings settings,
+    required String? currentThreadId,
+    required List<HeadingAttachment> attachments,
+  }) {
+    return Stack(
+      children: [
+        // Main content column (messages + attachment bar + input)
+        Column(
+          children: [
+            if (error != null) _buildErrorBanner(error, colors),
+            _buildMentionIndexBanner(colors),
+            if (currentThreadId != null && messages.isNotEmpty)
+              _buildThreadIndicator(currentThreadId, colors),
+            Expanded(
+              child: messages.isEmpty
+                  ? _buildEmptyState(context, isLoading, settings, colors)
+                  : AiQaMessageListView(
+                      scrollController: _scrollController,
+                      messages: messages,
+                    ),
             ),
+
+            // ── Answer mode (orthodox / knowledge) ────────────────────
+            _AnswerModeToggle(colors: colors),
+
+            // ── Attachment chips bar ──────────────────────────────────
+            if (attachments.isNotEmpty) const AttachmentBar(),
+
+            // ── Input bar ─────────────────────────────────────────────
+            _AiQaInputBar(
+              isLoading: isLoading,
+              textController: _textController,
+              focusNode: _focusNode,
+              onSend: _sendMessage,
+              layerLink: _mentionLayerLink,
+              onKeyEvent: _handleKeyEvent,
+            ),
+          ],
+        ),
+
+        // ── @ Mention Overlay (floats above input bar, positioned via LayerLink) ─
+        if (_mentionActive)
+          CompositedTransformFollower(
+            link: _mentionLayerLink,
+            offset: const Offset(0, -8),
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.bottomLeft,
+            child: const MentionOverlay(),
+          ),
+      ],
+    );
+  }
+
+  /// Compact header for the dockable panel mode.
+  Widget _buildPanelHeader({
+    required ColorScheme colors,
+    required String currentThreadTitle,
+    required List<AiQaMessage> messages,
+    required AiQaSettings settings,
+  }) {
+    return Container(
+      height: AppDimensions.appBarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
+      color: colors.surface,
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [colors.primary, colors.primary.withValues(alpha: 0.7)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _featureName,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  currentThreadTitle.isNotEmpty
+                      ? currentThreadTitle
+                      : AppLocalizations.of(context).investigationExploration,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.history, size: 18, color: colors.onSurfaceVariant),
+            tooltip: AppLocalizations.of(context).chatHistory,
+            visualDensity: VisualDensity.compact,
+            onPressed: _showHistorySheet,
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.add_comment_outlined,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
+            tooltip: AppLocalizations.of(context).newChat,
+            visualDensity: VisualDensity.compact,
+            onPressed: _startNewChat,
+          ),
+          if (messages.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: colors.onSurfaceVariant,
+              ),
+              tooltip: AppLocalizations.of(context).clearChat,
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                ref.read(aiQaProvider.notifier).clearChat();
+              },
+            ),
+          IconButton(
+            icon: Icon(
+              Icons.tune,
+              color: settings.isValid ? colors.onSurfaceVariant : Colors.orange,
+              size: 18,
+            ),
+            tooltip: AppLocalizations.of(context).vimamsaSettings,
+            visualDensity: VisualDensity.compact,
+            onPressed: () => showAiQaSettingsSheet(context),
+          ),
         ],
       ),
     );
-  } // ── Build helpers ─────────────────────────────────────────────────────
+  }
 
   /// Show a subtle banner if the heading index is not yet built.
   Widget _buildMentionIndexBanner(ColorScheme colors) {
@@ -739,6 +880,12 @@ class _ThreadHistorySheet extends ConsumerWidget {
     final threadsAsync = ref.watch(chatThreadsProvider);
 
     return DraggableScrollableSheet(
+      // Don't fill the whole screen (see dictionary_sheet.dart): with the
+      // default `expand: true` the sheet's scrollable covers the full
+      // screen and swallows taps above the sheet, so tapping outside can
+      // no longer dismiss the modal. `expand: false` keeps the top space
+      // as the dismissible modal barrier.
+      expand: false,
       initialChildSize: 0.6,
       minChildSize: 0.3,
       maxChildSize: 0.85,

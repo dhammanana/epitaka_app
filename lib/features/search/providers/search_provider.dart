@@ -75,6 +75,10 @@ class SearchResultItem {
   /// FTS5 snippet for Pāli matches (<mark> tags already embedded).
   final String? paliSnippet;
 
+  /// When true (AI-found results), show every line even if none matches the
+  /// original query terms — the whole passage is relevant.
+  final bool showAllLines;
+
   /// Convenience: get the full paragraph Pāli text (joined lines).
   String get paliText => lines.map((l) => l.pali).join(' ');
 
@@ -93,6 +97,7 @@ class SearchResultItem {
     required this.paraId,
     required this.lines,
     this.paliSnippet,
+    this.showAllLines = false,
   });
 }
 
@@ -105,8 +110,13 @@ class BookResultSummary {
   /// Pages of loaded results (each page is `kSearchPageSize` items max).
   final List<List<SearchResultItem>> loadedPages;
 
+  /// When true (AI-found results), treat the book as fully loaded so no
+  /// "load more" button appears — the AI already selected every passage.
+  final bool forceFullyLoaded;
+
   /// Whether we've loaded all available results for this book.
   bool get fullyLoaded =>
+      forceFullyLoaded ||
       loadedPages.length * kSearchPageSize >= totalCount;
 
   int get loadedCount =>
@@ -117,6 +127,7 @@ class BookResultSummary {
     required this.totalCount,
     this.isExpanded = false,
     List<List<SearchResultItem>>? loadedPages,
+    this.forceFullyLoaded = false,
   }) : loadedPages = loadedPages ?? [];
 }
 
@@ -144,7 +155,6 @@ class SearchLoading extends SearchState {
 class SearchResults extends SearchState {
   final String query;
   final int totalResults;
-  final bool fuzzy;
   final int distance;
 
   /// Current filter state.
@@ -162,7 +172,6 @@ class SearchResults extends SearchState {
     required this.totalResults,
     required this.bookSummaries,
     this.headings = const [],
-    this.fuzzy = false,
     this.distance = 0,
     this.enabledCategories = kAllCategories,
     this.enabledNikayas = kAllNikayas,
@@ -313,7 +322,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
     if (current is SearchResults) {
       await search(
         query: current.query,
-        fuzzy: current.fuzzy,
         distance: current.distance,
       );
     }
@@ -338,13 +346,19 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   /// Execute a search. First stage: count results per book.
   /// If total is small enough, also load the actual results.
+  ///
+  /// Search is always diacritic-insensitive (fuzzy): the FTS index is
+  /// built with `remove_diacritics 1`, so the database layer normalizes
+  /// the query the same way the index text was cleaned.
   Future<void> search({
     required String query,
-    bool fuzzy = false,
     int distance = 0,
   }) async {
     final normalized = query.trim();
-    if (normalized.isEmpty) {
+    // A query made only of punctuation (",", "…") has no searchable words
+    // after cleaning — treat it like an empty query instead of running a
+    // pointless (and, for headings, `LIKE '%%'`-matching) search.
+    if (normalized.isEmpty || cleanPaliForIndexing(normalized).isEmpty) {
       state = const SearchIdle();
       return;
     }
@@ -375,7 +389,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
           try {
             return await appDb.countPaliResultsByBook(
               normalized,
-              fuzzy: fuzzy,
               distance: distance,
             );
           } catch (_) {
@@ -389,7 +402,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
             return await appDb.countTranslationResultsByBook(
               activeLang,
               normalized,
-              fuzzy: fuzzy,
               distance: distance,
             );
           } catch (_) {
@@ -419,7 +431,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
           totalResults: 0,
           bookSummaries: [],
           headings: headingResults,
-          fuzzy: fuzzy,
           distance: distance,
           enabledCategories: _enabledCategories,
           enabledNikayas: _enabledNikayas,
@@ -463,7 +474,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
         totalResults: totalResults,
         bookSummaries: summaries,
         headings: headingResults,
-        fuzzy: fuzzy,
         distance: distance,
         enabledCategories: _enabledCategories,
         enabledNikayas: _enabledNikayas,
@@ -517,7 +527,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
         appDb.searchPaliFtsByBook(
           summary.book.bookId,
           query,
-          fuzzy: current.fuzzy,
           distance: current.distance,
           limit: pageSize,
           offset: offset,
@@ -528,7 +537,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
           activeLang,
           summary.book.bookId,
           query,
-          fuzzy: current.fuzzy,
           distance: current.distance,
           limit: pageSize,
           offset: offset,
@@ -664,7 +672,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
         totalResults: current.totalResults,
         bookSummaries: summaries,
         headings: current.headings,
-        fuzzy: current.fuzzy,
         distance: current.distance,
         enabledCategories: _enabledCategories,
         enabledNikayas: _enabledNikayas,
@@ -691,13 +698,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
       totalCount: summary.totalCount,
       isExpanded: true,
       loadedPages: summary.loadedPages,
+      forceFullyLoaded: summary.forceFullyLoaded,
     );
     state = SearchResults(
       query: current.query,
       totalResults: current.totalResults,
       bookSummaries: summaries,
       headings: current.headings,
-      fuzzy: current.fuzzy,
       distance: current.distance,
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
@@ -719,13 +726,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
       book: summary.book,
       totalCount: summary.totalCount,
       isExpanded: false,
+      forceFullyLoaded: summary.forceFullyLoaded,
     );
     state = SearchResults(
       query: current.query,
       totalResults: current.totalResults,
       bookSummaries: summaries,
       headings: current.headings,
-      fuzzy: current.fuzzy,
       distance: current.distance,
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
@@ -742,6 +749,166 @@ class SearchNotifier extends StateNotifier<SearchState> {
     await _loadBookPage(summaryIndex, fetchAll: true);
   }
 
+  // ── AI-found results (Gavesana) ──────────────────────────────────────
+
+  /// Display AI-found passages in the normal search results format.
+  ///
+  /// [passages] may contain duplicates and out-of-order entries; they are
+  /// deduplicated, grouped by book and presented as fully-expanded book
+  /// summaries (like an auto-expanded FTS search). The search query is used
+  /// only for highlighting, so AI results show every line (showAllLines).
+  Future<void> showAiResults({
+    required String query,
+    required List<AiPassageRef> passages,
+  }) async {
+    state = const SearchLoading();
+    try {
+      final seen = <String>{};
+      final grouped = <String, List<AiPassageRef>>{};
+      for (final p in passages) {
+        if (p.bookId.isEmpty || p.paraId <= 0) continue;
+        final key = '${p.bookId}:${p.paraId}';
+        if (!seen.add(key)) continue;
+        grouped.putIfAbsent(p.bookId, () => []).add(p);
+      }
+
+      if (grouped.isEmpty) {
+        state = SearchResults(
+          query: query,
+          totalResults: 0,
+          bookSummaries: const [],
+        );
+        return;
+      }
+
+      final allBooks = await _allBooks();
+      final bookMap = <String, BookInfo>{
+        for (final b in allBooks) b.bookId: b,
+      };
+      final activeLang = _activeTranslationLang();
+      final searchWords = normalizePaliFuzzy(query)
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+
+      // Sort books by id (stable, matches normal search ordering).
+      final bookIds = grouped.keys.toList()
+        ..sort((a, b) => (bookMap[a]?.id ?? 0).compareTo(bookMap[b]?.id ?? 0));
+
+      final summaries = <BookResultSummary>[];
+      for (final bookId in bookIds) {
+        final refs = grouped[bookId]!;
+        final book = bookMap[bookId] ??
+            BookInfo(id: 0, bookId: bookId, bookName: bookId);
+        final items = <SearchResultItem>[];
+        for (final ref in refs) {
+          final item = await _buildAiResultItem(
+            ref: ref,
+            activeLang: activeLang,
+            searchWords: searchWords,
+          );
+          if (item != null) items.add(item);
+        }
+        if (items.isEmpty) continue;
+        summaries.add(BookResultSummary(
+          book: book,
+          totalCount: items.length,
+          isExpanded: true,
+          loadedPages: [items],
+          forceFullyLoaded: true,
+        ));
+      }
+
+      state = SearchResults(
+        query: query,
+        totalResults: summaries.fold(0, (s, b) => s + b.totalCount),
+        bookSummaries: summaries,
+      );
+    } catch (e) {
+      debugPrint('[SEARCH] showAiResults failed: $e');
+      state = SearchError('Failed to load AI results: $e');
+    }
+  }
+
+  /// Build a full [SearchResultItem] (with lines + translation) for an
+  /// AI-found passage, mirroring [_loadBookPage]'s fetch logic.
+  Future<SearchResultItem?> _buildAiResultItem({
+    required AiPassageRef ref,
+    required String? activeLang,
+    required List<String> searchWords,
+  }) async {
+    try {
+      final epitakaDb = await _epitakaDb();
+      final lineRows = await epitakaDb.customSelect(
+        'SELECT para_id, line_id, pali '
+        'FROM sentences '
+        'WHERE book_id = ? AND para_id = ? '
+        'ORDER BY line_id',
+        variables: [
+          Variable.withString(ref.bookId),
+          Variable.withInt(ref.paraId),
+        ],
+      ).get();
+      if (lineRows.isEmpty) return null;
+
+      // Translations for the same paragraph (best-effort).
+      final transLineMap = <int, String>{};
+      if (activeLang != null) {
+        try {
+          final transDb =
+              await _ref.read(translationDbProvider(activeLang).future);
+          if (transDb != null) {
+            final tRows = await transDb.customSelect(
+              'SELECT line_id, translation '
+              'FROM sentences '
+              'WHERE book_id = ? AND para_id = ? '
+              'ORDER BY line_id',
+              variables: [
+                Variable.withString(ref.bookId),
+                Variable.withInt(ref.paraId),
+              ],
+            ).get();
+            for (final row in tRows) {
+              final t = row.data['translation'] as String?;
+              if (t != null && t.isNotEmpty) {
+                transLineMap[row.data['line_id'] as int] = t;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      final lines = <SearchResultLine>[];
+      for (final row in lineRows) {
+        final pali = (row.data['pali'] as String?) ?? '';
+        final lineTrans = transLineMap[row.data['line_id'] as int];
+        final paliNormalized = normalizePaliFuzzy(pali);
+        bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
+        if (!isMatch && lineTrans != null) {
+          isMatch =
+              searchWords.any((w) => normalizePaliFuzzy(lineTrans).contains(w));
+        }
+        lines.add(SearchResultLine(
+          lineId: row.data['line_id'] as int,
+          pali: pali,
+          translation: lineTrans,
+          isMatch: isMatch,
+        ));
+      }
+
+      if (lines.isEmpty) return null;
+      return SearchResultItem(
+        bookId: ref.bookId,
+        paraId: ref.paraId,
+        lines: lines,
+        showAllLines: true,
+      );
+    } catch (e) {
+      debugPrint('[SEARCH] _buildAiResultItem failed: $e');
+      return null;
+    }
+  }
+
   /// Search the headings table for matching titles.
   Future<List<HeadingResult>> _searchHeadings(
     EpitakaDatabase epitakaDb,
@@ -749,7 +916,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
     Map<String, BookInfo> bookMap,
   ) async {
     try {
-      final likePattern = '%$normalized%';
+      // Clean punctuation (commas, quotes, …) out of pasted sentences the
+      // same way the FTS query is cleaned, so the LIKE pattern matches
+      // heading titles. Diacritics are preserved (LIKE matches them as-is).
+      final cleaned = cleanPaliForIndexing(normalized);
+      // Never build a `LIKE '%%'` pattern (would match every heading).
+      if (cleaned.isEmpty) return [];
+      final likePattern = '%$cleaned%';
       final rows = await epitakaDb.customSelect(
         'SELECT book_id, para_id, title, level '
         'FROM headings '
@@ -811,5 +984,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
 }
 
 // ── Utility providers ────────────────────────────────────────────────────
+
+/// A passage located by the AI search tool loop.
+class AiPassageRef {
+  final String bookId;
+  final int paraId;
+
+  /// Optional display text (Pāli) captured from the tool result.
+  final String? text;
+
+  const AiPassageRef({
+    required this.bookId,
+    required this.paraId,
+    this.text,
+  });
+}
 
 final expandSearchResultsProvider = StateProvider<bool>((ref) => true);

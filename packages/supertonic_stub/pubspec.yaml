@@ -1,0 +1,17 @@
+name: supertonic_flutter
+description: >-
+  Local stub that replaces the real supertonic_flutter package in builds where
+  the ONNX Runtime (flutter_onnxruntime) dependency cannot be linked — e.g.
+  Intel (x86_64) macOS, where the bundled onnxruntime-c pod is arm64-only.
+  The stub exposes the same API surface but reports SuperTonic TTS as
+  unavailable, so the rest of the app compiles and runs normally.
+  Remove the override in pubspec_overrides.yaml to restore the real package.
+version: 2.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  dio: ^5.4.0
+  audioplayers: ^6.8.1

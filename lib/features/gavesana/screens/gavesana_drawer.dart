@@ -9,7 +9,7 @@ import '../../../router/app_router.dart' show AppRoutes;
 /// The main navigation drawer.
 ///
 /// Contains:
-/// - Tipitaka (with expandable children: Reading, Bookmarks)
+/// - Tipitaka
 /// - Search
 /// - Gavesana
 class MainDrawer extends StatefulWidget {
@@ -20,8 +20,6 @@ class MainDrawer extends StatefulWidget {
 }
 
 class _MainDrawerState extends State<MainDrawer> {
-  bool _tipitakaExpanded = false;
-
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -100,42 +98,9 @@ class _MainDrawerState extends State<MainDrawer> {
                 _DrawerItem(
                   icon: Icons.menu_book,
                   title: loc.tipitaka,
-                  trailing: Icon(
-                    _tipitakaExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 18,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  onTap: () {
-                    // Toggle children AND navigate to library
-                    setState(() => _tipitakaExpanded = !_tipitakaExpanded);
-                    if (_tipitakaExpanded) {
-                      // Just expand, don't navigate yet
-                    } else {
-                      _closeAndGo(context, '/');
-                    }
-                  },
+                  onTap: () => _closeAndGo(context, '/'),
                   selected: _isRouteActive(context, '/'),
                 ),
-
-                // Children: Reading + Bookmarks
-                if (_tipitakaExpanded) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: _DrawerChildItem(
-                      icon: Icons.tab,
-                      title: loc.reading,
-                      onTap: () => _closeAndSwitchLibraryTab(context, 1),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: _DrawerChildItem(
-                      icon: Icons.bookmark,
-                      title: loc.bookmarks,
-                      onTap: () => _closeAndSwitchLibraryTab(context, 2),
-                    ),
-                  ),
-                ],
 
                 const SizedBox(height: 4),
                 Divider(
@@ -294,12 +259,6 @@ class _MainDrawerState extends State<MainDrawer> {
     context.push(route);
   }
 
-  /// Navigate to library and switch to the given tab index.
-  void _closeAndSwitchLibraryTab(BuildContext context, int tabIndex) {
-    Navigator.of(context).pop(); // close drawer
-    context.go('/?tab=$tabIndex');
-  }
-
   bool _isRouteActive(BuildContext context, String route) {
     final uri = Uri.tryParse(GoRouterState.of(context).uri.toString());
     if (uri == null) return false;
@@ -315,7 +274,6 @@ class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
-  final Widget? trailing;
   final VoidCallback onTap;
   final bool selected;
 
@@ -323,7 +281,6 @@ class _DrawerItem extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
-    this.trailing,
     required this.onTap,
     this.selected = false,
   });
@@ -386,55 +343,6 @@ class _DrawerItem extends StatelessWidget {
                           ),
                         ),
                     ],
-                  ),
-                ),
-                if (trailing != null) trailing!,
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Drawer Child Item ───────────────────────────────────────────────────
-
-class _DrawerChildItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  const _DrawerChildItem({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                const SizedBox(width: 44), // icon area alignment
-                Icon(icon, size: 14, color: colors.onSurfaceVariant),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],

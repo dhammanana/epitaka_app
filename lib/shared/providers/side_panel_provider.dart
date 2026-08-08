@@ -16,6 +16,12 @@ enum SidePanelType {
 
   /// Gavesana (AI-powered search) panel.
   gavesana,
+
+  /// Reading/listening history panel (desktop sidebar).
+  history,
+
+  /// Bookmarks panel (desktop sidebar).
+  bookmarks,
 }
 
 /// Which slot a panel occupies.
@@ -153,6 +159,13 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
     _setPinned(slot, !current.isPinned);
   }
 
+  /// Pin or unpin a panel without touching its other state (data, width,
+  /// autoFocus). Used by the desktop shell to keep the dictionary pinned
+  /// for word-lookup routing without wiping a pending word.
+  void setPinned(SidePanelType panel, bool pinned) {
+    _setPinned(_slotFor(panel), pinned);
+  }
+
   /// Set the data payload for an open panel (e.g. dictionary word).
   void setPanelData(SidePanelType panel, String data) {
     final slot = _slotFor(panel);
@@ -181,6 +194,8 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
         return PanelSlot.right;
       case SidePanelType.library:
       case SidePanelType.gavesana:
+      case SidePanelType.history:
+      case SidePanelType.bookmarks:
         return PanelSlot.left;
       case SidePanelType.contents:
         return PanelSlot.left;

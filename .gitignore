@@ -43,6 +43,10 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+# Local dependency override (SuperTonic stub for Intel Mac dev).
+# Kept out of git so CI/release builds use the real supertonic_flutter.
+# See packages/supertonic_stub/README for details.
+/pubspec_overrides.yaml
 
 # Symbolication related
 app.*.symbols
@@ -54,7 +58,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-=======
 *.lock
 *.log
 *.pyc

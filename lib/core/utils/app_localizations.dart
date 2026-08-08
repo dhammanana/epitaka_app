@@ -188,8 +188,6 @@ class AppLocalizations {
   String get aiQa => _t('AI Q&A');
   String get aiQaSettings => _t('AI Q&A Settings');
   String get aiQaSettingsSubtitle => _t('API key, models, etc.');
-  String get noDownloadUrlForAiAssets =>
-      _t('No download URL available for AI search assets');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  APPEARANCE SCREEN
@@ -244,19 +242,7 @@ class AppLocalizations {
   // ═══════════════════════════════════════════════════════════════════════
 
   String get aiSearch => _t('Gavesana (AI Search)');
-  String get aiSearchAssets => _t('AI Search Assets');
-  String get notDownloaded =>
-      _t('Not downloaded — tap to download');
   String get readyLabel => _t('Ready');
-  String get gavesanaAssetsTitle => _t('Gavesana AI Assets');
-  String get gavesanaAssetsReadyDesc => _t(
-    'The AI search model and vector database are ready to use.\n\n'
-        'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.',
-  );
-  String get downloadGavesanaTitle => _t('Download Gavesana Assets?');
-  String get downloadGavesanaDesc => _t(
-    'This will download approximately 670 MB of data:\n- AI model (270 MB)\n- Vector database (364 MB)\n- Tokenizer config (33 MB)\n\nA Wi-Fi connection is recommended.',
-  );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TRANSLATION SETTINGS SCREEN
@@ -488,6 +474,8 @@ class AppLocalizations {
   );
   String get noBookmarksShort => _t('No bookmarks yet.');
   String get noHistory => _t('No reading history yet.');
+  String get listening => _t('Listening');
+  String get noListeningHistory => _t('No listening history yet.');
   String get removeBookmark => _t('Remove Bookmark?');
   String get removeHistoryEntry => _t('Remove History Entry?');
   String get justNow => _t('Just now');
@@ -577,6 +565,10 @@ class AppLocalizations {
   String get openInReader => _t('Open in Reader');
   String get noHeadingFound => _t('No heading found for this result');
   String get failedToLoadPreview => _t('Failed to load preview:');
+  String get sectionHeadings => _t('Section headings');
+
+  /// `N found` (heading results card badge)
+  String headingsFound(int n) => '$n ${_t('found')}';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READER SCREEN
@@ -749,22 +741,8 @@ class AppLocalizations {
   // ═══════════════════════════════════════════════════════════════════════
 
   String get askAboutTipitaka => _t('Ask about the Tipitaka…');
-  String get numberOfResults => _t('Number of results');
-  String get loadingGavesana => _t('Loading Gavesana…');
-  String get loadingModels => _t('Loading models…');
-  String get computingEmbedding => _t('Computing query embedding…');
-  String get searchingVectorDb => _t('Searching vector database…');
   String get searchSemantically =>
       _t('Search semantically across the Tipitaka');
-  String get gavesanaDesc => _t(
-    "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.",
-  );
-  String get gavesanaAssetsNotFound => _t('Gavesana AI assets not found.');
-  String get downloadInSettingsHint => _t('Download them in Settings.');
-  String get anErrorOccurred => _t('An error occurred');
-
-  /// `Show N results`
-  String showNResults(int n) => 'Show $n results';
 
   /// `N results`
   String nResults(int n) => '$n results';
@@ -834,33 +812,33 @@ class AppLocalizations {
   String get stopLabel => _t('Stop');
   String get lessLabel => _t('Less');
   String get libraryLabel => _t('Library');
+  String get resetLayout => _t('Reset layout');
   String get paliTipitakaReader => _t('Pāli Tipiṭaka Reader');
   String get vimamsa => _t('Vimaṃsa');
-  String get downloadAiAssetsInSettings =>
-      _t('Download AI assets in Settings');
   String get openGavesana => _t('Open Gavesana');
   String get gavesana => _t('Gavesana');
   String get gavesanaAiSearch => _t('Gavesana AI Search');
   String get gavesanaPanelDesc => _t(
-    'AI-powered semantic search across the Tipiṭaka.\n\n'
+    'AI-powered search across the Tipiṭaka.\n\n'
         'Open the full Gavesana panel for detailed results.',
   );
-  String get buildBm25 => _t('Build BM25');
-  String get rebuildBm25 => _t('Rebuild BM25');
 
-  // ═══════════════════════════════════════════════════════════════════════
-  //  GAVESANA FTS BUILD DIALOG
-  // ═══════════════════════════════════════════════════════════════════════
-
-  String get buildBm25SearchIndex => _t('Build BM25 Search Index');
-  String get rebuildingBm25Index => _t('Rebuilding BM25 index…');
-  String get preparingBm25Index => _t('Preparing BM25 index…');
-  String get bm25IndexReady => _t('BM25 index ready');
-  String get continueWithoutBm25 => _t('Continue without BM25');
-  String get hybridSearchEnabled =>
-      _t('Hybrid (vector + BM25) search is now enabled.');
-  String get bm25IndexesOnce =>
-      _t('This indexes Pāli text for keyword (BM25) search and runs once.');
+  // ── Gavesana AI search (LLM-based, replaces on-device embeddings) ────
+  String get gavesanaAiSearchHint => _t(
+    'Describe what you\u2019re looking for — the AI will search the Tipitaka '
+        'for relevant passages.',
+  );
+  String get gavesanaSearchButton => _t('Search with AI');
+  String get gavesanaSearching => _t('AI is searching the Tipitaka…');
+  String get gavesanaAiTools => _t('AI search steps');
+  String get gavesanaAiResults => _t('AI-found passages');
+  String get gavesanaNoResults => _t(
+    'The AI could not find any relevant passages. Try a different description.',
+  );
+  String get gavesanaConfigureSettings => _t('Configure AI in Settings');
+  String get gavesanaNeedsApiKey => _t(
+    'Gavesana AI search needs an API key. Configure it in Settings → AI Q&A.',
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  APP SHELL (Toolbar)

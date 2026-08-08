@@ -7,10 +7,8 @@ import '../../../core/utils/l10n/app_strings.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../router/app_router.dart' show AppRoutes;
-import '../../gavesana/providers/gavesana_download_provider.dart';
 import '../../search/providers/search_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 
@@ -225,6 +223,10 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// Gavesana AI-powered search settings section.
+  ///
+  /// Gavesana now runs on the cloud AI (same settings as Vimaṃsa), so this
+  /// section simply links to the shared AI settings sheet — no on-device
+  /// asset downloads anymore.
   Widget _buildGavesanaSection(
     BuildContext context,
     ColorScheme colors,
@@ -234,7 +236,14 @@ class SettingsScreen extends ConsumerWidget {
     return SettingsSection(
       title: loc.aiSearch,
       colors: colors,
-      children: [_GavesanaDownloadTile(colors: colors)],
+      children: [
+        _SettingsTile(
+          icon: Icons.auto_awesome,
+          title: loc.gavesanaAiSearch,
+          subtitle: loc.aiQaSettingsSubtitle,
+          onTap: () => showAiQaSettingsSheet(context),
+        ),
+      ],
     );
   }
 }
@@ -309,185 +318,6 @@ class _LanguagePickerTile extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-/// Tile showing Gavesana download status and action.
-class _GavesanaDownloadTile extends ConsumerStatefulWidget {
-  final ColorScheme colors;
-
-  const _GavesanaDownloadTile({required this.colors});
-
-  @override
-  ConsumerState<_GavesanaDownloadTile> createState() =>
-      _GavesanaDownloadTileState();
-}
-
-class _GavesanaDownloadTileState extends ConsumerState<_GavesanaDownloadTile> {
-  bool _isDownloading = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final assetsAsync = ref.watch(gavesanaAssetsReadyProvider);
-    final loc = AppLocalizations.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: AppDimensions.md,
-      ),
-      child: InkWell(
-        onTap: _isDownloading ? null : _handleAction,
-        child: Row(
-          children: [
-            Icon(Icons.psychology, color: widget.colors.primary),
-            const SizedBox(width: AppDimensions.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    loc.aiSearchAssets,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: widget.colors.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  assetsAsync.when(
-                    data: (ready) => Text(
-                      ready
-                          ? '${loc.readyLabel} (${_sizeLabel(270 + 364 + 33)} MB)'
-                          : loc.notDownloaded,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: ready
-                            ? widget.colors.tertiary
-                            : widget.colors.onSurfaceVariant,
-                        fontSize: 11,
-                      ),
-                    ),
-                    loading: () => const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    error: (_, __) => Text(loc.error),
-                  ),
-                ],
-              ),
-            ),
-            if (_isDownloading)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              assetsAsync.when(
-                data: (ready) => Icon(
-                  ready
-                      ? Icons.check_circle_outline
-                      : Icons.cloud_download_outlined,
-                  size: 20,
-                  color: ready ? widget.colors.tertiary : widget.colors.primary,
-                ),
-                loading: () => const SizedBox(width: 20),
-                error: (_, __) => const Icon(Icons.error_outline, size: 20),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _sizeLabel(int mb) {
-    if (mb >= 1000) return '${(mb / 1000).toStringAsFixed(1)} GB';
-    return mb.toString();
-  }
-
-  Future<void> _handleAction() async {
-    final loc = AppLocalizations.of(context);
-    final assetsReady = await ref.read(gavesanaAssetsReadyProvider.future);
-    if (assetsReady) {
-      // Show info about the assets
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(loc.gavesanaAssetsTitle),
-          content: Text(loc.gavesanaAssetsReadyDesc),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(loc.ok),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    // Start download
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(loc.downloadGavesanaTitle),
-        content: Text(loc.downloadGavesanaDesc),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(loc.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(loc.download),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return;
-
-    setState(() => _isDownloading = true);
-    try {
-      final manifest = await ref.read(translationManifestProvider.future);
-      final url = manifest.embeddingsUrl;
-      if (url == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(loc.noDownloadUrlForAiAssets),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        setState(() => _isDownloading = false);
-        return;
-      }
-      final service = ref.read(gavesanaDownloadServiceProvider);
-      final success = await service.downloadAssets(url: url);
-      if (!success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${loc.download} failed: ${service.error}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      if (mounted) {
-        ref.invalidate(gavesanaAssetsReadyProvider);
-        setState(() => _isDownloading = false);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isDownloading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${loc.error}: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
   }
 }
 

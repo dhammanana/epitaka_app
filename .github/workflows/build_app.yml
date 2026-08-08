@@ -165,9 +165,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Rust (required by super_native_extensions)
-        run: rustup default stable
-
       - name: Ensure Windows AppData directory exists
         shell: pwsh
         run: |

@@ -7,6 +7,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
@@ -490,7 +491,11 @@ class _BookRowState extends ConsumerState<_BookRow> {
                 bookName: book.book.displayName,
               ),
             );
-            context.push('/reader');
+            // Desktop: the reader is already visible — never push a second
+            // reader onto the history stack (pops past it → black screen).
+            if (!ResponsiveBreakpoint.isDesktop(context)) {
+              context.push('/reader');
+            }
           },
           child: Padding(
             padding: EdgeInsets.only(
@@ -579,7 +584,9 @@ class _RelatedBookRow extends ConsumerWidget {
             bookName: ref.bookName,
           ),
         );
-        context.push('/reader');
+        if (!ResponsiveBreakpoint.isDesktop(context)) {
+          context.push('/reader');
+        }
       },
       child: Padding(
         padding: EdgeInsets.only(

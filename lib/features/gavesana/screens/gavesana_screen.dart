@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../shared/widgets/pali_text.dart';
-import '../../reader/providers/reader_tabs_provider.dart';
-import '../providers/gavesana_download_provider.dart';
-import '../providers/gavesana_provider.dart';
-import 'gavesana_fts_build_dialog.dart';
+import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
+import '../../search/providers/search_provider.dart';
+import '../../search/widgets/search_results_view.dart';
+import '../providers/ai_search_provider.dart';
 
-/// Full-screen Gavesana semantic search.
+/// Full-screen Gavesana AI search.
 ///
-/// Users type a query, Gavesana finds semantically related passages
-/// using vector search, and results show Pāli + translation text
-/// with a similarity score badge.
+/// The user describes what they're looking for; an AI model plans and runs
+/// the searches against the local Tipitaka databases (using the same
+/// tool-calling engine as Vimaṃsa), then the passages it gathers are shown
+/// in the normal search results format.
 class GavesanaScreen extends ConsumerStatefulWidget {
   const GavesanaScreen({super.key});
 
@@ -26,75 +25,41 @@ class GavesanaScreen extends ConsumerStatefulWidget {
 class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
   final _queryController = TextEditingController();
   final _focusNode = FocusNode();
-  final _scrollController = ScrollController();
-  bool _initializing = false;
-  int _topK = 10;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initIfReady();
       _focusNode.requestFocus();
     });
-  }
-
-  void _initIfReady() {
-    final notifier = ref.read(gavesanaProvider.notifier);
-    if (!notifier.isInitialized) {
-      setState(() => _initializing = true);
-      notifier
-          .init()
-          .then((_) {
-            if (mounted) setState(() => _initializing = false);
-            _maybePromptBm25Build();
-          })
-          .catchError((_) {
-            if (mounted) setState(() => _initializing = false);
-          });
-    } else {
-      _maybePromptBm25Build();
-    }
-  }
-
-  /// Show the BM25 build dialog automatically if the index hasn't been
-  /// built yet. The user can dismiss it and still use vector search.
-  void _maybePromptBm25Build() {
-    final notifier = ref.read(gavesanaProvider.notifier);
-    if (notifier.isInitialized && !notifier.isBm25IndexBuilt && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) GavesanaFtsBuildDialog.show(context);
-      });
-    }
-  }
-
-  void _navigateToSettings(BuildContext context) {
-    context.push('/settings');
   }
 
   @override
   void dispose() {
     _queryController.dispose();
     _focusNode.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
   void _executeSearch() {
     final query = _queryController.text.trim();
-    if (query.isNotEmpty) {
-      ref.read(gavesanaProvider.notifier).search(query, topK: _topK);
-      _focusNode.unfocus();
-    }
+    if (query.isEmpty) return;
+    _focusNode.unfocus();
+    ref.read(aiSearchProvider.notifier).search(query);
+  }
+
+  void _clearSearch() {
+    _queryController.clear();
+    ref.read(searchProvider.notifier).clear();
+    ref.read(aiSearchProvider.notifier).reset();
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final state = ref.watch(gavesanaProvider);
-    final notifier = ref.read(gavesanaProvider.notifier);
-    final assetsReady = ref.watch(gavesanaAssetsReadyProvider);
+    final aiState = ref.watch(aiSearchProvider);
+    final searchState = ref.watch(searchProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -130,30 +95,13 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
           ],
         ),
         actions: [
-          // Assets status indicator — clickable when not ready
+          // AI settings — the same sheet used by Vimaṃsa (API key, model).
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: assetsReady.when(
-              data: (ready) => ready
-                  ? Icon(Icons.check_circle, size: 16, color: colors.tertiary)
-                  : GestureDetector(
-                      onTap: () => _navigateToSettings(context),
-                      child: Tooltip(
-                        message: loc.downloadAiAssetsInSettings,
-                        child: Icon(
-                          Icons.cloud_download,
-                          size: 16,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-              loading: () => const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              error: (_, __) =>
-                  Icon(Icons.warning, size: 16, color: colors.error),
+            child: IconButton(
+              icon: Icon(Icons.tune, size: 20, color: colors.onSurfaceVariant),
+              tooltip: loc.aiQaSettings,
+              onPressed: () => showAiQaSettingsSheet(context),
             ),
           ),
         ],
@@ -191,9 +139,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _queryController.clear();
-                            },
+                            onPressed: _clearSearch,
                             tooltip: loc.clear,
                           ),
                         ],
@@ -218,167 +164,10 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
             ),
           ),
 
-          // ── Options bar ──────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimensions.marginMobile,
-              AppDimensions.sm,
-              AppDimensions.marginMobile,
-              0,
-            ),
-            child: Row(
-              children: [
-                // Top-K selector
-                PopupMenuButton<int>(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: loc.numberOfResults,
-                  initialValue: _topK,
-                  onSelected: (val) {
-                    setState(() => _topK = val);
-                    if (_queryController.text.isNotEmpty) _executeSearch();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(value: 5, child: Text(loc.showNResults(5))),
-                    PopupMenuItem(value: 10, child: Text(loc.showNResults(10))),
-                    PopupMenuItem(value: 20, child: Text(loc.showNResults(20))),
-                    PopupMenuItem(value: 50, child: Text(loc.showNResults(50))),
-                  ],
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.format_list_numbered,
-                          size: 14,
-                          color: colors.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          loc.nResults(_topK),
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Icon(
-                          Icons.arrow_drop_down,
-                          size: 16,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                // Build / Rebuild BM25 index button (always available)
-                TextButton.icon(
-                  onPressed: () => GavesanaFtsBuildDialog.show(
-                    context,
-                    rebuild: notifier.isBm25IndexBuilt,
-                  ),
-                  icon: Icon(
-                    notifier.isBm25IndexBuilt
-                        ? Icons.refresh
-                        : Icons.text_fields,
-                    size: 14,
-                  ),
-                  label: Text(
-                    notifier.isBm25IndexBuilt ? loc.rebuildBm25 : loc.buildBm25,
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colors.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
-
-                // Result count
-                if (state == GavesanaState.ready && notifier.results.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(
-                        AppDimensions.radiusSm,
-                      ),
-                    ),
-                    child: Text(
-                      loc.resultsCount(notifier.results.length),
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // ── Vector/BM25 weight slider ─────────────────────────
-          if (state == GavesanaState.ready && notifier.results.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimensions.marginMobile,
-                AppDimensions.xs,
-                AppDimensions.marginMobile,
-                0,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.hub, size: 14, color: colors.onSurfaceVariant),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Vector ${((notifier.vectorWeight) * 100).toStringAsFixed(0)}%',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: notifier.vectorWeight,
-                      min: 0.0,
-                      max: 1.0,
-                      divisions: 20,
-                      onChanged: (v) {
-                        setState(() => notifier.vectorWeight = v);
-                        notifier.rerank();
-                      },
-                    ),
-                  ),
-                  Text(
-                    'BM25 ${((1 - notifier.vectorWeight) * 100).toStringAsFixed(0)}%',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.text_fields,
-                    size: 14,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-
           const SizedBox(height: AppDimensions.sm),
 
           // ── Body ────────────────────────────────────────────
-          Expanded(child: _buildBody(colors, state, notifier, assetsReady)),
+          Expanded(child: _buildBody(colors, aiState, searchState, loc)),
         ],
       ),
     );
@@ -386,198 +175,219 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
 
   Widget _buildBody(
     ColorScheme colors,
-    GavesanaState state,
-    GavesanaNotifier notifier,
-    AsyncValue<bool> assetsReady,
+    AiSearchState aiState,
+    SearchState searchState,
+    AppLocalizations loc,
   ) {
-    // Initializing
-    if (_initializing) {
-      final loc = AppLocalizations.of(context);
-      return Center(
+    switch (aiState) {
+      case AiSearchIdle():
+        // Show any existing search results first; otherwise the idle hint.
+        if (searchState is SearchResults) {
+          return SearchResultsView(state: searchState);
+        }
+        return _buildIdleState(colors, loc);
+
+      case AiSearchRunning(:final toolLogs):
+        return _buildRunningState(colors, loc, toolLogs);
+
+      case AiSearchError(:final message):
+        return _buildErrorState(colors, loc, message);
+
+      case AiSearchDone(:final passageCount):
+        if (searchState is SearchResults && searchState.totalResults > 0) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDoneHeader(colors, loc, passageCount),
+              Expanded(child: SearchResultsView(state: searchState)),
+            ],
+          );
+        }
+        return _buildNoResultsState(colors, loc);
+    }
+  }
+
+  Widget _buildIdleState(ColorScheme colors, AppLocalizations loc) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppDimensions.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(strokeWidth: 2),
-            const SizedBox(height: 12),
-            Text(loc.loadingGavesana),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.psychology,
+                size: 34,
+                color: colors.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              loc.searchSemantically,
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.onSurface,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: 300,
+              child: Text(
+                loc.gavesanaAiSearchHint,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyTranslation.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ),
           ],
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    // Error state
-    if (state == GavesanaState.error) {
-      final loc = AppLocalizations.of(context);
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  Widget _buildRunningState(
+    ColorScheme colors,
+    AppLocalizations loc,
+    List toolLogs,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.marginMobile,
+            0,
+            AppDimensions.marginMobile,
+            AppDimensions.sm,
+          ),
+          child: Row(
             children: [
-              Icon(Icons.error_outline, size: 48, color: colors.error),
-              const SizedBox(height: 12),
-              Text(
-                notifier.errorMessage ?? loc.anErrorOccurred,
-                style: AppTypography.bodyTranslation.copyWith(
-                  color: colors.error,
-                  fontSize: 13,
-                ),
-                textAlign: TextAlign.center,
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                onPressed: () {
-                  setState(() => _initializing = true);
-                  notifier.init().then((_) {
-                    if (mounted) setState(() => _initializing = false);
-                  });
-                },
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(loc.retry),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  loc.gavesanaSearching,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ],
           ),
         ),
-      );
-    }
-
-    // Assets not ready
-    return assetsReady.when(
-      data: (ready) {
-        if (!ready) {
-          final loc = AppLocalizations.of(context);
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.cloud_download,
-                    size: 48,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    loc.gavesanaAssetsNotFound,
-                    style: AppTypography.bodyTranslation.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    loc.downloadInSettingsHint,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
+        if (toolLogs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppDimensions.marginMobile,
+            ),
+            child: Text(
+              loc.gavesanaAiTools,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
               ),
             ),
-          );
-        }
-
-        // Loading states
-        if (state == GavesanaState.loadingModel) {
-          final loc = AppLocalizations.of(context);
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(strokeWidth: 2),
-                const SizedBox(height: 12),
-                Text(loc.loadingModels),
-              ],
-            ),
-          );
-        }
-
-        if (state == GavesanaState.embedding) {
-          final loc = AppLocalizations.of(context);
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(strokeWidth: 2),
-                const SizedBox(height: 12),
-                Text(loc.computingEmbedding),
-              ],
-            ),
-          );
-        }
-
-        if (state == GavesanaState.searching) {
-          final loc = AppLocalizations.of(context);
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(strokeWidth: 2),
-                const SizedBox(height: 12),
-                Text(loc.searchingVectorDb),
-              ],
-            ),
-          );
-        }
-
-        // Ready state with results
-        if (state == GavesanaState.ready && notifier.results.isNotEmpty) {
-          return ListView.builder(
-            controller: _scrollController,
+          ),
+        Expanded(
+          child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(
               AppDimensions.marginMobile,
               0,
               AppDimensions.marginMobile,
               AppDimensions.bottomToolbarHeight + AppDimensions.lg,
             ),
-            itemCount: notifier.results.length,
+            itemCount: toolLogs.length,
             itemBuilder: (context, index) {
-              return _GavesanaResultCard(
-                hit: notifier.results[index],
-                index: index,
+              final log = toolLogs[index];
+              final isLast = index == toolLogs.length - 1;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isLast ? Icons.radar : Icons.check_circle,
+                      size: 16,
+                      color: isLast
+                          ? colors.primary
+                          : colors.tertiary.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        log.resultSummary.isNotEmpty
+                            ? log.resultSummary
+                            : log.toolName,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
-          );
-        }
-
-        // Idle state
-        return _buildIdleState(colors);
-      },
-      loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildIdleState(ColorScheme colors) {
-    final loc = AppLocalizations.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildDoneHeader(
+    ColorScheme colors,
+    AppLocalizations loc,
+    int passageCount,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        0,
+        AppDimensions.marginMobile,
+        AppDimensions.sm,
+      ),
+      child: Row(
         children: [
-          Icon(
-            Icons.psychology,
-            size: 56,
-            color: colors.primary.withValues(alpha: 0.2),
-          ),
-          const SizedBox(height: 16),
+          Icon(Icons.auto_awesome, size: 14, color: colors.primary),
+          const SizedBox(width: 6),
           Text(
-            loc.searchSemantically,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-              fontSize: 16,
+            loc.gavesanaAiResults,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 280,
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: colors.primaryContainer.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Text(
-              loc.gavesanaDesc,
-              textAlign: TextAlign.center,
+              loc.nResults(passageCount),
               style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-                height: 1.5,
+                color: colors.primary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -585,174 +395,70 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
       ),
     );
   }
-}
 
-// ── Result Card ──────────────────────────────────────────────────────────
-
-class _GavesanaResultCard extends ConsumerWidget {
-  final GavesanaSearchHit hit;
-  final int index;
-
-  const _GavesanaResultCard({required this.hit, required this.index});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppDimensions.sm),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _navigateToResult(context, ref),
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimensions.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header row: book name + similarity badge ────
-              Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: colors.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      Icons.import_contacts,
-                      size: 14,
-                      color: colors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      hit.bookName.isNotEmpty ? hit.bookName : hit.bookId,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // Similarity badge — shows vector cosine + RRF score
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: hit.displayScore > 0.7
-                          ? colors.tertiaryContainer
-                          : (hit.displayScore > 0.5
-                                ? colors.secondaryContainer
-                                : colors.surfaceContainerHighest),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.trending_up,
-                          size: 10,
-                          color: hit.displayScore > 0.7
-                              ? colors.onTertiaryContainer
-                              : colors.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          'V ${(hit.similarity * 100).toStringAsFixed(0)}%',
-                          style: AppTypography.labelSmall.copyWith(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: hit.displayScore > 0.7
-                                ? colors.onTertiaryContainer
-                                : colors.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '· RRF ${(hit.rrfScore).toStringAsFixed(4)}',
-                          style: AppTypography.labelSmall.copyWith(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: hit.displayScore > 0.7
-                                ? colors.onTertiaryContainer
-                                : colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+  Widget _buildNoResultsState(ColorScheme colors, AppLocalizations loc) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimensions.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: AppDimensions.sm),
+            Text(
+              loc.gavesanaNoResults,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                height: 1.5,
               ),
-
-              // ── Location info ──────────────────────────────
-              Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 8),
-                child: Text(
-                  'Para ${hit.startPara} – ${hit.endPara} · Line ${hit.startLine} – ${hit.endLine}',
-                  style: AppTypography.labelSmall.copyWith(
-                    fontSize: 10,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
-
-              // ── Pāli text ──────────────────────────────────
-              if (hit.paliText.isNotEmpty)
-                PaliText(
-                  hit.paliText,
-                  style: AppTypography.bodyPali.copyWith(
-                    color: colors.onSurface,
-                    fontSize: 14,
-                    height: 1.4,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-              // ── Translation text ───────────────────────────
-              if (hit.translation.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    hit.translation,
-                    style: AppTypography.bodyTranslation.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontStyle: FontStyle.italic,
-                      fontSize: 12,
-                      height: 1.3,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppDimensions.md),
+            FilledButton.tonalIcon(
+              onPressed: _executeSearch,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: Text(loc.retry),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  void _navigateToResult(BuildContext context, WidgetRef ref) {
-    ref
-        .read(readerTabsProvider.notifier)
-        .openTab(
-          ReaderTabInfo(
-            bookId: hit.bookId,
-            bookName: hit.bookName.isNotEmpty ? hit.bookName : hit.bookId,
-            initialParaId: hit.startPara,
-            initialLineId: hit.startLine,
-          ),
-        );
-    context.push('/reader');
+  Widget _buildErrorState(
+    ColorScheme colors,
+    AppLocalizations loc,
+    String message,
+  ) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimensions.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: colors.error),
+            const SizedBox(height: AppDimensions.sm),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyTranslation.copyWith(
+                color: colors.error,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: AppDimensions.md),
+            FilledButton.tonalIcon(
+              onPressed: () => showAiQaSettingsSheet(context),
+              icon: const Icon(Icons.tune, size: 16),
+              label: Text(loc.gavesanaConfigureSettings),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

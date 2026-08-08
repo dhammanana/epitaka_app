@@ -168,6 +168,15 @@ class ReaderContentList extends StatelessWidget {
       itemBuilder: (context, index) {
         final paragraph = data.paragraphs[index];
 
+        // Seed the per-line page tracking with the previous paragraph's last
+        // page (selected system) so a page break on this paragraph's first
+        // line is still detected. ParagraphData.pageNumbers holds the merged
+        // (last-line) page values, which is exactly the carry-forward value.
+        final previousLinePage = index > 0
+            ? data.paragraphs[index - 1]
+                  .pageNumbers[settings.pageNumberingSystem]
+            : null;
+
         // Pass line keys for the TTS target paragraph so
         // Scrollable.ensureVisible can precisely scroll to the line.
         Map<int, GlobalKey>? lineKeys;
@@ -207,6 +216,7 @@ class ReaderContentList extends StatelessWidget {
           // unrelated settings change.
           script: settings.paliScript,
           pageNumberingSystem: settings.pageNumberingSystem,
+          previousLinePageNumber: previousLinePage,
           paliFontSize: settings.typography.pali.fontSize,
           paliLineHeight: settings.typography.pali.lineHeight,
           translationFontSize: settings.typography.fontSizeFor(

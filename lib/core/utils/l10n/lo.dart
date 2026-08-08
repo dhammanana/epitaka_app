@@ -185,25 +185,7 @@ const Map<String, String> lo = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'ຄະເວສະນະ (ຄົ້ນຫາດ້ວຍ AI)',
-  'AI Search Assets': 'ໄຟລ໌ການຄົ້ນຫາດ້ວຍ AI',
-  'Not downloaded — tap to download': 'ຍັງບໍ່ໄດ້ດາວໂຫລດ — ແຕະເພື່ອດາວໂຫລດ',
-  'Gavesana AI Assets': 'ໄຟລ໌ AI ຂອງຄະເວສະນະ',
-  'The AI search model and vector database are ready to use.\n\n'
-          'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'ໂມເດວການຄົ້ນຫາດ້ວຍ AI ແລະ ຖານຂໍ້ມູນເວັກເຕີ ພ້ອມໃຊ້ງານແລ້ວ.\n\n'
-      'ເປີດແຖບຂ້າງໃນໜ້າຫໍສະໝຸດ ແລ້ວແຕະໄອຄອນຄະເວສະນະເພື່ອເລີ່ມຄົ້ນຫາຕາມຄວາມໝາຍ.',
-  'Download Gavesana Assets?': 'ດາວໂຫລດໄຟລ໌ຄະເວສະນະບໍ?',
-  'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.':
-      'ການດຳເນີນການນີ້ຈະດາວໂຫລດຂໍ້ມູນປະມານ 670 MB:\n'
-      '- ໂມເດວ AI (270 MB)\n'
-      '- ຖານຂໍ້ມູນເວັກເຕີ (364 MB)\n'
-      '- ການຕັ້ງຄ່າ Tokenizer (33 MB)\n\n'
-      'ແນະນຳໃຫ້ໃຊ້ການເຊື່ອມຕໍ່ Wi-Fi.',
-  'Download AI assets in Settings': 'ດາວໂຫລດໄຟລ໌ AI ໃນການຕັ້ງຄ່າ',
+
   'Open Gavesana': 'ເປີດຄະເວສະນະ',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -348,6 +330,8 @@ const Map<String, String> lo = {
       'ຍັງບໍ່ມີທີ່ຄັ່ນໜ້າ.\nບັນທຶກຕຳແໜ່ງການອ່ານຂອງທ່ານຈາກໜ້າອ່ານ.',
   'No bookmarks yet.': 'ຍັງບໍ່ມີທີ່ຄັ່ນໜ້າ.',
   'No reading history yet.': 'ຍັງບໍ່ມີປະຫວັດການອ່ານ.',
+  'Listening': 'ການຟັງ',
+  'No listening history yet.': 'ຍັງບໍ່ມີປະຫວັດການຟັງ.',
   'Remove Bookmark?': 'ເອົາທີ່ຄັ່ນໜ້າອອກບໍ?',
   'Remove History Entry?': 'ເອົາລາຍການປະຫວັດອອກບໍ?',
   'Just now': 'ຫາກໍ່ນີ້',
@@ -525,21 +509,11 @@ const Map<String, String> lo = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'ຖາມກ່ຽວກັບພຣະໄຕຣປິດົກ…',
-  'Number of results': 'ຈຳນວນຜົນລັບ',
-  'Loading Gavesana…': 'ກຳລັງໂຫລດຄະເວສະນະ…',
-  'Loading models…': 'ກຳລັງໂຫລດໂມເດວ…',
-  'Computing query embedding…': 'ກຳລັງຄິດໄລ່ embedding ຂອງຄຳຄົ້ນຫາ…',
-  'Searching vector database…': 'ກຳລັງຄົ້ນຫາໃນຖານຂໍ້ມູນເວັກເຕີ…',
+
   'Search semantically across the Tipitaka': 'ຄົ້ນຫາຕາມຄວາມໝາຍທົ່ວພຣະໄຕຣປິດົກ',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       'ຄະເວສະນະໃຊ້ AI ຄົ້ນຫາຂໍ້ຄວາມທີ່ກ່ຽວຂ້ອງກັບ\nຄຳຄົ້ນຫາຂອງທ່ານ ເຖິງແມ່ນວ່າຈະບໍ່ມີຄຳທີ່ຄືກັນທຸກຄຳ.',
-  'Gavesana AI assets not found.': 'ບໍ່ພົບໄຟລ໌ AI ຂອງຄະເວສະນະ.',
-  'Download them in Settings.': 'ດາວໂຫລດໄດ້ໃນການຕັ້ງຄ່າ.',
-  'An error occurred': 'ເກີດຂໍ້ຜິດພາດ',
-  'Show 5 results': 'ສະແດງ 5 ຜົນລັບ',
-  'Show 10 results': 'ສະແດງ 10 ຜົນລັບ',
-  'Show 20 results': 'ສະແດງ 20 ຜົນລັບ',
-  'Show 50 results': 'ສະແດງ 50 ຜົນລັບ',
+
   'Semantic search': 'ການຄົ້ນຫາຕາມຄວາມໝາຍ',
   'Investigation & exploration': 'ການສືບຄົ້ນ ແລະ ການສຳຫຼວດ',
   'Tipitaka': 'ພຣະໄຕຣປິດົກ',
@@ -548,15 +522,9 @@ const Map<String, String> lo = {
   'Vimaṃsa': 'ວີມັງສາ',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'ສ້າງດັດຊະນີການຄົ້ນຫາ BM25',
-  'Rebuilding BM25 index…': 'ກຳລັງສ້າງດັດຊະນີ BM25 ໃໝ່…',
-  'Preparing BM25 index…': 'ກຳລັງກະກຽມດັດຊະນີ BM25…',
-  'BM25 index ready': 'ດັດຊະນີ BM25 ພ້ອມແລ້ວ',
-  'Continue without BM25': 'ດຳເນີນຕໍ່ໂດຍບໍ່ໃຊ້ BM25',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'ເປີດໃຊ້ການຄົ້ນຫາແບບປະສົມ (ເວັກເຕີ + BM25) ແລ້ວ.',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'ການດຳເນີນການນີ້ຈະສ້າງດັດຊະນີຂໍ້ຄວາມບາລີສຳລັບການຄົ້ນຫາແບບຄີເວີດ (BM25) ແລະ ດຳເນີນເທື່ອດຽວ.',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ການແປທີ່ມີໃຫ້ໃຊ້',
@@ -681,14 +649,13 @@ const Map<String, String> lo = {
   'Stop': 'ຢຸດ',
   'Less': 'ໜ້ອຍລົງ',
   'Library': 'ຫໍສະໝຸດ',
+  'Reset layout': 'ຣີເຊັດຮູບແບບ',
 
   // ── Gavesana ────────────────────────────────────────────────────────
   'Gavesana': 'ຄະເວສະນະ',
   'Gavesana AI Search': 'ການຄົ້ນຫາດ້ວຍ AI ຄະເວສະນະ',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'ການຄົ້ນຫາຕາມຄວາມໝາຍດ້ວຍ AI ທົ່ວພຣະໄຕຣປິດົກ.\n\nເປີດແຜງຄະເວສະນະແບບເຕັມເພື່ອເບິ່ງຜົນລັບລະອຽດ.',
-  'Build BM25': 'ສ້າງ BM25',
-  'Rebuild BM25': 'ສ້າງ BM25 ໃໝ່',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'ເມນູນຳທາງ',

@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/utils/responsive_breakpoint.dart';
-import '../../../shared/providers/side_panel_provider.dart';
+import '../../dictionary/widgets/dictionary_open.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../utils/reader_word_hit_test.dart' show selectWordAt;
 
@@ -173,20 +172,15 @@ class ReaderDictionaryLookupController {
       name: 'epitaka.dict',
     );
 
-    final sidePanels = ref.read(sidePanelProvider);
-    final isDictionaryPinned =
-        sidePanels.right.openPanel == SidePanelType.dictionary &&
-        sidePanels.right.isPinned;
-
-    if (ResponsiveBreakpoint.isDesktop(context) && isDictionaryPinned) {
-      // The dictionary is docked in the right side panel: route the lookup
-      // there instead of opening the bottom sheet.
-      ref.read(sidePanelProvider.notifier).updateDictionaryWord(word.trim());
+    // Desktop: route the lookup into the shell's dictionary panel (sidebar
+    // dock or right column) instead of the bottom sheet. The panel stays
+    // mounted, so there's no need to disable selection.
+    if (openDictionaryInPanel(context, ref, word)) {
+      _lastLookedUpWord = null;
       return;
     }
 
-    // Default: show as a bottom sheet on all platforms. The user can pin it
-    // (via the toolbar pin button) to dock it in the right side panel.
+    // Default: show as a bottom sheet on mobile.
     //
     // Disable selection (via SelectionContainer.disabled, NOT by unmounting
     // SelectionArea) before the sheet opens. We commit the disable on its own

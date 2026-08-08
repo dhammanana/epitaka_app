@@ -22,8 +22,10 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/utils/reading_clipboard.dart';
+import '../../../shared/widgets/reader_toolbar_controller.dart';
 import '../../../features/ai_qa/providers/ai_qa_provider.dart' show aiQaInitialPromptProvider;
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
+import '../../dictionary/widgets/dictionary_open.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../library/screens/library_screen.dart';
 import '../../library/widgets/library_dialog.dart';
@@ -309,6 +311,163 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// Toggle the in-book search bar.
   void _toggleInBookSearch() {
     ref.read(inBookSearchProvider.notifier).toggleSearchBar();
+  }
+
+  // ── Toolbar actions ──────────────────────────────────────────────────
+  //
+  // Single source of truth for the reader's toolbar actions. Both the mobile
+  // floating pill and the desktop status bar (via [ReaderToolbarController])
+  // invoke these, so behavior can never drift between the two UIs. They
+  // resolve the current active tab / reader state from providers at call
+  // time (never capturing stale build-scope values), which also keeps the
+  // status bar's [ReaderToolbarController.update] from firing on every
+  // reader rebuild (method tear-offs are identity-stable).
+
+  ReaderTabInfo? _toolbarActiveTab() {
+    return ref.read(readerTabsProvider).activeTab;
+  }
+
+  ReaderDataState _toolbarReaderState(ReaderTabInfo tab) {
+    return ref.read(readerDataProvider(tab.bookId));
+  }
+
+  void _handleToolbarContents() {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      // Desktop: open the dockable contents panel instead of pushing a
+      // full screen over the shell.
+      ref.read(sidePanelProvider.notifier).toggle(SidePanelType.contents);
+      return;
+    }
+    final readerState = _toolbarReaderState(activeTab);
+    // The TOC must highlight the section the reader is actually in. Use the
+    // live position (first paragraph fully past the viewport top) rather
+    // than the tab's topmost-visible paragraph: after jumping to a heading
+    // the target sits a few percent below the top, so the topmost visible
+    // paragraph is the one ABOVE the jump target and the TOC would
+    // highlight the wrong section.
+    final currentParaId =
+        _getCurrentParaId(activeTab.bookId) ?? activeTab.currentParaId;
+    var url =
+        '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
+    if (currentParaId != null) {
+      url += '&currentParaId=$currentParaId';
+    }
+    context.push(url);
+  }
+
+  void _handleToolbarSearch() => _toggleInBookSearch();
+
+  void _handleToolbarDictionary() {
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      // Desktop: toggle the docked dictionary panel.
+      ref.read(sidePanelProvider.notifier).toggle(SidePanelType.dictionary);
+      return;
+    }
+    showDictionarySheet(context, '');
+  }
+
+  void _handleToolbarJump() {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    _onJumpTap(activeTab, _toolbarReaderState(activeTab));
+  }
+
+  void _handleToolbarDisplayLayout() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      barrierDismissible: true,
+      builder: (_) => const Align(
+        alignment: Alignment(0, 0.88),
+        child: DisplayLayoutPopup(),
+      ),
+    );
+  }
+
+  Future<void> _handleToolbarListen() async {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    final readerState = _toolbarReaderState(activeTab);
+
+    final positions =
+        _itemPositionsListeners[activeTab.bookId]?.itemPositions.value;
+    int startParaIndex = 0;
+    if (positions != null && positions.isNotEmpty) {
+      final visible =
+          positions
+              .where((p) => p.itemTrailingEdge > 0)
+              .toList()
+            ..sort(
+              (a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge),
+            );
+      if (visible.isNotEmpty) {
+        startParaIndex = visible.first.index.clamp(
+          0,
+          readerState.paragraphs.isEmpty
+              ? 0
+              : readerState.paragraphs.length - 1,
+        );
+      }
+    }
+
+    final lines = <TtsLineItem>[];
+    final enabledLangs =
+        ref.read(settingsProvider).visibleTranslationLangs;
+    final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
+    if (lang == null) return;
+
+    // Load TTS replacements
+    final replaceAsyncState = ref.read(ttsReplacementsNotifierProvider);
+    if (replaceAsyncState is AsyncLoading ||
+        replaceAsyncState is AsyncError) {
+      await ref.read(ttsReplacementsNotifierProvider.notifier).load();
+    }
+    final activeReplacements = ref.read(activeTtsReplacementsProvider);
+
+    for (int i = startParaIndex; i < readerState.paragraphs.length; i++) {
+      final para = readerState.paragraphs[i];
+      for (final line in para.lines) {
+        final rawText = line.translations[lang] ?? '';
+        final stripped = stripHtmlForTts(rawText);
+        var text = stripped;
+        for (final rule in activeReplacements) {
+          try {
+            if (rule.isRegex) {
+              text = text.replaceAll(RegExp(rule.pattern), rule.replacement);
+            } else {
+              text = text.replaceAll(rule.pattern, rule.replacement);
+            }
+          } catch (_) {}
+        }
+        lines.add(
+          TtsLineItem(paraId: para.paraId, lineId: line.lineId, text: text),
+        );
+      }
+    }
+
+    if (lines.isNotEmpty) {
+      // Cache the book name so the Android notification shows a
+      // human-readable title instead of the raw bookId.
+      TtsReadingNotifier.cacheBookName(
+        activeTab.bookId,
+        readerState.bookName ?? activeTab.bookId,
+      );
+      ref
+          .read(ttsReadingProvider.notifier)
+          .startReading(activeTab.bookId, lines);
+    }
+  }
+
+  void _handleToolbarStop() {
+    ref.read(ttsReadingProvider.notifier).stopReading();
+  }
+
+  void _handleToolbarBookmark() {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    _onBookmarkTap(activeTab, _toolbarReaderState(activeTab));
   }
 
   @override
@@ -1038,9 +1197,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       });
   }
 
-  /// Get the current paraId from approximately 1/3 of the screen height.
+  /// Get the paraId of the paragraph the user is actually reading.
+  ///
   /// This uses the item positions listener to find the first paragraph
-  /// whose leading edge is >= 0.3 (i.e., about 1/3 from the top).
+  /// whose leading edge is >= 0.0, i.e. whose top has fully scrolled past
+  /// the top of the viewport.
+  ///
+  /// Why not the topmost visible paragraph? After a programmatic jump the
+  /// target paragraph is placed a few percent below the top (alignment
+  /// 0.05), so the PREVIOUS paragraph still peeks in at the very top and
+  /// would be reported as "topmost". Feeding that into the table of
+  /// contents highlighted the section ABOVE the one jumped to. The first
+  /// paragraph past the viewport top is the one whose text actually fills
+  /// the screen, which is what the TOC / jump sheet / bookmark naming
+  /// should reflect.
   int? _getCurrentParaId(String bookId) {
     final listener = _itemPositionsListeners[bookId];
     final positions = listener?.itemPositions.value;
@@ -1051,15 +1221,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     if (visible.isEmpty) return null;
 
-    // Find the first paragraph with leading edge >= 0.3
+    // Find the first paragraph with leading edge >= 0.0
     int? targetIndex;
     for (final pos in visible) {
-      if (pos.itemLeadingEdge >= 0.3) {
+      if (pos.itemLeadingEdge >= 0.0) {
         targetIndex = pos.index;
         break;
       }
     }
-    // Fallback to the topmost visible paragraph
+    // Fallback to the topmost visible paragraph (e.g. a paragraph taller
+    // than the viewport, or scrolled to the very end of the book).
     targetIndex ??= visible.first.index;
 
     final readerState = ref.read(readerDataProvider(bookId));
@@ -1156,18 +1327,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       '[DICT] reader word lookup tap word="$word"',
       name: 'epitaka.dict',
     );
-    final sidePanels = ref.read(sidePanelProvider);
-    final isDictionaryPinned =
-        sidePanels.right.openPanel == SidePanelType.dictionary &&
-        sidePanels.right.isPinned;
-    if (ResponsiveBreakpoint.isDesktop(context) && isDictionaryPinned) {
-      // The dictionary is docked in the right side panel: route the lookup
-      // there instead of opening the bottom sheet.
-      ref.read(sidePanelProvider.notifier).updateDictionaryWord(word.trim());
+    // Desktop: route the lookup into the shell's dictionary panel (sidebar
+    // dock or right column) instead of the bottom sheet.
+    if (openDictionaryInPanel(context, ref, word)) {
+      _lastLookedUpWord = null;
+      _selectableRegionKey.currentState?.clearSelection();
       return;
     }
-    // Default: show as a bottom sheet on all platforms. The user can pin it
-    // (via the toolbar pin button) to dock it in the right side panel.
+    // Default: show as a bottom sheet on mobile.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         await showDictionarySheet(context, word.trim());
@@ -1902,6 +2069,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final tabsState = ref.watch(readerTabsProvider);
 
+    // Inside the desktop shell, the attached status bar drives the reader's
+    // toolbar actions through this scope; the floating pill is hidden and
+    // the handlers below are registered into the shell's controller.
+    final toolbarScope = ReaderToolbarScope.maybeOf(context);
+    toolbarScope?.controller.update(
+      enabled: tabsState.isNotEmpty,
+      onContents: _handleToolbarContents,
+      onSearch: _handleToolbarSearch,
+      onDictionary: _handleToolbarDictionary,
+      onJump: _handleToolbarJump,
+      onDisplayLayout: _handleToolbarDisplayLayout,
+      onListen: _handleToolbarListen,
+      onStop: _handleToolbarStop,
+      onBookmark: _handleToolbarBookmark,
+    );
+
     // ── Detect tab switch and start timing ───────────────────────────
     final tabSwitchBookId = tabsState.activeTab?.bookId;
     if (tabSwitchBookId != null && _lastBuildBookId != tabSwitchBookId) {
@@ -2292,52 +2475,57 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         child: Column(
           children: [
             // ── Animated app bar (only this rebuilds on collapse) ──
-            ValueListenableBuilder<bool>(
-              valueListenable: _appBarCollapsed,
-              builder: (context, collapsed, _) => ReaderAppBar(
-                bookId: activeTab.bookId,
-                bookName: readerState.bookName ?? activeTab.bookId,
-                colors: colors,
-                showCollapsed: collapsed,
-                onSettingsTap: () {
-                  if (ResponsiveBreakpoint.isDesktop(context)) {
-                    showSettingsDialog(context);
-                  } else {
-                    context.push('/settings');
-                  }
-                },
-                actions: ResponsiveBreakpoint.isDesktop(context)
-                    ? [
-                        IconButton(
-                          icon: const Icon(Icons.menu_book_outlined),
-                          color: colors.onSurfaceVariant,
-                          tooltip: AppLocalizations.of(context).libraryLabel,
-                          onPressed: () => showLibraryDialog(context),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.search),
-                          color: colors.onSurfaceVariant,
-                          tooltip: AppLocalizations.of(context).search,
-                          onPressed: () => ref
-                              .read(sidePanelProvider.notifier)
-                              .toggle(SidePanelType.search),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.settings),
-                          color: colors.onSurfaceVariant,
-                          tooltip: AppLocalizations.of(context).settings,
-                          onPressed: () {
-                            if (ResponsiveBreakpoint.isDesktop(context)) {
-                              showSettingsDialog(context);
-                            } else {
-                              context.push('/settings');
-                            }
-                          },
-                        ),
-                      ]
-                    : null,
+            // Hidden entirely on desktop: the shell's activity bar and
+            // status bar cover these actions, and the back button is the
+            // source of the "pop past the end → black screen" bug (books
+            // are never pushed onto the history stack on desktop).
+            if (!ResponsiveBreakpoint.isDesktop(context))
+              ValueListenableBuilder<bool>(
+                valueListenable: _appBarCollapsed,
+                builder: (context, collapsed, _) => ReaderAppBar(
+                  bookId: activeTab.bookId,
+                  bookName: readerState.bookName ?? activeTab.bookId,
+                  colors: colors,
+                  showCollapsed: collapsed,
+                  onSettingsTap: () {
+                    if (ResponsiveBreakpoint.isDesktop(context)) {
+                      showSettingsDialog(context);
+                    } else {
+                      context.push('/settings');
+                    }
+                  },
+                  actions: ResponsiveBreakpoint.isDesktop(context)
+                      ? [
+                          IconButton(
+                            icon: const Icon(Icons.menu_book_outlined),
+                            color: colors.onSurfaceVariant,
+                            tooltip: AppLocalizations.of(context).libraryLabel,
+                            onPressed: () => showLibraryDialog(context),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.search),
+                            color: colors.onSurfaceVariant,
+                            tooltip: AppLocalizations.of(context).search,
+                            onPressed: () => ref
+                                .read(sidePanelProvider.notifier)
+                                .toggle(SidePanelType.search),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.settings),
+                            color: colors.onSurfaceVariant,
+                            tooltip: AppLocalizations.of(context).settings,
+                            onPressed: () {
+                              if (ResponsiveBreakpoint.isDesktop(context)) {
+                                showSettingsDialog(context);
+                              } else {
+                                context.push('/settings');
+                              }
+                            },
+                          ),
+                        ]
+                      : null,
+                ),
               ),
-            ),
             const TabStrip(),
             Expanded(
               child: Stack(
@@ -2428,151 +2616,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       ),
                     ),
 
-                  // Floating bottom toolbar (animated)
-                  ValueListenableBuilder<bool>(
-                    valueListenable: _appBarCollapsed,
-                    builder: (context, collapsed, _) => AnimatedPositioned(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      bottom: collapsed ? -80.0 : 24.0,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: ReaderBottomToolbar(
-                          colors: colors,
-                          displayMode: settings.translationDisplayMode,
-                          showTranslation: settings.showTranslation,
-                          ttsPlayback: ttsPlaybackStateForTab,
-                          onJumpTap: () => _onJumpTap(activeTab, readerState),
-                          onDisplayLayoutTap: () {
-                            showDialog(
-                              context: context,
-                              barrierColor: Colors.transparent,
-                              barrierDismissible: true,
-                              builder: (_) => const Align(
-                                alignment: Alignment(0, 0.88),
-                                child: DisplayLayoutPopup(),
-                              ),
-                            );
-                          },
-                          onContentsTap: () {
-                            final currentParaId = activeTab.currentParaId;
-                            var url =
-                                '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
-                            if (currentParaId != null) {
-                              url += '&currentParaId=$currentParaId';
-                            }
-                            context.push(url);
-                          },
-                          onDictionaryTap: () {
-                            showDictionarySheet(context, '');
-                          },
-                          onSearchTap: _toggleInBookSearch,
-                          onListenTap: () async {
-                            final positions =
-                                _itemPositionsListeners[activeTab.bookId]
-                                    ?.itemPositions
-                                    .value;
-                            int startParaIndex = 0;
-                            if (positions != null && positions.isNotEmpty) {
-                              final visible =
-                                  positions
-                                      .where((p) => p.itemTrailingEdge > 0)
-                                      .toList()
-                                    ..sort(
-                                      (a, b) => a.itemLeadingEdge.compareTo(
-                                        b.itemLeadingEdge,
-                                      ),
-                                    );
-                              if (visible.isNotEmpty) {
-                                startParaIndex = visible.first.index.clamp(
-                                  0,
-                                  readerState.paragraphs.isEmpty
-                                      ? 0
-                                      : readerState.paragraphs.length - 1,
-                                );
-                              }
-                            }
-
-                            final lines = <TtsLineItem>[];
-                            final lang = enabledLangs.isNotEmpty
-                                ? enabledLangs.first
-                                : null;
-                            if (lang == null) return;
-
-                            // Load TTS replacements
-                            final replaceAsyncState = ref.read(
-                              ttsReplacementsNotifierProvider,
-                            );
-                            if (replaceAsyncState is AsyncLoading ||
-                                replaceAsyncState is AsyncError) {
-                              await ref
-                                  .read(
-                                    ttsReplacementsNotifierProvider.notifier,
-                                  )
-                                  .load();
-                            }
-                            final activeReplacements = ref.read(
-                              activeTtsReplacementsProvider,
-                            );
-
-                            for (
-                              int i = startParaIndex;
-                              i < readerState.paragraphs.length;
-                              i++
-                            ) {
-                              final para = readerState.paragraphs[i];
-                              for (final line in para.lines) {
-                                final rawText = line.translations[lang] ?? '';
-                                final stripped = stripHtmlForTts(rawText);
-                                var text = stripped;
-                                for (final rule in activeReplacements) {
-                                  try {
-                                    if (rule.isRegex) {
-                                      text = text.replaceAll(
-                                        RegExp(rule.pattern),
-                                        rule.replacement,
-                                      );
-                                    } else {
-                                      text = text.replaceAll(
-                                        rule.pattern,
-                                        rule.replacement,
-                                      );
-                                    }
-                                  } catch (_) {}
-                                }
-                                lines.add(
-                                  TtsLineItem(
-                                    paraId: para.paraId,
-                                    lineId: line.lineId,
-                                    text: text,
-                                  ),
-                                );
-                              }
-                            }
-
-                            if (lines.isNotEmpty) {
-                              // Cache the book name so the Android
-                              // notification shows a human-readable
-                              // title instead of the raw bookId.
-                              TtsReadingNotifier.cacheBookName(
-                                activeTab.bookId,
-                                readerState.bookName ?? activeTab.bookId,
-                              );
-                              ref
-                                  .read(ttsReadingProvider.notifier)
-                                  .startReading(activeTab.bookId, lines);
-                            }
-                          },
-                          onStopTap: () {
-                            ref.read(ttsReadingProvider.notifier).stopReading();
-                          },
-                          onBookmarkTap: () =>
-                              _onBookmarkTap(activeTab, readerState),
+                  // Floating bottom toolbar (animated). Hidden inside the
+                  // desktop shell, where the attached status bar hosts the
+                  // same actions (via ReaderToolbarScope).
+                  if (toolbarScope == null)
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _appBarCollapsed,
+                      builder: (context, collapsed, _) => AnimatedPositioned(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        bottom: collapsed ? -80.0 : 24.0,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: ReaderBottomToolbar(
+                            colors: colors,
+                            displayMode: settings.translationDisplayMode,
+                            showTranslation: settings.showTranslation,
+                            ttsPlayback: ttsPlaybackStateForTab,
+                            onJumpTap: _handleToolbarJump,
+                            onDisplayLayoutTap: _handleToolbarDisplayLayout,
+                            onContentsTap: _handleToolbarContents,
+                            onDictionaryTap: _handleToolbarDictionary,
+                            onSearchTap: _handleToolbarSearch,
+                            onListenTap: _handleToolbarListen,
+                            onStopTap: _handleToolbarStop,
+                            onBookmarkTap: _handleToolbarBookmark,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

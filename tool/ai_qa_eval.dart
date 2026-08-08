@@ -29,6 +29,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:epitaka/core/utils/pali_stemmer.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -470,15 +471,33 @@ class EvalRetriever {
       } catch (_) {}
     }
     try {
-      final rows = epiDb.select(
-        'SELECT book_id, para_id, line_id, word FROM pali_definition '
-        'WHERE word = ? LIMIT 10',
-        [term.toLowerCase()],
-      );
-      result['canon_occurrences'] =
-          rows.map((r) => Map<String, Object?>.from(r)).toList();
+      // Mirror the app dictionary's pali_definition search: stem the term,
+      // drop the trailing vowel when the stem is long, then prefix-match
+      // `word LIKE prefix%` (exact `word = ?` misses sandhi variants).
+      final prefix = _paliDefPrefix(term);
+      if (prefix.isNotEmpty) {
+        final rows = epiDb.select(
+          'SELECT book_id, para_id, line_id, word, plain FROM pali_definition '
+          'WHERE word LIKE ? ORDER BY length(word), word, '
+          'book_id, para_id, line_id LIMIT 10',
+          ['$prefix%'],
+        );
+        result['canon_occurrences'] =
+            rows.map((r) => Map<String, Object?>.from(r)).toList();
+      }
     } catch (_) {}
     return result;
+  }
+
+  static const _paliVowels = 'aāiīuūeo';
+
+  /// Mirror of paliDefinitionSearchPrefix (pali_definition_provider.dart).
+  static String _paliDefPrefix(String word) {
+    var prefix = PaliStemmer.getStem(word.trim().toLowerCase());
+    if (prefix.length > 5 && _paliVowels.contains(prefix[prefix.length - 1])) {
+      prefix = prefix.substring(0, prefix.length - 1);
+    }
+    return prefix;
   }
 
   // ── Section index build (mirrors SectionIndexService) ─────────────────

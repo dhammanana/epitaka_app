@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/database/translation_database.dart';
 import '../../../core/providers/database_provider.dart';
@@ -9,6 +8,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
+import '../../dictionary/widgets/dictionary_open.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -245,8 +245,12 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
                           initialLineId: link.linkedLineId,
                         ),
                       );
+                  // Deliberately no context.push('/reader') here: this
+                  // sheet is opened from the reader, which is already the
+                  // current route. openTab updates the shared tabs state, so
+                  // closing the sheet is enough — pushing '/reader' stacked a
+                  // duplicate reader screen and forced extra Back presses.
                   Navigator.of(context).pop();
-                  context.push('/reader');
                 }
               : null,
           icon: const Icon(Icons.open_in_new, size: 14),
@@ -395,6 +399,9 @@ class _BookLinkSectionSheetState extends ConsumerState<_BookLinkSectionSheet> {
   }
 
   void _showDictionary(BuildContext context, String word) {
+    // Desktop: close the book-link sheet and open the dictionary in the
+    // shell's panel instead of the bottom sheet.
+    if (openDictionaryInPanel(context, ref, word, closeSheet: true)) return;
     showDictionarySheet(context, word.trim());
   }
 }

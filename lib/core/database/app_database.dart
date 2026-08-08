@@ -19,6 +19,18 @@ part 'app_database.g.dart';
 /// Callback for reporting indexing progress (0.0–1.0) with a status message.
 typedef IndexProgressCallback = void Function(double progress, String status);
 
+/// Bumped whenever the FTS5 index schema changes in a way that makes
+/// indexes built by older app versions incompatible (tokenizer options,
+/// column layout, …). Each index build stamps this version into the
+/// `index_meta` table; the "is built" checks treat a missing or older
+/// stamp as "not built", so after an upgrade the app rebuilds the affected
+/// index once through the normal build gate.
+///
+///   v1 — published builds: `unicode61 remove_diacritics 0` (tokens keep
+///        diacritics, so `katva` cannot match `katvā`).
+///   v2 — `unicode61 remove_diacritics 1` (diacritic-insensitive search).
+const int kSearchIndexSchemaVersion = 2;
+
 /// Thrown by [AppDatabase.open] when `app_data.db` cannot be opened even
 /// after a journal-file cleanup retry. Callers should catch this and let
 /// the user choose to clear + rebuild rather than doing it automatically.
@@ -411,8 +423,9 @@ class AppDatabase extends _$AppDatabase {
       final exists = await customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_fts'",
       ).get();
-      if (exists.isEmpty)
+      if (exists.isEmpty) {
         return true; // nothing built yet, nothing to be corrupt
+      }
       // FTS5's built-in self-check: throws if the shadow tables disagree
       // with the index content.
       await customStatement(
@@ -570,6 +583,85 @@ class AppDatabase extends _$AppDatabase {
     await (delete(readingHistory)..where((h) => h.id.equals(id))).go();
   }
 
+  // ── Listening History (books played with TTS) ──────────────────────────
+
+  /// Ensure the `listening_history` table exists.
+  ///
+  /// Created lazily on first use (same pattern as the chat_* tables) so
+  /// existing installs get the table without a schema migration.
+  Future<void> _ensureListeningHistoryTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS listening_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id TEXT NOT NULL,
+        book_name TEXT,
+        para_id INTEGER,
+        line_id INTEGER,
+        opened_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        listen_count INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+  }
+
+  /// Add or update a listening-history entry for [bookId] (TTS playback).
+  Future<void> recordListening({
+    required String bookId,
+    String? bookName,
+    int? paraId,
+    int? lineId,
+  }) async {
+    await _ensureListeningHistoryTable();
+    final now = DateTime.now().toIso8601String();
+    final existing = await customSelect(
+      'SELECT id, book_name, para_id, line_id, listen_count '
+      'FROM listening_history WHERE book_id = ? '
+      'ORDER BY updated_at DESC LIMIT 1',
+      variables: [Variable.withString(bookId)],
+    ).get();
+
+    if (existing.isNotEmpty) {
+      final row = existing.first.data;
+      await customStatement(
+        'UPDATE listening_history SET book_name = ?, para_id = ?, '
+        'line_id = ?, updated_at = ?, listen_count = ? WHERE id = ?',
+        [
+          bookName ?? row['book_name'],
+          paraId ?? row['para_id'],
+          lineId ?? row['line_id'],
+          now,
+          (row['listen_count'] as int) + 1,
+          row['id'],
+        ],
+      );
+    } else {
+      await customStatement(
+        'INSERT INTO listening_history '
+        '(book_id, book_name, para_id, line_id, opened_at, updated_at, listen_count) '
+        'VALUES (?, ?, ?, ?, ?, ?, 1)',
+        [bookId, bookName, paraId, lineId, now, now],
+      );
+    }
+  }
+
+  /// Get all listening history, ordered by most recently updated first.
+  Future<List<ListeningHistoryData>> getAllListeningHistory() async {
+    await _ensureListeningHistoryTable();
+    final rows = await customSelect(
+      'SELECT * FROM listening_history ORDER BY updated_at DESC',
+    ).get();
+    return rows.map((r) => ListeningHistoryData.fromRow(r.data)).toList();
+  }
+
+  /// Delete a listening-history entry by ID.
+  Future<void> deleteListeningHistoryEntry(int id) async {
+    await _ensureListeningHistoryTable();
+    await customStatement(
+      'DELETE FROM listening_history WHERE id = ?',
+      [id],
+    );
+  }
+
   // ── TTS Replacements ────────────────────────────────────────────────────
 
   /// Get all TTS replacement rules, ordered by creation date.
@@ -694,6 +786,25 @@ class AppDatabase extends _$AppDatabase {
         return false;
       }
       debugPrint('[INDEX_CHECK] search_words FOUND');
+
+      // The tables existing isn't enough: the FTS5 tokenizer options are
+      // baked into each virtual table at CREATE time and can't be changed
+      // in place, so an index built by an older app version (e.g. with
+      // remove_diacritics 0) must be rebuilt. The build stamps the schema
+      // version that produced it into `index_meta`; a missing or older
+      // stamp means this index was built by different code than what's
+      // running now, so report it as "not built" to trigger the rebuild.
+      final version = await _storedIndexSchemaVersion('search_index_version');
+      if (version == null || version < kSearchIndexSchemaVersion) {
+        debugPrint(
+          '[INDEX_CHECK] Pāli index schema stamp missing/old '
+          '(v$version) → needs rebuild',
+        );
+        return false;
+      }
+      debugPrint(
+        '[INDEX_CHECK] Pāli index schema v$version is current → ready',
+      );
       debugPrint('[INDEX_CHECK] Index is BUILT and ready');
       return true;
     } catch (e) {
@@ -754,7 +865,7 @@ class AppDatabase extends _$AppDatabase {
         '  book_id UNINDEXED,'
         '  para_id UNINDEXED,'
         '  pali_text,'
-        "  tokenize='unicode61 remove_diacritics 1 prefix=\"3 4\"'"
+        "  tokenize='unicode61 remove_diacritics 1'"
         ')',
       );
       await customStatement(
@@ -772,8 +883,23 @@ class AppDatabase extends _$AppDatabase {
         'CREATE INDEX idx_search_words_fuzzy ON search_words(fuzzy)',
       );
 
+      // NOTE: deliberately NO FTS5 `prefix` option here. Every search term
+      // is matched as a prefix (`term*`), and FTS5 already resolves prefix
+      // queries with B-tree range scans (~0.1–2ms on the full corpus); the
+      // earlier `prefix="3 4"` idea was also broken SQL (`prefix` inside
+      // the tokenize string is a parse error). Prefix indexes only shave
+      // very short (2–3 char) prefixes further while making the build
+      // ~30–50% slower — and build time is the part users feel.
+      //
+      // Inserts are batched into multi-row statements: every
+      // customStatement call round-trips through Drift's async executor,
+      // so a row-by-row insert paid that overhead once per paragraph
+      // (~hundreds of thousands of times in a full build). Chunking cuts
+      // it down to a handful of round-trips.
       const yieldInterval = 200;
+      const insertChunk = 200; // rows per multi-row INSERT (200×3 = 600 params)
       int yieldCounter = 0;
+      final ftsBuffer = <Object?>[]; // flat book_id, para_id, pali_text tuples
 
       for (final row in pageRows) {
         final bookId = row.data['book_id'] as String;
@@ -786,10 +912,10 @@ class AppDatabase extends _$AppDatabase {
         paliText = _cleanPaliText(paliText.toLowerCase());
         if (paliText.isEmpty) continue;
 
-        await customStatement(
-          'INSERT INTO search_fts(book_id, para_id, pali_text) VALUES (?, ?, ?)',
-          [bookId, paraId, paliText],
-        );
+        ftsBuffer
+          ..add(bookId)
+          ..add(paraId)
+          ..add(paliText);
         insertedPages++;
         yieldCounter++;
 
@@ -807,6 +933,15 @@ class AppDatabase extends _$AppDatabase {
           );
         }
 
+        if (ftsBuffer.length >= insertChunk * 3) {
+          await _flushBatchInsert(
+            'search_fts',
+            'book_id, para_id, pali_text',
+            ftsBuffer,
+            3,
+          );
+        }
+
         // Yielding inside a transaction still keeps the UI responsive
         // (this is cooperative multitasking on the same isolate) without
         // giving up the atomicity of the transaction itself.
@@ -815,15 +950,30 @@ class AppDatabase extends _$AppDatabase {
           yieldCounter = 0;
         }
       }
+      await _flushBatchInsert(
+        'search_fts',
+        'book_id, para_id, pali_text',
+        ftsBuffer,
+        3,
+      );
 
       final wordTotal = wordCounts.length;
+      final wordBuffer = <Object?>[]; // flat pali, fuzzy, count tuples
       for (final entry in wordCounts.entries) {
-        final fuzzy = _normalizeFuzzy(entry.key);
-        await customStatement(
-          'INSERT INTO search_words(pali, fuzzy, count) VALUES (?, ?, ?)',
-          [entry.key, fuzzy, entry.value],
-        );
+        wordBuffer
+          ..add(entry.key)
+          ..add(_normalizeFuzzy(entry.key))
+          ..add(entry.value);
         wordCount++;
+
+        if (wordBuffer.length >= insertChunk * 3) {
+          await _flushBatchInsert(
+            'search_words',
+            'pali, fuzzy, count',
+            wordBuffer,
+            3,
+          );
+        }
 
         if (wordCount % 200 == 0 || wordCount == wordTotal) {
           final p = 0.55 + (wordCount / wordTotal) * 0.45;
@@ -836,6 +986,27 @@ class AppDatabase extends _$AppDatabase {
           await Future.delayed(Duration.zero);
         }
       }
+      await _flushBatchInsert(
+        'search_words',
+        'pali, fuzzy, count',
+        wordBuffer,
+        3,
+      );
+
+      // Stamp the index-schema version that built this table. Runs inside
+      // the same transaction as the data, so a build killed mid-way rolls
+      // both back and the table can never look "current" while half-built.
+      await customStatement(
+        'CREATE TABLE IF NOT EXISTS index_meta ('
+        '  key TEXT PRIMARY KEY,'
+        '  value TEXT NOT NULL'
+        ')',
+      );
+      await customStatement(
+        'INSERT OR REPLACE INTO index_meta(key, value) '
+        "VALUES ('search_index_version', ?)",
+        [kSearchIndexSchemaVersion.toString()],
+      );
     });
 
     stopwatch.stop();
@@ -910,8 +1081,13 @@ class AppDatabase extends _$AppDatabase {
         'CREATE INDEX idx_search_words_${langCode}_word ON search_words_$langCode(word)',
       );
 
+      // Same multi-row INSERT batching as the Pāli index: each
+      // customStatement round-trips through Drift's async executor, so
+      // batching hundreds of rows per statement cuts the build time a lot.
       const yieldInterval = 200;
+      const insertChunk = 200;
       int yieldCounter = 0;
+      final ftsBuffer = <Object?>[]; // flat book_id, para_id, translation tuples
 
       for (final row in sentenceRows) {
         final bookId = row.data['book_id'] as String;
@@ -935,10 +1111,10 @@ class AppDatabase extends _$AppDatabase {
             .trim();
         if (translationText.isEmpty) continue;
 
-        await customStatement(
-          'INSERT INTO $tableName(book_id, para_id, translation_text) VALUES (?, ?, ?)',
-          [bookId, paraId, translationText],
-        );
+        ftsBuffer
+          ..add(bookId)
+          ..add(paraId)
+          ..add(translationText);
         count++;
         yieldCounter++;
 
@@ -959,18 +1135,60 @@ class AppDatabase extends _$AppDatabase {
             'Indexing ${langCode.toUpperCase()} translation… $count / $totalRows paragraphs',
           );
         }
+
+        if (ftsBuffer.length >= insertChunk * 3) {
+          await _flushBatchInsert(
+            tableName,
+            'book_id, para_id, translation_text',
+            ftsBuffer,
+            3,
+          );
+        }
         if (yieldCounter >= yieldInterval) {
           await Future.delayed(Duration.zero);
           yieldCounter = 0;
         }
       }
+      await _flushBatchInsert(
+        tableName,
+        'book_id, para_id, translation_text',
+        ftsBuffer,
+        3,
+      );
 
+      final wordBuffer = <Object?>[]; // flat word, count tuples
       for (final entry in wordCounts.entries) {
-        await customStatement(
-          'INSERT INTO search_words_$langCode(word, count) VALUES (?, ?)',
-          [entry.key, entry.value],
-        );
+        wordBuffer
+          ..add(entry.key)
+          ..add(entry.value);
+        if (wordBuffer.length >= insertChunk * 2) {
+          await _flushBatchInsert(
+            'search_words_$langCode',
+            'word, count',
+            wordBuffer,
+            2,
+          );
+        }
       }
+      await _flushBatchInsert(
+        'search_words_$langCode',
+        'word, count',
+        wordBuffer,
+        2,
+      );
+
+      // Same schema-version stamp as the Pāli index, per-language key.
+      await customStatement(
+        'CREATE TABLE IF NOT EXISTS index_meta ('
+        '  key TEXT PRIMARY KEY,'
+        '  value TEXT NOT NULL'
+        ')',
+      );
+      await customStatement(
+        'INSERT OR REPLACE INTO index_meta(key, value) '
+        "VALUES ('search_index_version_$langCode', ?)",
+        [kSearchIndexSchemaVersion.toString()],
+      );
     });
 
     stopwatch.stop();
@@ -989,7 +1207,22 @@ class AppDatabase extends _$AppDatabase {
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         variables: [Variable.withString(tableName)],
       ).get();
-      return rows.isNotEmpty;
+      if (rows.isEmpty) return false;
+
+      // Same tokenizer-version check as the Pāli index: an index built by
+      // a pre-versioning app build must be rebuilt so the new tokenizer
+      // takes effect.
+      final version = await _storedIndexSchemaVersion(
+        'search_index_version_$langCode',
+      );
+      if (version == null || version < kSearchIndexSchemaVersion) {
+        debugPrint(
+          '[INDEX_CHECK] $langCode index schema stamp missing/old '
+          '(v$version) → needs rebuild',
+        );
+        return false;
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -1000,7 +1233,6 @@ class AppDatabase extends _$AppDatabase {
   Future<List<SearchResultRow>> searchTranslationFts(
     String langCode,
     String query, {
-    bool fuzzy = false,
     int distance = 0,
   }) async {
     final tableName = 'search_fts_$langCode';
@@ -1009,33 +1241,8 @@ class AppDatabase extends _$AppDatabase {
     final exists = await isTranslationIndexBuilt(langCode);
     if (!exists) return [];
 
-    final normalized = query.trim().toLowerCase();
-    if (normalized.isEmpty) return [];
-
-    String ftsQuery;
-
-    if (fuzzy) {
-      // For fuzzy search on translations, we do a LIKE-based fallback
-      // since translations are in modern languages (not Pali).
-      return _translationFuzzySearch(tableName, normalized);
-    } else if (distance > 0) {
-      // FTS5 has no `term1 NEAR/N term2` operator — that's FTS3/4 syntax
-      // and FTS5's parser doesn't accept it. FTS5's NEAR is a function
-      // call: NEAR(term1 term2 ..., N).
-      final terms = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' ');
-      ftsQuery = 'NEAR($terms, $distance)';
-    } else {
-      final terms = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' AND ');
-      ftsQuery = terms;
-    }
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(
@@ -1063,147 +1270,57 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Fallback fuzzy search for translation FTS: uses LIKE on stored text
-  /// since translations are in modern languages without Pali diacritics.
-  Future<List<SearchResultRow>> _translationFuzzySearch(
-    String tableName,
-    String normalized,
-  ) async {
-    try {
-      // First, get all distinct book_id, para_id pairs that match the query
-      final rows = await customSelect(
-        'SELECT DISTINCT book_id, para_id '
-        'FROM $tableName '
-        'WHERE translation_text LIKE ? '
-        'ORDER BY book_id, para_id '
-        'LIMIT 100',
-        variables: [Variable.withString('%$normalized%')],
-      ).get();
-
-      return rows
-          .map(
-            (r) => SearchResultRow(
-              bookId: r.data['book_id'] as String,
-              vripage: '',
-              snippet: '...$normalized...',
-              firstParaId: r.data['para_id'] as int?,
-            ),
-          )
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
   /// Build an FTS5 query string from the user's raw [query].
-  /// Handles prefix matching, fuzzy expansion via search_words, and
-  /// NEAR/phrase queries. Returns the FTS5-safe query string.
-  Future<String> _buildFtsQuery(
-    String query, {
-    bool fuzzy = false,
-    int distance = 0,
-  }) async {
-    final normalized = query.trim().toLowerCase();
+  ///
+  /// Search is always diacritic-insensitive: the FTS5 index is built with
+  /// `unicode61 remove_diacritics 1`, so the tokenizer already normalizes
+  /// diacritics on both the indexed text and the query — there is no need
+  /// (and no longer any code) for the slow per-word search_words expansion
+  /// that used to look up every diacritic variant and OR them together.
+  ///
+  /// The query is cleaned with the same [cleanPaliForIndexing] pipeline
+  /// used when indexing, so a sentence pasted from a book (commas, quotes,
+  /// dashes, brackets, HTML tags …) becomes exactly the same words that
+  /// were indexed. Without this, punctuation such as `,` or `'` inside a
+  /// MATCH query is an FTS5 syntax error and the search silently returns
+  /// zero results.
+  ///
+  /// Words are matched as prefixes (`term*`). With [distance] > 0 and more
+  /// than one word, FTS5's NEAR() function (not the FTS3/4 infix syntax)
+  /// requires the words within [distance] tokens of each other.
+  String _buildFtsQuery(String query, {int distance = 0}) {
+    final normalized = cleanPaliForIndexing(query.trim().toLowerCase());
     if (normalized.isEmpty) return '';
 
-    if (fuzzy) {
-      final rawWords = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-      if (rawWords.isEmpty) return '';
-
-      final fuzzyNormalized = _normalizeFuzzy(normalized);
-      final fuzzyWords = fuzzyNormalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-
-      // For each word, find all diacritic variants from search_words.
-      // Group per-word so we can apply NEAR/AND between groups.
-      final wordGroups = <List<String>>[];
-      for (int i = 0; i < fuzzyWords.length; i++) {
-        final likePattern = '${fuzzyWords[i]}%';
-        final variants = <String>{};
-        try {
-          final matches = await customSelect(
-            'SELECT DISTINCT pali FROM search_words WHERE fuzzy LIKE ? '
-            'ORDER BY count DESC LIMIT 30',
-            variables: [Variable.withString(likePattern)],
-          ).get();
-          for (final row in matches) {
-            variants.add(row.data['pali'] as String);
-          }
-        } catch (_) {}
-
-        // Fallback: use the original word form
-        if (variants.isEmpty) {
-          variants.add(rawWords[i]);
-        }
-        wordGroups.add(variants.toList());
-      }
-
-      if (wordGroups.isEmpty) return '';
-
-      // Build group queries: each group is (var1* OR var2* OR …)
-      // meaning ANY diacritic variant of that word is accepted.
-      final groupQueries = wordGroups.map((vars) {
-        final escaped = vars
-            .map((v) => '${v.replaceAll('"', '""')}*')
-            .join(' OR ');
-        return '($escaped)';
-      }).toList();
-
-      // Combine groups: ALL original words must appear (AND).
-      //
-      // FTS5 has no `group1 NEAR/N group2` operator — that's FTS3/4
-      // syntax. FTS5's NEAR is a function call, NEAR(phrase1 phrase2 ...,
-      // N), and each phrase argument must be a plain token/phrase, not a
-      // parenthesized OR sub-expression like the `(var1* OR var2*)`
-      // groups above. So when distance>0 we can't feed the full
-      // variant-OR groups into NEAR(); instead take each word's
-      // highest-frequency variant (wordGroups entries are already
-      // ordered by count DESC) to build a valid NEAR() phrase list.
-      if (distance > 0 && wordGroups.length > 1) {
-        final nearTerms = wordGroups
-            .map((vars) => '${vars.first.replaceAll('"', '""')}*')
-            .join(' ');
-        return 'NEAR($nearTerms, $distance)';
-      }
-      return groupQueries.join(' AND ');
-    }
-
-    if (distance > 0) {
-      // Same FTS5 NEAR() fix as above: NEAR is a function call, not a
-      // `term1 NEAR/N term2` infix operator.
-      final terms = normalized
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .map((w) => '${_escapeFtsTerm(w)}*')
-          .join(' ');
-      return 'NEAR($terms, $distance)';
-    }
-
-    final terms = normalized
+    final words = normalized
         .split(RegExp(r'\s+'))
         .where((w) => w.isNotEmpty)
-        .map((w) => '${_escapeFtsTerm(w)}*')
-        .join(' AND ');
-    return terms;
+        // Strip FTS5 operator characters (* ^ ~) that would otherwise
+        // produce a syntax error once the prefix `*` is appended.
+        .map(
+          (w) => _escapeFtsTerm(w)
+              .replaceAll('*', '')
+              .replaceAll('^', '')
+              .replaceAll('~', ''),
+        )
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return '';
+
+    final terms = words.map((w) => '$w*').toList();
+    if (distance > 0 && terms.length > 1) {
+      return 'NEAR(${terms.join(' ')}, $distance)';
+    }
+    return terms.join(' AND ');
   }
 
   /// Count search results grouped by book_id from the Pali FTS index.
   /// Returns a map of book_id -> count.
   Future<Map<String, int>> countPaliResultsByBook(
     String query, {
-    bool fuzzy = false,
     int distance = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(
-      query,
-      fuzzy: fuzzy,
-      distance: distance,
-    );
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
     if (ftsQuery.isEmpty) return {};
 
     try {
@@ -1229,39 +1346,13 @@ class AppDatabase extends _$AppDatabase {
   Future<Map<String, int>> countTranslationResultsByBook(
     String langCode,
     String query, {
-    bool fuzzy = false,
     int distance = 0,
   }) async {
     final tableName = 'search_fts_$langCode';
     final exists = await isTranslationIndexBuilt(langCode);
     if (!exists) return {};
 
-    // For translations, we use LIKE-based fuzzy for non-Pali languages
-    if (fuzzy) {
-      try {
-        final normalized = query.trim().toLowerCase();
-        final rows = await customSelect(
-          'SELECT book_id, COUNT(*) as cnt '
-          'FROM $tableName '
-          "WHERE translation_text LIKE '%' || ? || '%' "
-          'GROUP BY book_id '
-          'ORDER BY book_id',
-          variables: [Variable.withString(normalized)],
-        ).get();
-        return {
-          for (final r in rows)
-            r.data['book_id'] as String: (r.data['cnt'] as num).toInt(),
-        };
-      } catch (_) {
-        return {};
-      }
-    }
-
-    final ftsQuery = await _buildFtsQuery(
-      query,
-      fuzzy: false,
-      distance: distance,
-    );
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
     if (ftsQuery.isEmpty) return {};
 
     try {
@@ -1287,16 +1378,11 @@ class AppDatabase extends _$AppDatabase {
   Future<List<SearchResultRow>> searchPaliFtsByBook(
     String bookId,
     String query, {
-    bool fuzzy = false,
     int distance = 0,
     int limit = 30,
     int offset = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(
-      query,
-      fuzzy: fuzzy,
-      distance: distance,
-    );
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1337,7 +1423,6 @@ class AppDatabase extends _$AppDatabase {
     String langCode,
     String bookId,
     String query, {
-    bool fuzzy = false,
     int distance = 0,
     int limit = 30,
     int offset = 0,
@@ -1346,46 +1431,7 @@ class AppDatabase extends _$AppDatabase {
     final exists = await isTranslationIndexBuilt(langCode);
     if (!exists) return [];
 
-    if (fuzzy) {
-      try {
-        final normalized = query.trim().toLowerCase();
-        final rows = await customSelect(
-          "SELECT book_id, para_id, "
-          "'…<mark>' || ? || '</mark>…' as snippet_text, "
-          'translation_text '
-          'FROM $tableName '
-          "WHERE translation_text LIKE '%' || ? || '%' AND book_id = ? "
-          'ORDER BY book_id, para_id '
-          'LIMIT ? OFFSET ?',
-          variables: [
-            Variable.withString(normalized),
-            Variable.withString(normalized),
-            Variable.withString(bookId),
-            Variable.withInt(limit),
-            Variable.withInt(offset),
-          ],
-        ).get();
-        return rows
-            .map(
-              (r) => SearchResultRow(
-                bookId: r.data['book_id'] as String,
-                vripage: '',
-                firstParaId: r.data['para_id'] as int?,
-                snippet: r.data['snippet_text'] as String? ?? '',
-                translation: r.data['translation_text'] as String? ?? '',
-              ),
-            )
-            .toList();
-      } catch (_) {
-        return [];
-      }
-    }
-
-    final ftsQuery = await _buildFtsQuery(
-      query,
-      fuzzy: false,
-      distance: distance,
-    );
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1429,14 +1475,9 @@ class AppDatabase extends _$AppDatabase {
   /// "cakka", "cakkhu", "cakkuṃ" etc.
   Future<List<SearchResultRow>> searchFts(
     String query, {
-    bool fuzzy = false,
     int distance = 0,
   }) async {
-    final ftsQuery = await _buildFtsQuery(
-      query,
-      fuzzy: fuzzy,
-      distance: distance,
-    );
+    final ftsQuery = _buildFtsQuery(query, distance: distance);
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1561,6 +1602,44 @@ class AppDatabase extends _$AppDatabase {
     return normalizePaliFuzzy(text);
   }
 
+  /// Flush buffered row-tuples into [table] as ONE multi-row INSERT,
+  /// cutting the per-row async round-trip through Drift's executor during
+  /// index builds. [buffer] holds flat `[c1, c2, …, cN, c1, c2, …]` values;
+  /// [arity] is the number of columns (N). The buffer is cleared on return.
+  /// Read the index-schema version stamp for [key] from the `index_meta`
+  /// table. Returns null when the table or the row doesn't exist — which
+  /// is exactly how indexes built by pre-versioning app builds are
+  /// detected (they have no stamp at all).
+  Future<int?> _storedIndexSchemaVersion(String key) async {
+    try {
+      final rows = await customSelect(
+        'SELECT value FROM index_meta WHERE key = ?',
+        variables: [Variable.withString(key)],
+      ).get();
+      if (rows.isEmpty) return null;
+      return int.tryParse(rows.first.data['value'] as String);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _flushBatchInsert(
+    String table,
+    String columns,
+    List<Object?> buffer,
+    int arity,
+  ) async {
+    if (buffer.isEmpty) return;
+    final groups = buffer.length ~/ arity;
+    final group = '(${List.filled(arity, '?').join(', ')})';
+    final placeholders = List.filled(groups, group).join(', ');
+    await customStatement(
+      'INSERT INTO $table($columns) VALUES $placeholders',
+      List<Object?>.of(buffer),
+    );
+    buffer.clear();
+  }
+
   /// Escape an FTS5 term for safe use in a query string.
   /// Replaces double-quotes and wraps in a `"…"` pair only if the term
   /// contains special FTS5 characters (so a simple prefix like `cakk*`
@@ -1574,6 +1653,45 @@ class AppDatabase extends _$AppDatabase {
       return '"$safe"';
     }
     return safe;
+  }
+}
+
+// ── Listening history row model ─────────────────────────────────────────
+
+/// A single listening-history entry (a book played with TTS).
+class ListeningHistoryData {
+  final int id;
+  final String bookId;
+  final String? bookName;
+  final int? paraId;
+  final int? lineId;
+  final DateTime openedAt;
+  final DateTime updatedAt;
+  final int listenCount;
+
+  const ListeningHistoryData({
+    required this.id,
+    required this.bookId,
+    this.bookName,
+    this.paraId,
+    this.lineId,
+    required this.openedAt,
+    required this.updatedAt,
+    required this.listenCount,
+  });
+
+  /// Build from a raw `listening_history` row.
+  factory ListeningHistoryData.fromRow(Map<String, Object?> data) {
+    return ListeningHistoryData(
+      id: data['id'] as int,
+      bookId: data['book_id'] as String,
+      bookName: data['book_name'] as String?,
+      paraId: data['para_id'] as int?,
+      lineId: data['line_id'] as int?,
+      openedAt: DateTime.parse(data['opened_at'] as String),
+      updatedAt: DateTime.parse(data['updated_at'] as String),
+      listenCount: data['listen_count'] as int,
+    );
   }
 }
 

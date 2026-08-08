@@ -189,27 +189,13 @@ const Map<String, String> my = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'ဂဝေသန (AI ရှာဖွေမှု)',
-  'AI Search Assets': 'AI ရှာဖွေရေးဖိုင်များ',
-  'Not downloaded — tap to download':
-      'မဒေါင်းလုဒ်ရသေးပါ — ဒေါင်းလုဒ်ရန် နှိပ်ပါ',
-  'Gavesana AI Assets': 'ဂဝေသန AI ဖိုင်များ',
-  'The AI search model and vector database are ready to use.\n\n'
-          'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'AI ရှာဖွေရေးမော်ဒယ်နှင့် vector ဒေတာဘေ့စ်သည် အသုံးပြုရန် အသင့်ဖြစ်ပါပြီ။\n\n'
-      'အနက်ရှာဖွေမှု စတင်ရန် စာကြည့်တိုက်စာမျက်နှာရှိ ဘေးဘားကိုဖွင့်ပြီး ဂဝေသနအိုင်ကွန်ကို နှိပ်ပါ။',
-  'Download Gavesana Assets?': 'ဂဝေသနဖိုင်များ ဒေါင်းလုဒ်လုပ်မည်လား?',
-  'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.':
-      'ဤလုပ်ဆောင်ချက်သည် ဒေတာ 670 MB ခန့် ဒေါင်းလုဒ်လုပ်ပါလိမ့်မည်။\n'
-      '- AI မော်ဒယ် (270 MB)\n'
-      '- Vector ဒေတာဘေ့စ် (364 MB)\n'
-      '- Tokenizer config (33 MB)\n\n'
-      'Wi-Fi ချိတ်ဆက်မှုကို အကြံပြုပါသည်။',
-  'Download AI assets in Settings':
-      'ဆက်တင်များတွင် AI ဖိုင်များကို ဒေါင်းလုဒ်လုပ်ပါ',
+
+  
+
+  
+
+  
+  
   'Open Gavesana': 'ဂဝေသနကို ဖွင့်မည်',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -358,6 +344,8 @@ const Map<String, String> my = {
       'စာအမှတ်များ မရှိသေးပါ။\nဖတ်ရှုနေသည့်နေရာကို ဖတ်ရှုစာမျက်နှာမှ သိမ်းဆည်းပါ။',
   'No bookmarks yet.': 'စာအမှတ်များ မရှိသေးပါ။',
   'No reading history yet.': 'ဖတ်ရှုမှုမှတ်တမ်း မရှိသေးပါ။',
+  'Listening': 'နားထောင်ခြင်း',
+  'No listening history yet.': 'နားထောင်မှုမှတ်တမ်း မရှိသေးပါ။',
   'Remove Bookmark?': 'စာအမှတ်ကို ဖယ်ရှားမည်လား?',
   'Remove History Entry?': 'မှတ်တမ်းအမှတ်ကို ဖယ်ရှားမည်လား?',
   'Just now': 'ယခုလေးတင်',
@@ -536,22 +524,12 @@ const Map<String, String> my = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'တိပိဋကအကြောင်း မေးပါ…',
-  'Number of results': 'ရလဒ်အရေအတွက်',
-  'Loading Gavesana…': 'ဂဝေသန ဖွင့်နေသည်…',
-  'Loading models…': 'မော်ဒယ်များ ဖွင့်နေသည်…',
-  'Computing query embedding…': 'မေးခွန်း embedding တွက်ချက်နေသည်…',
-  'Searching vector database…': 'Vector ဒေတာဘေ့စ်တွင် ရှာဖွေနေသည်…',
+
   'Search semantically across the Tipitaka':
       'တိပိဋကတစ်ခုလုံးကို အနက်အားဖြင့် ရှာဖွေမည်',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       'ဂဝေသနသည် AI ကိုသုံး၍ သင်၏မေးခွန်းနှင့်ဆက်စပ်သော\nအပိုဒ်များကို တိကျသောစကားလုံးမတူညီစေကာမူ ရှာဖွေပေးသည်။',
-  'Gavesana AI assets not found.': 'ဂဝေသန AI ဖိုင်များ မတွေ့ရှိပါ။',
-  'Download them in Settings.': 'ဆက်တင်များတွင် ဒေါင်းလုဒ်လုပ်ပါ။',
-  'An error occurred': 'အမှားတစ်ခု ဖြစ်ပွားခဲ့သည်',
-  'Show 5 results': 'ရလဒ် ၅ ခု ပြသမည်',
-  'Show 10 results': 'ရလဒ် ၁၀ ခု ပြသမည်',
-  'Show 20 results': 'ရလဒ် ၂၀ ခု ပြသမည်',
-  'Show 50 results': 'ရလဒ် ၅၀ ခု ပြသမည်',
+
   'Semantic search': 'အနက်ရှာဖွေမှု',
   'Investigation & exploration': 'စူးစမ်းလေ့လာမှု နှင့် ရှာဖွေတွေ့ရှိမှု',
   'Tipitaka': 'တိပိဋက',
@@ -560,15 +538,9 @@ const Map<String, String> my = {
   'Vimaṃsa': 'ဝီမံသ',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'BM25 ရှာဖွေရေးအညွှန်း တည်ဆောက်မည်',
-  'Rebuilding BM25 index…': 'BM25 အညွှန်း ပြန်တည်ဆောက်နေသည်…',
-  'Preparing BM25 index…': 'BM25 အညွှန်း ပြင်ဆင်နေသည်…',
-  'BM25 index ready': 'BM25 အညွှန်း အသင့်ဖြစ်ပါပြီ',
-  'Continue without BM25': 'BM25 မပါဘဲ ဆက်လုပ်မည်',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'ရောနှော (vector + BM25) ရှာဖွေမှုကို ယခုဖွင့်ထားပါပြီ။',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'ဤလုပ်ဆောင်ချက်သည် keyword (BM25) ရှာဖွေမှုအတွက် ပါဠိစာသားကို အညွှန်းစီပြီး တစ်ကြိမ်သာ လုပ်ဆောင်သည်။',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ရရှိနိုင်သောဘာသာပြန်များ',
@@ -697,14 +669,13 @@ const Map<String, String> my = {
   'Stop': 'ရပ်မည်',
   'Less': 'လျှော့ပြမည်',
   'Library': 'စာကြည့်တိုက်',
+  'Reset layout': 'အပြင်အဆင် ပြန်သတ်မှတ်ရန်',
 
   // ── Gavesana ────────────────────────────────────────────────────────
   'Gavesana': 'ဂဝေသန',
   'Gavesana AI Search': 'ဂဝေသန AI ရှာဖွေမှု',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'တိပိဋကတစ်ခုလုံးကို AI အနက်ရှာဖွေမှု။\n\nအသေးစိတ်ရလဒ်များအတွက် ဂဝေသနအပြည့်အစုံဘောင်ကို ဖွင့်ပါ။',
-  'Build BM25': 'BM25 တည်ဆောက်မည်',
-  'Rebuild BM25': 'BM25 ပြန်တည်ဆောက်မည်',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'လမ်းညွှန်မီနူး',

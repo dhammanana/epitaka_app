@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/app_database.dart';
-import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -11,12 +9,14 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import 'bookmarks_panel.dart';
+import 'history_tabs.dart';
 import 'library_browser.dart';
 
 /// A compact library panel for the left sidebar on desktop.
 ///
-/// Contains three tabs: Browse (Tipitaka book tree), Reading (open tabs),
-/// and Bookmarks (saved positions + reading history).
+/// Contains three tabs: Browse (Tipitaka book tree), Reading (open tabs +
+/// reading/listening history), and Bookmarks (saved positions).
 class LibraryPanel extends ConsumerStatefulWidget {
   const LibraryPanel({super.key});
 
@@ -126,7 +126,7 @@ class _LibraryPanelState extends ConsumerState<LibraryPanel> {
       case 1:
         return _ReadingTab(colors: colors);
       case 2:
-        return _BookmarksTab(colors: colors);
+        return const BookmarksPanel();
       default:
         return LibraryBrowser(maxWidth: double.infinity);
     }
@@ -144,66 +144,74 @@ class _ReadingTab extends ConsumerWidget {
     final tabsState = ref.watch(readerTabsProvider);
     final loc = AppLocalizations.of(context);
 
-    if (tabsState.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tab, size: 32, color: colors.outlineVariant),
-            const SizedBox(height: AppDimensions.sm),
-            Text(
-              loc.noBooksOpenShort,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: [
-              Text(
-                loc.openTabs,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+        // Open Tabs (or a hint) — history is always shown below.
+        if (tabsState.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.tab, size: 24, color: colors.outlineVariant),
+                  const SizedBox(height: AppDimensions.xs),
+                  Text(
+                    loc.noBooksOpenShort,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              Text(
-                '${tabsState.tabs.length}',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
+            ),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Text(
+                  loc.openTabs,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+                const Spacer(),
+                Text(
+                  '${tabsState.tabs.length}',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        ...tabsState.tabs.map((tab) => _OpenTabCard(
-              tab: tab,
-              colors: colors,
-              onTap: () {
-                ref.read(readerTabsProvider.notifier).switchTo(
-                      tabsState.tabs.indexOf(tab),
-                    );
-                if (!ResponsiveBreakpoint.isDesktop(context)) {
-                  context.push('/reader');
-                }
-              },
-              onClose: () {
-                final index = tabsState.tabs.indexOf(tab);
-                if (index >= 0) {
-                  ref.read(readerTabsProvider.notifier).closeTab(index);
-                }
-              },
-            )),
+          ...tabsState.tabs.map((tab) => _OpenTabCard(
+                tab: tab,
+                colors: colors,
+                onTap: () {
+                  ref.read(readerTabsProvider.notifier).switchTo(
+                        tabsState.tabs.indexOf(tab),
+                      );
+                  if (!ResponsiveBreakpoint.isDesktop(context)) {
+                    context.push('/reader');
+                  }
+                },
+                onClose: () {
+                  final index = tabsState.tabs.indexOf(tab);
+                  if (index >= 0) {
+                    ref.read(readerTabsProvider.notifier).closeTab(index);
+                  }
+                },
+              )),
+        ],
+        const SizedBox(height: AppDimensions.sm),
+        // History with Reading / Listening sub-tabs (open books in place —
+        // the reader is already shown in the desktop main area)
+        HistoryTabsSection(colors: colors, compact: true, openBookInPlace: true),
       ],
     );
   }
@@ -265,164 +273,3 @@ class _OpenTabCard extends ConsumerWidget {
   }
 }
 
-// ── Bookmarks Tab ───────────────────────────────────────────────────────
-
-class _BookmarksTab extends ConsumerWidget {
-  final ColorScheme colors;
-  const _BookmarksTab({required this.colors});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bookmarksAsync = ref.watch(bookmarksProvider);
-    final loc = AppLocalizations.of(context);
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(children: [
-            Icon(Icons.bookmark, size: 14, color: colors.primary),
-            const SizedBox(width: 6),
-            Text(loc.bookmarks,
-                style: AppTypography.labelMedium.copyWith(
-                    color: colors.primary, fontWeight: FontWeight.w600)),
-          ]),
-        ),
-        bookmarksAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
-          error: (e, _) => Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(loc.errorMessage('$e'),
-                style: AppTypography.labelSmall.copyWith(color: colors.error)),
-          ),
-          data: (bookmarks) {
-            if (bookmarks.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: Text(loc.noBookmarksShort,
-                      style: AppTypography.labelSmall.copyWith(
-                          color: colors.onSurfaceVariant)),
-                ),
-              );
-            }
-            return Column(
-              children: bookmarks.map((bm) => _BookmarkCard(
-                    bookmark: bm,
-                    colors: colors,
-                    onTap: () => _openBook(context, ref, bm.bookId,
-                        bm.bookName, bm.paraId, bm.lineId),
-                    onDelete: () => _confirmDeleteBookmark(context, ref, bm.id, bm.name),
-                  )).toList(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  void _openBook(BuildContext context, WidgetRef ref, String bookId,
-      String? bookName, int? paraId, [int? lineId]) {
-    ref.read(readerTabsProvider.notifier).openTab(
-      ReaderTabInfo(
-        bookId: bookId,
-        bookName: bookName ?? bookId,
-        initialParaId: paraId,
-        initialLineId: lineId,
-      ),
-    );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
-  }
-
-  void _confirmDeleteBookmark(
-      BuildContext context, WidgetRef ref, int id, String name) {
-    final loc = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(loc.removeBookmark),
-        content: Text(loc.deleteBookmarkConfirm(name)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(loc.cancel)),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              ref.read(appDbProvider.future).then((db) async {
-                await db.deleteBookmark(id);
-                ref.invalidate(bookmarksProvider);
-              });
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: Text(loc.delete),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BookmarkCard extends ConsumerWidget {
-  final Bookmark bookmark;
-  final ColorScheme colors;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-
-  const _BookmarkCard({
-    required this.bookmark,
-    required this.colors,
-    required this.onTap,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-        side: BorderSide(color: colors.outlineVariant, width: 0.5),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(children: [
-            Expanded(
-              child: PaliTextStatic(
-                bookmark.name,
-                script,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            IconButton(
-              onPressed: onDelete,
-              icon: Icon(Icons.delete_outline, size: 14,
-                  color: colors.error.withValues(alpha: 0.6)),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}

@@ -313,6 +313,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.4.2"
+  clipboard:
+    dependency: "direct main"
+    description:
+      name: clipboard
+      sha256: c0ba5e7214035b824549473fa134870bc544fff0d7b89170d4756c0ac2c0239d
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.14"
   clock:
     dependency: transitive
     description:
@@ -425,14 +433,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0+7.7.0"
-  dart_sentencepiece_tokenizer:
-    dependency: "direct main"
-    description:
-      name: dart_sentencepiece_tokenizer
-      sha256: "85825632845cf6427ea0cd13dfba96b4341cf63525165155e5b9b97011239289"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.3.2"
   dart_style:
     dependency: transitive
     description:
@@ -449,22 +449,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.13"
-  device_info_plus:
-    dependency: transitive
-    description:
-      name: device_info_plus
-      sha256: "98f28b42168cc509abc92f88518882fd58061ea372d7999aecc424345c7bff6a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "11.5.0"
-  device_info_plus_platform_interface:
-    dependency: transitive
-    description:
-      name: device_info_plus_platform_interface
-      sha256: e1ea89119e34903dca74b883d0dd78eb762814f97fb6c76f35e9ff74d261a18f
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.3"
   dio:
     dependency: "direct main"
     description:
@@ -627,14 +611,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.12"
-  flutter_onnxruntime:
-    dependency: "direct main"
-    description:
-      name: flutter_onnxruntime
-      sha256: "4efb12e04c24ee653b3fbe2bbbf1955367c6c055a0967fb14c0440bf61293db6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.8.3"
   flutter_riverpod:
     dependency: "direct main"
     description:
@@ -861,22 +837,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.5"
-  irondash_engine_context:
-    dependency: transitive
-    description:
-      name: irondash_engine_context
-      sha256: "2bb0bc13dfda9f5aaef8dde06ecc5feb1379f5bb387d59716d799554f3f305d7"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.5.5"
-  irondash_message_channel:
-    dependency: transitive
-    description:
-      name: irondash_message_channel
-      sha256: b4101669776509c76133b8917ab8cfc704d3ad92a8c450b92934dd8884a2f060
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.0"
   jni:
     dependency: transitive
     description:
@@ -973,14 +933,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
-  logger:
-    dependency: transitive
-    description:
-      name: logger
-      sha256: "25aee487596a6257655a1e091ec2ae66bc30e7af663592cc3a27e6591e05035c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.7.0"
   logging:
     dependency: transitive
     description:
@@ -1213,14 +1165,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.2"
-  pixel_snap:
-    dependency: transitive
-    description:
-      name: pixel_snap
-      sha256: "677410ea37b07cd37ecb6d5e6c0d8d7615a7cf3bd92ba406fd1ac57e937d1fb0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.5"
   platform:
     dependency: transitive
     description:
@@ -1510,18 +1454,10 @@ packages:
     dependency: "direct main"
     description:
       name: sqlite3
-      sha256: "61c7930bebf32c552ac5808c91bf33802e66711c9216090d3b5579c9f862e80c"
+      sha256: "3145bd74dcdb4fd6f5c6dda4d4e4490a8087d7f286a14dee5d37087290f0f8a2"
       url: "https://pub.dev"
     source: hosted
-    version: "3.4.0"
-  sqlite_vector:
-    dependency: "direct main"
-    description:
-      name: sqlite_vector
-      sha256: "794e1d06bdbf14c51386405dbdd5ac679443a99575a889ae289972f154b40e36"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
+    version: "2.9.4"
   sqlparser:
     dependency: transitive
     description:
@@ -1570,29 +1506,12 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
-  super_clipboard:
-    dependency: "direct main"
-    description:
-      name: super_clipboard
-      sha256: e73f3bb7e66cc9260efa1dc507f979138e7e106c3521e2dda2d0311f6d728a16
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.9.1"
-  super_native_extensions:
-    dependency: transitive
-    description:
-      name: super_native_extensions
-      sha256: b9611dcb68f1047d6f3ef11af25e4e68a21b1a705bbcc3eb8cb4e9f5c3148569
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.9.1"
   supertonic_flutter:
     dependency: "direct main"
     description:
-      name: supertonic_flutter
-      sha256: b81a83a472872b29250b9cd388c1c5b844c92cf546d9b04d980549bc9cb983eb
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/supertonic_stub"
+      relative: true
+    source: path
     version: "2.0.0"
   synchronized:
     dependency: transitive
@@ -1882,14 +1801,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.15.0"
-  win32_registry:
-    dependency: transitive
-    description:
-      name: win32_registry
-      sha256: "6f1b564492d0147b330dd794fee8f512cec4977957f310f9951b5f9d83618dae"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.0"
   xdg_directories:
     dependency: transitive
     description:

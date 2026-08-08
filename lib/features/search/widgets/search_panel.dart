@@ -40,7 +40,6 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   final _focusNode = FocusNode();
   Timer? _debounce;
   bool _isConverting = false;
-  bool _fuzzy = false;
   int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
@@ -131,7 +130,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     _focusNode.unfocus();
     ref
         .read(searchProvider.notifier)
-        .search(query: query, fuzzy: _fuzzy, distance: _wordDistance);
+        .search(query: query, distance: _wordDistance);
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
@@ -261,27 +260,6 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             children: [
               Row(
                 children: [
-                  FilterChip(
-                    label: Text(
-                      loc.fuzzy,
-                      style: AppTypography.labelSmall.copyWith(
-                        fontSize: 10,
-                        color: _fuzzy
-                            ? colors.onPrimaryContainer
-                            : colors.onSurfaceVariant,
-                      ),
-                    ),
-                    selected: _fuzzy,
-                    onSelected: (val) {
-                      setState(() => _fuzzy = val);
-                      if (_searchController.text.isNotEmpty) _executeSearch();
-                    },
-                    selectedColor: colors.primaryContainer,
-                    checkmarkColor: colors.primary,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  const SizedBox(width: 4),
                   PopupMenuButton<int>(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),

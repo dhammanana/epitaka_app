@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/app_db_provider.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/services/tts_audio_handler.dart';
 
@@ -85,6 +86,12 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   /// removed). Initialised when reading starts, cancelled on stop/finish.
   StreamSubscription<void>? _noisySubscription;
 
+  /// Debounce timer for position updates while listening.
+  Timer? _listeningSaveTimer;
+
+  /// Last saved paraId for the current listening session (dedupes saves).
+  int? _lastSavedListeningParaId;
+
   TtsReadingNotifier(this._ref) : super(const TtsReadingState());
 
   /// Start reading from [lines] starting at [startIndex].
@@ -122,6 +129,10 @@ Future<void> startReading(
       currentIndex: startIndex,
       isActive: true,
     );
+
+    // Record the book in the listening history right away, so opening the
+    // Listening history tab always shows what was played.
+    _saveListeningHistoryNow();
 
     // ── AudioService integration ───────────────────────────────────
     // NOTE: AudioService.init() is intentionally NOT called here.
@@ -235,6 +246,10 @@ Future<void> startReading(
     _currentSessionId++;
     _pendingSynth = null;
     _pendingSynthIndex = null;
+    // Save the final position before the state is reset below.
+    _listeningSaveTimer?.cancel();
+    _listeningSaveTimer = null;
+    await _saveListeningHistoryNow();
     await _ref.read(ttsProvider.notifier).stop();
     state = const TtsReadingState();
     _cleanupHandlerCallbacks();
@@ -389,6 +404,7 @@ Future<void> startReading(
     final nextIndex = state.currentIndex + 1;
     if (nextIndex < state.lines.length) {
       state = state.copyWith(currentIndex: nextIndex);
+      _scheduleListeningHistorySave();
       ttsAudioHandler.setPlaybackState(
         playing: true,
         paused: false,
@@ -409,6 +425,7 @@ Future<void> startReading(
     final sessionId = _currentSessionId;
     await _ref.read(ttsProvider.notifier).stop();
     state = state.copyWith(currentIndex: state.currentIndex - 1);
+    _scheduleListeningHistorySave();
     ttsAudioHandler.setPlaybackState(
       playing: true,
       paused: false,
@@ -442,8 +459,46 @@ Future<void> startReading(
         hasPrev: true,
         hasNext: nextIndex < state.lines.length - 1,
       );
+      // Debounced listening-history position update.
+      _scheduleListeningHistorySave();
       // Speak the next line
       _speakCurrent(sessionId);
+    }
+  }
+
+  /// Debounce a listening-history save for the current position.
+  void _scheduleListeningHistorySave() {
+    final s = state;
+    final bookId = s.bookId;
+    if (bookId == null || s.isEmpty) return;
+    final paraId = s.currentParaId;
+    if (paraId == null) return;
+    if (_lastSavedListeningParaId == paraId) return;
+    _lastSavedListeningParaId = paraId;
+
+    _listeningSaveTimer?.cancel();
+    _listeningSaveTimer = Timer(const Duration(seconds: 3), () {
+      _saveListeningHistoryNow();
+    });
+  }
+
+  /// Persist the current listening position to the app database.
+  Future<void> _saveListeningHistoryNow() async {
+    final s = state;
+    final bookId = s.bookId;
+    if (bookId == null || s.isEmpty) return;
+    try {
+      final db = await _ref.read(appDbProvider.future);
+      await db.recordListening(
+        bookId: bookId,
+        bookName: _bookNameCache[bookId],
+        paraId: s.currentParaId,
+        lineId: s.currentLineId,
+      );
+      // Refresh the Listening-history UI (mirrors the reading-history flow).
+      _ref.invalidate(listeningHistoryProvider);
+    } catch (_) {
+      // Silently fail — history is non-critical
     }
   }
 
@@ -454,6 +509,10 @@ Future<void> startReading(
       'lastIndex=${state.currentIndex}/${state.lines.length}',
       name: 'epitaka.tts',
     );
+    // Save the final position before the state is reset below.
+    _listeningSaveTimer?.cancel();
+    _listeningSaveTimer = null;
+    _saveListeningHistoryNow();
     state = const TtsReadingState();
     _cleanupHandlerCallbacks();
     // Same as stopReading(): use 'idle' state to trigger internal service stop.
@@ -498,6 +557,10 @@ Future<void> startReading(
     _pendingSynthIndex = null;
     _noisySubscription?.cancel();
     _noisySubscription = null;
+    // Save the final listening position (best-effort, not awaited in dispose).
+    _listeningSaveTimer?.cancel();
+    _listeningSaveTimer = null;
+    _saveListeningHistoryNow();
     // Stop the TTS engine and kill the AudioService background isolate so
     // the process can be terminated by the system.
     try {

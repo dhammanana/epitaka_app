@@ -16,6 +16,13 @@ class LineData {
   final String? paliText;
   final Map<String, String> translations;
 
+  /// Page numbers for THIS line, keyed by system code: 'vri', 'pts',
+  /// 'thai', 'my'. Typically only the line where a page begins carries a
+  /// value (the sentence row that opens the page). Used to render the page
+  /// badge at the start of the page-break line instead of only at paragraph
+  /// boundaries.
+  final Map<String, String> pageNumbers;
+
   /// Pre-computed diacritic-normalized text for fast in-book search.
   /// Combines Pāli + all translations, stripped of HTML/brackets/punctuation
   /// and with diacritics normalized (ā→a, ṭ→t, ṃ→m, etc.).
@@ -25,6 +32,7 @@ class LineData {
     required this.lineId,
     this.paliText,
     this.translations = const {},
+    this.pageNumbers = const {},
     required this.normalizedText,
   });
 }
@@ -181,10 +189,12 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         final prevHash = Object.hashAll([
           Object.hashAll(prev.translationVersionMap.entries),
           Object.hashAll(prev.enabledTranslations),
+          prev.pageNumberingSystem,
         ]);
         final nextHash = Object.hashAll([
           Object.hashAll(next.translationVersionMap.entries),
           Object.hashAll(next.enabledTranslations),
+          next.pageNumberingSystem,
         ]);
         if (prevHash != nextHash) {
           _headings = null; // Reset headings to force clean reload
@@ -629,6 +639,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
             paliText: rl.paliText,
             translations: lineTranslations,
             normalizedText: '',
+            pageNumbers: rl.pageNumbers,
           ),
         );
       }

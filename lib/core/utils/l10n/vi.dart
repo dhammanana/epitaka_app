@@ -190,25 +190,11 @@ const Map<String, String> vi = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'Gavesana (Tìm kiếm AI)',
-  'AI Search Assets': 'Tài nguyên tìm kiếm AI',
-  'Not downloaded — tap to download': 'Chưa tải về — chạm để tải',
-  'Gavesana AI Assets': 'Tài nguyên AI Gavesana',
-  'The AI search model and vector database are ready to use.\n\n'
-      'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'Mô hình AI và cơ sở dữ liệu vector đã sẵn sàng.\n\n'
-          'Mở thanh bên trong màn hình Thư viện và chạm vào biểu tượng Gavesana để bắt đầu tìm kiếm ngữ nghĩa.',
-  'Download Gavesana Assets?': 'Tải tài nguyên Gavesana?',
-  'This will download approximately 670 MB of data:\n'
-      '- AI model (270 MB)\n'
-      '- Vector database (364 MB)\n'
-      '- Tokenizer config (33 MB)\n\n'
-      'A Wi-Fi connection is recommended.':
-      'Thao tác này sẽ tải khoảng 670 MB dữ liệu:\n'
-          '- Mô hình AI (270 MB)\n'
-          '- Cơ sở dữ liệu vector (364 MB)\n'
-          '- Cấu hình Tokenizer (33 MB)\n\n'
-          'Nên sử dụng kết nối Wi-Fi.',
-  'Download AI assets in Settings': 'Tải tài nguyên AI trong Cài đặt',
+
+  
+
+  
+
   'Open Gavesana': 'Mở Gavesana',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -354,6 +340,8 @@ const Map<String, String> vi = {
       'Chưa có đánh dấu nào.\nLưu vị trí đọc từ trình đọc.',
   'No bookmarks yet.': 'Chưa có đánh dấu nào.',
   'No reading history yet.': 'Chưa có lịch sử đọc.',
+  'Listening': 'Nghe',
+  'No listening history yet.': 'Chưa có lịch sử nghe.',
   'Remove Bookmark?': 'Xóa đánh dấu?',
   'Remove History Entry?': 'Xóa mục lịch sử?',
   'Just now': 'Vừa xong',
@@ -532,22 +520,12 @@ const Map<String, String> vi = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'Hỏi về Tipitaka…',
-  'Number of results': 'Số lượng kết quả',
-  'Loading Gavesana…': 'Đang tải Gavesana…',
-  'Loading models…': 'Đang tải mô hình…',
-  'Computing query embedding…': 'Đang tính embedding truy vấn…',
-  'Searching vector database…': 'Đang tìm trong cơ sở dữ liệu vector…',
+
   'Search semantically across the Tipitaka':
       'Tìm kiếm ngữ nghĩa trong Tipitaka',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       'Gavesana sử dụng AI để tìm các đoạn liên quan đến\ntruy vấn của bạn, ngay cả khi không có từ chính xác.',
-  'Gavesana AI assets not found.': 'Không tìm thấy tài nguyên AI Gavesana.',
-  'Download them in Settings.': 'Tải chúng trong Cài đặt.',
-  'An error occurred': 'Đã xảy ra lỗi',
-  'Show 5 results': 'Hiển thị 5 kết quả',
-  'Show 10 results': 'Hiển thị 10 kết quả',
-  'Show 20 results': 'Hiển thị 20 kết quả',
-  'Show 50 results': 'Hiển thị 50 kết quả',
+
   'Semantic search': 'Tìm kiếm ngữ nghĩa',
   'Investigation & exploration': 'Điều tra & khám phá',
   'Tipitaka': 'Tipitaka',
@@ -556,15 +534,9 @@ const Map<String, String> vi = {
   'Vimaṃsa': 'Vimaṃsa',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'Xây dựng chỉ mục tìm kiếm BM25',
-  'Rebuilding BM25 index…': 'Đang xây dựng lại chỉ mục BM25…',
-  'Preparing BM25 index…': 'Đang chuẩn bị chỉ mục BM25…',
-  'BM25 index ready': 'Chỉ mục BM25 đã sẵn sàng',
-  'Continue without BM25': 'Tiếp tục không dùng BM25',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'Tìm kiếm kết hợp (vector + BM25) hiện đã được bật.',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'Thao tác này lập chỉ mục văn bản Pāli cho tìm kiếm từ khóa (BM25) và chỉ chạy một lần.',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'Bản dịch khả dụng',
@@ -691,14 +663,13 @@ const Map<String, String> vi = {
   'Stop': 'Dừng',
   'Less': 'Ít hơn',
   'Library': 'Thư viện',
+  'Reset layout': 'Đặt lại bố cục',
 
   // ── Gavesana ────────────────────────────────────────────────────────
   'Gavesana': 'Gavesana',
   'Gavesana AI Search': 'Tìm kiếm AI Gavesana',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'Tìm kiếm ngữ nghĩa bằng AI trên toàn bộ Tipiṭaka.\n\nMở bảng Gavesana đầy đủ để xem kết quả chi tiết.',
-  'Build BM25': 'Xây dựng BM25',
-  'Rebuild BM25': 'Xây dựng lại BM25',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'Menu điều hướng',

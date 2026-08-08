@@ -2,8 +2,9 @@
 /// Tipitaka SQLite database.
 ///
 /// **Search strategy (BM25 + LIKE):**
-/// 1. Try BM25 search via Gavesana's `chunks_fts` FTS5 index (when available).
-/// 2. Fall back to LIKE-based keyword search.
+/// 1. Try BM25 search via the `vec_chunks_fts` FTS5 index in `epitaka.db`
+///    when it happens to be present (legacy databases may carry it).
+/// 2. Fall back to LIKE-based keyword search (always available).
 ///
 /// Each tool corresponds to a Gemini function declaration and is executed
 /// when the small model requests it. Results are passed back to the model
@@ -24,6 +25,7 @@ import '../../../core/utils/database_initializer.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../../core/providers/pali_definition_provider.dart';
 import '../../reader/services/jump_service.dart';
 import 'section_index_service.dart';
 
@@ -42,6 +44,26 @@ class ToolResult {
 
 /// JSON encoder for formatting results.
 const _encoder = JsonEncoder.withIndent(null);
+
+/// Maximum canon occurrences (`pali_definition` hits) returned per term.
+const int kDictMaxCanonOccurrences = 15;
+
+/// Maximum length of a DPD meaning sent to the model (plain text).
+const int kDictMaxMeaningLength = 300;
+
+/// Strip HTML tags from a DPD meaning and collapse whitespace so the
+/// payload stays small (the DPD dictionary is a secondary source).
+String _plainMeaning(String html) {
+  if (html.isEmpty) return '';
+  final text = html
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return text.length <= kDictMaxMeaningLength
+      ? text
+      : '${text.substring(0, kDictMaxMeaningLength)}…';
+}
 
 /// Encode a JSON value to a string.
 String _toJsonString(dynamic value) {
@@ -73,8 +95,8 @@ class AiQaToolService {
   /// Lazily open epitaka.db for BM25 search using `vec_chunks_fts`.
   ///
   /// Returns `null` if the DB does not exist or does not have a
-  /// `vec_chunks_fts` FTS5 index (the user must build it via Gavesana
-  /// first — or the Gavesana screen will prompt to build it).
+  /// `vec_chunks_fts` FTS5 index (the on-device index builder was
+  /// removed; on fresh installs the search falls back to LIKE).
   Future<sqlite.Database?> _getEpiDbForBm25() async {
     if (_epiDb != null) return _epiDb;
 
@@ -97,7 +119,7 @@ class AiQaToolService {
       );
       if (tables.isEmpty) {
         debugPrint('[AI_QA] vec_chunks_fts not found in epitaka.db');
-        db.close();
+        db.dispose();
         return null;
       }
 
@@ -162,7 +184,7 @@ class AiQaToolService {
         debugPrint('[AI_QA] _searchBm25: epitaka.db with vec_chunks_fts not available');
         return const ToolResult(
             success: false, data: '[]',
-            errorMessage: 'BM25 index not available. Please build it from Gavesana.');
+            errorMessage: 'BM25 index not available — falling back to LIKE search.');
       }
 
       // Build FTS5 MATCH query: quote each term, add prefix wildcard,
@@ -1230,8 +1252,15 @@ class AiQaToolService {
 
   // ── Tool 7b: get_dictionary ───────────────────────────────────────────
 
-  /// Scholarly definition + inflections (DPD dictionary) plus canon
-  /// occurrences (`pali_definition` table) for a Pāli term.
+  /// Definition (DPD dictionary) plus canon occurrences (`pali_definition`
+  /// table) for a Pāli term.
+  ///
+  /// The canon occurrences reuse the app dictionary's own search
+  /// ([paliDefinitionProvider]): the term is stemmed, its trailing vowel is
+  /// dropped when long, then `word LIKE prefix%` — so variant spellings
+  /// (sandhi forms etc.) are found. Each occurrence carries the source Pāli
+  /// sentence plus up to 3 lines of context (one before + one after) with
+  /// the translation when available.
   ///
   /// Both lookups are best-effort: the DPD database may not be installed,
   /// and `pali_definition` may be empty — partial results are returned
@@ -1272,7 +1301,7 @@ class AiQaToolService {
               .map((h) => {
                     'id': h.id,
                     'lemma': h.cleanLemma1,
-                    'meaning': h.meaningHtml ?? '',
+                    'meaning': _plainMeaning(h.meaningHtml ?? ''),
                   })
               .toList(),
         });
@@ -1282,23 +1311,33 @@ class AiQaToolService {
       debugPrint('[AI_QA] get_dictionary: DPD lookup unavailable: $e');
     }
 
-    // 2. Canon occurrences from pali_definition.
+    // 2. Canon occurrences from pali_definition — the SAME search the app
+    //    dictionary uses (see [paliDefinitionProvider]): stem the term,
+    //    drop the trailing vowel when the stem is long, then prefix-match
+    //    `word LIKE prefix%`. Each hit is linked to its source sentence and
+    //    up to 3 lines of surrounding context.
     try {
-      final epitakaDb = await _ref.read(epitakaDbProvider.future);
-      final defRows = await epitakaDb.customSelect(
-        'SELECT book_id, para_id, line_id, word, plain, stem '
-        'FROM pali_definition WHERE word = ? LIMIT 10',
-        variables: [Variable.withString(term.toLowerCase())],
-      ).get();
-      result['canon_occurrences'] = defRows
-          .map((r) => {
-                'book_id': r.data['book_id'] as String,
-                'para_id': r.data['para_id'] as int,
-                'line_id': r.data['line_id'] as int,
-                'word': (r.data['word'] as String?) ?? '',
-                'plain': (r.data['plain'] as String?) ?? '',
-                'stem': (r.data['stem'] as String?) ?? '',
-              })
+      final defs = await _ref.read(paliDefinitionProvider(term).future);
+      result['canon_occurrences'] = defs
+          .take(kDictMaxCanonOccurrences)
+          .map((d) {
+            final context = <String>[
+              ...d.beforeLines,
+              d.pali,
+              ...d.afterLines,
+            ].where((l) => l.trim().isNotEmpty).toList();
+            return {
+              'word': d.entry.word,
+              'plain': d.entry.plain,
+              'ending': d.entry.ending,
+              'book_id': d.entry.bookId,
+              'para_id': d.entry.paraId,
+              'line_id': d.entry.lineId,
+              'pali': d.pali,
+              'translation': d.translation,
+              'context': context,
+            };
+          })
           .toList();
     } catch (e) {
       debugPrint('[AI_QA] get_dictionary: pali_definition query failed: $e');
@@ -1309,6 +1348,50 @@ class AiQaToolService {
       'lookups, ${(result['canon_occurrences'] as List).length} occurrences',
     );
     return ToolResult(success: true, data: _toJsonJson(result));
+  }
+
+  // ── Tool 7c: get_dictionary_batch ─────────────────────────────────────
+
+  /// Look up MULTIPLE Pāli terms in ONE call (parallel), returning the
+  /// merged per-term results.
+  ///
+  /// Every `get_dictionary` call costs a full tool-model API round-trip, so
+  /// when several terms must be explained (e.g. the key words of a sutta)
+  /// the model should batch them here instead of looping one-by-one.
+  Future<ToolResult> getDictionaryBatch(Map<String, dynamic> args) async {
+    final terms = (args['terms'] as List<dynamic>?)
+            ?.map((t) => t.toString().trim())
+            .where((t) => t.isNotEmpty)
+            .toList() ??
+        [];
+
+    debugPrint('[AI_QA] get_dictionary_batch: ${terms.length} terms: '
+        '${terms.join(" | ")}');
+
+    if (terms.isEmpty) {
+      return const ToolResult(
+          success: false, data: '[]', errorMessage: 'No terms provided');
+    }
+
+    // Execute ALL lookups in PARALLEL.
+    final results = await Future.wait(
+      terms.map((t) => getDictionary({'term': t})),
+    );
+
+    final entries = <Map<String, dynamic>>[];
+    for (int i = 0; i < terms.length; i++) {
+      final r = results[i];
+      if (!r.success) continue;
+      try {
+        final parsed = jsonDecode(r.data) as Map<String, dynamic>;
+        parsed['term'] = terms[i];
+        entries.add(parsed);
+      } catch (_) {}
+    }
+
+    debugPrint('[AI_QA] get_dictionary_batch: ✅ '
+        '${entries.length}/${terms.length} terms resolved');
+    return ToolResult(success: true, data: _toJsonString(entries));
   }
 }
 

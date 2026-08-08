@@ -23,7 +23,7 @@ dependencies:
 
   # Database
   drift: ^2.25.1
-  sqlite3: ^3.0.0
+  sqlite3: ^2.4.6
   path_provider: ^2.1.5
   path: ^1.9.1
 
@@ -48,7 +48,7 @@ dependencies:
   # Utils
   uuid: ^4.5.1
   cupertino_icons: ^1.0.8
-  super_clipboard: ^0.9.1
+  clipboard: ^3.0.14
   audio_service: ^0.18.19
   audio_session: ^0.1.25
   permission_handler: ^11.3.1
@@ -60,15 +60,9 @@ dependencies:
   flutter_markdown_plus: ^1.0.12
   markdown: ^7.3.1
 
-  # AI inferer
-  flutter_onnxruntime: ^1.8.0
+  # HTML rendering (Gavesana AI search results)
   flutter_widget_from_html: ^0.15.0
 
-  # BPE tokenizer for HuggingFace tokenizer.json
-  dart_sentencepiece_tokenizer: ^1.3.2
-
-  # Vector search (sqlite-vec via pub — no manual .so/.dylib)
-  sqlite_vector: ^1.0.0
   share_plus: ^12.0.2
   app_links: ^7.2.1
 
@@ -151,10 +145,6 @@ flutter:
       fonts:
         - asset: assets/fonts/NotoSansChakma-Regular.ttf
 
-dependency_overrides:
-  # sqlite_vector requires sqlite3 ^3.0.0 but drift ^2.25.1
-  # constrains it to ^2.4.6. Override to satisfy both.
-  sqlite3: ^3.0.0
 
 dev_dependencies:
   flutter_test:

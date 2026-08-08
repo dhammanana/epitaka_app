@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/database_provider.dart';
@@ -226,8 +225,12 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
             initialParaId: jump.paraId,
           ),
         );
+    // Deliberately no context.push('/reader') here: this sheet is opened
+    // FROM the reader, which is already the current route. openTab updates
+    // the shared tabs state, so closing the sheet is enough — pushing
+    // '/reader' stacked a duplicate reader screen and forced extra Back
+    // presses to reach the book list.
     Navigator.of(context).pop();
-    context.push('/reader');
   }
 
   Widget _buildPageJumpTab(ColorScheme colors, AppLocalizations loc) {
@@ -354,8 +357,10 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
                 initialParaId: paraId,
               ),
             );
+        // Deliberately no context.push('/reader') here: see [_openBook].
+        // Jumping to a page only changes the position within the book — the
+        // reader is already the current route, so closing the sheet suffices.
         Navigator.of(context).pop();
-        context.push('/reader');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -189,25 +189,11 @@ const Map<String, String> si = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'ගවේෂණ (AI සෙවුම)',
-  'AI Search Assets': 'AI සෙවුම් වත්කම්',
-  'Not downloaded — tap to download': 'බාගෙන නැත — බාගැනීමට තට්ටු කරන්න',
-  'Gavesana AI Assets': 'ගවේෂණ AI වත්කම්',
-  'The AI search model and vector database are ready to use.\n\n'
-          'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'AI සෙවුම් ආකෘතිය සහ දෛශික දත්ත සමුදාය භාවිතයට සූදානම්.\n\n'
-      'අර්ථාන්විතව සෙවීම ආරම්භ කිරීමට පුස්තකාල තිරයේ පැති තීරුව විවෘත කර ගවේෂණ අයිකනය තට්ටු කරන්න.',
-  'Download Gavesana Assets?': 'ගවේෂණ වත්කම් බාගන්නද?',
-  'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.':
-      'මෙය දත්ත මෙ.බ. 670ක් පමණ බාගනු ඇත:\n'
-      '- AI ආකෘතිය (මෙ.බ. 270)\n'
-      '- දෛශික දත්ත සමුදාය (මෙ.බ. 364)\n'
-      '- ටෝකනීකරණ වින්‍යාසය (මෙ.බ. 33)\n\n'
-      'Wi-Fi සම්බන්ධතාවයක් නිර්දේශ කරයි.',
-  'Download AI assets in Settings': 'සැකසුම් තුළ AI වත්කම් බාගන්න',
+
+  
+
+  
+
   'Open Gavesana': 'ගවේෂණ විවෘත කරන්න',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -354,6 +340,8 @@ const Map<String, String> si = {
       'තවම පොත් සලකුණු නැත.\nකියවන තැනින් ඔබේ කියවීමේ ස්ථානය සුරකින්න.',
   'No bookmarks yet.': 'තවම පොත් සලකුණු නැත.',
   'No reading history yet.': 'තවම කියවීමේ ඉතිහාසයක් නැත.',
+  'Listening': 'සවන්දීම',
+  'No listening history yet.': 'තවම සවන්දීමේ ඉතිහාසයක් නැත.',
   'Remove Bookmark?': 'පොත් සලකුණ ඉවත් කරන්නද?',
   'Remove History Entry?': 'ඉතිහාස ඇතුළත් කිරීම ඉවත් කරන්නද?',
   'Just now': 'මේ දැන්',
@@ -534,22 +522,12 @@ const Map<String, String> si = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'ත්‍රිපිටකය ගැන අසන්න…',
-  'Number of results': 'ප්‍රතිඵල ගණන',
-  'Loading Gavesana…': 'ගවේෂණ පූරණය වෙමින්…',
-  'Loading models…': 'ආකෘති පූරණය වෙමින්…',
-  'Computing query embedding…': 'විමසුම් එම්බෙඩින් ගණනය කරමින්…',
-  'Searching vector database…': 'දෛශික දත්ත සමුදායේ සොයමින්…',
+
   'Search semantically across the Tipitaka':
       'ත්‍රිපිටකය පුරා අර්ථාන්විතව සොයන්න',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       'ගවේෂණ ඔබේ විමසුමට අදාළ ඡේද, එකම වචන බෙදා නොගත්තද\nහමු කිරීමට AI භාවිතා කරයි.',
-  'Gavesana AI assets not found.': 'ගවේෂණ AI වත්කම් හමු නොවීය.',
-  'Download them in Settings.': 'ඒවා සැකසුම් තුළ බාගන්න.',
-  'An error occurred': 'දෝෂයක් සිදු විය',
-  'Show 5 results': 'ප්‍රතිඵල 5ක් පෙන්වන්න',
-  'Show 10 results': 'ප්‍රතිඵල 10ක් පෙන්වන්න',
-  'Show 20 results': 'ප්‍රතිඵල 20ක් පෙන්වන්න',
-  'Show 50 results': 'ප්‍රතිඵල 50ක් පෙන්වන්න',
+
   'Semantic search': 'අර්ථාන්විත සෙවුම',
   'Investigation & exploration': 'පරීක්ෂණය සහ ගවේෂණය',
   'Tipitaka': 'ත්‍රිපිටකය',
@@ -558,15 +536,9 @@ const Map<String, String> si = {
   'Vimaṃsa': 'විමංස',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'BM25 සෙවුම් දර්ශකය තනන්න',
-  'Rebuilding BM25 index…': 'BM25 දර්ශකය නැවත තනමින්…',
-  'Preparing BM25 index…': 'BM25 දර්ශකය සූදානම් කරමින්…',
-  'BM25 index ready': 'BM25 දර්ශකය සූදානම්',
-  'Continue without BM25': 'BM25 රහිතව ඉදිරියට යන්න',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'දෙමුහුම් (දෛශික + BM25) සෙවීම දැන් සක්‍රීයයි.',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'මෙය මූල පද (BM25) සෙවීම සඳහා පාලි පාඨය දර්ශකගත කරන අතර එක් වරක් ධාවනය වේ.',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ලබාගත හැකි පරිවර්තන',
@@ -692,14 +664,13 @@ const Map<String, String> si = {
   'Stop': 'නවත්වන්න',
   'Less': 'අඩුවෙන්',
   'Library': 'පුස්තකාලය',
+  'Reset layout': 'පිරිසැලසුම යළි පිහිටුවන්න',
 
   // ── Gavesana ────────────────────────────────────────────────────────
   'Gavesana': 'ගවේෂණ',
   'Gavesana AI Search': 'ගවේෂණ AI සෙවුම',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'ත්‍රිපිටකය පුරා AI බලගැන්වූ අර්ථාන්විත සෙවුම.\n\nවිස්තරාත්මක ප්‍රතිඵල සඳහා සම්පූර්ණ ගවේෂණ පැනලය විවෘත කරන්න.',
-  'Build BM25': 'BM25 තනන්න',
-  'Rebuild BM25': 'BM25 නැවත තනන්න',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'සංචලන මෙනුව',

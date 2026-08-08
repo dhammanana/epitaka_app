@@ -137,7 +137,8 @@ void main() {
 
     final after = tester.getCenter(divider).dx;
     expect(before - after, greaterThan(60));
-    expect(after, lessThan(300)); // ≈ 260px panel + half the divider
+    // 52px activity bar + 260px panel + half the divider
+    expect(after, lessThan(330));
 
     // The chosen width is persisted.
     expect(readSettings(tester).leftPanelWidth, 260);

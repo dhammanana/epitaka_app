@@ -74,6 +74,12 @@ class ReadingParagraph extends StatelessWidget {
   /// need to watch [settingsProvider].
   final String pageNumberingSystem;
 
+  /// The page number (in the selected system) of the previous paragraph's
+  /// LAST line, used to seed the per-line page tracking so a page break on
+  /// the very first line of this paragraph is detected correctly even
+  /// though the paragraph doesn't know what came before it.
+  final String? previousLinePageNumber;
+
   // Legacy params
   final double paliFontSize;
   final double paliLineHeight;
@@ -103,6 +109,7 @@ class ReadingParagraph extends StatelessWidget {
     this.lineKeys,
     required this.script,
     required this.pageNumberingSystem,
+    this.previousLinePageNumber,
     this.paliFontSize = 19,
     this.paliLineHeight = 32 / 19,
     this.translationFontSize = 17,
@@ -112,7 +119,6 @@ class ReadingParagraph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final pageSystemLabel = _pageSystemLabel(pageNumberingSystem);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,9 +130,16 @@ class ReadingParagraph extends StatelessWidget {
         if (paragraph.heading != null)
           _buildHeading(paragraph.heading!, colors),
 
-        // Page number badge at page start
-        if (paragraph.isPageStart && paragraph.pageNumber != null)
-          _buildPageBadge(paragraph.pageNumber!, colors, pageSystemLabel),
+        // Page break marker at paragraph page start. In lineByLine mode the
+        // marker is rendered at the exact line where the page begins (see
+        // _buildLinesStacked), which is more accurate than this paragraph-level
+        // marker when a page break falls mid-paragraph. The joined/side-by-side
+        // modes have no per-line anchors, so they keep this paragraph-level
+        // marker.
+        if (displayMode != ParagraphDisplayMode.lineByLine &&
+            paragraph.isPageStart &&
+            paragraph.pageNumber != null)
+          _buildPageBreakMarker(paragraph.pageNumber!, colors),
 
         // Content with vertical line flush to left
         _buildContentWithVerticalLine(context, colors),
@@ -196,54 +209,76 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  Widget _buildPageBadge(
-    String pageNumber,
-    ColorScheme colors,
-    String systemLabel,
-  ) {
+  /// Page break marker styled like a printed book / PDF page break: a thin
+  /// horizontal divider with a page number chip at the right end. Shown at
+  /// every page start, including page breaks that fall in the middle of a
+  /// paragraph (lineByLine mode). The chip shows the page numbering system
+  /// label (e.g. "VRI") alongside the page number; the volume prefix is
+  /// stripped from the raw page number ("1.17" renders as "17").
+  Widget _buildPageBreakMarker(String pageNumber, ColorScheme colors) {
+    final systemLabel = _pageSystemLabel(pageNumberingSystem);
     return SelectionContainer.disabled(
       child: Padding(
-        padding: const EdgeInsets.only(top: 24, bottom: 12),
-        child: Column(
+        padding: const EdgeInsets.only(top: 18, bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              height: 2,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colors.outlineVariant.withValues(alpha: 0.1),
-                    colors.outlineVariant.withValues(alpha: 0.4),
-                    colors.outlineVariant.withValues(alpha: 0.1),
-                  ],
+            Expanded(
+              child: Container(
+                height: 1,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      colors.outlineVariant.withValues(alpha: 0.05),
+                      colors.outlineVariant.withValues(alpha: 0.25),
+                      colors.outlineVariant.withValues(alpha: 0.45),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colors.outlineVariant.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Text(
-                    '$systemLabel p. $pageNumber',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colors.outlineVariant.withValues(alpha: 0.8),
                 ),
-              ],
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.shadow.withValues(alpha: 0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$systemLabel ',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.4,
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    TextSpan(
+                      text: _displayPageNumber(pageNumber),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -309,10 +344,20 @@ class ReadingParagraph extends StatelessWidget {
 
   Widget _buildLinesStacked(BuildContext context, ColorScheme colors) {
     final para = paragraph;
+    // Track the current page (selected system) across lines so a page break
+    // marker can be drawn at the exact line where the page begins. Seeded from
+    // the previous paragraph's last line to catch page breaks that fall on a
+    // paragraph's first line.
+    String? runningPage = previousLinePageNumber;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: para.lines.map((line) {
         final lineId = line.lineId;
+        final linePage = line.pageNumbers[pageNumberingSystem];
+        final startsNewPage = linePage != null && linePage != runningPage;
+        if (linePage != null) runningPage = linePage;
+
         final isHighlighted =
             ttsHighlightLineId != null &&
             ttsHighlightParaId != null &&
@@ -321,16 +366,23 @@ class ReadingParagraph extends StatelessWidget {
 
         final lineLinks = bookLinks[lineId];
 
+        final hasPali =
+            showPali && line.paliText != null && line.paliText!.isNotEmpty;
+
         return Padding(
           key: lineKeys?[lineId],
           padding: const EdgeInsets.only(bottom: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (showPali &&
-                  line.paliText != null &&
-                  line.paliText!.isNotEmpty)
-                _buildPaliLine(line.paliText!, colors),
+              // Page break marker at the exact line where a new page begins —
+              // a divider with the page number on the right, like a printed
+              // book (PDF page break). Drawn even when this line carries no
+              // Pāli text, so a mid-paragraph break is always visible.
+              if (startsNewPage) _buildPageBreakMarker(linePage, colors),
+              // Build the Pāli line lazily (only when it exists) so a line
+              // carrying page data but no Pāli text can't crash.
+              if (hasPali) _buildPaliLine(line.paliText!, colors),
               if (displayMode == ParagraphDisplayMode.lineByLine &&
                   showTranslation)
                 _buildTranslationBlock(
@@ -816,6 +868,18 @@ class ReadingParagraph extends StatelessWidget {
   }
 }
 
+/// Display form of a raw page number: strips the leading "volume." prefix so
+/// "1.17" renders as "17", like the folio of a printed book. Values without a
+/// dot are returned unchanged.
+String _displayPageNumber(String pageNumber) {
+  final dot = pageNumber.indexOf('.');
+  if (dot > 0 && dot < pageNumber.length - 1) {
+    return pageNumber.substring(dot + 1);
+  }
+  return pageNumber;
+}
+
+/// Short label for a page numbering system code ('vri' → 'VRI', …).
 String _pageSystemLabel(String code) {
   switch (code) {
     case 'vri':

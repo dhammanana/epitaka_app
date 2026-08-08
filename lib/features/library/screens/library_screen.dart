@@ -15,14 +15,16 @@ import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_dialog.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../widgets/history_tabs.dart';
 import '../widgets/library_browser.dart';
 import '../providers/heading_title_provider.dart';
 
 /// Library screen with Browse / Reading / Bookmarks tabs.
 ///
 /// - Browse: the Tipitaka book tree (existing [LibraryBrowser]).
-/// - Reading: shows currently open reader tabs at the top.
-/// - Bookmarks: shows saved bookmarks at the top, reading history below.
+/// - Reading: shows currently open reader tabs at the top, and reading /
+///   listening history below (two sub-tabs).
+/// - Bookmarks: shows saved bookmarks.
 class LibraryScreen extends ConsumerStatefulWidget {
   /// When false, the screen hides its own app bar (e.g. when embedded in
   /// the desktop library dialog, which supplies its own chrome).
@@ -319,77 +321,61 @@ class _ReadingTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tabsState = ref.watch(readerTabsProvider);
 
-    if (tabsState.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tab, size: 48, color: colors.outlineVariant),
-            const SizedBox(height: 12),
-            Text(
-              'No books open yet.\nBrowse and open a book to start reading.',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyTranslation.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Icon(Icons.arrow_upward, size: 20, color: colors.outlineVariant),
-          ],
-        ),
-      );
-    }
-
     return ListView(
       padding: const EdgeInsets.only(bottom: 40),
       children: [
-        // Section header
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Icon(Icons.tab, size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Open Tabs',
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 18,
+        // Open Tabs section (only when there are open tabs)
+        if (tabsState.isNotEmpty) ...[
+          // Section header
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Icon(Icons.tab, size: 18, color: colors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Open Tabs',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                '${tabsState.tabs.length} book${tabsState.tabs.length == 1 ? '' : 's'}',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
+                const Spacer(),
+                Text(
+                  '${tabsState.tabs.length} book${tabsState.tabs.length == 1 ? '' : 's'}',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        // Tab cards
-        ...tabsState.tabs.map(
-          (tab) => _OpenTabCard(
-            tab: tab,
-            colors: colors,
-            onTap: () {
-              ref
-                  .read(readerTabsProvider.notifier)
-                  .switchTo(tabsState.tabs.indexOf(tab));
-              context.push('/reader');
-            },
-            onClose: () {
-              final index = tabsState.tabs.indexOf(tab);
-              if (index >= 0) {
-                ref.read(readerTabsProvider.notifier).closeTab(index);
-              }
-            },
+          // Tab cards
+          ...tabsState.tabs.map(
+            (tab) => _OpenTabCard(
+              tab: tab,
+              colors: colors,
+              onTap: () {
+                ref
+                    .read(readerTabsProvider.notifier)
+                    .switchTo(tabsState.tabs.indexOf(tab));
+                if (!ResponsiveBreakpoint.isDesktop(context)) {
+                  context.push('/reader');
+                }
+              },
+              onClose: () {
+                final index = tabsState.tabs.indexOf(tab);
+                if (index >= 0) {
+                  ref.read(readerTabsProvider.notifier).closeTab(index);
+                }
+              },
+            ),
           ),
-        ),
-        // History section at the bottom
-        const SizedBox(height: 24),
-        _HistorySection(colors: colors),
+          const SizedBox(height: 24),
+        ],
+        // History section (always visible, with Reading | Listening sub-tabs)
+        HistoryTabsSection(colors: colors),
       ],
     );
   }
@@ -424,7 +410,7 @@ class _OpenTabCard extends ConsumerWidget {
     final headingTitle = headingAsync?.when(
       data: (t) => t,
       loading: () => null,
-      error: (_, __) => null,
+      error: (_, _) => null,
     );
     final mainTitle =
         headingTitle ??
@@ -508,7 +494,6 @@ class _BookmarksTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
     final bookmarksAsync = ref.watch(bookmarksProvider);
-    final historyAsync = ref.watch(historyProvider);
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 40),
@@ -536,7 +521,7 @@ class _BookmarksTab extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(loc.errorLoadingBookmarks + ' $e'),
+            child: Text('${loc.errorLoadingBookmarks} $e'),
           ),
           data: (bookmarks) {
             if (bookmarks.isEmpty) {
@@ -586,84 +571,6 @@ class _BookmarksTab extends ConsumerWidget {
             );
           },
         ),
-        const SizedBox(height: 24),
-        // History section at the bottom
-        Row(
-          children: [
-            Icon(Icons.history, size: 18, color: colors.tertiary),
-            const SizedBox(width: 8),
-            Text(
-              'Reading History',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.tertiary,
-                fontWeight: FontWeight.w600,
-                fontSize: 18,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        historyAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
-          error: (e, _) => Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(loc.errorLoadingHistory + ' $e'),
-          ),
-          data: (history) {
-            if (history.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.history,
-                        size: 36,
-                        color: colors.outlineVariant,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'No reading history yet.',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyTranslation.copyWith(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return Column(
-              children: history
-                  .map(
-                    (entry) => _HistoryCard(
-                      entry: entry,
-                      colors: colors,
-                      onTap: () => _openBook(
-                        context,
-                        ref,
-                        entry.bookId,
-                        entry.bookName,
-                        entry.paraId,
-                        entry.lineId,
-                      ),
-                      onDelete: () => _confirmDeleteHistory(
-                        context,
-                        ref,
-                        entry.id,
-                        entry.bookName ?? entry.bookId,
-                      ),
-                    ),
-                  )
-                  .toList(),
-            );
-          },
-        ),
       ],
     );
   }
@@ -686,7 +593,9 @@ class _BookmarksTab extends ConsumerWidget {
             initialLineId: lineId,
           ),
         );
-    context.push('/reader');
+    if (!ResponsiveBreakpoint.isDesktop(context)) {
+      context.push('/reader');
+    }
   }
 
   void _confirmDeleteBookmark(
@@ -738,47 +647,6 @@ class _BookmarksTab extends ConsumerWidget {
       // Silently fail
     }
   }
-
-  void _confirmDeleteHistory(
-    BuildContext context,
-    WidgetRef ref,
-    int id,
-    String label,
-  ) {
-    final loc = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(loc.removeHistoryEntry),
-        content: Text(loc.deleteHistoryEntryConfirm(label)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(loc.cancel),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _deleteHistoryEntry(ref, id);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            child: Text(loc.delete),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _deleteHistoryEntry(WidgetRef ref, int id) async {
-    try {
-      final db = await ref.read(appDbProvider.future);
-      await db.deleteHistoryEntry(id);
-      ref.invalidate(historyProvider);
-    } catch (_) {}
-  }
 }
 
 // ── Bookmark Card ────────────────────────────────────────────────────────
@@ -812,7 +680,7 @@ class _BookmarkCard extends ConsumerWidget {
     final headingTitle = headingAsync?.when(
       data: (t) => t,
       loading: () => null,
-      error: (_, __) => null,
+      error: (_, _) => null,
     );
 
     return Card(
@@ -918,289 +786,3 @@ class _BookmarkCard extends ConsumerWidget {
   }
 }
 
-// ── History Section (used in Reading tab) ────────────────────────────────
-
-class _HistorySection extends ConsumerWidget {
-  final ColorScheme colors;
-
-  const _HistorySection({required this.colors});
-
-  void _confirmDeleteHistory(
-    BuildContext context,
-    WidgetRef ref,
-    int id,
-    String label,
-  ) {
-    final loc = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(loc.removeHistoryEntry),
-        content: Text(loc.deleteHistoryEntryConfirm(label)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(loc.cancel),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              ref.read(appDbProvider.future).then((db) async {
-                await db.deleteHistoryEntry(id);
-                ref.invalidate(historyProvider);
-              });
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            child: Text(loc.delete),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final loc = AppLocalizations.of(context);
-    final historyAsync = ref.watch(historyProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.history, size: 18, color: colors.tertiary),
-            const SizedBox(width: 8),
-            Text(
-              'History',
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.tertiary,
-                fontWeight: FontWeight.w600,
-                fontSize: 18,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        historyAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
-          error: (e, _) => Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(loc.errorLoadingHistory + ' $e'),
-          ),
-          data: (history) {
-            if (history.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.history,
-                        size: 36,
-                        color: colors.outlineVariant,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'No reading history yet.',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyTranslation.copyWith(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return Column(
-              children: history
-                  .map(
-                    (entry) => _HistoryCard(
-                      entry: entry,
-                      colors: colors,
-                      onTap: () {
-                        ref
-                            .read(readerTabsProvider.notifier)
-                            .openTab(
-                              ReaderTabInfo(
-                                bookId: entry.bookId,
-                                bookName: entry.bookName ?? entry.bookId,
-                                initialParaId: entry.paraId,
-                                initialLineId: entry.lineId,
-                              ),
-                            );
-                        context.push('/reader');
-                      },
-                      onDelete: () => _confirmDeleteHistory(
-                        context,
-                        ref,
-                        entry.id,
-                        entry.bookName ?? entry.bookId,
-                      ),
-                    ),
-                  )
-                  .toList(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-// ── History Card ─────────────────────────────────────────────────────────
-
-class _HistoryCard extends ConsumerWidget {
-  final ReadingHistoryData entry;
-  final ColorScheme colors;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-
-  const _HistoryCard({
-    required this.entry,
-    required this.colors,
-    required this.onTap,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final timeAgo = _formatTimeAgo(entry.updatedAt);
-    final script = ref.watch(settingsProvider).paliScript;
-
-    // Look up nearest heading title
-    final headingAsync = entry.paraId != null
-        ? ref.watch(
-            headingTitleProvider(
-              HeadingQuery(bookId: entry.bookId, paraId: entry.paraId!),
-            ),
-          )
-        : null;
-    final headingTitle = headingAsync?.when(
-      data: (t) => t,
-      loading: () => null,
-      error: (_, __) => null,
-    );
-    final mainTitle =
-        headingTitle ?? (entry.paraId != null ? 'Para ${entry.paraId}' : null);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        side: BorderSide(color: colors.outlineVariant, width: 0.5),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.tertiaryContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.history, size: 16, color: colors.tertiary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Main title: heading title from DB
-                    if (mainTitle != null)
-                      PaliTextStatic(
-                        mainTitle,
-                        script,
-                        style: AppTypography.bodyTranslation.copyWith(
-                          color: colors.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    // Secondary: book name + para location
-                    PaliTextStatic(
-                      entry.bookName ?? entry.bookId,
-                      script,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    // Timestamp + read count
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        children: [
-                          Text(
-                            timeAgo,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: colors.onSurfaceVariant,
-                              fontSize: 10,
-                            ),
-                          ),
-                          if (entry.readCount > 1) ...[
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.touch_app,
-                              size: 10,
-                              color: colors.outline,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${entry.readCount}',
-                              style: AppTypography.labelSmall.copyWith(
-                                color: colors.outline,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: onDelete,
-                icon: Icon(
-                  Icons.delete_outline,
-                  size: 16,
-                  color: colors.error.withValues(alpha: 0.6),
-                ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatTimeAgo(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.month}/${dt.day}/${dt.year}';
-  }
-}

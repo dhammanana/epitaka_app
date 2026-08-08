@@ -18,6 +18,7 @@ import '../features/settings/screens/translation_settings_screen.dart';
 import '../features/settings/screens/tts_settings_screen.dart';
 import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
+import '../core/utils/platform_info.dart';
 import '../shared/widgets/responsive_scaffold.dart';
 
 /// The route paths for the app.
@@ -47,9 +48,23 @@ class AppRoutes {
 /// so every route is gated without redundant re-mounts.
 GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
   return GoRouter(
-    initialLocation: AppRoutes.library,
+    // Desktop is reader-focused: launch straight into the IDE-style shell
+    // (the library lives docked on its left). Mobile keeps the library home.
+    initialLocation: PlatformInfo.isDesktop
+        ? AppRoutes.reader
+        : AppRoutes.library,
     navigatorKey: navigatorKey,
     debugLogDiagnostics: false,
+    redirect: (context, state) {
+      // Desktop: any navigation to the library root lands on the reader
+      // shell instead (the library stays reachable via its docked panel
+      // and the app-bar library button).
+      if (PlatformInfo.isDesktop &&
+          state.matchedLocation == AppRoutes.library) {
+        return AppRoutes.reader;
+      }
+      return null;
+    },
     routes: [
       GoRoute(
         path: AppRoutes.library,

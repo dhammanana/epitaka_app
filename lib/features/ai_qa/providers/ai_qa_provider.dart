@@ -37,18 +37,11 @@ import '../../../core/utils/database_initializer.dart';
 import '../../shared/models/ai_provider.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
-import '../services/ai_qa_tool_service.dart';
+import '../services/ai_api_client.dart';
 import 'ai_qa_settings_provider.dart';
 import 'chat_history_provider.dart';
 
 const _uuid = Uuid();
-
-/// Helper to hold a pending tool call before parallel execution.
-class _ToolCallSpec {
-  final String name;
-  final Map<String, dynamic> args;
-  const _ToolCallSpec({required this.name, required this.args});
-}
 
 /// Staged initial prompt to auto-send when the Vimaṃsa screen opens.
 /// Set by the reader's context menu (Explain / Summarize Chapter) before
@@ -81,295 +74,9 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
   /// DB ID of the last assistant message (for stream finalization updates).
   int? _dbMessageId;
 
-  /// Gemini default base URL.
-  String get _geminiBaseUrl =>
-      'https://generativelanguage.googleapis.com/v1beta/models';
-
   static const _encoder = JsonEncoder.withIndent('  ');
 
-  static const int _maxRetries = 2;
-  static const int _maxToolIterations = 8;
-
-  // ── Tool definitions (Gemini function declarations) ───────────────────
-
-  static List<Map<String, dynamic>> get _toolDeclarations => [
-    {
-      'name': 'search_tipitaka',
-      'description':
-          'Search the Tipitaka database for relevant passages using full-text search. '
-          'Use this when you need to find passages related to a specific topic, term, '
-          'or concept in the Pāli Canon.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'query': {
-            'type': 'STRING',
-            'description':
-                'Search query — a phrase or keywords to search for in the Pāli text.',
-          },
-        },
-        'required': ['query'],
-      },
-    },
-    {
-      'name': 'search_tipitaka_batch',
-      'description':
-          'Search the Tipitaka using MULTIPLE different search terms in one call. '
-          'Use this to search for a concept using several synonyms or related terms '
-          'simultaneously. All queries are executed in parallel for speed.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'queries': {
-            'type': 'ARRAY',
-            'description':
-                'Array of search queries to run in parallel. '
-                'Include different phrasings, synonyms, and related terms '
-                'to maximize coverage.',
-            'items': {'type': 'STRING'},
-            'minItems': 2,
-            'maxItems': 5,
-          },
-        },
-        'required': ['queries'],
-      },
-    },
-    {
-      'name': 'search_by_category',
-      'description':
-          'Search the Tipitaka within specific book categories or nikayas. '
-          'Use this when you know which part of the canon the answer is likely in. '
-          'Categories: "vinaya", "sutta", "abhidhamma". '
-          'Nikaya prefixes: "dn", "mn", "sn", "an", "khp", "dhp", "ud", "it", "snp", '
-          '"vv", "pv", "thag", "thig", "ja", "bi", "patis", "nm", "ne", "pk". '
-          'Combine with queries to find specific passages within those books.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'queries': {
-            'type': 'ARRAY',
-            'description':
-                'Array of search queries. Include 2-3 specific terms '
-                '(Pāli keywords, English phrases) to find within the target books.',
-            'items': {'type': 'STRING'},
-            'minItems': 2,
-            'maxItems': 5,
-          },
-          'categories': {
-            'type': 'ARRAY',
-            'description':
-                'Book categories to search within. '
-                'Choose from: "vinaya", "sutta", or "abhidhamma". '
-                'Can be combined with nikayas. Leave empty to search all categories.',
-            'items': {'type': 'STRING'},
-          },
-          'nikayas': {
-            'type': 'ARRAY',
-            'description':
-                'Nikāya book prefixes to narrow the search further. '
-                'E.g. ["dn"] for Dīgha Nikāya, ["an"] for Aṅguttara Nikāya, '
-                '["dhp"] for Dhammapada. Can be combined with categories.',
-            'items': {'type': 'STRING'},
-          },
-        },
-        'required': ['queries', 'categories'],
-      },
-    },
-    {
-      'name': 'search_sections',
-      'description':
-          'Search section/sutta TITLES (with short summaries) across the whole canon. '
-          'Use this FIRST for concept questions to discover WHICH suttas discuss '
-          'a topic, then open them with get_paragraph_content or drill in with get_section.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'query': {
-            'type': 'STRING',
-            'description':
-                'Term or phrase to match against section/sutta titles or summaries (Pāli or English).',
-          },
-        },
-        'required': ['query'],
-      },
-    },
-    {
-      'name': 'get_section',
-      'description':
-          'Get ONE section (vagga/sutta/chapter) with its summary, its direct '
-          'child sections, and its parent section. Use this to BROWSE down the '
-          'canon hierarchy (vagga → sutta) after search_sections, instead of '
-          'dumping a whole book\'s headings.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'book_id': {
-            'type': 'STRING',
-            'description':
-                'Book ID (e.g. "D-i", "S-iii", "M-iii", "Dhp").',
-          },
-          'para_start': {
-            'type': 'INTEGER',
-            'description':
-                'The section\'s starting paragraph (para_start from a search_sections result).',
-          },
-        },
-        'required': ['book_id', 'para_start'],
-      },
-    },
-    {
-      'name': 'get_dictionary',
-      'description':
-          'Get the scholarly definition, inflections and canon occurrences for a '
-          'Pāli term from the Pāli-English dictionary. Use this BEFORE searching '
-          'the canon when the question is about the meaning of a Pāli term or concept.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'term': {
-            'type': 'STRING',
-            'description': 'Pāli term to look up (e.g. "saṅkhāra").',
-          },
-        },
-        'required': ['term'],
-      },
-    },
-    {
-      'name': 'get_headings',
-      'description':
-          'Get the table of contents / section headings for a specific book. '
-          'Use this to understand the structure of a book, find specific sections, '
-          'or navigate to a particular topic within a book.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'book_id': {
-            'type': 'STRING',
-            'description':
-                'Book ID (e.g. "dn1", "mn141", "sn12.2", "an3.1", "dhp").',
-          },
-        },
-        'required': ['book_id'],
-      },
-    },
-    {
-      'name': 'get_books',
-      'description':
-          'Get a list of all available books in the Tipitaka database. '
-          'Use this when you need to know which books are available, their categories, '
-          'or to find the correct book_id for a specific text.',
-      'parameters': {'type': 'OBJECT', 'properties': {}},
-    },
-    {
-      'name': 'get_paragraph_content',
-      'description':
-          'Get the full Pāli content of a range of paragraphs from a specific book. '
-          'Use this to read the actual text of a passage after you have identified '
-          'the relevant book and paragraph range (e.g. from search results or headings).',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'book_id': {
-            'type': 'STRING',
-            'description': 'Book ID (e.g. "dn1", "mn141").',
-          },
-          'para_start': {
-            'type': 'INTEGER',
-            'description': 'Starting paragraph number (inclusive).',
-          },
-          'para_end': {
-            'type': 'INTEGER',
-            'description':
-                'Ending paragraph number (inclusive). Can be the same as para_start for a single paragraph.',
-          },
-        },
-        'required': ['book_id', 'para_start', 'para_end'],
-      },
-    },
-    {
-      'name': 'get_paragraph_content_batch',
-      'description':
-          'Get Pāli content from MULTIPLE book/paragraph ranges in ONE call. '
-          'Use this to read several passages at once after you have identified '
-          'the relevant locations (e.g. from search results or headings). '
-          'All ranges are fetched in parallel for speed.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'ranges': {
-            'type': 'ARRAY',
-            'description':
-                'Array of paragraph ranges to fetch. Each range is an object '
-                'with book_id, para_start, para_end.',
-            'items': {
-              'type': 'OBJECT',
-              'properties': {
-                'book_id': {
-                  'type': 'STRING',
-                  'description': 'Book ID (e.g. "dn1", "mn141").',
-                },
-                'para_start': {
-                  'type': 'INTEGER',
-                  'description': 'Starting paragraph number (inclusive).',
-                },
-                'para_end': {
-                  'type': 'INTEGER',
-                  'description': 'Ending paragraph number (inclusive).',
-                },
-              },
-              'required': ['book_id', 'para_start', 'para_end'],
-            },
-            'minItems': 2,
-            'maxItems': 10,
-          },
-        },
-        'required': ['ranges'],
-      },
-    },
-    {
-      'name': 'get_commentaries',
-      'description':
-          'Get related commentary (Aṭṭhakathā) and sub-commentary (Ṭīkā) passages '
-          'for a given Mūla (root text) paragraph. Use this when a user asks about '
-          'commentarial explanations of a specific passage in the Tipitaka.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'mula_book_id': {
-            'type': 'STRING',
-            'description':
-                'Book ID of the Mūla (root) text (e.g. "dn1", "mn141").',
-          },
-          'mula_para_id': {
-            'type': 'INTEGER',
-            'description':
-                'Paragraph number in the Mūla text to find commentaries for.',
-          },
-        },
-        'required': ['mula_book_id', 'mula_para_id'],
-      },
-    },
-    {
-      'name': 'final_answer',
-      'description':
-          'Call this when you have collected all the information needed to answer the user\'s question. '
-          'The results will be passed to a more capable model to write the final answer. '
-          'Use the args to summarize what you found.',
-      'parameters': {
-        'type': 'OBJECT',
-        'properties': {
-          'summary': {
-            'type': 'STRING',
-            'description':
-                'Brief summary of what you found and what sources you collected.',
-          },
-        },
-        'required': ['summary'],
-      },
-    },
-  ];
-
-  // ── Debug log ──────────────────────────────────────────────────────────
+  static const int _maxToolIterations = 8;  // ── Debug log ──────────────────────────────────────────────────────────
 
   /// Debug log data collected during the current pipeline run.
   Map<String, dynamic> _debugLog = {};
@@ -393,81 +100,7 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
 
   // ── Default system prompts ────────────────────────────────────────────
 
-  static const String _defaultToolSystemPrompt =
-      '''You are an expert research assistant for the Pāli Canon (Tipitaka).
-
-## Available tools
-1. **search_sections(query)** — Search section/sutta TITLES across the whole canon (not full text). Use this FIRST for concept questions to discover WHICH suttas discuss a topic, then open them with get_paragraph_content or get_section.
-2. **get_section(book_id, para_start)** — Get ONE section's summary + its child sections + parent. Use to BROWSE down the hierarchy (vagga → sutta).
-3. **get_dictionary(term)** — Scholarly definition + inflections + canon occurrences for a Pāli term. Use for concept questions BEFORE searching the canon.
-4. **search_tipitaka(query)** — Full-text search across the Tipitaka.
-5. **search_tipitaka_batch(queries: [...])** — Search with MULTIPLE different terms in ONE call (parallel).
-6. **search_by_category(queries, categories, [nikayas])** — Search WITHIN specific book categories ("vinaya"/"sutta"/"abhidhamma") or nikāyas ("dn"/"mn"/"sn"/"an"/"dhp"/"ja"/etc). Results are filtered to only those books.
-7. **get_headings(book_id)** — Get table of contents for a book.
-8. **get_books()** — List all available books with their categories.
-9. **get_paragraph_content(book_id, para_start, para_end)** — Read Pāli text.
-10. **get_paragraph_content_batch(ranges: [...])** — Read MULTIPLE ranges in parallel.
-11. **get_commentaries(mula_book_id, mula_para_id)** — Find Aṭṭhakathā/Ṭīkā.
-
-## The Map (section index)
-- search_sections(query) finds SUTTA/SECTION titles across the whole canon — use it to discover where a topic lives BEFORE full-text search.
-- get_section(book_id, para_start) shows a section's summary + its sub-sections — use it to browse down a hierarchy (vagga → sutta).
-- Summaries are NAVIGATION HINTS only. Never quote from a summary in your answer; always open the real text with get_paragraph_content first.
-
-## CRITICAL: Strategic search process
-You have up to 8 tool iterations. Use them WISELY. Follow this process:
-
-### PHASE 0: Disambiguate the concept (thinking, no tools yet)
-If the question is about a broad or polysemous term:
-1. List the DISTINCT SENSES of the term. (e.g. saṅkhāra → (a) khandha, (b) paṭiccasamuppāda link, (c) conditioned things / anicca teaching, (d) abhidhamma technical use.)
-2. For EACH sense, note the most likely location:
-   - khandha → SN 22 (Saṃyutta, Khandhavagga)
-   - paṭiccasamuppāda → SN 12.2, MN 9
-   - conditioned things → Dhp 277–279
-   - abhidhamma → Vibhaṅga (Vbh), Dhammasaṅgaṇī (Dhs)
-3. FIRST call search_sections for the term (finds sutta TITLES).
-4. Then run ONE search_by_category per sense, targeted at those nikāyas.
-5. Prefer passages that DEFINE the term over passages that merely use it.
-
-### PHASE 1: Analyze the question (thinking, no tools yet)
-Before searching, analyze:
-- What is the UNIQUE core of this question? What makes it specific?
-- Which part of the canon would contain the answer? (Vinaya for rules, Suttas for teachings, Jātakas for stories, etc.)
-- What Pāli compounds or technical terms might capture the SPECIFIC concept?
-
-### PHASE 2: Strategic search (use search_by_category FIRST)
-- If you know WHERE the answer lives, use **search_by_category** to search only relevant books.
-  Example: rules about monks → categories: ["vinaya"]
-  Example: teachings on giving → nikayas: ["an"] (Aṅguttara has many dāna teachings)
-  Example: stories → nikayas: ["ja"] (Jātaka)
-- ALWAYS include SPECIFIC queries that target the unique aspect, not just generic keywords.
-  BAD: ["dāna", "giving"] (returns 1000+ results, all generic)
-  GOOD: ["dukkara dāna", "most difficult gift", "kicchena dāna", "supreme offering monk"]
-- Use 3-4 queries at different specificity levels:
-  1. Very specific (Pāli compound from the question's core concept)
-  2. Phrase search (English description of the unique situation)
-  3. Synonyms (related concepts)
-  4. Broad fallback (if specific yields nothing)
-
-### PHASE 3: Evaluate result quality
-After each search batch, evaluate:
-- How many results? 0-3 = too few (search again with broader terms)
-- Are they actually about the user's question, or just tangentially related?
-- If 30+ results and many are generic → search was too broad. Narrow down with search_by_category or more specific terms.
-- If results are from wrong books → use search_by_category to correct.
-
-### PHASE 4: Iterate until confident
-- If results are insufficient → refine and search AGAIN (you have iterations)
-- After finding relevant passages, read them with get_paragraph_content to confirm they answer the question.
-- Use get_headings to understand the structure of a promising book before diving in.
-- Only call final_answer when you have found passages that DIRECTLY address the user's question.
-
-## Guidelines
-- When searching, use search_tipitaka_batch or search_by_category (not single search).
-- Pāli terms: try compounds (e.g. "sammāsambuddha" not just "buddha").
-- If search_by_category returns nothing, fall back to search_tipitaka_batch across all books.
-- For commentaries, use get_commentaries with the specific passage.
-- Include precise citations [book_id:para_id:line_id] for every quoted passage.''';
+  static const String _defaultToolSystemPrompt = kAiDefaultToolSystemPrompt;
 
   /// Build the answer-model system prompt, adapting the grounding rules to
   /// the selected answer mode.
@@ -749,8 +382,6 @@ $grounding''';
 
       // ── 2. Start tool loop (small model + function calling) ─────
       final conversation = <Map<String, dynamic>>[];
-      final allToolResults = <Map<String, dynamic>>[];
-      final debugToolSteps = <Map<String, dynamic>>[];
 
       // Build conversation from DB history + current user message
       // Load the thread's past messages for full context
@@ -795,80 +426,17 @@ $grounding''';
           ? settings.customSystemPrompt
           : _defaultToolSystemPrompt;
 
-      // Tool loop
-      bool toolsDone = false;
-      int toolIterations = 0;
-
-      while (!toolsDone && toolIterations < _maxToolIterations) {
-        toolIterations++;
-
-        final toolResponse = await _callToolModel(
-          provider: settings.provider,
-          baseUrl: settings.baseUrl,
-          systemPrompt: systemPrompt,
-          conversation: conversation,
-          apiKey: settings.apiKey,
-          toolModel: settings.toolModel,
-        );
-
-        final parsed = toolResponse['candidates'] as List<dynamic>?;
-        if (parsed == null || parsed.isEmpty) {
-          throw Exception('Empty response from tool model');
-        }
-
-        final candidate = parsed[0] as Map<String, dynamic>;
-        final content = candidate['content'] as Map<String, dynamic>?;
-        if (content == null) break;
-
-        final parts = content['parts'] as List<dynamic>? ?? [];
-        bool hasFunctionCall = false;
-        final functionResponses = <Map<String, dynamic>>[];
-
-        // Preserve the ENTIRE model response
-        conversation.add(Map<String, dynamic>.from(content));
-
-        // ── PHASE 1: Collect all function calls ──
-        final callSpecs = <_ToolCallSpec>[];
-        bool hasFinalAnswer = false;
-        bool hasTextResponse = false;
-
-        for (final part in parts) {
-          final p = part as Map<String, dynamic>;
-          if (p.containsKey('functionCall')) {
-            hasFunctionCall = true;
-            final fc = Map<String, dynamic>.from(
-              p['functionCall'] as Map<String, dynamic>,
-            );
-            final name = fc['name'] as String? ?? '';
-            final args = fc['args'] as Map<String, dynamic>? ?? {};
-
-            if (name == 'final_answer') {
-              hasFinalAnswer = true;
-            } else {
-              callSpecs.add(_ToolCallSpec(name: name, args: args));
-            }
-          } else if (p.containsKey('text')) {
-            final textResponse = p['text'] as String? ?? '';
-            if (textResponse.isNotEmpty) {
-              hasTextResponse = true;
-            }
-          }
-        }
-
-        // ── PHASE 2: Execute all collected tools in PARALLEL ──────
-        if (callSpecs.isNotEmpty) {
-          for (final spec in callSpecs) {
-            toolLogs.add(
-              ToolCallLog(
-                toolName: spec.name,
-                arguments: spec.args,
-                resultSummary: spec.name.contains('search')
-                    ? '🔍 ${spec.args['query'] ?? spec.args['queries'] ?? "..."}'
-                    : 'Calling ${spec.name}...',
-              ),
-            );
-          }
-
+      // Tool loop — shared engine (see ai_api_client.dart)
+      // Tool loop — shared engine (see ai_api_client.dart)
+      final loopResult = await runAiToolLoop(
+        settings: settings,
+        systemPrompt: systemPrompt,
+        initialConversation: conversation,
+        executeTool: (name, args) => executeAiTool(_ref, name, args),
+        onToolUpdate: (logs) {
+          toolLogs
+            ..clear()
+            ..addAll(logs);
           state = state.copyWith(
             messages: [
               ...state.messages.where((m) => m.id != 'thinking'),
@@ -883,112 +451,14 @@ $grounding''';
             ],
             isLoading: true,
           );
-
-          final results = await Future.wait(
-            callSpecs.map((spec) async {
-              try {
-                return await _executeTool(spec.name, spec.args);
-              } catch (e) {
-                return ToolResult(
-                  success: false,
-                  data: '{}',
-                  errorMessage: 'Tool execution error: $e',
-                );
-              }
-            }),
-          );
-
-          for (int i = 0; i < callSpecs.length; i++) {
-            final spec = callSpecs[i];
-            final result = results[i];
-
-            final summary = _buildToolSummary(spec.name, spec.args, result);
-            toolLogs[i] = ToolCallLog(
-              toolName: spec.name,
-              arguments: spec.args,
-              resultSummary: summary,
-            );
-
-            final resultData = result.success
-                ? result.data
-                : 'Error: ${result.errorMessage}';
-            final maxChars = settings.maxToolResultChars;
-            final truncatedData = maxChars > 0 && resultData.length > maxChars
-                ? '${resultData.substring(0, maxChars)}\n... (truncated to $maxChars chars)'
-                : resultData;
-
-            allToolResults.add({
-              'tool': spec.name,
-              'args': spec.args,
-              'result': resultData,
-              'success': result.success,
-            });
-
-            // Record tool call in debug log
-            debugToolSteps.add({
-              'tool': spec.name,
-              'args': spec.args,
-              'result_summary': summary,
-              'result_size': resultData.length,
-            });
-
-            functionResponses.add({
-              'functionResponse': {
-                'name': spec.name,
-                'response': {'content': truncatedData},
-              },
-            });
-          }
-
-          state = state.copyWith(
-            messages: [
-              ...state.messages.where((m) => m.id != 'thinking'),
-              AiQaMessage(
-                id: 'thinking',
-                text: '',
-                isUser: false,
-                timestamp: DateTime.now(),
-                isThinking: true,
-                toolCalls: [...toolLogs],
-              ),
-            ],
-            isLoading: true,
-          );
-        }
-
-        if (hasFinalAnswer) {
-          toolsDone = true;
-          functionResponses.add({
-            'functionResponse': {
-              'name': 'final_answer',
-              'response': {
-                'content':
-                    'Proceeding to generate final answer with collected data.',
-              },
-            },
-          });
-        }
-        if (hasTextResponse) {
-          toolsDone = true;
-        }
-
-        if (functionResponses.isNotEmpty) {
-          conversation.add({'role': 'user', 'parts': functionResponses});
-        }
-
-        if (!hasFunctionCall) {
-          toolsDone = true;
-        }
-
-        if (toolIterations >= _maxToolIterations) {
-          debugPrint('[VIMAṂSA] Max tool iterations reached');
-          toolsDone = true;
-        }
-      }
+        },
+        maxIterations: _maxToolIterations,
+        logTag: 'VIMAṂSA',
+      );
 
       // Record tool loop in debug log
-      _debugLog['tool_loop'] = debugToolSteps;
-      _debugLog['conversation'] = conversation.map((c) {
+      _debugLog['tool_loop'] = loopResult.debugToolSteps;
+      _debugLog['conversation'] = loopResult.conversation.map((c) {
         final role = c['role'];
         final parts = c['parts'];
         return {'role': role, 'parts': parts};
@@ -999,7 +469,7 @@ $grounding''';
           ? settings.customSystemPrompt
           : _buildAnswerSystemPrompt(orthodoxMode: settings.orthodoxMode);
 
-      final contextBlock = _buildContextBlock(allToolResults);
+      final contextBlock = _buildContextBlock(loopResult.allToolResults);
 
       final answerPrompt = settings.orthodoxMode
           ? '''
@@ -1087,7 +557,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         },
         onError: (error) {
           debugPrint('[VIMAṂSA] Stream error: $error');
-          streamError = _friendlyErrorMessage(error);
+          streamError = AiApiClient.friendlyErrorMessage(error);
           _finalizeMessage(accumulatedText, error: streamError);
           if (!streamDone.isCompleted) streamDone.complete();
         },
@@ -1141,7 +611,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       _debugLog['error'] = '$e';
       _saveDebugLog();
       debugPrint('[VIMAṂSA] Error: $e\n$stack');
-      final friendlyError = _friendlyErrorMessage(e);
+      final friendlyError = AiApiClient.friendlyErrorMessage(e);
       if (_finalized) {
         // The stream already finished (e.g. DB save failure) — surface the
         // reason instead of silently swallowing it.
@@ -1160,243 +630,6 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
 
   // ── Tool execution ─────────────────────────────────────────────────────
 
-  Future<ToolResult> _executeTool(
-    String name,
-    Map<String, dynamic> args,
-  ) async {
-    final service = _ref.read(aiQaToolServiceProvider);
-
-    switch (name) {
-      case 'search_tipitaka':
-        return service.searchTipitaka(args);
-      case 'search_tipitaka_batch':
-        return service.searchTipitakaBatch(args);
-      case 'search_by_category':
-        return service.searchByCategory(args);
-      case 'search_sections':
-        return service.searchSections(args);
-      case 'get_section':
-        return service.getSection(args);
-      case 'get_dictionary':
-        return service.getDictionary(args);
-      case 'get_headings':
-        return service.getHeadings(args);
-      case 'get_books':
-        return service.getBooks(args);
-      case 'get_paragraph_content':
-        return service.getParagraphContent(args);
-      case 'get_paragraph_content_batch':
-        return service.getParagraphContentBatch(args);
-      case 'get_commentaries':
-        return service.getCommentaries(args);
-      default:
-        return ToolResult(
-          success: false,
-          data: '{}',
-          errorMessage: 'Unknown tool: $name',
-        );
-    }
-  }
-
-  // ── API calls ─────────────────────────────────────────────────────────
-
-  Future<Map<String, dynamic>> _callToolModel({
-    required AiProvider provider,
-    String baseUrl = '',
-    required String systemPrompt,
-    required List<Map<String, dynamic>> conversation,
-    required String apiKey,
-    required String toolModel,
-  }) async {
-    final payload = _buildToolPayload(
-      provider: provider,
-      systemPrompt: systemPrompt,
-      conversation: conversation,
-    );
-
-    final payloadSize = utf8.encode(jsonEncode(payload)).length;
-    debugPrint(
-      '[VIMAṂSA] _callToolModel: $toolModel | '
-      'contents=${conversation.length} | '
-      'payload=~${(payloadSize / 1024).toStringAsFixed(1)}KB',
-    );
-
-    switch (provider) {
-      case AiProvider.gemini:
-        final response = await _callGeminiApi(
-          model: toolModel,
-          apiKey: apiKey,
-          payload: payload,
-        );
-        return jsonDecode(response) as Map<String, dynamic>;
-      case AiProvider.openai:
-        final response = await _callOpenAiApiRaw(
-          model: toolModel,
-          apiKey: apiKey,
-          baseUrl: baseUrl,
-          payload: payload,
-        );
-        return jsonDecode(response) as Map<String, dynamic>;
-    }
-  }
-
-  /// Build the request payload for the tool model, adapting to the provider.
-  Map<String, dynamic> _buildToolPayload({
-    required AiProvider provider,
-    required String systemPrompt,
-    required List<Map<String, dynamic>> conversation,
-  }) {
-    switch (provider) {
-      case AiProvider.gemini:
-        return {
-          'system_instruction': {
-            'parts': [
-              {'text': systemPrompt},
-            ],
-          },
-          'contents': conversation,
-          'tools': [
-            {'functionDeclarations': _toolDeclarations},
-          ],
-          'generationConfig': {'maxOutputTokens': 2048, 'temperature': 0.3},
-        };
-      case AiProvider.openai:
-        // Convert Gemini-style conversation to OpenAI messages format
-        final messages = <Map<String, dynamic>>[];
-        messages.add({'role': 'system', 'content': systemPrompt});
-        for (final msg in conversation) {
-          final role = msg['role'] as String? ?? 'user';
-          final parts = msg['parts'] as List<dynamic>? ?? [];
-          final text = parts
-              .map((p) {
-                if (p is Map && p['text'] is String) return p['text'] as String;
-                if (p is Map && p['functionResponse'] is Map) {
-                  final fr = p['functionResponse'] as Map;
-                  return '[Tool result: ${fr['name']}]';
-                }
-                return '';
-              })
-              .join('\n');
-          if (text.isNotEmpty) {
-            messages.add({
-              'role': role == 'model' ? 'assistant' : role,
-              'content': text,
-            });
-          }
-        }
-        // Convert Gemini function declarations to OpenAI tools format
-        final openaiTools = _toolDeclarations.map((d) {
-          return {
-            'type': 'function',
-            'function': {
-              'name': d['name'],
-              'description': d['description'],
-              'parameters': d['parameters'],
-            },
-          };
-        }).toList();
-
-        return {
-          'messages': messages,
-          'tools': openaiTools,
-          'tool_choice': 'auto',
-          'max_tokens': 2048,
-          'temperature': 0.3,
-        };
-    }
-  }
-
-  String _buildToolSummary(
-    String name,
-    Map<String, dynamic> args,
-    ToolResult result,
-  ) {
-    if (!result.success) {
-      return '❌ ${result.errorMessage ?? "Unknown error"}';
-    }
-
-    int resultCount = 0;
-    try {
-      final parsed = jsonDecode(result.data);
-      if (parsed is List) {
-        resultCount = parsed.length;
-      } else if (parsed is Map && parsed['headings'] is List) {
-        resultCount = (parsed['headings'] as List).length;
-      } else if (parsed is Map && parsed['books'] is List) {
-        resultCount = (parsed['books'] as List).length;
-      } else if (parsed is Map && parsed['results'] is List) {
-        resultCount = (parsed['results'] as List).length;
-      } else if (parsed is Map && parsed['paragraphs'] is List) {
-        resultCount = (parsed['paragraphs'] as List).length;
-      } else if (parsed is Map && parsed['children'] is List) {
-        resultCount = (parsed['children'] as List).length;
-      }
-    } catch (_) {}
-
-    switch (name) {
-      case 'search_tipitaka':
-        final query = args['query'] as String? ?? '';
-        final queryShort = query.length > 40
-            ? '${query.substring(0, 40)}…'
-            : query;
-        if (resultCount > 0) {
-          return '🔍 "$queryShort" → $resultCount results';
-        }
-        return '🔍 "$queryShort" (${result.data.length} chars)';
-      case 'search_tipitaka_batch':
-        final queries =
-            (args['queries'] as List<dynamic>?)
-                ?.map((q) => q.toString())
-                .toList() ??
-            [];
-        final queriesStr = queries
-            .map((q) => q.length > 20 ? '${q.substring(0, 20)}…' : q)
-            .join(', ');
-        return '🔍 Batch[$resultCount results] ($queriesStr)';
-      case 'search_by_category':
-        final cats =
-            (args['categories'] as List<dynamic>?)
-                ?.map((c) => c.toString())
-                .toList() ??
-            [];
-        final niks =
-            (args['nikayas'] as List<dynamic>?)
-                ?.map((n) => n.toString())
-                .toList() ??
-            [];
-        final scope = [...cats, ...niks];
-        final scopeStr = scope.isEmpty ? 'all' : scope.join(', ');
-        return '🔍 $scopeStr[$resultCount results]';
-      case 'search_sections':
-        final query = args['query'] as String? ?? '';
-        return '🗂️ "$query" → $resultCount sections';
-      case 'get_section':
-        final bookId = args['book_id'] as String? ?? '';
-        final paraStart = args['para_start'] ?? 0;
-        return '🗺️ $bookId §$paraStart → $resultCount children';
-      case 'get_dictionary':
-        final term = args['term'] as String? ?? '';
-        return '📖 "$term" → $resultCount entries';
-      case 'get_headings':
-        final bookId = args['book_id'] as String? ?? '';
-        return '📋 $bookId — $resultCount headings';
-      case 'get_books':
-        return '📚 $resultCount books';
-      case 'get_paragraph_content':
-        final bookId = args['book_id'] as String? ?? '';
-        final start = args['para_start'] ?? 0;
-        final end = args['para_end'] ?? 0;
-        return '📖 $bookId §$start–$end (${result.data.length} chars)';
-      case 'get_paragraph_content_batch':
-        return '📖 Batch $resultCount ranges (${result.data.length} chars)';
-      case 'get_commentaries':
-        final bookId = args['mula_book_id'] as String? ?? '';
-        final paraId = args['mula_para_id'] ?? 0;
-        return '📝 Commentary on $bookId §$paraId: $resultCount found';
-      default:
-        return '$name completed (${result.data.length} chars)';
-    }
-  }
 
   Stream<String> _streamAnswer({
     required AiProvider provider,
@@ -1456,7 +689,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     };
 
     final url = Uri.parse(
-      '$_geminiBaseUrl/$model:streamGenerateContent?alt=sse&key=$apiKey',
+      '$kGeminiBaseUrl/$model:streamGenerateContent?alt=sse&key=$apiKey',
     );
 
     final request = http.Request('POST', url)
@@ -1470,7 +703,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       if (httpResponse.statusCode != 200) {
         final errorBody = await httpResponse.stream.bytesToString();
         throw Exception(
-          'API error ${httpResponse.statusCode}: ${_parseApiError(errorBody)}',
+          'API error ${httpResponse.statusCode}: ${AiApiClient.parseApiError(errorBody)}',
         );
       }
 
@@ -1546,7 +779,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       if (httpResponse.statusCode != 200) {
         final errorBody = await httpResponse.stream.bytesToString();
         throw Exception(
-          'API error ${httpResponse.statusCode}: ${_parseApiError(errorBody)}',
+          'API error ${httpResponse.statusCode}: ${AiApiClient.parseApiError(errorBody)}',
         );
       }
 
@@ -1581,231 +814,6 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
     }
   }
 
-  /// Gemini-style non-streaming API call.
-  Future<String> _callGeminiApi({
-    required String model,
-    required String apiKey,
-    required Map<String, dynamic> payload,
-  }) async {
-    final url = Uri.parse('$_geminiBaseUrl/$model:generateContent?key=$apiKey');
-
-    for (int attempt = 0; attempt <= _maxRetries; attempt++) {
-      try {
-        final apiStopwatch = Stopwatch()..start();
-        final httpResponse = await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        );
-        final apiDuration = apiStopwatch.elapsedMilliseconds;
-
-        if (httpResponse.statusCode == 200) {
-          debugPrint(
-            '[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
-            '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)',
-          );
-          return httpResponse.body;
-        } else if (httpResponse.statusCode == 429) {
-          if (attempt < _maxRetries) {
-            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
-            await Future.delayed(wait);
-            continue;
-          }
-          throw Exception('Rate limit exceeded. Try again later.');
-        } else {
-          if (attempt < _maxRetries) {
-            await Future.delayed(const Duration(seconds: 2));
-            continue;
-          }
-          throw Exception(
-            'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}',
-          );
-        }
-      } on http.ClientException {
-        if (attempt < _maxRetries) {
-          await Future.delayed(const Duration(seconds: 2));
-          continue;
-        }
-        rethrow;
-      }
-    }
-
-    throw Exception('API call failed after $_maxRetries retries');
-  }
-
-  /// OpenAI-compatible non-streaming API call (raw response for tool pipeline).
-  Future<String> _callOpenAiApiRaw({
-    required String model,
-    required String apiKey,
-    required String baseUrl,
-    required Map<String, dynamic> payload,
-  }) async {
-    final effectiveBase = baseUrl.isNotEmpty
-        ? baseUrl
-        : 'https://api.openai.com/v1';
-    final url = Uri.parse('$effectiveBase/chat/completions');
-
-    for (int attempt = 0; attempt <= _maxRetries; attempt++) {
-      try {
-        final apiStopwatch = Stopwatch()..start();
-        final httpResponse = await http.post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $apiKey',
-          },
-          body: jsonEncode(payload),
-        );
-        final apiDuration = apiStopwatch.elapsedMilliseconds;
-
-        if (httpResponse.statusCode == 200) {
-          debugPrint(
-            '[VIMAṂSA] API $model: 200 OK (${apiDuration}ms, '
-            '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)',
-          );
-          // Parse the OpenAI response and wrap it in a format compatible
-          // with the tool pipeline (which expects Gemini-like structure).
-          final data = jsonDecode(httpResponse.body) as Map<String, dynamic>;
-          final choices = data['choices'] as List<dynamic>? ?? [];
-          if (choices.isNotEmpty) {
-            final message =
-                choices[0]['message'] as Map<String, dynamic>? ?? {};
-            final content = message['content'] as String? ?? '';
-            final toolCalls = message['tool_calls'] as List<dynamic>?;
-
-            // Build a response that the tool pipeline can parse
-            final parts = <Map<String, dynamic>>[];
-            if (content.isNotEmpty) {
-              parts.add({'text': content});
-            }
-            if (toolCalls != null) {
-              for (final tc in toolCalls) {
-                final tcMap = tc as Map<String, dynamic>;
-                parts.add({
-                  'functionCall': {
-                    'name': tcMap['function']['name'],
-                    'args': jsonDecode(
-                      tcMap['function']['arguments'] as String,
-                    ),
-                  },
-                });
-              }
-            }
-
-            final adaptedResponse = {
-              'candidates': [
-                {
-                  'content': {'parts': parts, 'role': 'model'},
-                  'finishReason': message['finish_reason'] ?? 'STOP',
-                },
-              ],
-            };
-            return jsonEncode(adaptedResponse);
-          }
-          return httpResponse.body;
-        } else if (httpResponse.statusCode == 429) {
-          if (attempt < _maxRetries) {
-            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
-            await Future.delayed(wait);
-            continue;
-          }
-          throw Exception('Rate limit exceeded. Try again later.');
-        } else {
-          if (attempt < _maxRetries) {
-            await Future.delayed(const Duration(seconds: 2));
-            continue;
-          }
-          throw Exception(
-            'API error ${httpResponse.statusCode}: ${_parseApiError(httpResponse.body)}',
-          );
-        }
-      } on http.ClientException {
-        if (attempt < _maxRetries) {
-          await Future.delayed(const Duration(seconds: 2));
-          continue;
-        }
-        rethrow;
-      }
-    }
-
-    throw Exception('API call failed after $_maxRetries retries');
-  }
-
-  String _parseApiError(String body) {
-    try {
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final error = data['error'] as Map<String, dynamic>?;
-      if (error != null) {
-        return error['message'] as String? ??
-            error['status'] as String? ??
-            body;
-      }
-      return body;
-    } on FormatException {
-      return body;
-    }
-  }
-
-  /// Translate raw errors into a friendly, actionable message for the user.
-  ///
-  /// The raw exception text (HTTP status, socket errors, etc.) is often
-  /// cryptic — this makes sure the reason is understandable and suggests
-  /// what to do next.
-  String _friendlyErrorMessage(Object error) {
-    final raw = error.toString();
-    final lower = raw.toLowerCase();
-
-    final statusMatch = RegExp(r'API error (\d+)').firstMatch(raw);
-    if (statusMatch != null) {
-      switch (statusMatch.group(1)) {
-        case '400':
-          return 'The AI service rejected the request (400). The question may '
-              'be too long or contain unsupported content. Try asking again.';
-        case '401':
-        case '403':
-          return 'Your API key was rejected (${statusMatch.group(1)}). '
-              'Please check the API key in Settings.';
-        case '404':
-          return 'Model not found (404). The selected model may have been '
-              'renamed or is unavailable — update the model in Settings.';
-        case '429':
-          return 'Rate limit exceeded (429). Please wait a moment and try again.';
-        case '500':
-        case '502':
-        case '503':
-          return 'The AI service is temporarily unavailable '
-              '(${statusMatch.group(1)}). Please try again shortly.';
-        default:
-          return 'The AI service returned an error '
-              '(${statusMatch.group(1)}). Please try again.';
-      }
-    }
-
-    if (lower.contains('socketexception') ||
-        lower.contains('connection refused') ||
-        lower.contains('connection reset') ||
-        lower.contains('clientexception') ||
-        lower.contains('failed host lookup') ||
-        lower.contains('handshake')) {
-      return 'Network error — could not reach the AI service. '
-          'Check your internet connection and try again.';
-    }
-    if (lower.contains('timeout') || lower.contains('timed out')) {
-      return 'The request timed out. Try again, or ask a shorter question.';
-    }
-    if (lower.contains('rate limit') || lower.contains('too many requests')) {
-      return 'Rate limit exceeded. Please wait a moment and try again.';
-    }
-    if (lower.contains('empty response')) {
-      return 'The AI service returned an empty response. '
-          'Check that the selected model is correct in Settings and try again.';
-    }
-    if (lower.contains('quota') || lower.contains('billing')) {
-      return 'Your API quota may be exhausted. Check your usage/billing on '
-          'the provider console.';
-    }
-    return 'Something went wrong: $raw';
-  }
 
   // ── Context building & finalization ───────────────────────────────────
 

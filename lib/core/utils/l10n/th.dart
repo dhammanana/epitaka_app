@@ -186,25 +186,11 @@ const Map<String, String> th = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'คเวสนา (ค้นหาด้วย AI)',
-  'AI Search Assets': 'ไฟล์การค้นหาด้วย AI',
-  'Not downloaded — tap to download': 'ยังไม่ได้ดาวน์โหลด — แตะเพื่อดาวน์โหลด',
-  'Gavesana AI Assets': 'ไฟล์ AI ของคเวสนา',
-  'The AI search model and vector database are ready to use.\n\n'
-          'Open the sidebar in the Library screen and tap the Gavesana icon to start searching semantically.':
-      'โมเดลค้นหาด้วย AI และฐานข้อมูลเวกเตอร์พร้อมใช้งานแล้ว\n\n'
-      'เปิดแถบด้านข้างในหน้าห้องสมุดแล้วแตะไอคอนคเวสนาเพื่อเริ่มค้นหาเชิงความหมาย',
-  'Download Gavesana Assets?': 'ดาวน์โหลดไฟล์คเวสนาหรือไม่?',
-  'This will download approximately 670 MB of data:\n'
-          '- AI model (270 MB)\n'
-          '- Vector database (364 MB)\n'
-          '- Tokenizer config (33 MB)\n\n'
-          'A Wi-Fi connection is recommended.':
-      'การดำเนินการนี้จะดาวน์โหลดข้อมูลประมาณ 670 MB:\n'
-      '- โมเดล AI (270 MB)\n'
-      '- ฐานข้อมูลเวกเตอร์ (364 MB)\n'
-      '- การตั้งค่า Tokenizer (33 MB)\n\n'
-      'แนะนำให้ใช้การเชื่อมต่อ Wi-Fi',
-  'Download AI assets in Settings': 'ดาวน์โหลดไฟล์ AI ในการตั้งค่า',
+
+  
+
+  
+
   'Open Gavesana': 'เปิดคเวสนา',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -526,21 +512,11 @@ const Map<String, String> th = {
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'ถามเกี่ยวกับพระไตรปิฎก…',
-  'Number of results': 'จำนวนผลลัพธ์',
-  'Loading Gavesana…': 'กำลังโหลดคเวสนา…',
-  'Loading models…': 'กำลังโหลดโมเดล…',
-  'Computing query embedding…': 'กำลังคำนวณ embedding ของคำค้นหา…',
-  'Searching vector database…': 'กำลังค้นหาในฐานข้อมูลเวกเตอร์…',
+
   'Search semantically across the Tipitaka': 'ค้นหาเชิงความหมายทั่วพระไตรปิฎก',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       'คเวสนาใช้ AI ค้นหาข้อความที่เกี่ยวข้องกับ\nคำค้นหาของคุณ แม้จะไม่มีคำที่ตรงกันทุกคำ',
-  'Gavesana AI assets not found.': 'ไม่พบไฟล์ AI ของคเวสนา',
-  'Download them in Settings.': 'ดาวน์โหลดได้ในการตั้งค่า',
-  'An error occurred': 'เกิดข้อผิดพลาด',
-  'Show 5 results': 'แสดง 5 ผลลัพธ์',
-  'Show 10 results': 'แสดง 10 ผลลัพธ์',
-  'Show 20 results': 'แสดง 20 ผลลัพธ์',
-  'Show 50 results': 'แสดง 50 ผลลัพธ์',
+
   'Semantic search': 'การค้นหาเชิงความหมาย',
   'Investigation & exploration': 'การสืบค้นและการสำรวจ',
   'Tipitaka': 'พระไตรปิฎก',
@@ -549,15 +525,9 @@ const Map<String, String> th = {
   'Vimaṃsa': 'วีมังสา',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-  'Build BM25 Search Index': 'สร้างดัชนีค้นหา BM25',
-  'Rebuilding BM25 index…': 'กำลังสร้างดัชนี BM25 ใหม่…',
-  'Preparing BM25 index…': 'กำลังเตรียมดัชนี BM25…',
-  'BM25 index ready': 'ดัชนี BM25 พร้อมแล้ว',
-  'Continue without BM25': 'ดำเนินการต่อโดยไม่ใช้ BM25',
-  'Hybrid (vector + BM25) search is now enabled.':
-      'เปิดใช้งานการค้นหาแบบผสม (เวกเตอร์ + BM25) แล้ว',
-  'This indexes Pāli text for keyword (BM25) search and runs once.':
-      'การดำเนินการนี้จะสร้างดัชนีข้อความบาลีสำหรับการค้นหาแบบคีย์เวิร์ด (BM25) และทำงานเพียงครั้งเดียว',
+
+  
+  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'คำแปลที่มีให้ใช้',
@@ -688,8 +658,6 @@ const Map<String, String> th = {
   'Gavesana AI Search': 'การค้นหาด้วย AI คเวสนา',
   'AI-powered semantic search across the Tipiṭaka.\n\nOpen the full Gavesana panel for detailed results.':
       'การค้นหาเชิงความหมายด้วย AI ทั่วพระไตรปิฎก\n\nเปิดแผงคเวสนาแบบเต็มเพื่อดูผลลัพธ์โดยละเอียด',
-  'Build BM25': 'สร้าง BM25',
-  'Rebuild BM25': 'สร้าง BM25 ใหม่',
 
   // ── AI Q&A (Vimaṃsa) ────────────────────────────────────────────────
   'Navigation menu': 'เมนูนำทาง',

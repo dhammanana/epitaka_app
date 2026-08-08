@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -94,4 +97,39 @@ Future<void> main() async {
   }
 
   runApp(const ProviderScope(child: EpitakaApp()));
+
+  // Debug-only macOS workaround: with `flutter run -d macos` the window
+  // sometimes fails to repaint frames produced after launch (e.g. the
+  // "Loading available translations…" screen → setup wizard transition)
+  // until the window is activated or resized. Keeping frames scheduled
+  // for the first seconds of a debug session makes the UI snap to the
+  // latest state. Profile/release builds are unaffected — `kDebugMode` is
+  // a const false there, so this whole block is compiled out.
+  if (kDebugMode && Platform.isMacOS) {
+    _nudgeMacDebugRepaints();
+  }
+}
+
+/// Debug-only helper backing the macOS repaint workaround in [main].
+///
+/// Schedules a few extra frames right after the first frame, then keeps a
+/// frame scheduled every ~0.5s while startup settles (async provider
+/// transitions such as the manifest fetch can complete several seconds in),
+/// stopping after ~15s. Harmless in debug, compiled out elsewhere.
+void _nudgeMacDebugRepaints() {
+  final binding = WidgetsBinding.instance;
+  binding.addPostFrameCallback((_) {
+    for (var i = 0; i < 3; i++) {
+      binding.scheduleFrame();
+    }
+    var count = 0;
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      count++;
+      if (count > 30) {
+        timer.cancel();
+        return;
+      }
+      binding.scheduleFrame();
+    });
+  });
 }
