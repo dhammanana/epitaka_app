@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,6 +33,16 @@ const double _kMaxRightPanelWidth = 640;
 const double _kDefaultLeftWidth = 340;
 const double _kDefaultRightWidth = 360;
 
+/// Fraction of the sidebar height the docked dictionary takes by default
+/// (before the user resizes it). Sized so the dictionary clearly dominates
+/// the sidebar ("show it in the sidebar", not a small bottom strip).
+const double _kDefaultDockFraction = 0.7;
+
+/// The docked dictionary's height can be dragged between these fractions
+/// of the sidebar height.
+const double _kMinDockFraction = 0.25;
+const double _kMaxDockFraction = 0.85;
+
 /// Horizontal drag distance (px) that commits a "move to the other side".
 const double _kDragCommitDx = 80;
 
@@ -59,10 +71,15 @@ const double _kDragCommitDx = 80;
 ///   at a time (clicking another item replaces the previous one; clicking
 ///   the active item closes the sidebar). It starts closed.
 /// * **Dictionary dock** — by default the dictionary is docked at the
-///   bottom of the sidebar, so it collapses with it. It can be dragged
-///   (via its grip) to the right side, where it becomes an independent
-///   panel that is not affected by the sidebar collapse. Dragging it back
+///   bottom of the sidebar, so it collapses with it. Its height can be
+///   resized by dragging the divider above it, and it can be dragged (via
+///   its grip) to the right side, where it becomes an independent panel
+///   that is not affected by the sidebar collapse. Dragging it back
 ///   returns it to the dock.
+/// * **Saved placement** — where the user last put the dictionary (dock
+///   vs. right column), the dock's height, and whether the sidebar sits on
+///   the right are all persisted, so word lookups reopen the dictionary
+///   where the user left it instead of forcing one position.
 /// * **Sidebar drag** — the sidebar can be dragged to the right side of
 ///   the window (grip in its header), where it stays open independently.
 /// * **Center** — only the reader (books) and Vimaṃsa live here, as two
@@ -98,6 +115,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// (vs. docked at the bottom of the sidebar).
   bool _dictOnRight = false;
 
+  /// Fraction (0..1) of the sidebar height the docked dictionary occupies.
+  double _dictDockFraction = _kDefaultDockFraction;
+
   /// Set right before the activity-bar opens the dictionary docked in the
   /// sidebar, so the [sidePanelProvider] listener doesn't re-place it on
   /// the right.
@@ -109,7 +129,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void initState() {
     super.initState();
-    // Load persisted widths once settings are available.
+    // Load persisted widths / placements once settings are available.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final s = ref.read(settingsProvider);
@@ -118,6 +138,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
             s.leftPanelWidth > 0 ? s.leftPanelWidth : _kDefaultLeftWidth;
         _rightWidth =
             s.rightPanelWidth > 0 ? s.rightPanelWidth : _kDefaultRightWidth;
+        _dictOnRight = s.dictOnRight;
+        _sidebarOnRight = s.sidebarOnRight;
+        _dictDockFraction = s.dictionaryDockFraction > 0
+            ? s.dictionaryDockFraction
+            : _kDefaultDockFraction;
       });
     });
   }
@@ -134,8 +159,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     ref.read(sidePanelProvider.notifier).toggle(panel);
   }
 
-  /// Activity-bar dictionary button: toggles the dictionary docked at the
-  /// bottom of the sidebar (opening the sidebar first if it's closed).
+  /// Activity-bar dictionary button: toggles the dictionary, honoring where
+  /// the user last placed it (docked in the sidebar, or the right column)
+  /// instead of always forcing one position.
   void _toggleDictionary() {
     final notifier = ref.read(sidePanelProvider.notifier);
     final panels = ref.read(sidePanelProvider);
@@ -144,18 +170,55 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       notifier.close(SidePanelType.dictionary);
       return;
     }
+    // Set the placement ourselves so the [sidePanelProvider] listener
+    // doesn't re-place it based on the current sidebar state. When the
+    // sidebar sits on the right, the dictionary rides inside it;
+    // otherwise honor the saved placement (dock or right column).
     _pendingDockPlacement = true;
-    setState(() => _dictOnRight = false);
-    notifier.open(SidePanelType.dictionary, pin: true);
-    // The dock lives inside the sidebar — make sure it's visible.
-    if (ref.read(sidePanelProvider).left.openPanel == null) {
+    if (_sidebarOnRight) {
+      setState(() => _dictOnRight = false);
+    }
+    // When docked, the dock lives inside the sidebar — make sure it's open.
+    if (!_dictOnRight && panels.left.openPanel == null) {
       notifier.open(SidePanelType.library);
     }
+    notifier.open(SidePanelType.dictionary, pin: true);
+  }
+
+  /// Place the dictionary after a provider-driven open (word lookup,
+  /// Cmd/Ctrl+D, reader toolbar), honoring where the user last put it
+  /// ([_dictOnRight] / [_sidebarOnRight], persisted) rather than forcing
+  /// one position.
+  void _placeDictionary({required bool sidebarOpen}) {
+    setState(() {
+      if (_sidebarOnRight) {
+        // The dictionary rides inside the sidebar. If the sidebar (which
+        // sits on the right) is closed, fall back to the right column.
+        _dictOnRight = !sidebarOpen;
+      } else if (!_dictOnRight && !sidebarOpen) {
+        // Saved dock placement, but the sidebar is closed — the dock only
+        // exists inside the sidebar, so show the right column for now.
+        // Deliberately NOT persisted: the user's saved dock preference
+        // survives restarts; this fallback only applies for the current
+        // session until they drag the dictionary again.
+        _dictOnRight = true;
+      }
+      // _dictOnRight == true → keep the dictionary as the right column.
+      // _dictOnRight == false && sidebar open → docked in the sidebar.
+    });
+  }
+
+  /// Persist the dictionary/sidebar placement ("save where it was").
+  void _persistPlacement() {
+    final notifier = ref.read(settingsProvider.notifier);
+    notifier.setDictOnRight(_dictOnRight);
+    notifier.setSidebarOnRight(_sidebarOnRight);
   }
 
   void _moveDictToRight() {
     if (_sidebarOnRight) return; // the dict rides inside the sidebar
     setState(() => _dictOnRight = true);
+    _persistPlacement();
   }
 
   void _moveDictToLeft() {
@@ -164,6 +227,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     if (ref.read(sidePanelProvider).left.openPanel == null) {
       ref.read(sidePanelProvider.notifier).open(SidePanelType.library);
     }
+    _persistPlacement();
   }
 
   void _moveSidebarToRight() {
@@ -171,10 +235,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       _sidebarOnRight = true;
       _dictOnRight = false; // the dictionary travels with the sidebar
     });
+    _persistPlacement();
   }
 
   void _moveSidebarToLeft() {
     setState(() => _sidebarOnRight = false);
+    _persistPlacement();
   }
 
   void resetLayout() {
@@ -184,10 +250,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       _vimamsaOpen = false;
       _leftWidth = _kDefaultLeftWidth;
       _rightWidth = _kDefaultRightWidth;
+      _dictDockFraction = _kDefaultDockFraction;
     });
     ref.read(sidePanelProvider.notifier).closeAll();
     ref.read(settingsProvider.notifier).setLeftPanelWidth(0);
     ref.read(settingsProvider.notifier).setRightPanelWidth(0);
+    ref.read(settingsProvider.notifier).setDictOnRight(false);
+    ref.read(settingsProvider.notifier).setSidebarOnRight(false);
+    ref
+        .read(settingsProvider.notifier)
+        .setDictionaryDockFraction(_kDefaultDockFraction);
   }
 
   // ── Panel resizing ────────────────────────────────────────────────
@@ -221,6 +293,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       onRight: onRight,
       autoFocus: autoFocus,
       showDictionaryDock: showDictionaryDock,
+      dictDockFraction: _dictDockFraction,
+      onDictDockResize: (fraction) =>
+          setState(() => _dictDockFraction = fraction),
+      onDictDockResizeEnd: () => ref
+          .read(settingsProvider.notifier)
+          .setDictionaryDockFraction(_dictDockFraction),
       onClose: () => _toggleSidebar(panel),
       onMoveSidebarRight: _moveSidebarToRight,
       onMoveSidebarLeft: _moveSidebarToLeft,
@@ -273,18 +351,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       final prevLeft = prev?.left.openPanel;
       final nextLeft = next.left.openPanel;
 
-      // A dictionary opened through the provider (Cmd/Ctrl+D, toolbar,
-      // word lookup) becomes an independent right-side panel — unless the
-      // activity bar just opened it docked in the sidebar.
+      // A dictionary opened through the provider (word lookup, Cmd/Ctrl+D,
+      // toolbar, activity bar) is placed where the user last had it — the
+      // activity bar pre-sets the placement and marks it pending; every
+      // other path goes through [_placeDictionary].
       if (nextRight == SidePanelType.dictionary &&
           prevRight != SidePanelType.dictionary) {
         if (_pendingDockPlacement) {
           _pendingDockPlacement = false;
         } else {
-          // Provider-driven open (word lookup, Cmd/Ctrl+D, toolbar):
-          // dock in the sidebar when it's open, otherwise show as the
-          // independent right column.
-          setState(() => _dictOnRight = nextLeft == null);
+          _placeDictionary(sidebarOpen: nextLeft != null);
         }
         // Keep the dictionary pinned wherever it is placed (docked or
         // right panel) so the reader's word-lookup routes into it instead
@@ -450,12 +526,25 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
 /// The single sidebar panel: a header (title + drag grip + close), the
 /// active panel content on top, and the dictionary dock at the bottom.
+/// The dock's height is resizable by dragging the divider above it; the
+/// chosen height (as a fraction of the sidebar) is reported back to the
+/// shell so it can be persisted.
 class DesktopSidebar extends StatelessWidget {
   final SidePanelType panel;
   final String title;
   final bool onRight;
   final bool autoFocus;
   final bool showDictionaryDock;
+
+  /// Fraction (0..1) of the sidebar height the docked dictionary occupies.
+  final double dictDockFraction;
+
+  /// Called while the dock divider is dragged, with the new height fraction.
+  final ValueChanged<double> onDictDockResize;
+
+  /// Called when the dock divider drag ends (persist the height).
+  final VoidCallback onDictDockResizeEnd;
+
   final VoidCallback onClose;
   final VoidCallback onMoveSidebarRight;
   final VoidCallback onMoveSidebarLeft;
@@ -470,6 +559,9 @@ class DesktopSidebar extends StatelessWidget {
     required this.onRight,
     required this.autoFocus,
     required this.showDictionaryDock,
+    required this.dictDockFraction,
+    required this.onDictDockResize,
+    required this.onDictDockResizeEnd,
     required this.onClose,
     required this.onMoveSidebarRight,
     required this.onMoveSidebarLeft,
@@ -485,36 +577,61 @@ class DesktopSidebar extends StatelessWidget {
 
     return Container(
       color: colors.surfaceContainerLowest,
-      child: Column(
-        children: [
-          _PanelHeader(
-            title: title,
-            colors: colors,
-            onClose: onClose,
-            grip: _Grip(
-              onDragRight: onMoveSidebarRight,
-              onDragLeft: onMoveSidebarLeft,
-              tooltip: loc.t(
-                onRight ? 'Move panel to the left' : 'Move panel to the right',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxHeight = math.max(1.0, constraints.maxHeight);
+          // The dock can be resized between ~a quarter and ~80% of the
+          // sidebar height (with a floor so it never collapses entirely).
+          final minPx = math.min(140.0, maxHeight * _kMinDockFraction);
+          final maxPx = maxHeight * _kMaxDockFraction;
+          final dockPx = (dictDockFraction * maxHeight)
+              .clamp(minPx, maxPx)
+              .toDouble();
+
+          return Column(
+            children: [
+              _PanelHeader(
+                title: title,
+                colors: colors,
+                onClose: onClose,
+                grip: _Grip(
+                  onDragRight: onMoveSidebarRight,
+                  onDragLeft: onMoveSidebarLeft,
+                  tooltip: loc.t(
+                    onRight
+                        ? 'Move panel to the left'
+                        : 'Move panel to the right',
+                  ),
+                ),
               ),
-            ),
-          ),
-          Divider(height: 1, color: colors.outlineVariant),
-          // Top zone: the active sidebar item (one at a time).
-          Expanded(flex: 5, child: _panelContent(context)),
-          if (showDictionaryDock) ...[
-            Divider(height: 1, color: colors.outlineVariant),
-            // Dictionary docked at the bottom (collapses with the sidebar).
-            Expanded(
-              flex: 4,
-              child: _DictionaryDock(
-                onClose: onCloseDictionary,
-                onMoveToRight: onMoveDictionaryToRight,
-                onMoveToLeft: onMoveDictionaryToLeft,
-              ),
-            ),
-          ],
-        ],
+              Divider(height: 1, color: colors.outlineVariant),
+              // Top zone: the active sidebar item (one at a time).
+              Expanded(child: _panelContent(context)),
+              if (showDictionaryDock) ...[
+                // Draggable divider — resizes the docked dictionary's
+                // height. Dragging up grows the dictionary.
+                _DockResizeDivider(
+                  key: const Key('dict-dock-divider'),
+                  currentHeight: () => dockPx,
+                  onHeightChanged: (px) => onDictDockResize(
+                    (px / maxHeight).clamp(0.0, 1.0),
+                  ),
+                  onDragEnd: onDictDockResizeEnd,
+                ),
+                // Dictionary docked at the bottom (collapses with the
+                // sidebar).
+                SizedBox(
+                  height: dockPx,
+                  child: _DictionaryDock(
+                    onClose: onCloseDictionary,
+                    onMoveToRight: onMoveDictionaryToRight,
+                    onMoveToLeft: onMoveDictionaryToLeft,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -724,6 +841,72 @@ class _GripState extends State<_Grip> {
               Icons.drag_indicator,
               size: 16,
               color: colors.outline,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A draggable horizontal divider between the sidebar's top panel and the
+/// docked dictionary. Dragging it up/down resizes the dictionary's height.
+class _DockResizeDivider extends StatefulWidget {
+  /// Returns the dictionary dock's current pixel height (clamped) so the
+  /// drag can accumulate deltas against a stable start value.
+  final double Function() currentHeight;
+
+  /// Called while dragging, with the new desired dock height in pixels.
+  final ValueChanged<double> onHeightChanged;
+
+  /// Called when the drag ends (persist the height).
+  final VoidCallback onDragEnd;
+
+  const _DockResizeDivider({
+    super.key,
+    required this.currentHeight,
+    required this.onHeightChanged,
+    required this.onDragEnd,
+  });
+
+  @override
+  State<_DockResizeDivider> createState() => _DockResizeDividerState();
+}
+
+class _DockResizeDividerState extends State<_DockResizeDivider> {
+  double _startHeight = 0;
+  double _accumDy = 0;
+
+  void _onDragStart(DragStartDetails details) {
+    _startHeight = widget.currentHeight();
+    _accumDy = 0;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    _accumDy += details.delta.dy;
+    widget.onHeightChanged(_startHeight - _accumDy);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeRow,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: _onDragStart,
+        onVerticalDragUpdate: _onDragUpdate,
+        onVerticalDragEnd: (_) => widget.onDragEnd(),
+        child: SizedBox(
+          height: 12,
+          child: Center(
+            child: Container(
+              width: 28,
+              height: 3,
+              decoration: BoxDecoration(
+                color: colors.outlineVariant.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(1.5),
+              ),
             ),
           ),
         ),

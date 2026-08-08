@@ -6,10 +6,11 @@ import '../../../shared/providers/side_panel_provider.dart';
 
 /// Route a dictionary lookup to the desktop shell's dictionary panel.
 ///
-/// On desktop the dictionary lives in the shell — docked at the bottom of
-/// the sidebar when the sidebar is open, or as an independent right column
-/// when the sidebar is closed — so lookups should never open the mobile
-/// bottom sheet there.
+/// On desktop the dictionary lives in the shell — docked in the sidebar
+/// (its height is user-resizable and its placement is remembered) or as an
+/// independent right column when the sidebar is closed — so lookups should
+/// never open the mobile bottom sheet there. The shell decides the exact
+/// placement from the user's saved preference ("save where it was").
 ///
 /// Returns `true` when the lookup was handled (desktop, or an empty word);
 /// returns `false` when the caller should fall back to showing the

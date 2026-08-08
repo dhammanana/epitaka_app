@@ -60,59 +60,67 @@ class DesktopStatusBar extends ConsumerWidget {
                 final compact = constraints.maxWidth < 860;
                 return Row(
                   children: [
-                    // Flat reader toolbar (drives the active reader tab)
+                    // Left spacer balances the right-aligned shell actions
+                    // so the remaining toolbar buttons stay centered.
+                    const Spacer(),
+                    // Flat reader toolbar (drives the active reader tab),
+                    // centered between the two balanced sides. Contents /
+                    // search / dictionary are handled by the sidebar, so
+                    // they're not wired up here.
+                    ReaderBottomToolbar(
+                      colors: colors,
+                      displayMode: settings.translationDisplayMode,
+                      showTranslation: settings.showTranslation,
+                      ttsPlayback: ttsPlayback,
+                      flat: true,
+                      compact: compact,
+                      enabled: controller.enabled,
+                      onJumpTap: controller.onJump,
+                      onDisplayLayoutTap: controller.onDisplayLayout,
+                      onListenTap: controller.onListen,
+                      onStopTap: controller.onStop,
+                      onBookmarkTap: controller.onBookmark,
+                    ),
+                    // Right side: shell actions, end-aligned.
                     Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: ReaderBottomToolbar(
-                          colors: colors,
-                          displayMode: settings.translationDisplayMode,
-                          showTranslation: settings.showTranslation,
-                          ttsPlayback: ttsPlayback,
-                          flat: true,
-                          compact: compact,
-                          enabled: controller.enabled,
-                          onContentsTap: controller.onContents,
-                          onSearchTap: controller.onSearch,
-                          onDictionaryTap: controller.onDictionary,
-                          onJumpTap: controller.onJump,
-                          onDisplayLayoutTap: controller.onDisplayLayout,
-                          onListenTap: controller.onListen,
-                          onStopTap: controller.onStop,
-                          onBookmarkTap: controller.onBookmark,
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          const SizedBox(width: 8),
+                          // ── Shell actions ──────────────────────────────
+                          _StatusIconButton(
+                            icon: Icons.text_decrease,
+                            tooltip: loc.decreaseFontSize,
+                            onTap: () => ref
+                                .read(settingsProvider.notifier)
+                                .decreaseFontSize(),
+                          ),
+                          _StatusIconButton(
+                            icon: Icons.text_increase,
+                            tooltip: loc.increaseFontSize,
+                            onTap: () => ref
+                                .read(settingsProvider.notifier)
+                                .increaseFontSize(),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            width: 1,
+                            height: 20,
+                            color: colors.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(width: 4),
+                          _StatusIconButton(
+                            icon: Icons.restart_alt,
+                            tooltip: loc.resetLayout,
+                            onTap: onResetLayout,
+                          ),
+                          _StatusIconButton(
+                            icon: Icons.settings_outlined,
+                            tooltip: loc.settings,
+                            onTap: onOpenSettings,
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    // ── Shell actions ──────────────────────────────────
-                    _StatusIconButton(
-                      icon: Icons.text_decrease,
-                      tooltip: loc.decreaseFontSize,
-                      onTap: () =>
-                          ref.read(settingsProvider.notifier).decreaseFontSize(),
-                    ),
-                    _StatusIconButton(
-                      icon: Icons.text_increase,
-                      tooltip: loc.increaseFontSize,
-                      onTap: () =>
-                          ref.read(settingsProvider.notifier).increaseFontSize(),
-                    ),
-                    const SizedBox(width: 4),
-                    Container(
-                      width: 1,
-                      height: 20,
-                      color: colors.outlineVariant.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(width: 4),
-                    _StatusIconButton(
-                      icon: Icons.restart_alt,
-                      tooltip: loc.resetLayout,
-                      onTap: onResetLayout,
-                    ),
-                    _StatusIconButton(
-                      icon: Icons.settings_outlined,
-                      tooltip: loc.settings,
-                      onTap: onOpenSettings,
                     ),
                   ],
                 );

@@ -86,31 +86,35 @@ class ReaderBottomToolbar extends StatelessWidget {
     final isLoading = ttsPlayback == TtsPlaybackState.loading;
 
     final buttons = <Widget>[
-      ToolbarButton(
-        icon: Icons.format_list_bulleted,
-        label: loc.contents,
-        compact: compact,
-        enabled: enabled,
-        onTap: onContentsTap,
-      ),
-      if (!compact) const SizedBox(width: 8),
-      // Search within current book
-      ToolbarButton(
-        icon: Icons.search,
-        label: loc.search,
-        compact: compact,
-        enabled: enabled,
-        onTap: onSearchTap,
-      ),
-      if (!compact) const SizedBox(width: 8),
-      ToolbarButton(
-        icon: Icons.menu_book,
-        label: loc.dictionary,
-        compact: compact,
-        enabled: enabled,
-        onTap: onDictionaryTap,
-      ),
-      if (!compact) const SizedBox(width: 8),
+      // Contents, search and dictionary already live in the desktop sidebar
+      // / activity bar, so the flat status-bar strip doesn't repeat them.
+      if (!flat) ...[
+        ToolbarButton(
+          icon: Icons.format_list_bulleted,
+          label: loc.contents,
+          compact: compact,
+          enabled: enabled,
+          onTap: onContentsTap,
+        ),
+        if (!compact) const SizedBox(width: 8),
+        // Search within current book
+        ToolbarButton(
+          icon: Icons.search,
+          label: loc.search,
+          compact: compact,
+          enabled: enabled,
+          onTap: onSearchTap,
+        ),
+        if (!compact) const SizedBox(width: 8),
+        ToolbarButton(
+          icon: Icons.menu_book,
+          label: loc.dictionary,
+          compact: compact,
+          enabled: enabled,
+          onTap: onDictionaryTap,
+        ),
+        if (!compact) const SizedBox(width: 8),
+      ],
       ToolbarButton(
         icon: Icons.open_in_new,
         label: loc.jumpLabel,

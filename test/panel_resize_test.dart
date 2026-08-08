@@ -7,14 +7,20 @@ import 'package:epitaka/shared/widgets/responsive_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Verifies the desktop split-pane behavior of [ResponsiveScaffold]:
 /// pinned side panels are separated from the main content by a draggable
 /// divider, the width is clamped between a minimum and a screen-aware
 /// maximum, and the final width is persisted via [settingsProvider].
+/// Also verifies the docked dictionary's resizable height and that its
+/// placement (dock vs. right column) is remembered.
 void main() {
-  Future<void> pumpScaffold(WidgetTester tester) async {
+  Future<void> pumpScaffold(
+    WidgetTester tester, {
+    SettingsNotifier? settings,
+  }) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -27,6 +33,7 @@ void main() {
           contentsProvider.overrideWith(
             (ref, bookId) async => <HeadingInfo>[],
           ),
+          if (settings != null) settingsProvider.overrideWith((ref) => settings),
         ],
         child: MaterialApp(
           locale: const Locale('en'),
@@ -188,5 +195,150 @@ void main() {
         .getCenter(find.byKey(const Key('left-panel-divider')))
         .dx;
     expect(reopened, closeTo(afterResize, 1));
+  });
+
+  testWidgets('docked dictionary height can be resized by dragging its '
+      'divider', (tester) async {
+    await pumpScaffold(tester);
+    // Open the sidebar first so the dictionary docks inside it.
+    await openPanel(tester, 'open-left');
+    await openPanel(tester, 'open-right');
+
+    // A horizontal resize divider appears above the docked dictionary.
+    final divider = find.byKey(const Key('dict-dock-divider')).hitTestable();
+    expect(divider, findsOneWidget);
+
+    // Drag the divider up → the dictionary grows (divider moves up).
+    final before = tester.getCenter(divider).dy;
+    await tester.drag(divider, const Offset(0, -100));
+    await tester.pump();
+    final after = tester.getCenter(divider).dy;
+    expect(before - after, greaterThan(50));
+
+    // The new height fraction is persisted.
+    expect(
+      readSettings(tester).dictionaryDockFraction,
+      greaterThan(0.7),
+    );
+  });
+
+  testWidgets('dictionary stays where the user moved it (dock → right column)',
+      (tester) async {
+    await pumpScaffold(tester);
+    await openPanel(tester, 'open-left');
+    await openPanel(tester, 'open-right');
+
+    // Docked inside the sidebar first.
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsOneWidget,
+    );
+
+    // Drag the dock's grip to the right → becomes the right column.
+    await tester.drag(
+      find.byTooltip('Move dictionary to the right'),
+      const Offset(120, 0),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('right-panel-divider')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(readSettings(tester).dictOnRight, isTrue);
+
+    // Close the dictionary, then reopen it via the provider (as a word
+    // lookup would) — it stays on the right instead of re-docking.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ResponsiveScaffold)),
+    );
+    container.read(sidePanelProvider.notifier).close(SidePanelType.dictionary);
+    await tester.pump();
+    await openPanel(tester, 'open-right');
+
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('right-panel-divider')).hitTestable(),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('dictionary placement is restored from persisted settings',
+      (tester) async {
+    // The user previously moved the dictionary to the right column.
+    SharedPreferences.setMockInitialValues({'dict_on_right': true});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsNotifier(prefs)..init(prefs);
+
+    await pumpScaffold(tester, settings: settings);
+    // Sidebar open + dictionary open (as from a word lookup).
+    await openPanel(tester, 'open-left');
+    await openPanel(tester, 'open-right');
+
+    // The saved placement wins: right column, not the sidebar dock.
+    expect(
+      find.byKey(const Key('right-panel-divider')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsNothing,
+    );
+  });
+
+  testWidgets('activity bar honors the saved right-column placement',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'dict_on_right': true});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsNotifier(prefs)..init(prefs);
+
+    await pumpScaffold(tester, settings: settings);
+    // Toggle the dictionary from the activity bar (sidebar closed). The
+    // status bar no longer duplicates the dictionary button.
+    await tester.tap(find.byTooltip('Dictionary'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // The saved right-column placement wins: the dictionary opens as the
+    // right column and does not force-open the left sidebar or dock.
+    expect(
+      find.byKey(const Key('right-panel-divider')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('left-panel-divider')).hitTestable(),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsNothing,
+    );
+  });
+
+  testWidgets('status bar drops the sidebar actions and centers the rest',
+      (tester) async {
+    await pumpScaffold(tester);
+
+    // Contents / search / dictionary now live only in the activity bar —
+    // exactly one tooltip each, i.e. the status bar no longer duplicates
+    // them.
+    expect(find.byTooltip('Contents'), findsOneWidget);
+    expect(find.byTooltip('Search'), findsOneWidget);
+    expect(find.byTooltip('Dictionary'), findsOneWidget);
+
+    // The remaining toolbar actions are still present…
+    expect(find.byTooltip('Jump'), findsOneWidget);
+    expect(find.byTooltip('Save'), findsOneWidget);
+
+    // …and the group is centered in the bar (window 1280 → center 640).
+    final jumpX = tester.getCenter(find.byTooltip('Jump')).dx;
+    final saveX = tester.getCenter(find.byTooltip('Save')).dx;
+    expect((jumpX + saveX) / 2, closeTo(640, 8));
   });
 }

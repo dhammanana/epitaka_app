@@ -423,6 +423,19 @@ class AppSettings {
   /// format). Empty string = never customized, use the default layout.
   final String desktopLayout;
 
+  /// Whether the user last placed the dictionary as the independent right
+  /// column (true) vs. docked inside the sidebar (false). Persisted so word
+  /// lookups reopen the dictionary where the user left it.
+  final bool dictOnRight;
+
+  /// Whether the user moved the desktop sidebar to the right side of the
+  /// window (true) or kept it on the left (false).
+  final bool sidebarOnRight;
+
+  /// Fraction (0..1) of the sidebar height taken by the docked dictionary.
+  /// 0 means the user never resized it, so the default is used instead.
+  final double dictionaryDockFraction;
+
   /// The reader text-selection context menu: which actions appear, in what
   /// order, plus any added external apps / custom AI prompts.
   final List<ContextMenuAction> contextMenuActions;
@@ -468,6 +481,9 @@ class AppSettings {
     this.leftPanelWidth = 0,
     this.rightPanelWidth = 0,
     this.desktopLayout = '',
+    this.dictOnRight = false,
+    this.sidebarOnRight = false,
+    this.dictionaryDockFraction = 0,
     this.contextMenuActions = const [],
     this.featureGuideSeen = false,
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
@@ -510,6 +526,9 @@ class AppSettings {
     double? leftPanelWidth,
     double? rightPanelWidth,
     String? desktopLayout,
+    bool? dictOnRight,
+    bool? sidebarOnRight,
+    double? dictionaryDockFraction,
     List<ContextMenuAction>? contextMenuActions,
     bool? featureGuideSeen,
     String? quoteTemplate,
@@ -558,6 +577,10 @@ class AppSettings {
       leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
       rightPanelWidth: rightPanelWidth ?? this.rightPanelWidth,
       desktopLayout: desktopLayout ?? this.desktopLayout,
+      dictOnRight: dictOnRight ?? this.dictOnRight,
+      sidebarOnRight: sidebarOnRight ?? this.sidebarOnRight,
+      dictionaryDockFraction:
+          dictionaryDockFraction ?? this.dictionaryDockFraction,
       contextMenuActions: contextMenuActions ?? this.contextMenuActions,
       featureGuideSeen: featureGuideSeen ?? this.featureGuideSeen,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
@@ -778,6 +801,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
       desktopLayout: prefs.getString('desktop_layout') ?? '',
+      dictOnRight: prefs.getBool('dict_on_right') ?? false,
+      sidebarOnRight: prefs.getBool('sidebar_on_right') ?? false,
+      dictionaryDockFraction: prefs.getDouble('dict_dock_fraction') ?? 0,
       contextMenuActions: _loadContextMenuActions(),
       featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
       quoteTemplate:
@@ -1108,6 +1134,27 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setDesktopLayout(String layout) async {
     state = state.copyWith(desktopLayout: layout);
     await _prefs?.setString('desktop_layout', layout);
+  }
+
+  /// Persist whether the dictionary lives as the independent right column
+  /// (true) vs. docked inside the sidebar (false).
+  Future<void> setDictOnRight(bool value) async {
+    state = state.copyWith(dictOnRight: value);
+    await _prefs?.setBool('dict_on_right', value);
+  }
+
+  /// Persist whether the desktop sidebar sits on the right side of the
+  /// window (true) vs. the left (false).
+  Future<void> setSidebarOnRight(bool value) async {
+    state = state.copyWith(sidebarOnRight: value);
+    await _prefs?.setBool('sidebar_on_right', value);
+  }
+
+  /// Persist the fraction (0..1) of the sidebar height taken by the docked
+  /// dictionary.
+  Future<void> setDictionaryDockFraction(double fraction) async {
+    state = state.copyWith(dictionaryDockFraction: fraction);
+    await _prefs?.setDouble('dict_dock_fraction', fraction);
   }
 
   /// Replace the full ordered context-menu action list.
