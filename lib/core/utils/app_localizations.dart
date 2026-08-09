@@ -78,22 +78,18 @@ class AppLocalizations {
   String get translationsDownloads => _t('Translations & Downloads');
   String get readingPreferences => _t('Reading Preferences');
   String get readingOptions => _t('Reading Options');
-  String get readingOptionsSubtitle =>
-      _t('Layout, numbering & scroll');
+  String get readingOptionsSubtitle => _t('Layout, numbering & scroll');
   String get textToSpeech => _t('Text-to-Speech');
   String get ttsSubtitle => _t('Voice & speed');
   String get ttsReplacements => _t('TTS Replacements');
-  String get ttsReplacementsSubtitle =>
-      _t('Regex text replacements');
+  String get ttsReplacementsSubtitle => _t('Regex text replacements');
   String get script => _t('Script');
   String get stripVariantAnnotations => _t('Show variant readings');
-  String get stripVariantAnnotationsSubtitle => _t(
-    'Show variant readings from other textual versions',
-  );
-  String get showBookLinks => _t('Show Book Links');
-  String get showBookLinksSubtitle => _t(
-    'Show links to inlined commentaries & connected books',
-  );
+  String get stripVariantAnnotationsSubtitle =>
+      _t('Show variant readings from other textual versions');
+  String get showBookLinks => _t('Show Inline Commentaries');
+  String get showBookLinksSubtitle =>
+      _t('Show links to inlined commentaries & connected books');
   String get libraryBrowser => _t('Library Browser');
   String get defaultExpandLevel => _t('Default expand level');
   String get collapsed => _t('Collapsed');
@@ -154,8 +150,7 @@ class AppLocalizations {
       _t('Re-indexes Pāli texts & translations');
   String get dictionaries => _t('Dictionaries');
   String get dictionarySettings => _t('Dictionary Settings');
-  String get dictionarySettingsSubtitle =>
-      _t('Enable, disable & reorder');
+  String get dictionarySettingsSubtitle => _t('Enable, disable & reorder');
   String get account => _t('Account');
   String get profile => _t('Profile');
   String get system => _t('System');
@@ -206,8 +201,7 @@ class AppLocalizations {
   String get pageNumbering => _t('Page Numbering');
   String get layout => _t('Layout');
   String get sideBySideView => _t('Side-by-Side View');
-  String get sideBySideSubtitle =>
-      _t('Show Pāli and translation side by side');
+  String get sideBySideSubtitle => _t('Show Pāli and translation side by side');
   String get copyClipboard => _t('Copy / Clipboard');
   String get quoteFormat => _t('Quote Format');
   String get defaultCopyScope => _t('Default Copy Scope');
@@ -278,9 +272,9 @@ class AppLocalizations {
   String get contextMenu => _t('Context Menu');
   String get contextMenuSubtitle => _t('Customize the selection toolbar');
   String get contextMenuDesc => _t(
-        'Customize the actions shown when you select text in the reader. '
-        'Drag to reorder, toggle to hide, and add apps or AI prompts.',
-      );
+    'Customize the actions shown when you select text in the reader. '
+    'Drag to reorder, toggle to hide, and add apps or AI prompts.',
+  );
   String get addPrompt => _t('Add Prompt');
   String get addApp => _t('Add App');
   String get promptName => _t('Prompt Name');
@@ -311,19 +305,19 @@ class AppLocalizations {
   String get featureGuide => _t('Feature Guide');
   String get featureGuideSubtitle => _t('Learn what ePitaka can do');
   String get featureGuideIntro => _t(
-        'Step-by-step instructions for the reader toolbar, text selection, '
-        'settings and the AI assistant.',
-      );
+    'Step-by-step instructions for the reader toolbar, text selection, '
+    'settings and the AI assistant.',
+  );
   String get featureGuideWelcomeDesc => _t(
-        'Take a quick tour of the main features — you can reopen this guide '
-        'anytime from the menu.',
-      );
+    'Take a quick tour of the main features — you can reopen this guide '
+    'anytime from the menu.',
+  );
   String get exploreFeatures => _t('Explore features');
   String get gotIt => _t('Got it');
   String get exploreWhileWaiting => _t('While you wait…');
   String get exploreWhileWaitingDesc => _t(
-        'While you wait, here is a quick tour of what you can do with ePitaka.',
-      );
+    'While you wait, here is a quick tour of what you can do with ePitaka.',
+  );
 
   // ── Display modes (Translation settings) ──────────────────────────────
   String get hideTranslationMode => _t('Hide Translation');
@@ -356,8 +350,7 @@ class AppLocalizations {
   String get modelsInstalled => _t('Models Installed');
   String get ttsModels => _t('TTS Models');
   String get allModelsReady => _t('All models are ready for use');
-  String get requiresDownload =>
-      _t('Requires ~400 MB download for neural TTS');
+  String get requiresDownload => _t('Requires ~400 MB download for neural TTS');
   String get speakingRate => _t('Speaking Rate');
   String get low => _t('Low');
   String get high => _t('High');
@@ -366,8 +359,7 @@ class AppLocalizations {
   String get testHearSample =>
       _t('Hear a sample of the current voice & settings');
   String get playing => _t('Playing…');
-  String get tapPauseOrStop =>
-      _t('Tap pause or stop to control playback');
+  String get tapPauseOrStop => _t('Tap pause or stop to control playback');
   String get paused => _t('Paused');
   String get tapResume => _t('Tap resume to continue');
   String get loadingAudio => _t('Preparing audio…');
@@ -376,13 +368,11 @@ class AppLocalizations {
   String get config => _t('Config');
   String get ttsLanguageLabel2 => _t('TTS Language');
   String get quality => _t('Quality');
-  String get qualitySubtitle => _t(
-    'Synthesis quality — higher sounds better but is slower',
-  );
+  String get qualitySubtitle =>
+      _t('Synthesis quality — higher sounds better but is slower');
   String get medium => _t('Medium');
-  String get ttsLanguageAutoNote => _t(
-    'Follows the reading language (first enabled translation)',
-  );
+  String get ttsLanguageAutoNote =>
+      _t('Follows the reading language (first enabled translation)');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN
@@ -422,9 +412,8 @@ class AppLocalizations {
 
   String get typographyFontSize => _t('Typography & Font Size');
   String get noTranslationDatabases => _t('No translation databases found.');
-  String get downloadInSettings => _t(
-    'Download translations in Settings → Translations & Downloads.',
-  );
+  String get downloadInSettings =>
+      _t('Download translations in Settings → Translations & Downloads.');
   String get couldNotLoadTranslations => _t('Could not load translations:');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -436,9 +425,8 @@ class AppLocalizations {
   );
   String get enabledDictionaries => _t('Enabled Dictionaries');
   String get disabledDictionaries => _t('Disabled Dictionaries');
-  String get noDictEnabled => _t(
-    'No dictionaries enabled. Tap a dictionary below to enable it.',
-  );
+  String get noDictEnabled =>
+      _t('No dictionaries enabled. Tap a dictionary below to enable it.');
   String get errorLoadingDict => _t('Error loading dictionaries:');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -463,15 +451,13 @@ class AppLocalizations {
   String get bookmarks => _t('Bookmarks');
   String get openTabs => _t('Open Tabs');
   String get books => _t('books');
-  String get noBooksOpen => _t(
-    'No books open yet.\nBrowse and open a book to start reading.',
-  );
+  String get noBooksOpen =>
+      _t('No books open yet.\nBrowse and open a book to start reading.');
   String get noBooksOpenShort => _t('No books open yet.');
   String get history => _t('History');
   String get readingHistory => _t('Reading History');
-  String get noBookmarks => _t(
-    'No bookmarks yet.\nSave your reading position from the reader.',
-  );
+  String get noBookmarks =>
+      _t('No bookmarks yet.\nSave your reading position from the reader.');
   String get noBookmarksShort => _t('No bookmarks yet.');
   String get noHistory => _t('No reading history yet.');
   String get listening => _t('Listening');
@@ -553,15 +539,13 @@ class AppLocalizations {
       n == 1 ? '1 ${_t('result')}' : '$n ${_t('results')}';
 
   /// `No matches for "QUERY"`
-  String noMatchesForQuery(String query) =>
-      '${_t('No matches for')} "$query"';
+  String noMatchesForQuery(String query) => '${_t('No matches for')} "$query"';
 
   /// `No matches found for "QUERY"`
   String noMatchesFoundForQuery(String query) =>
       '${_t('No matches found for')} "$query"';
-  String get typeToSearch => _t(
-    'Type a word or phrase to search\nacross all Pāli texts',
-  );
+  String get typeToSearch =>
+      _t('Type a word or phrase to search\nacross all Pāli texts');
   String get openInReader => _t('Open in Reader');
   String get noHeadingFound => _t('No heading found for this result');
   String get failedToLoadPreview => _t('Failed to load preview:');
@@ -696,10 +680,8 @@ class AppLocalizations {
   String get apiKey => _t('API Key');
   String get baseUrl => _t('Base URL');
   String get checkKeyLoadModels => _t('Check key & load models');
-  String get checkingKeyLoadingModels =>
-      _t('Checking key & loading models...');
-  String get toolModelLabel =>
-      _t('Tool Model (for search & function calling)');
+  String get checkingKeyLoadingModels => _t('Checking key & loading models...');
+  String get toolModelLabel => _t('Tool Model (for search & function calling)');
   String get answerModelLabel =>
       _t('Answer Model (for final answer generation)');
   String get maxCharsPerToolResult => _t('Max chars per tool result');
@@ -719,8 +701,9 @@ class AppLocalizations {
       _t('Tap "Create API key" and copy it (it starts with AIza).');
   String get guideStep4 =>
       _t('Paste it in the API Key field above — it is checked automatically.');
-  String get noCreditCard =>
-      _t('No credit card needed. The free tier includes generous daily limits for Gemini Flash models.');
+  String get noCreditCard => _t(
+    'No credit card needed. The free tier includes generous daily limits for Gemini Flash models.',
+  );
   String get apiKeyRejected => _t('API key rejected — see the error below');
   String get keyEnteredVerify =>
       _t('Key entered — press Enter or "Check key" to verify');
@@ -762,22 +745,20 @@ class AppLocalizations {
   String get askAboutTipitakaShort => _t('Ask about the Tipitaka');
   String get vimamsaIntro => _t(
     'Vimaṃsa — investigation through questioning.\n'
-        'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
-        'and provides detailed answers with clickable citations.\n'
-        'Each chat thread is saved — you can continue later.',
+    'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
+    'and provides detailed answers with clickable citations.\n'
+    'Each chat thread is saved — you can continue later.',
   );
   String get viewPastConversations => _t('View past conversations');
   String get orthodox => _t('Orthodox');
   String get orthodoxDesc =>
       _t('Answers use only the passages found in the Tipitaka.');
-  String get unorthodoxDesc => _t(
-    'The AI may also use its own knowledge alongside the found passages.',
-  );
+  String get unorthodoxDesc =>
+      _t('The AI may also use its own knowledge alongside the found passages.');
   String get typeAtToAttach => _t('Type @ to attach a heading');
   String get threadIsFull => _t('Thread is full — start a new chat');
-  String get askTipitakaOrAttach => _t(
-    'Ask about the Tipitaka, or type @ to attach a heading…',
-  );
+  String get askTipitakaOrAttach =>
+      _t('Ask about the Tipitaka, or type @ to attach a heading…');
   String get chatHistoryTitle => _t('Chat History');
   String get newChatTitle => _t('New Chat');
   String get noConversationsYet => _t('No conversations yet');
@@ -798,8 +779,7 @@ class AppLocalizations {
       '${_t('Delete')} "$title" ${_t('and all its messages?')}';
 
   /// `$langName Translation` (typography section title)
-  String translationTitle(String langName) =>
-      '$langName ${_t('Translation')}';
+  String translationTitle(String langName) => '$langName ${_t('Translation')}';
 
   String get dpdDictionary => _t('DPD Dictionary');
   String get compoundBreakdown => _t('Compound breakdown');
@@ -820,13 +800,13 @@ class AppLocalizations {
   String get gavesanaAiSearch => _t('Gavesana AI Search');
   String get gavesanaPanelDesc => _t(
     'AI-powered search across the Tipiṭaka.\n\n'
-        'Open the full Gavesana panel for detailed results.',
+    'Open the full Gavesana panel for detailed results.',
   );
 
   // ── Gavesana AI search (LLM-based, replaces on-device embeddings) ────
   String get gavesanaAiSearchHint => _t(
     'Describe what you\u2019re looking for — the AI will search the Tipitaka '
-        'for relevant passages.',
+    'for relevant passages.',
   );
   String get gavesanaSearchButton => _t('Search with AI');
   String get gavesanaSearching => _t('AI is searching the Tipitaka…');
@@ -855,9 +835,8 @@ class AppLocalizations {
   // ═══════════════════════════════════════════════════════════════════════
 
   String get availableTranslations => _t('Available Translations');
-  String get noTranslationsAvailable => _t(
-    'No translations available.\nPlease download a translation first.',
-  );
+  String get noTranslationsAvailable =>
+      _t('No translations available.\nPlease download a translation first.');
   String get noTranslationsAvailableShort => _t('No translations available.');
   String get buildIndex => _t('Build Index');
   String get selectATranslation => _t('Select a Translation');
@@ -881,8 +860,7 @@ class AppLocalizations {
       _t('No translations available for download.');
   String get downloadTranslationToStart =>
       _t('Download a translation to get started:');
-  String get chooseTranslationToIndex =>
-      _t('Choose a translation to index:');
+  String get chooseTranslationToIndex => _t('Choose a translation to index:');
   String get buildIndexPali => _t('Build Index (Pāli)');
   String get somethingWentWrong => _t('Something went wrong');
   String get unknownError => _t('Unknown error');
@@ -899,10 +877,8 @@ class AppLocalizations {
   String get optionalTranslations => _t('Optional Translations');
   String get textColors => _t('Text Colors');
   String get pickPaliTextColor => _t('Pick Pāli Text Color');
-  String get pickTranslationTextColor =>
-      _t('Pick Translation Text Color');
-  String get downloadRequiredItemsFirst =>
-      _t('Download required items first');
+  String get pickTranslationTextColor => _t('Pick Translation Text Color');
+  String get downloadRequiredItemsFirst => _t('Download required items first');
   String get loadingAvailableTranslations =>
       _t('Loading available translations…');
   String get required => _t('Required');
@@ -996,9 +972,8 @@ class AppLocalizations {
   // ═══════════════════════════════════════════════════════════════════════
 
   String get buildSearchIndex => _t('Build Search Index');
-  String get chooseTranslation => _t(
-    'Choose a translation to include in the search index.',
-  );
+  String get chooseTranslation =>
+      _t('Choose a translation to include in the search index.');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  FEEDBACK
@@ -1032,8 +1007,7 @@ class AppLocalizations {
   String get mentionAttachPrefix => _t('Attach: ');
   String get typeSuttaOrHeading => _t('Type a sutta or heading name');
   String get startTypingSutta => _t('Start typing a sutta or heading name');
-  String get mentionTip =>
-      _t('Tip: Try @cankisutta, @dn1, or a heading title');
+  String get mentionTip => _t('Tip: Try @cankisutta, @dn1, or a heading title');
   String get selectShort => _t('Select');
   String get navigateShort => _t('Navigate');
   String get escShort => _t('Esc');

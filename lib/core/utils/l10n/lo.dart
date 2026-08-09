@@ -162,7 +162,7 @@ const Map<String, String> lo = {
   'Display': 'ການສະແດງຜົນ',
   'Keep Screen On': 'ໃຫ້ໜ້າຈໍເປີດຄ້າງໄວ້',
   'Prevent screen from dimming while reading': 'ປ້ອງກັນໜ້າຈໍມືດລົງໃນຂະນະອ່ານ',
-  'Show Book Links': 'ສະແດງລິ້ງປຶ້ມ',
+  'Show Inline Commentaries': 'ສະແດງລິ້ງປຶ້ມ',
   'Show links to inlined commentaries & connected books':
       'ສະແດງລິ້ງໄປຫາຄຳອະທິບາຍທີ່ແຊກໃນຂໍ້ຄວາມ ແລະ ປຶ້ມທີ່ເຊື່ອມຕໍ່',
   'Book ID': 'ລະຫັດປຶ້ມ',
@@ -522,9 +522,6 @@ const Map<String, String> lo = {
   'Vimaṃsa': 'ວີມັງສາ',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-
-  
-  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ການແປທີ່ມີໃຫ້ໃຊ້',

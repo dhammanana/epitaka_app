@@ -46,6 +46,15 @@ const double _kMaxDockFraction = 0.85;
 /// Horizontal drag distance (px) that commits a "move to the other side".
 const double _kDragCommitDx = 80;
 
+/// Duration of the dictionary panel's fly-out / slide-in / spring-back
+/// animations when it moves between the sidebar dock and the right column.
+const Duration _kDictMoveDuration = Duration(milliseconds: 240);
+
+/// Grace period after the fly-out before the layout swap runs. Kept longer
+/// than [_kDictMoveDuration] so the exit animation visually finishes before
+/// the panel is re-placed on the other side.
+const Duration _kDictSwapDelay = Duration(milliseconds: 280);
+
 /// The desktop shell shown instead of the mobile layout on desktop platforms.
 ///
 /// ```
@@ -118,6 +127,20 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// Fraction (0..1) of the sidebar height the docked dictionary occupies.
   double _dictDockFraction = _kDefaultDockFraction;
 
+  /// Live horizontal slide (fraction of the visible dictionary panel's
+  /// width) applied while its grip is dragged, plus the fly-out / slide-in
+  /// offsets used when a committed move lands on the other side.
+  double _dictSlideX = 0;
+
+  /// Whether a dictionary grip drag is in progress — while true the
+  /// [AnimatedSlide] previews follow the pointer instantly (zero duration);
+  /// when false, settle animations run.
+  bool _dictDragging = false;
+
+  /// Invalidates pending fly-out / swap callbacks when a new drag starts or
+  /// the placement changes, so a stale animation can't clobber a newer one.
+  int _dictSettleToken = 0;
+
   /// Set right before the activity-bar opens the dictionary docked in the
   /// sidebar, so the [sidePanelProvider] listener doesn't re-place it on
   /// the right.
@@ -175,6 +198,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     // sidebar sits on the right, the dictionary rides inside it;
     // otherwise honor the saved placement (dock or right column).
     _pendingDockPlacement = true;
+    _dictSettleToken++;
+    if (_dictSlideX != 0 || _dictDragging) {
+      setState(() {
+        _dictSlideX = 0;
+        _dictDragging = false;
+      });
+    }
     if (_sidebarOnRight) {
       setState(() => _dictOnRight = false);
     }
@@ -190,6 +220,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// ([_dictOnRight] / [_sidebarOnRight], persisted) rather than forcing
   /// one position.
   void _placeDictionary({required bool sidebarOpen}) {
+    _dictSettleToken++; // cancel any in-flight grip animation
     setState(() {
       if (_sidebarOnRight) {
         // The dictionary rides inside the sidebar. If the sidebar (which
@@ -205,6 +236,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       }
       // _dictOnRight == true → keep the dictionary as the right column.
       // _dictOnRight == false && sidebar open → docked in the sidebar.
+      // Provider-driven opens are not animated.
+      _dictSlideX = 0;
+      _dictDragging = false;
     });
   }
 
@@ -215,19 +249,77 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     notifier.setSidebarOnRight(_sidebarOnRight);
   }
 
+  /// Live dictionary-panel preview while its grip is dragged: the visible
+  /// panel (dock or right column) follows the pointer's horizontal offset.
+  void _onDictDragUpdate(double dx) {
+    _dictSettleToken++; // a new drag supersedes any pending fly-out/swap
+    final width = _dictOnRight ? _rightWidth : _leftWidth;
+    setState(() {
+      _dictDragging = true;
+      _dictSlideX = dx / width;
+    });
+  }
+
+  /// Spring the dictionary panel back into place when a grip drag is
+  /// cancelled (or doesn't reach the commit threshold).
+  void _onDictDragCancel() {
+    setState(() {
+      _dictDragging = false;
+      _dictSlideX = 0;
+    });
+  }
+
   void _moveDictToRight() {
-    if (_sidebarOnRight) return; // the dict rides inside the sidebar
-    setState(() => _dictOnRight = true);
-    _persistPlacement();
+    if (_sidebarOnRight) {
+      // The dict rides inside the sidebar — spring the preview back.
+      _onDictDragCancel();
+      return;
+    }
+    final token = ++_dictSettleToken;
+    // Fly the dock out to the right, then land it as the right column.
+    setState(() {
+      _dictDragging = false;
+      _dictSlideX = 2.0;
+    });
+    Future.delayed(_kDictSwapDelay, () {
+      if (!mounted || _dictSettleToken != token) return;
+      setState(() {
+        _dictOnRight = true;
+        // The right panel starts off-screen to the left and slides in.
+        _dictSlideX = -1.0;
+      });
+      _persistPlacement();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _dictSlideX = 0.0); // slide into place
+      });
+    });
   }
 
   void _moveDictToLeft() {
-    setState(() => _dictOnRight = false);
-    // The dock lives inside the sidebar — make sure it's visible.
-    if (ref.read(sidePanelProvider).left.openPanel == null) {
-      ref.read(sidePanelProvider.notifier).open(SidePanelType.library);
-    }
-    _persistPlacement();
+    final token = ++_dictSettleToken;
+    // Fly the right panel out to the left, then land it back in the dock.
+    setState(() {
+      _dictDragging = false;
+      _dictSlideX = -2.0;
+    });
+    Future.delayed(_kDictSwapDelay, () {
+      if (!mounted || _dictSettleToken != token) return;
+      setState(() {
+        _dictOnRight = false;
+        // The dock starts off-screen to the right and slides in.
+        _dictSlideX = 1.0;
+      });
+      // The dock lives inside the sidebar — make sure it's visible.
+      if (ref.read(sidePanelProvider).left.openPanel == null) {
+        ref.read(sidePanelProvider.notifier).open(SidePanelType.library);
+      }
+      _persistPlacement();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _dictSlideX = 0.0); // slide into place
+      });
+    });
   }
 
   void _moveSidebarToRight() {
@@ -244,6 +336,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   }
 
   void resetLayout() {
+    _dictSettleToken++;
     setState(() {
       _sidebarOnRight = false;
       _dictOnRight = false;
@@ -251,6 +344,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       _leftWidth = _kDefaultLeftWidth;
       _rightWidth = _kDefaultRightWidth;
       _dictDockFraction = _kDefaultDockFraction;
+      _dictSlideX = 0;
+      _dictDragging = false;
     });
     ref.read(sidePanelProvider.notifier).closeAll();
     ref.read(settingsProvider.notifier).setLeftPanelWidth(0);
@@ -299,6 +394,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       onDictDockResizeEnd: () => ref
           .read(settingsProvider.notifier)
           .setDictionaryDockFraction(_dictDockFraction),
+      dictSlideX: _dictSlideX,
+      dictDragging: _dictDragging,
+      onDictDragUpdate: _onDictDragUpdate,
+      onDictDragCancel: _onDictDragCancel,
       onClose: () => _toggleSidebar(panel),
       onMoveSidebarRight: _moveSidebarToRight,
       onMoveSidebarLeft: _moveSidebarToLeft,
@@ -387,6 +486,18 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           }
         });
       }
+      // When the dictionary closes, reset any in-flight slide animation so
+      // a later reopen doesn't show the panel offset.
+      if (prevRight == SidePanelType.dictionary &&
+          nextRight != SidePanelType.dictionary) {
+        _dictSettleToken++;
+        if (_dictSlideX != 0 || _dictDragging) {
+          setState(() {
+            _dictSlideX = 0;
+            _dictDragging = false;
+          });
+        }
+      }
     });
 
     // Opening a book while Vimaṃsa is showing returns to the reader.
@@ -465,6 +576,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                                 )
                               : _RightDictionaryPanel(
                                   autoFocus: panels.right.autoFocus,
+                                  dictSlideX: _dictSlideX,
+                                  dictDragging: _dictDragging,
+                                  onDragUpdate: _onDictDragUpdate,
+                                  onDragCancel: _onDictDragCancel,
                                   onClose: () => ref
                                       .read(sidePanelProvider.notifier)
                                       .close(SidePanelType.dictionary),
@@ -545,6 +660,17 @@ class DesktopSidebar extends StatelessWidget {
   /// Called when the dock divider drag ends (persist the height).
   final VoidCallback onDictDockResizeEnd;
 
+  /// Horizontal slide fraction applied to the docked dictionary while its
+  /// grip is dragged or while it flies out / slides in on a committed move.
+  final double dictSlideX;
+
+  /// Whether the dictionary grip is currently being dragged (previews the
+  /// move instantly instead of animating).
+  final bool dictDragging;
+
+  final ValueChanged<double> onDictDragUpdate;
+  final VoidCallback onDictDragCancel;
+
   final VoidCallback onClose;
   final VoidCallback onMoveSidebarRight;
   final VoidCallback onMoveSidebarLeft;
@@ -562,6 +688,10 @@ class DesktopSidebar extends StatelessWidget {
     required this.dictDockFraction,
     required this.onDictDockResize,
     required this.onDictDockResizeEnd,
+    required this.dictSlideX,
+    required this.dictDragging,
+    required this.onDictDragUpdate,
+    required this.onDictDragCancel,
     required this.onClose,
     required this.onMoveSidebarRight,
     required this.onMoveSidebarLeft,
@@ -608,24 +738,40 @@ class DesktopSidebar extends StatelessWidget {
               // Top zone: the active sidebar item (one at a time).
               Expanded(child: _panelContent(context)),
               if (showDictionaryDock) ...[
-                // Draggable divider — resizes the docked dictionary's
-                // height. Dragging up grows the dictionary.
-                _DockResizeDivider(
-                  key: const Key('dict-dock-divider'),
-                  currentHeight: () => dockPx,
-                  onHeightChanged: (px) => onDictDockResize(
-                    (px / maxHeight).clamp(0.0, 1.0),
-                  ),
-                  onDragEnd: onDictDockResizeEnd,
-                ),
-                // Dictionary docked at the bottom (collapses with the
-                // sidebar).
-                SizedBox(
-                  height: dockPx,
-                  child: _DictionaryDock(
-                    onClose: onCloseDictionary,
-                    onMoveToRight: onMoveDictionaryToRight,
-                    onMoveToLeft: onMoveDictionaryToLeft,
+                // The whole dock section (resize divider + dictionary)
+                // slides horizontally with the grip drag / move animation.
+                AnimatedSlide(
+                  offset: Offset(dictSlideX, 0),
+                  duration: dictDragging
+                      ? Duration.zero
+                      : _kDictMoveDuration,
+                  curve: Curves.easeOutCubic,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Draggable divider — resizes the docked dictionary's
+                      // height. Dragging up grows the dictionary.
+                      _DockResizeDivider(
+                        key: const Key('dict-dock-divider'),
+                        currentHeight: () => dockPx,
+                        onHeightChanged: (px) => onDictDockResize(
+                          (px / maxHeight).clamp(0.0, 1.0),
+                        ),
+                        onDragEnd: onDictDockResizeEnd,
+                      ),
+                      // Dictionary docked at the bottom (collapses with
+                      // the sidebar).
+                      SizedBox(
+                        height: dockPx,
+                        child: _DictionaryDock(
+                          onClose: onCloseDictionary,
+                          onMoveToRight: onMoveDictionaryToRight,
+                          onMoveToLeft: onMoveDictionaryToLeft,
+                          onDragUpdate: onDictDragUpdate,
+                          onDragCancel: onDictDragCancel,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -663,11 +809,15 @@ class _DictionaryDock extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onMoveToRight;
   final VoidCallback onMoveToLeft;
+  final ValueChanged<double> onDragUpdate;
+  final VoidCallback onDragCancel;
 
   const _DictionaryDock({
     required this.onClose,
     required this.onMoveToRight,
     required this.onMoveToLeft,
+    required this.onDragUpdate,
+    required this.onDragCancel,
   });
 
   @override
@@ -685,6 +835,8 @@ class _DictionaryDock extends StatelessWidget {
             grip: _Grip(
               onDragRight: onMoveToRight,
               onDragLeft: onMoveToLeft,
+              onDragUpdate: onDragUpdate,
+              onDragCancel: onDragCancel,
               tooltip: loc.t('Move dictionary to the right'),
             ),
           ),
@@ -702,33 +854,48 @@ class _RightDictionaryPanel extends StatelessWidget {
   final bool autoFocus;
   final VoidCallback onClose;
   final VoidCallback onMoveToLeft;
+  final double dictSlideX;
+  final bool dictDragging;
+  final ValueChanged<double> onDragUpdate;
+  final VoidCallback onDragCancel;
 
   const _RightDictionaryPanel({
     required this.autoFocus,
     required this.onClose,
     required this.onMoveToLeft,
+    required this.dictSlideX,
+    required this.dictDragging,
+    required this.onDragUpdate,
+    required this.onDragCancel,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    return Container(
-      color: colors.surfaceContainerLowest,
-      child: Column(
-        children: [
-          _PanelHeader(
-            title: loc.dictionary,
-            colors: colors,
-            onClose: onClose,
-            grip: _Grip(
-              onDragLeft: onMoveToLeft,
-              tooltip: loc.t('Dock dictionary in the sidebar'),
+    return AnimatedSlide(
+      offset: Offset(dictSlideX, 0),
+      duration: dictDragging ? Duration.zero : _kDictMoveDuration,
+      curve: Curves.easeOutCubic,
+      child: Container(
+        color: colors.surfaceContainerLowest,
+        child: Column(
+          children: [
+            _PanelHeader(
+              title: loc.dictionary,
+              colors: colors,
+              onClose: onClose,
+              grip: _Grip(
+                onDragLeft: onMoveToLeft,
+                onDragUpdate: onDragUpdate,
+                onDragCancel: onDragCancel,
+                tooltip: loc.t('Dock dictionary in the sidebar'),
+              ),
             ),
-          ),
-          Divider(height: 1, color: colors.outlineVariant),
-          Expanded(child: DictionaryPanel(autoFocus: autoFocus)),
-        ],
+            Divider(height: 1, color: colors.outlineVariant),
+            Expanded(child: DictionaryPanel(autoFocus: autoFocus)),
+          ],
+        ),
       ),
     );
   }
@@ -792,16 +959,25 @@ class _PanelHeader extends StatelessWidget {
   }
 }
 
-/// A small horizontal-drag grip. A committed drag to the right calls
-/// [onDragRight], to the left [onDragLeft] (based on distance/velocity).
+/// A small horizontal-drag grip used to move a panel to the other side of
+/// the window. Hovering highlights it and shows a grab cursor; while
+/// dragging the live horizontal offset is reported via [onDragUpdate] so
+/// the shell can preview the move (and the cursor becomes a closed grab).
+/// A committed drag to the right calls [onDragRight], to the left
+/// [onDragLeft] (based on distance/velocity); otherwise [onDragCancel] is
+/// called so the preview can spring back.
 class _Grip extends StatefulWidget {
   final VoidCallback? onDragRight;
   final VoidCallback? onDragLeft;
+  final ValueChanged<double>? onDragUpdate;
+  final VoidCallback? onDragCancel;
   final String tooltip;
 
   const _Grip({
     this.onDragRight,
     this.onDragLeft,
+    this.onDragUpdate,
+    this.onDragCancel,
     required this.tooltip,
   });
 
@@ -811,19 +987,34 @@ class _Grip extends StatefulWidget {
 
 class _GripState extends State<_Grip> {
   double _accumDx = 0;
+  bool _hovered = false;
+  bool _dragging = false;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final active = _hovered || _dragging;
     return Tooltip(
       message: widget.tooltip,
       child: MouseRegion(
-        cursor: SystemMouseCursors.resizeLeftRight,
+        cursor: _dragging
+            ? SystemMouseCursors.grabbing
+            : (_hovered ? SystemMouseCursors.grab : SystemMouseCursors.basic),
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: (_) => _accumDx = 0,
-          onHorizontalDragUpdate: (d) => _accumDx += d.delta.dx,
+          onHorizontalDragStart: (_) {
+            _accumDx = 0;
+            setState(() => _dragging = true);
+            widget.onDragUpdate?.call(0);
+          },
+          onHorizontalDragUpdate: (d) {
+            _accumDx += d.delta.dx;
+            widget.onDragUpdate?.call(_accumDx);
+          },
           onHorizontalDragEnd: (d) {
+            setState(() => _dragging = false);
             final velocity = d.primaryVelocity ?? 0;
             if ((_accumDx > _kDragCommitDx || velocity > 300) &&
                 widget.onDragRight != null) {
@@ -831,16 +1022,29 @@ class _GripState extends State<_Grip> {
             } else if ((_accumDx < -_kDragCommitDx || velocity < -300) &&
                 widget.onDragLeft != null) {
               widget.onDragLeft!();
+            } else {
+              widget.onDragCancel?.call();
             }
           },
-          child: Container(
+          onHorizontalDragCancel: () {
+            setState(() => _dragging = false);
+            widget.onDragCancel?.call();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             width: 30,
             height: 30,
             alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active
+                  ? colors.primaryContainer.withValues(alpha: 0.35)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Icon(
               Icons.drag_indicator,
               size: 16,
-              color: colors.outline,
+              color: active ? colors.primary : colors.outline,
             ),
           ),
         ),

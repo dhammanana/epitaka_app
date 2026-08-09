@@ -71,12 +71,15 @@ class DisplayLayoutPopup extends ConsumerWidget {
               icon: Icons.view_headline,
               title: loc.displayLineByLine,
               subtitle: loc.displayLineByLineSubtitle,
-              isSelected: showTrans && currentMode == TranslationDisplayMode.lineByLine,
+              isSelected:
+                  showTrans && currentMode == TranslationDisplayMode.lineByLine,
               onTap: () {
                 ref.read(settingsProvider.notifier).setShowTranslation(true);
                 ref
                     .read(settingsProvider.notifier)
-                    .setTranslationDisplayMode(TranslationDisplayMode.lineByLine);
+                    .setTranslationDisplayMode(
+                      TranslationDisplayMode.lineByLine,
+                    );
                 Navigator.of(context).pop();
               },
             ),
@@ -84,12 +87,15 @@ class DisplayLayoutPopup extends ConsumerWidget {
               icon: Icons.view_column,
               title: loc.displaySideBySide,
               subtitle: loc.displaySideBySideSubtitle,
-              isSelected: showTrans && currentMode == TranslationDisplayMode.sideBySide,
+              isSelected:
+                  showTrans && currentMode == TranslationDisplayMode.sideBySide,
               onTap: () {
                 ref.read(settingsProvider.notifier).setShowTranslation(true);
                 ref
                     .read(settingsProvider.notifier)
-                    .setTranslationDisplayMode(TranslationDisplayMode.sideBySide);
+                    .setTranslationDisplayMode(
+                      TranslationDisplayMode.sideBySide,
+                    );
                 Navigator.of(context).pop();
               },
             ),
@@ -105,13 +111,14 @@ class DisplayLayoutPopup extends ConsumerWidget {
               ),
             ),
 
-            // ── Show book links (temporary toggle) ───────────────────────
+            // ── Show Inline Commentaries (temporary toggle) ───────────────────────
             _CheckboxTile(
               icon: Icons.link,
               title: loc.showBookLinks,
               value: settings.showBookLinks,
-              onChanged: (v) =>
-                  ref.read(settingsProvider.notifier).setShowBookLinksTemporary(v),
+              onChanged: (v) => ref
+                  .read(settingsProvider.notifier)
+                  .setShowBookLinksTemporary(v),
             ),
 
             // ── Divider ──────────────────────────────────────────────────
@@ -150,7 +157,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
   }
 }
 
-/// A checkbox-style toggle row (e.g. "Show book links") in the layout popup.
+/// A checkbox-style toggle row (e.g. "Show Inline Commentaries") in the layout popup.
 /// Toggling it applies immediately but does NOT persist — the reader toolbar
 /// is meant for quick, temporary adjustments.
 class _CheckboxTile extends StatelessWidget {
@@ -270,7 +277,9 @@ class _LayoutOptionTile extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
                       color: colors.onSurface,
                     ),
                   ),
@@ -291,5 +300,3 @@ class _LayoutOptionTile extends StatelessWidget {
     );
   }
 }
-
-

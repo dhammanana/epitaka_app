@@ -234,12 +234,16 @@ void main() {
       findsOneWidget,
     );
 
-    // Drag the dock's grip to the right → becomes the right column.
+    // Drag the dock's grip to the right → becomes the right column. The
+    // move plays a fly-out animation, a delayed layout swap, then a
+    // slide-in entrance — pump through all of it (durations live in
+    // desktop_shell.dart: _kDictMoveDuration 240ms + _kDictSwapDelay 280ms).
     await tester.drag(
       find.byTooltip('Move dictionary to the right'),
       const Offset(120, 0),
     );
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(
       find.byKey(const Key('dict-dock-divider')).hitTestable(),
       findsNothing,
@@ -267,6 +271,75 @@ void main() {
       find.byKey(const Key('right-panel-divider')).hitTestable(),
       findsOneWidget,
     );
+  });
+
+  testWidgets('right-column dictionary slides back into the dock on grip '
+      'drag', (tester) async {
+    SharedPreferences.setMockInitialValues({'dict_on_right': true});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsNotifier(prefs)..init(prefs);
+
+    await pumpScaffold(tester, settings: settings);
+    // Sidebar already open (contents) so the dictionary docks into it.
+    await openPanel(tester, 'open-left');
+    await openPanel(tester, 'open-right');
+
+    // Starts as the right column (saved placement wins).
+    expect(
+      find.byKey(const Key('right-panel-divider')).hitTestable(),
+      findsOneWidget,
+    );
+
+    // Drag the right panel's grip left → it flies back into the sidebar
+    // dock. Pump through the fly-out, the delayed swap, and the dock's
+    // slide-in entrance (which translates the divider off-screen until it
+    // settles).
+    await tester.drag(
+      find.byTooltip('Dock dictionary in the sidebar'),
+      const Offset(-120, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // The dock is back in the sidebar (present and settled in place), and
+    // the dock placement is persisted.
+    expect(find.byKey(const Key('dict-dock-divider')), findsOneWidget);
+    expect(
+      find.byKey(const Key('dict-dock-divider')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(readSettings(tester).dictOnRight, isFalse);
+  });
+
+  testWidgets('dictionary dock previews the grip drag and springs back',
+      (tester) async {
+    await pumpScaffold(tester);
+    await openPanel(tester, 'open-left');
+    await openPanel(tester, 'open-right');
+
+    final divider = find.byKey(const Key('dict-dock-divider'));
+    final before = tester.getCenter(divider).dx;
+
+    // Drag the grip right but hold (don't release yet): the dock follows
+    // the pointer live instead of only reacting on release. Use several
+    // small moves so the drag recognizer commits to the gesture.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byTooltip('Move dictionary to the right')),
+    );
+    for (var i = 0; i < 4; i++) {
+      await gesture.moveBy(const Offset(15, 0));
+      await tester.pump();
+    }
+    final during = tester.getCenter(divider).dx;
+    expect(during, greaterThan(before));
+
+    // Releasing short of the commit threshold springs the dock back.
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getCenter(divider).dx, closeTo(before, 1));
   });
 
   testWidgets('dictionary placement is restored from persisted settings',

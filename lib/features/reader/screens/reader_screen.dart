@@ -360,12 +360,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _handleToolbarSearch() => _toggleInBookSearch();
 
   void _handleToolbarDictionary() {
-    if (ResponsiveBreakpoint.isDesktop(context)) {
-      // Desktop: toggle the docked dictionary panel.
-      ref.read(sidePanelProvider.notifier).toggle(SidePanelType.dictionary);
+    if (!PlatformInfo.isDesktop) {
+      // Mobile: the dictionary is a modal bottom sheet — easy to close
+      // with the back button, by pulling it down, or by tapping outside.
+      showDictionarySheet(context, '');
       return;
     }
-    showDictionarySheet(context, '');
+    final notifier = ref.read(sidePanelProvider.notifier);
+    if (ref.read(sidePanelProvider).right.openPanel ==
+        SidePanelType.dictionary) {
+      notifier.close(SidePanelType.dictionary);
+      return;
+    }
+    // Open the docked panel and focus its search field (desktop).
+    notifier.open(SidePanelType.dictionary, autoFocus: true);
   }
 
   void _handleToolbarJump() {
@@ -1327,27 +1335,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       '[DICT] reader word lookup tap word="$word"',
       name: 'epitaka.dict',
     );
-    // Desktop: route the lookup into the shell's dictionary panel (sidebar
-    // dock or right column) instead of the bottom sheet.
-    if (openDictionaryInPanel(context, ref, word)) {
-      _lastLookedUpWord = null;
-      _selectableRegionKey.currentState?.clearSelection();
-      return;
-    }
-    // Default: show as a bottom sheet on mobile.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await showDictionarySheet(context, word.trim());
-      } finally {
-        if (mounted) {
-          _lastLookedUpWord = null;
-          // Clear any text selection that SelectionArea may have made
-          // during the double-tap, so the user can start a fresh
-          // long-press selection after dismissing the sheet.
-          _selectableRegionKey.currentState?.clearSelection();
-        }
-      }
-    });
+    // Route the lookup into the dictionary dock/panel FIRST — the
+    // dictionary must receive the word before any selection is cleared
+    // (clearing first broke lookups and triggered framework assertions).
+    openDictionaryInPanel(context, ref, word);
+    _lastLookedUpWord = null;
+    // Clear any pre-existing selection right away (the dictionary already
+    // has the word by now). Leftover selections from THIS double-tap are
+    // handled event-driven in [_handleSelectionChanged] (the framework
+    // creates its word selection after the sheet is already open) and the
+    // context menu is suppressed in [_buildCopyContextMenu].
+    _selectableRegionKey.currentState?.clearSelection();
   }
 
   void _handleSelectionChanged(SelectedContent? selection) {
@@ -1357,6 +1355,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       'hasSelection=${selection != null}',
       name: 'epitaka.dict',
     );
+
+    // When a modal dictionary/book-link sheet is open, any NEW selection
+    // reported here is a leftover from the double-tap that opened it: the
+    // sheet is pushed on the second tap's pointer-*down*, while
+    // SelectionArea creates its word selection on that same gesture *after*
+    // the push (and shows its context menu on the pointer-up). Clearing it
+    // here — the instant it appears — keeps the selection highlight and its
+    // context menu from ever covering the sheet. This is event-driven, so it
+    // works regardless of when the framework happens to land the selection
+    // (the earlier pointer-up + post-frame flag approach was timing-sensitive
+    // and missed the second and later double-taps). Desktop is unaffected:
+    // the sheet-open counter stays 0 there.
+    //
+    // The dictionary has already received the word by this point (the lookup
+    // runs before any selection can exist), so clearing can't race the lookup.
+    if (selection != null && ref.read(dictionarySheetOpenProvider) > 0) {
+      _selectableRegionKey.currentState?.clearSelection();
+    }
 
     // Dictionary lookup is now driven explicitly by our own double-tap
     // detector (see [_handlePointerDown] + [_selectWordAt]), which hit-tests
@@ -1886,6 +1902,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     BuildContext context,
     SelectableRegionState selectableRegionState,
   ) {
+    // While a modal dictionary/book-link sheet is open, SelectionArea builds
+    // this menu on the double-tap's pointer-up — a leftover of the tap that
+    // already pushed the sheet on the pointer-down. Never render it: it would
+    // pop up over the sheet. The leftover selection itself is cleared by the
+    // guard in [_handleSelectionChanged]. Desktop is unaffected (the sheet
+    // counter stays 0 there, and double-click menus are not shown anyway).
+    if (ref.read(dictionarySheetOpenProvider) > 0) {
+      return const SizedBox.shrink();
+    }
+
     final activeTab = ref.read(readerTabsProvider).activeTab;
     final selectionState = ref.read(readerSelectionProvider);
     final colors = Theme.of(context).colorScheme;
@@ -2068,6 +2094,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   Widget build(BuildContext context) {
     final tabsState = ref.watch(readerTabsProvider);
+
+    // The mobile dictionary dock is driven by the same panel state as the
+    // desktop shell. While it's open, the floating pill and the TTS chip
+    // are hidden so nothing overlaps it.
+    final dictDockOpen =
+        ref.watch(sidePanelProvider).right.openPanel ==
+        SidePanelType.dictionary;
 
     // Inside the desktop shell, the attached status bar drives the reader's
     // toolbar actions through this scope; the floating pill is hidden and
@@ -2593,6 +2626,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
                   // TTS floating controls chip
                   if (isCurrentBookTts &&
+                      !dictDockOpen &&
                       (globalTtsState == TtsPlaybackState.playing ||
                           globalTtsState == TtsPlaybackState.paused))
                     Positioned(
@@ -2619,7 +2653,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   // Floating bottom toolbar (animated). Hidden inside the
                   // desktop shell, where the attached status bar hosts the
                   // same actions (via ReaderToolbarScope).
-                  if (toolbarScope == null)
+                  if (toolbarScope == null && !dictDockOpen)
                     ValueListenableBuilder<bool>(
                       valueListenable: _appBarCollapsed,
                       builder: (context, collapsed, _) => AnimatedPositioned(
@@ -2646,6 +2680,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         ),
                       ),
                     ),
+
+                  // (Mobile dictionary is a modal bottom sheet, opened via
+                  // showDictionarySheet — see _handleToolbarDictionary.)
                 ],
               ),
             ),

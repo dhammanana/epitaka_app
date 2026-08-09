@@ -66,16 +66,23 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Keep the panel in sync with the dictionary word coming from the
-    // reader (e.g. a double-clicked word routed here when pinned on desktop).
-    final panelData = ref.watch(sidePanelProvider).right.panelData;
-    if (panelData != null && panelData.trim().isNotEmpty) {
-      final word = panelData.trim();
-      if (word != _query) {
-        _searchController.text = word;
-        _initiateSearch(word);
-      }
+    // Apply the word the panel was opened with (if any) on first mount. This
+    // is a read (not a watch): subsequent word updates arrive through the
+    // [ref.listen] in build, and watching here would rebuild the whole panel
+    // on every sidePanelProvider change (e.g. panel-width drags) for nothing.
+    final panelData = ref.read(sidePanelProvider).right.panelData;
+    if (panelData != null) {
+      _syncPanelWord(panelData);
     }
+  }
+
+  /// Apply a dictionary word coming from [SidePanelProvider] to the search
+  /// field, ignoring repeats of the current query.
+  void _syncPanelWord(String word) {
+    final trimmed = word.trim();
+    if (trimmed.isEmpty || trimmed == _query) return;
+    _searchController.text = trimmed;
+    _initiateSearch(trimmed);
   }
 
   @override
@@ -156,6 +163,17 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+
+    // Word lookups routed from the reader (e.g. double-clicking a word on
+    // desktop) arrive as panelData changes on [sidePanelProvider].
+    // didChangeDependencies is only re-invoked on InheritedWidget changes,
+    // NOT on provider changes — so without this listener the panel only
+    // picked up a new word when something else (a window resize) happened to
+    // rebuild it. React to the provider change explicitly instead.
+    ref.listen(sidePanelProvider, (prev, next) {
+      final word = next.right.panelData;
+      if (word != null) _syncPanelWord(word);
+    });
 
     return Column(
       children: [
@@ -302,7 +320,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             return _buildDictionaryResults(
               colors,
               lookup,
-              includePrefixSuggestions: !hasDpdMatch,
+              includePrefixSuggestions:
+                  !hasDpdMatch &&
+                  _query.length >= kDictionarySuggestionMinLength,
             );
           },
         );

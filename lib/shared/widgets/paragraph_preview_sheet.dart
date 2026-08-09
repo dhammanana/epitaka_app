@@ -6,7 +6,6 @@ import '../../core/utils/app_localizations.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
 import '../../features/dictionary/widgets/dictionary_open.dart';
-import '../../features/dictionary/widgets/dictionary_sheet.dart';
 import 'pali_text.dart';
 import 'preview_content.dart';
 
@@ -24,9 +23,22 @@ Future<void> showParagraphPreviewSheet(
   int? scrollToParaId,
   int? scrollToLineId,
   GlobalKey? targetLineKey,
+
+  /// Optional Pāli heading rendered above the lines (e.g. the linked
+  /// section title in a book-link sheet).
+  String? heading,
+
+  /// Optional footer text centered below the lines (e.g. a para/line ref).
+  String? footer,
+
+  /// Route the sheet through the root navigator's overlay. Used when the
+  /// sheet is opened on top of the reader, to keep it out of the reader's
+  /// focus/semantics subtree.
+  bool useRootNavigator = false,
 }) {
   return showModalBottomSheet(
     context: context,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _ParagraphPreviewSheet(
@@ -42,6 +54,8 @@ Future<void> showParagraphPreviewSheet(
       scrollToParaId: scrollToParaId,
       scrollToLineId: scrollToLineId,
       targetLineKey: targetLineKey,
+      heading: heading,
+      footer: footer,
     ),
   );
 }
@@ -64,6 +78,13 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
   /// Key attached to the target line so the sheet can bring it into view.
   final GlobalKey? targetLineKey;
 
+  /// Optional Pāli heading rendered above the lines (e.g. the linked
+  /// section title in a book-link sheet).
+  final String? heading;
+
+  /// Optional footer text centered below the lines (e.g. a para/line ref).
+  final String? footer;
+
   const _ParagraphPreviewSheet({
     required this.title,
     this.subtitle = '',
@@ -77,6 +98,8 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
     this.scrollToParaId,
     this.scrollToLineId,
     this.targetLineKey,
+    this.heading,
+    this.footer,
   });
 
   @override
@@ -230,28 +253,77 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                         AppDimensions.marginMobile,
                         32,
                       ),
-                      child: PreviewContent(
-                        lines: w.lines,
-                        highlightParaId: w.highlightParaId,
-                        highlightLineId: w.highlightLineId,
-                        firstSnippetIndex: w.firstSnippetIndex,
-                        paliSnippet: w.paliSnippet,
-                        scrollToParaId: w.scrollToParaId,
-                        scrollToLineId: w.scrollToLineId,
-                        targetLineKey: w.targetLineKey,
-                        onPaliWordTap: (word) {
-                          // Desktop: close the preview sheet and open the
-                          // dictionary in the shell's panel instead.
-                          if (openDictionaryInPanel(
-                            context,
-                            ref,
-                            word,
-                            closeSheet: true,
-                          )) {
-                            return;
-                          }
-                          showDictionarySheet(context, word.trim());
-                        },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Optional heading (e.g. book-link section title) ─
+                          if (w.heading != null && w.heading!.isNotEmpty) ...[
+                            Container(
+                              width: 32,
+                              height: 2,
+                              decoration: BoxDecoration(
+                                color: colors.primary.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            PaliTextStatic(
+                              w.heading!,
+                              script,
+                              style: AppTypography.bodyPali.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: colors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+
+                          PreviewContent(
+                            lines: w.lines,
+                            highlightParaId: w.highlightParaId,
+                            highlightLineId: w.highlightLineId,
+                            firstSnippetIndex: w.firstSnippetIndex,
+                            paliSnippet: w.paliSnippet,
+                            scrollToParaId: w.scrollToParaId,
+                            scrollToLineId: w.scrollToLineId,
+                            targetLineKey: w.targetLineKey,
+                            onPaliWordTap: (word) {
+                              // Close the preview sheet and open the dictionary
+                              // in the panel/dock instead (desktop sidebar or
+                              // mobile bottom dock).
+                              openDictionaryInPanel(
+                                context,
+                                ref,
+                                word,
+                                closeSheet: true,
+                              );
+                            },
+                          ),
+
+                          // ── Optional footer (e.g. para/line ref badge) ─
+                          if (w.footer != null && w.footer!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 20),
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    w.footer!,
+                                    style: AppTypography.labelSmall.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
             ),

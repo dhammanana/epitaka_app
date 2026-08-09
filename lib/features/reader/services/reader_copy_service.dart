@@ -24,7 +24,6 @@ import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
 import '../../../shared/utils/reading_clipboard.dart';
 import '../../dictionary/widgets/dictionary_open.dart';
-import '../../dictionary/widgets/dictionary_sheet.dart' show showDictionarySheet;
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
@@ -434,26 +433,15 @@ class ReaderCopyService {
     return word;
   }
 
-  /// Open the dictionary for [word], routing to the side panel if pinned.
+  /// Open the dictionary for [word], routing to the panel/dock (desktop
+  /// sidebar dock or right column, mobile bottom dock).
   static void _openDictionary(
     BuildContext context,
     WidgetRef ref,
     String word,
   ) {
     if (word.trim().isEmpty) return;
-
-    // Desktop: route the lookup into the shell's dictionary panel (sidebar
-    // dock or right column) instead of the bottom sheet.
-    if (openDictionaryInPanel(context, ref, word)) return;
-
-    // Show as a bottom sheet
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await showDictionarySheet(context, word.trim());
-      } catch (_) {
-        // Silently ignore — sheet errors are non-critical
-      }
-    });
+    openDictionaryInPanel(context, ref, word);
   }
 
   /// Copy the selected text as plain text with proper newlines.

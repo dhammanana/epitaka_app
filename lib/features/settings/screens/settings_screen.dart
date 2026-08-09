@@ -337,6 +337,12 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final titleStyle = AppTypography.labelMedium.copyWith(
+      color: colors.onSurface,
+    );
+    final subtitleStyle = AppTypography.labelSmall.copyWith(
+      color: colors.onSurfaceVariant,
+    );
 
     return InkWell(
       onTap: onTap,
@@ -345,33 +351,83 @@ class _SettingsTile extends StatelessWidget {
           horizontal: AppDimensions.md,
           vertical: AppDimensions.md,
         ),
-        child: Row(
-          children: [
-            Icon(icon, color: colors.primary),
-            const SizedBox(width: AppDimensions.md),
-            Expanded(
-              child: Text(
-                title,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurface,
-                ),
-              ),
-            ),
-            if (subtitle != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The trailing subtitle is a short hint; when it is long (e.g. a
+            // verbose translation on a narrow phone) the unconstrained Text
+            // squeezes the title's Expanded slot to nothing, which looks
+            // broken. Strip the subtitle unless the title and subtitle both
+            // fit beside the icon and chevron.
+            final showSubtitle = subtitle != null &&
+                _titleAndSubtitleFit(
+                  constraints.maxWidth,
+                  title,
+                  titleStyle,
                   subtitle!,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+                  subtitleStyle,
+                  Directionality.of(context),
+                  MediaQuery.textScalerOf(context),
+                );
+            return Row(
+              children: [
+                Icon(icon, color: colors.primary),
+                const SizedBox(width: AppDimensions.md),
+                Expanded(
+                  child: Text(title, style: titleStyle),
                 ),
-              ),
-            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-          ],
+                if (showSubtitle)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      subtitle!,
+                      style: subtitleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+              ],
+            );
+          },
         ),
       ),
     );
+  }
+
+  /// Whether [title] and [subtitle] fit side-by-side with the icon and
+  /// chevron. Fixed-width items in the row: icon (24), gap after it (md),
+  /// a small gap before the subtitle (8), the subtitle's right padding (8),
+  /// and the chevron (24). When they don't fit, the subtitle is stripped so
+  /// the title always keeps the full row.
+  bool _titleAndSubtitleFit(
+    double available,
+    String title,
+    TextStyle titleStyle,
+    String subtitle,
+    TextStyle subtitleStyle,
+    TextDirection direction,
+    TextScaler textScaler,
+  ) {
+    const fixed = 24.0 + AppDimensions.md + 8.0 + 8.0 + 24.0;
+    return _textWidth(title, titleStyle, direction, textScaler) +
+            _textWidth(subtitle, subtitleStyle, direction, textScaler) +
+            fixed <=
+        available;
+  }
+
+  double _textWidth(
+    String text,
+    TextStyle style,
+    TextDirection direction,
+    TextScaler textScaler,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: direction,
+      textScaler: textScaler,
+    )..layout();
+    return painter.width;
   }
 }
 

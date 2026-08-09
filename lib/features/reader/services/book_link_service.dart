@@ -98,19 +98,34 @@ class BookLinkService {
     }
   }
 
-  /// Get the whole section containing [paraId] in a linked book, along with
-  /// the nearest `level=10` heading (the section title) and optional
+  /// Lines loaded before the linked line when a section is large.
+  static const int previewWindowBefore = 60;
+
+  /// Lines loaded after the linked line when a section is large.
+  static const int previewWindowAfter = 60;
+
+  /// Get the section containing [paraId] in a linked book, along with the
+  /// nearest `level=10` heading (the section title) and optional
   /// translations.
   ///
   /// A "section" runs from the nearest `level=10` heading at or before
   /// [paraId] up to the next heading of any level. This shows the full
   /// commentary/explanation block rather than a single paragraph.
   ///
+  /// Large sections are capped: when the section has more than
+  /// [previewWindowBefore] + [previewWindowAfter] lines, only a window of
+  /// that many lines around the linked line ([paraId]/[lineId]) is loaded
+  /// instead of the whole section — a section can run to 1300+ lines, and
+  /// rendering all of them made the sheet slow. [LinkedParagraphContent.totalLines]
+  /// still reports the real section size and [LinkedParagraphContent.isTrimmed]
+  /// is set when this cap was applied.
+  ///
   /// [translationDbs] provides translation databases keyed by language code
   /// (e.g. {'en': TranslationDatabase, 'th': TranslationDatabase}).
   Future<LinkedParagraphContent?> getLinkedContent(
     String bookId,
     int paraId, {
+    int? lineId,
     Map<String, TranslationDatabase>? translationDbs,
   }) async {
     // ── Parallelize the independent queries ────────────────────────────
@@ -179,16 +194,95 @@ class BookLinkService {
           ]
         : [Variable.withInt(sectionStartParaId)];
 
-    final sentenceRows = await _db
-        .customSelect(
-          'SELECT para_id, line_id, pali FROM sentences '
-          'WHERE book_id = ? $rangeSql '
-          'ORDER BY para_id, line_id LIMIT 500',
-          variables: [Variable.withString(bookId), ...rangeVars],
-        )
-        .get();
+    // ── Section size + linked-line anchor ──────────────────────────────
+    // The linked line's 1-based position within the ordered section, and the
+    // section's total line count, both from a single ordered pass. This tells
+    // us whether the section is large enough to cap, and where the window
+    // must be centered.
+    //
+    // Only runs for genuinely bounded sections (a known next heading). The
+    // fallback ranges (`para_id >= start` with no upper bound — a link
+    // target without a level-10 heading, or the last section of a book) are
+    // left to the whole-section query below, avoiding a full scan of the
+    // rest of the book just to count lines.
+    int targetRn = 0;
+    int sectionTotal = 0;
+    if (lineId != null && sectionEndParaId != null) {
+      final anchorRows = await _db
+          .customSelect(
+            'SELECT rn, total FROM ('
+            '  SELECT para_id, line_id,'
+            '         ROW_NUMBER() OVER (ORDER BY para_id, line_id) AS rn,'
+            '         COUNT(*) OVER () AS total'
+            '  FROM sentences WHERE book_id = ? $rangeSql'
+            ') WHERE para_id = ? AND line_id = ?',
+            variables: [
+              Variable.withString(bookId),
+              ...rangeVars,
+              Variable.withInt(paraId),
+              Variable.withInt(lineId),
+            ],
+          )
+          .get();
+      if (anchorRows.isNotEmpty) {
+        targetRn = anchorRows.first.data['rn'] as int;
+        sectionTotal = anchorRows.first.data['total'] as int;
+      }
+    }
+
+    // Large sections are trimmed to a window around the linked line: 60
+    // lines before it and 60 after, so the sheet renders at most ~121 lines
+    // no matter how big the section is. Small sections load in full.
+    final bool trimSection =
+        sectionTotal > previewWindowBefore + previewWindowAfter;
+
+    final List<QueryRow> sentenceRows;
+    if (trimSection) {
+      final windowStart = (targetRn - 1 - previewWindowBefore) < 0
+          ? 0
+          : targetRn - 1 - previewWindowBefore; // 0-based index of first line
+      final windowEnd = targetRn + previewWindowAfter; // inclusive 1-based rn
+      sentenceRows = await _db
+          .customSelect(
+            'SELECT para_id, line_id, pali FROM ('
+            '  SELECT para_id, line_id, pali,'
+            '         ROW_NUMBER() OVER (ORDER BY para_id, line_id) AS rn'
+            '  FROM sentences WHERE book_id = ? $rangeSql'
+            ') WHERE rn > ? AND rn <= ? '
+            'ORDER BY para_id, line_id',
+            variables: [
+              Variable.withString(bookId),
+              ...rangeVars,
+              Variable.withInt(windowStart),
+              Variable.withInt(windowEnd),
+            ],
+          )
+          .get();
+    } else {
+      sentenceRows = await _db
+          .customSelect(
+            'SELECT para_id, line_id, pali FROM sentences '
+            'WHERE book_id = ? $rangeSql '
+            'ORDER BY para_id, line_id LIMIT 500',
+            variables: [Variable.withString(bookId), ...rangeVars],
+          )
+          .get();
+    }
 
     if (sentenceRows.isEmpty) return null;
+
+    // Scope translations to the paragraphs actually shown (the window or the
+    // whole section). Fetching by para range — rather than by the section's
+    // line range — keeps the rows keyed by (para_id, line_id) in sync with
+    // the Pāli rows even when a translation table is missing some lines, and
+    // avoids pulling translations for paragraphs that aren't rendered.
+    var paraMin = sentenceRows.first.data['para_id'] as int;
+    var paraMax = paraMin;
+    for (final r in sentenceRows) {
+      final p = r.data['para_id'] as int;
+      if (p < paraMin) paraMin = p;
+      if (p > paraMax) paraMax = p;
+    }
 
     // Fetch translations for each requested language in parallel.
     // Keyed by language -> paragraph -> line so multiple paragraphs don't
@@ -203,9 +297,13 @@ class BookLinkService {
             final rows = await transDb
                 .customSelect(
                   'SELECT para_id, line_id, translation FROM sentences '
-                  'WHERE book_id = ? $rangeSql '
+                  'WHERE book_id = ? AND para_id >= ? AND para_id <= ? '
                   'ORDER BY para_id, line_id',
-                  variables: [Variable.withString(bookId), ...rangeVars],
+                  variables: [
+                    Variable.withString(bookId),
+                    Variable.withInt(paraMin),
+                    Variable.withInt(paraMax),
+                  ],
                 )
                 .get();
             final paraMap = <int, Map<int, String>>{};
@@ -258,6 +356,8 @@ class BookLinkService {
       headingTitle: headingTitle,
       headingLevel: headingLevel,
       translationLangs: transByLang.keys.toList(),
+      totalLines: sectionTotal,
+      isTrimmed: trimSection,
     );
   }
 }
@@ -274,6 +374,15 @@ class LinkedParagraphContent {
   /// Language codes for which translations were successfully loaded.
   final List<String> translationLangs;
 
+  /// Total number of lines in the whole section (not just the loaded
+  /// window). 0 when the section size couldn't be determined.
+  final int totalLines;
+
+  /// True when the section was larger than the preview window, so [lines]
+  /// holds only the lines around the linked line instead of the whole
+  /// section.
+  final bool isTrimmed;
+
   const LinkedParagraphContent({
     required this.bookId,
     required this.bookName,
@@ -282,6 +391,8 @@ class LinkedParagraphContent {
     this.headingTitle,
     this.headingLevel,
     this.translationLangs = const [],
+    this.totalLines = 0,
+    this.isTrimmed = false,
   });
 }
 

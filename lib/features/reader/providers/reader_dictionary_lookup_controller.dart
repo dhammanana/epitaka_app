@@ -5,7 +5,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../dictionary/widgets/dictionary_open.dart';
-import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../utils/reader_word_hit_test.dart' show selectWordAt;
 
 /// Result from [ReaderDictionaryLookupController.handlePointerDown].
@@ -151,19 +150,12 @@ class ReaderDictionaryLookupController {
     developer.log('[DBG] clearTapState — swipe started', name: 'epitaka.dict');
   }
 
-  /// Open the dictionary for [word].
+  /// Open the dictionary for [word], routing the lookup into the dictionary
+  /// dock/panel (desktop sidebar dock or right column, mobile bottom dock).
   ///
-  /// If the dictionary is pinned in the desktop side panel, routes the lookup
-  /// there. Otherwise shows the dictionary bottom sheet, managing the
-  /// [SelectionContainer.disabled] toggle via [onSelectionDisabled] /
-  /// [onSelectionEnabled] callbacks.
-  void openDictionary(
-    WidgetRef ref,
-    BuildContext context,
-    String word, {
-    required VoidCallback onSelectionDisabled,
-    required VoidCallback onSelectionEnabled,
-  }) {
+  /// The dock/panel stays mounted, so there is no need to disable selection
+  /// while it is open.
+  void openDictionary(WidgetRef ref, BuildContext context, String word) {
     if (word.trim().isEmpty) return;
 
     developer.log('[DBG] openDictionary word="$word"', name: 'epitaka.dict');
@@ -172,34 +164,8 @@ class ReaderDictionaryLookupController {
       name: 'epitaka.dict',
     );
 
-    // Desktop: route the lookup into the shell's dictionary panel (sidebar
-    // dock or right column) instead of the bottom sheet. The panel stays
-    // mounted, so there's no need to disable selection.
-    if (openDictionaryInPanel(context, ref, word)) {
-      _lastLookedUpWord = null;
-      return;
-    }
-
-    // Default: show as a bottom sheet on mobile.
-    //
-    // Disable selection (via SelectionContainer.disabled, NOT by unmounting
-    // SelectionArea) before the sheet opens. We commit the disable on its own
-    // frame first so every paragraph's selectable unregisters from the root
-    // registrar *before* the modal steals focus; only then does the sheet
-    // mount on the next frame. By the time focus shifts, the registrar has
-    // nothing left to reconcile, so there's no teardown race or O(n) walk.
-    // SelectionArea itself stays mounted the whole time.
-    onSelectionDisabled();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await showDictionarySheet(context, word.trim());
-      } finally {
-        // Re-enable selection after the dictionary sheet closes,
-        // clearing dedup so the user can look up the same word again.
-        _lastLookedUpWord = null;
-        onSelectionEnabled();
-      }
-    });
+    openDictionaryInPanel(context, ref, word);
+    _lastLookedUpWord = null;
   }
 
 }

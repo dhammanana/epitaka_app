@@ -166,7 +166,7 @@ const Map<String, String> my = {
   'Keep Screen On': 'မျက်နှာပြင်ဖွင့်ထားမည်',
   'Prevent screen from dimming while reading':
       'ဖတ်ရှုနေစဉ် မျက်နှာပြင်မှိန်ခြင်းကို ကာကွယ်မည်',
-  'Show Book Links': 'စာအုပ်လင့်များ ပြသမည်',
+  'Show Inline Commentaries': 'စာအုပ်လင့်များ ပြသမည်',
   'Show links to inlined commentaries & connected books':
       'အနက်ဖွင့်ချက်နှင့် ချိတ်ဆက်ထားသော စာအုပ်လင့်များ ပြသမည်',
   'Book ID': 'စာအုပ် ID',
@@ -190,12 +190,6 @@ const Map<String, String> my = {
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'ဂဝေသန (AI ရှာဖွေမှု)',
 
-  
-
-  
-
-  
-  
   'Open Gavesana': 'ဂဝေသနကို ဖွင့်မည်',
 
   // ── Translation Settings ────────────────────────────────────────────
@@ -539,9 +533,6 @@ const Map<String, String> my = {
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
 
-  
-  
-
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ရရှိနိုင်သောဘာသာပြန်များ',
   'No translations available.\nPlease download a translation first.':
@@ -718,7 +709,8 @@ const Map<String, String> my = {
 
   // ── Context Menu ────────────────────────────────────────────────────
   'Context Menu': 'ဆက်စပ်မီနူး',
-  'Customize the selection toolbar': 'စာရွေးချယ်မှု toolbar ကို စိတ်ကြိုက်ပြင်ဆင်ပါ',
+  'Customize the selection toolbar':
+      'စာရွေးချယ်မှု toolbar ကို စိတ်ကြိုက်ပြင်ဆင်ပါ',
   'Customize the actions shown when you select text in the reader. Drag to reorder, toggle to hide, and add apps or AI prompts.':
       'Reader တွင် စာသားရွေးချယ်သည့်အခါ ပြသမည့်လုပ်ဆောင်ချက်များကို စိတ်ကြိုက်ပြင်ဆင်ပါ။ ပြန်စီရန် ဆွဲယူပါ၊ ဝှက်ရန် ပိတ်ပါ၊ အက်ပ်များ သို့မဟုတ် AI prompt များ ထည့်ပါ။',
   'Add Prompt': 'Prompt ထည့်ပါ',
@@ -739,9 +731,11 @@ const Map<String, String> my = {
   'Copy Link': 'လင့်ခ်ကူးယူပါ',
   'Copy a link to this passage': 'ဤအပိုဒ်သို့ လင့်ခ်ကူးယူပါ',
   'Explain': 'ရှင်းပြပါ',
-  'Explain the selected text with AI': 'ရွေးချယ်ထားသော စာသားကို AI ဖြင့် ရှင်းပြပါ',
+  'Explain the selected text with AI':
+      'ရွေးချယ်ထားသော စာသားကို AI ဖြင့် ရှင်းပြပါ',
   'Summarize Ch.': 'အခန်းအကျဉ်းချုပ်',
-  'Summarize the current chapter with AI': 'လက်ရှိအခန်းကို AI ဖြင့် အကျဉ်းချုပ်ပါ',
+  'Summarize the current chapter with AI':
+      'လက်ရှိအခန်းကို AI ဖြင့် အကျဉ်းချုပ်ပါ',
   'Share': 'မျှဝေပါ',
   'Share the selected text': 'ရွေးချယ်ထားသော စာသားကို မျှဝေပါ',
   'Look up the selected word': 'ရွေးချယ်ထားသော စကားလုံးကို ရှာဖွေပါ',

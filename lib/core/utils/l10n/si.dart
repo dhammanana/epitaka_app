@@ -166,7 +166,7 @@ const Map<String, String> si = {
   'Keep Screen On': 'තිරය දිගටම විවෘතව තබන්න',
   'Prevent screen from dimming while reading':
       'කියවන අතරතුර තිරය අඳුරු වීම වළක්වන්න',
-  'Show Book Links': 'පොත් සබැඳි පෙන්වන්න',
+  'Show Inline Commentaries': 'පොත් සබැඳි පෙන්වන්න',
   'Show links to inlined commentaries & connected books':
       'ඇතුළත් කළ විවරණ සහ සම්බන්ධිත පොත් සබැඳි පෙන්වන්න',
   'Book ID': 'පොත් හැඳුනුම්පත',
@@ -189,10 +189,6 @@ const Map<String, String> si = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'ගවේෂණ (AI සෙවුම)',
-
-  
-
-  
 
   'Open Gavesana': 'ගවේෂණ විවෘත කරන්න',
 
@@ -537,9 +533,6 @@ const Map<String, String> si = {
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
 
-  
-  
-
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'ලබාගත හැකි පරිවර්තන',
   'No translations available.\nPlease download a translation first.':
@@ -735,7 +728,8 @@ const Map<String, String> si = {
   'Explain': 'විස්තර කරන්න',
   'Explain the selected text with AI': 'තෝරාගත් පෙළ AI සමඟ විස්තර කරන්න',
   'Summarize Ch.': 'පරිච්ඡේදය සාරාංශ කරන්න',
-  'Summarize the current chapter with AI': 'වත්මන් පරිච්ඡේදය AI සමඟ සාරාංශ කරන්න',
+  'Summarize the current chapter with AI':
+      'වත්මන් පරිච්ඡේදය AI සමඟ සාරාංශ කරන්න',
   'Share': 'බෙදාගන්න',
   'Share the selected text': 'තෝරාගත් පෙළ බෙදාගන්න',
   'Look up the selected word': 'තෝරාගත් වචනය සොයන්න',

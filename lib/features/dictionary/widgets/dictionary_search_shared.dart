@@ -7,6 +7,15 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 
+/// Minimum query length before "Did you mean?" prefix suggestions are shown
+/// in the dictionary (sheet and panel). Short prefixes are too ambiguous to
+/// suggest from, and matching on them floods the results with noise.
+///
+/// Note: the "no matches found" empty state lives inside the suggestion
+/// section, so below this threshold a short query with no DPD match renders
+/// a blank results area rather than a noise card — intentional.
+const int kDictionarySuggestionMinLength = 3;
+
 // ── HTML → plain text ─────────────────────────────────────────────────────
 
 /// Strips HTML tags and collapses whitespace so dictionary definitions from
@@ -327,7 +336,7 @@ class DpdHeadwordCard extends ConsumerWidget {
                 fontSize: lemmaSize,
                 height: pali.lineHeight * 0.9,
                 fontWeight: FontWeight.w600,
-                color: colors.primary,
+                // color: colors.primary,
                 fontFamily: paliFontFamily,
               ),
             ),

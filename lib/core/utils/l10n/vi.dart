@@ -165,9 +165,8 @@ const Map<String, String> vi = {
   'Auto-Scroll Speed': 'Tốc độ tự động cuộn',
   'Display': 'Hiển thị',
   'Keep Screen On': 'Giữ màn hình sáng',
-  'Prevent screen from dimming while reading':
-      'Không cho màn hình tối khi đọc',
-  'Show Book Links': 'Hiện liên kết sách',
+  'Prevent screen from dimming while reading': 'Không cho màn hình tối khi đọc',
+  'Show Inline Commentaries': 'Hiện liên kết sách',
   'Show links to inlined commentaries & connected books':
       'Hiện liên kết đến chú giải chèn trong văn bản và sách liên kết',
   'Book ID': 'Mã sách',
@@ -190,10 +189,6 @@ const Map<String, String> vi = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'Gavesana (Tìm kiếm AI)',
-
-  
-
-  
 
   'Open Gavesana': 'Mở Gavesana',
 
@@ -307,9 +302,9 @@ const Map<String, String> vi = {
 
   // ── Dictionary Settings ─────────────────────────────────────────────
   'Enable, disable, and reorder dictionaries.\n'
-      'Dictionaries appear in this order in the dictionary panel.':
+          'Dictionaries appear in this order in the dictionary panel.':
       'Bật, tắt và sắp xếp từ điển.\n'
-          'Từ điển xuất hiện theo thứ tự này trong bảng từ điển.',
+      'Từ điển xuất hiện theo thứ tự này trong bảng từ điển.',
   'Enabled Dictionaries': 'Từ điển đã bật',
   'Disabled Dictionaries': 'Từ điển đã tắt',
   'No dictionaries enabled. Tap a dictionary below to enable it.':
@@ -366,9 +361,9 @@ const Map<String, String> vi = {
   'Dist': 'KC',
   'Search the Pāli Tipiṭaka': 'Tìm Tipiṭaka Pāli',
   'Search across both Pāli text and translations.\n'
-      'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).':
+          'Enable fuzzy mode to match diacritic variations (ā=a, ñ=n, ṭ=t …).':
       'Tìm kiếm trong cả văn bản Pāli và bản dịch.\n'
-          'Bật chế độ mờ để khớp các biến thể dấu phụ (ā=a, ñ=n, ṭ=t …).',
+      'Bật chế độ mờ để khớp các biến thể dấu phụ (ā=a, ñ=n, ṭ=t …).',
   'Building Search Index': 'Đang xây dựng chỉ mục tìm kiếm',
   'complete': 'hoàn thành',
   'Starting…': 'Đang bắt đầu…',
@@ -458,7 +453,8 @@ const Map<String, String> vi = {
   'Thinking...': 'Đang suy nghĩ...',
   'Researching...': 'Đang nghiên cứu...',
   'Generating answer...': 'Đang tạo câu trả lời...',
-  'Passage not found in the database': 'Không tìm thấy đoạn văn trong cơ sở dữ liệu',
+  'Passage not found in the database':
+      'Không tìm thấy đoạn văn trong cơ sở dữ liệu',
 
   // ── AI Settings Sheet ───────────────────────────────────────────────
   'AI Assistant Settings': 'Cài đặt Trợ lý AI',
@@ -535,9 +531,6 @@ const Map<String, String> vi = {
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
 
-  
-  
-
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'Bản dịch khả dụng',
   'No translations available.\nPlease download a translation first.':
@@ -558,8 +551,7 @@ const Map<String, String> vi = {
       'Để bật tìm kiếm toàn văn, chúng tôi cần xây dựng chỉ mục tìm kiếm cho văn bản Pāli và bản dịch.',
   'The indexing only needs to happen once.\nYou can rebuild later from Settings.':
       'Việc lập chỉ mục chỉ cần thực hiện một lần.\nBạn có thể xây dựng lại sau từ Cài đặt.',
-  'No translations available for download.':
-      'Không có bản dịch nào để tải.',
+  'No translations available for download.': 'Không có bản dịch nào để tải.',
   'Download a translation to get started:': 'Tải bản dịch để bắt đầu:',
   'Choose a translation to index:': 'Chọn bản dịch để lập chỉ mục:',
   'Build Index (Pāli)': 'Xây chỉ mục (Pāli)',
@@ -582,17 +574,17 @@ const Map<String, String> vi = {
   'Loading available translations…': 'Đang tải các bản dịch khả dụng…',
   'Building Heading Index…': 'Đang xây dựng chỉ mục tiêu đề…',
   'This will delete and rebuild the full-text search index from scratch. '
-      'It may take a few seconds on slower devices. '
-      'You can continue using the app while indexing runs in the background.':
+          'It may take a few seconds on slower devices. '
+          'You can continue using the app while indexing runs in the background.':
       'Thao tác này sẽ xóa và xây dựng lại chỉ mục tìm kiếm toàn văn từ đầu. '
-          'Có thể mất vài giây trên thiết bị chậm. '
-          'Bạn có thể tiếp tục sử dụng ứng dụng trong khi lập chỉ mục chạy nền.',
+      'Có thể mất vài giây trên thiết bị chậm. '
+      'Bạn có thể tiếp tục sử dụng ứng dụng trong khi lập chỉ mục chạy nền.',
   'This will clear the current search index and rebuild it from '
-      'scratch. Previously indexed data will be lost until the rebuild '
-      'completes.':
+          'scratch. Previously indexed data will be lost until the rebuild '
+          'completes.':
       'Thao tác này sẽ xóa chỉ mục tìm kiếm hiện tại và xây dựng lại từ '
-          'đầu. Dữ liệu đã lập chỉ mục trước đó sẽ bị mất cho đến khi '
-          'việc xây dựng lại hoàn tất.',
+      'đầu. Dữ liệu đã lập chỉ mục trước đó sẽ bị mất cho đến khi '
+      'việc xây dựng lại hoàn tất.',
 
   // ── Index Build Dialog ──────────────────────────────────────────────
   'Build Search Index': 'Xây dựng chỉ mục tìm kiếm',
@@ -625,8 +617,7 @@ const Map<String, String> vi = {
   // ── Mention overlay ─────────────────────────────────────────────────
   'Attach: ': 'Đính kèm: ',
   'Type a sutta or heading name': 'Nhập tên sutta hoặc tiêu đề',
-  'Start typing a sutta or heading name':
-      'Bắt đầu nhập tên sutta hoặc tiêu đề',
+  'Start typing a sutta or heading name': 'Bắt đầu nhập tên sutta hoặc tiêu đề',
   'Tip: Try @cankisutta, @dn1, or a heading title':
       'Mẹo: Thử @cankisutta, @dn1, hoặc tên tiêu đề',
   'Select': 'Chọn',
@@ -682,13 +673,13 @@ const Map<String, String> vi = {
       'Cần chỉ mục tiêu đề cho @ — xây dựng ngay?',
   'Ask about the Tipitaka': 'Hỏi về Tipitaka',
   'Vimaṃsa — investigation through questioning.\n'
-      'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
-      'and provides detailed answers with clickable citations.\n'
-      'Each chat thread is saved — you can continue later.':
+          'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
+          'and provides detailed answers with clickable citations.\n'
+          'Each chat thread is saved — you can continue later.':
       'Vimaṃsa — khảo sát thông qua đặt câu hỏi.\n'
-          'AI tìm kiếm Tipitaka bằng công cụ, thu thập các đoạn kinh liên quan,\n'
-          'và đưa ra câu trả lời chi tiết kèm trích dẫn có thể nhấp.\n'
-          'Mỗi cuộc trò chuyện đều được lưu lại — bạn có thể tiếp tục sau.',
+      'AI tìm kiếm Tipitaka bằng công cụ, thu thập các đoạn kinh liên quan,\n'
+      'và đưa ra câu trả lời chi tiết kèm trích dẫn có thể nhấp.\n'
+      'Mỗi cuộc trò chuyện đều được lưu lại — bạn có thể tiếp tục sau.',
   'View past conversations': 'Xem các cuộc trò chuyện trước',
   'Orthodox': 'Chính thống',
   'Answers use only the passages found in the Tipitaka.':
@@ -696,7 +687,8 @@ const Map<String, String> vi = {
   'The AI may also use its own knowledge alongside the found passages.':
       'AI cũng có thể dùng kiến thức riêng của nó cùng với các đoạn kinh tìm thấy.',
   'Type @ to attach a heading': 'Gõ @ để đính kèm tiêu đề',
-  'Thread is full — start a new chat': 'Cuộc trò chuyện đã đầy — hãy bắt đầu cuộc trò chuyện mới',
+  'Thread is full — start a new chat':
+      'Cuộc trò chuyện đã đầy — hãy bắt đầu cuộc trò chuyện mới',
   'Ask about the Tipitaka, or type @ to attach a heading…':
       'Hỏi về Tipitaka, hoặc gõ @ để đính kèm tiêu đề…',
   'Chat History': 'Lịch sử trò chuyện',
@@ -776,8 +768,10 @@ const Map<String, String> vi = {
       'Chọn bất kỳ văn bản nào trong trình đọc và một thanh công cụ thao tác thông minh sẽ hiện ra phía trên.',
   'Select text — tap and drag, or double-tap a word.':
       'Chọn văn bản — chạm và kéo, hoặc chạm hai lần vào một từ.',
-  'Copy — copy the selection as plain text.': 'Sao chép — sao chép vùng chọn dạng văn bản thường.',
-  'Excerpt — copy with a formatted citation.': 'Trích đoạn — sao chép kèm trích dẫn có định dạng.',
+  'Copy — copy the selection as plain text.':
+      'Sao chép — sao chép vùng chọn dạng văn bản thường.',
+  'Excerpt — copy with a formatted citation.':
+      'Trích đoạn — sao chép kèm trích dẫn có định dạng.',
   'Copy Link — copy a shareable link to this exact passage.':
       'Sao chép liên kết — sao chép liên kết chia sẻ đến đúng đoạn này.',
   'Dictionary — look up the selected word.': 'Từ điển — tra từ đã chọn.',

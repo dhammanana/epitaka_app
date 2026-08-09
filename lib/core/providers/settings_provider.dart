@@ -51,11 +51,11 @@ enum ThemePreference {
 
   /// Whether this theme uses a dark color scheme.
   bool get isDark => switch (this) {
-        ThemePreference.dark ||
-        ThemePreference.midnight ||
-        ThemePreference.forest => true,
-        _ => false,
-      };
+    ThemePreference.dark ||
+    ThemePreference.midnight ||
+    ThemePreference.forest => true,
+    _ => false,
+  };
 }
 
 /// Library expand level for the book browser.
@@ -257,9 +257,7 @@ class TypographySettings {
 /// Safely resolve a stored theme index, falling back to the system theme
 /// when the value is missing or out of range.
 ThemePreference _safeThemePreference(int? index) {
-  if (index == null ||
-      index < 0 ||
-      index >= ThemePreference.values.length) {
+  if (index == null || index < 0 || index >= ThemePreference.values.length) {
     return ThemePreference.system;
   }
   return ThemePreference.values[index];
@@ -589,7 +587,8 @@ class AppSettings {
       quotePageNumberSystem:
           quotePageNumberSystem ?? this.quotePageNumberSystem,
     );
-  }}
+  }
+}
 
 /// Provider for [AppSettings] backed by SharedPreferences.
 class SettingsNotifier extends StateNotifier<AppSettings> {
@@ -747,9 +746,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         orElse: () => AppLanguage.english,
       ),
       // Clamp so a corrupt/out-of-range stored value can't crash startup.
-      themePreference: _safeThemePreference(
-        prefs.getInt('theme_preference'),
-      ),
+      themePreference: _safeThemePreference(prefs.getInt('theme_preference')),
       primaryTranslationLang: prefs.getString('primary_lang') ?? 'en',
       secondaryTranslationLang: prefs.getString('secondary_lang') ?? 'th',
       showPali: prefs.getBool('show_pali') ?? true,
@@ -1085,7 +1082,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   /// Temporarily toggle book links for the current session WITHOUT
-  /// persisting. Used by the reader toolbar's quick "Show book links"
+  /// persisting. Used by the reader toolbar's quick "Show Inline Commentaries"
   /// checkbox so a temporary hide never changes the user's saved
   /// preference — the persisted value returns on the next app start.
   void setShowBookLinksTemporary(bool value) {
@@ -1192,9 +1189,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   /// Remove a context-menu action (external app or custom prompt).
   Future<void> removeContextMenuAction(String id) async {
-    final actions = state.contextMenuActions
-        .where((a) => a.id != id)
-        .toList();
+    final actions = state.contextMenuActions.where((a) => a.id != id).toList();
     await setContextMenuActions(actions);
   }
 

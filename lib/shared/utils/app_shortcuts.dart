@@ -125,9 +125,8 @@ class AppShortcuts {
 
     void openDictionary() {
       final context = _ctx(navigatorKey);
-      // Toggle: if the dictionary panel/sheet is already open, close it;
-      // otherwise open it and focus its search field.
       if (ResponsiveBreakpoint.isDesktop(context)) {
+        // Desktop: toggle the docked sidebar panel / right column.
         final sidePanels = ref.read(sidePanelProvider);
         if (sidePanels.right.openPanel == SidePanelType.dictionary) {
           ref.read(sidePanelProvider.notifier).close(SidePanelType.dictionary);
@@ -137,8 +136,8 @@ class AppShortcuts {
               .open(SidePanelType.dictionary, data: '', autoFocus: true);
         }
       } else {
-        // On mobile the dictionary is a bottom sheet; re-opening the same
-        // word is a no-op, so just open it.
+        // Mobile: the dictionary is a modal bottom sheet — easy to close
+        // with the back button, by pulling it down, or by tapping outside.
         showDictionarySheet(context, '');
       }
     }

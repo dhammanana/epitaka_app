@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.0.12+15
+version: 1.0.14+19
 
 environment:
   sdk: ^3.12.2
@@ -24,6 +24,11 @@ dependencies:
   # Database
   drift: ^2.25.1
   sqlite3: ^2.4.6
+  # Bundles the native sqlite3 library (libsqlite3.so/dylib/dll) into the
+  # app for Android/iOS/macOS/Windows/Linux. sqlite3 2.x requires this
+  # companion package — without it Android fails to open ANY Drift database
+  # ("Failed to load dynamic library libsqlite3.so").
+  sqlite3_flutter_libs: ^0.5.42
   path_provider: ^2.1.5
   path: ^1.9.1
 

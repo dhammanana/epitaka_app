@@ -397,6 +397,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                   GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onVerticalDragUpdate: (details) {
+                      // The dismiss pop below can dispose the sheet while the
+                      // drag gesture is still delivering events (the route's
+                      // exit animation keeps the pointer stream alive), which
+                      // detaches the controller mid-gesture. Guard so those
+                      // trailing events no-op instead of asserting.
+                      if (!_sheetController.isAttached) return;
                       final screenHeight = MediaQuery.of(context).size.height;
                       final delta = details.primaryDelta! / screenHeight;
                       final newSize = (_sheetController.size - delta).clamp(
@@ -406,10 +412,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       _sheetController.jumpTo(newSize);
                     },
                     onVerticalDragEnd: (details) {
+                      if (_dismissed || !_sheetController.isAttached) return;
                       final flick = details.primaryVelocity ?? 0;
-                      if (!_dismissed &&
-                          (flick > _kHeaderFlingVelocityPxPerSec ||
-                              _sheetController.size <= _sheetCloseExtent)) {
+                      if (flick > _kHeaderFlingVelocityPxPerSec ||
+                          _sheetController.size <= _sheetCloseExtent) {
                         _dismissed = true;
                         Navigator.of(context).pop();
                       }
@@ -562,12 +568,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   Widget _buildContent(ColorScheme colors, ScrollController scrollController) {
     if (_query.isEmpty) {
-      return _buildIdleState(colors);
+      return _buildIdleState(colors, scrollController);
     }
     return _buildResults(colors, scrollController);
   }
 
-  Widget _buildIdleState(ColorScheme colors) {
+  Widget _buildIdleState(ColorScheme colors, ScrollController scrollController) {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final trans = settings.typography.typographyFor(
@@ -575,35 +581,49 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     );
     final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
     final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.menu_book,
-            size: 56,
-            color: colors.primary.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: AppDimensions.md),
-          Text(
-            AppLocalizations.of(context).dictionary,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.onSurfaceVariant,
-              fontSize: paliSize,
+    // Attach the sheet's scroll controller even when idle: the header's
+    // drag-to-resize/close reads the sheet size via the controller, and
+    // DraggableScrollableController.isAttached requires the controller to
+    // have a client scrollable. Without one (plain Center), every header
+    // drag while the dictionary was opened empty hit the framework's
+    // 'not attached to a sheet' assertion in debug and did nothing.
+    return CustomScrollView(
+      controller: scrollController,
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.menu_book,
+                  size: 56,
+                  color: colors.primary.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: AppDimensions.md),
+                Text(
+                  AppLocalizations.of(context).dictionary,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: paliSize,
+                  ),
+                ),
+                const SizedBox(height: AppDimensions.sm),
+                Text(
+                  AppLocalizations.of(context).dictIdlePrompt,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyTranslation.copyWith(
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                    fontSize: transSize,
+                    fontFamily: trans.fontFamily.fontFamily,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: AppDimensions.sm),
-          Text(
-            AppLocalizations.of(context).dictIdlePrompt,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyTranslation.copyWith(
-              color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-              fontSize: transSize,
-              fontFamily: trans.fontFamily.fontFamily,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -637,7 +657,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               colors,
               lookup,
               scrollController,
-              includePrefixSuggestions: !hasDpdMatch,
+              includePrefixSuggestions:
+                  !hasDpdMatch &&
+                  _query.length >= kDictionarySuggestionMinLength,
             );
           },
         );

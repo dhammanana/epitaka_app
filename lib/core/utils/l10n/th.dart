@@ -163,7 +163,7 @@ const Map<String, String> th = {
   'Keep Screen On': 'เปิดหน้าจอค้างไว้',
   'Prevent screen from dimming while reading':
       'ป้องกันไม่ให้หน้าจอหรี่ลงขณะอ่าน',
-  'Show Book Links': 'แสดงลิงก์หนังสือ',
+  'Show Inline Commentaries': 'แสดงลิงก์หนังสือ',
   'Show links to inlined commentaries & connected books':
       'แสดงลิงก์ไปยังอรรถกถาและหนังสือที่เชื่อมโยง',
   'Book ID': 'รหัสหนังสือ',
@@ -186,10 +186,6 @@ const Map<String, String> th = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'คเวสนา (ค้นหาด้วย AI)',
-
-  
-
-  
 
   'Open Gavesana': 'เปิดคเวสนา',
 
@@ -525,9 +521,6 @@ const Map<String, String> th = {
   'Vimaṃsa': 'วีมังสา',
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
-
-  
-  
 
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'คำแปลที่มีให้ใช้',

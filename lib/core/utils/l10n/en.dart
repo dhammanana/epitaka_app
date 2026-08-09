@@ -120,7 +120,8 @@ const Map<String, String> en = {
   'Forest Seclusion': 'Forest Seclusion',
   'Expand results by default': 'Expand results by default',
   'Rebuild search index': 'Rebuild search index',
-  'Re-indexes Pāli texts & translations': 'Re-indexes Pāli texts & translations',
+  'Re-indexes Pāli texts & translations':
+      'Re-indexes Pāli texts & translations',
   'Dictionaries': 'Dictionaries',
   'Dictionary Settings': 'Dictionary Settings',
   'Enable, disable & reorder': 'Enable, disable & reorder',
@@ -168,7 +169,7 @@ const Map<String, String> en = {
   'Keep Screen On': 'Keep Screen On',
   'Prevent screen from dimming while reading':
       'Prevent screen from dimming while reading',
-  'Show Book Links': 'Show Book Links',
+  'Show Inline Commentaries': 'Show Inline Commentaries',
   'Show links to inlined commentaries & connected books':
       'Show links to inlined commentaries & connected books',
   'Book ID': 'Book ID',
@@ -191,10 +192,6 @@ const Map<String, String> en = {
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
   'Gavesana (AI Search)': 'Gavesana (AI Search)',
-
-  
-
-  
 
   'Open Gavesana': 'Open Gavesana',
   'found': 'found',
@@ -322,9 +319,9 @@ const Map<String, String> en = {
 
   // ── Dictionary Settings ─────────────────────────────────────────────
   'Enable, disable, and reorder dictionaries.\n'
-      'Dictionaries appear in this order in the dictionary panel.':
+          'Dictionaries appear in this order in the dictionary panel.':
       'Enable, disable, and reorder dictionaries.\n'
-          'Dictionaries appear in this order in the dictionary panel.',
+      'Dictionaries appear in this order in the dictionary panel.',
   'Enabled Dictionaries': 'Enabled Dictionaries',
   'Disabled Dictionaries': 'Disabled Dictionaries',
   'No dictionaries enabled. Tap a dictionary below to enable it.':
@@ -366,7 +363,8 @@ const Map<String, String> en = {
   'Error loading bookmarks:': 'Error loading bookmarks:',
   'Error loading history:': 'Error loading history:',
   'No books in this Piṭaka yet.': 'No books in this Piṭaka yet.',
-  'Could not load the Tipitaka library.': 'Could not load the Tipitaka library.',
+  'Could not load the Tipitaka library.':
+      'Could not load the Tipitaka library.',
   'Delete bookmark': 'Delete bookmark',
   'Delete history entry for': 'Delete history entry for',
   'Removed: ': 'Removed: ',
@@ -381,9 +379,9 @@ const Map<String, String> en = {
   'Dist': 'Dist',
   'Search the Pāli Tipiṭaka': 'Search the Pāli Tipiṭaka',
   'Search across both Pāli text and translations.\n'
-      'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).':
+          'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).':
       'Search across both Pāli text and translations.\n'
-          'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).',
+      'Diacritics are ignored (ā=a, ñ=n, ṭ=t …).',
   'Building Search Index': 'Building Search Index',
   'complete': 'complete',
   'Starting…': 'Starting…',
@@ -516,7 +514,8 @@ const Map<String, String> en = {
   'Get a free Gemini API key': 'Get a free Gemini API key',
   'Gemini is free for everyone — just 4 easy steps:':
       'Gemini is free for everyone — just 4 easy steps:',
-  'Tap "Get free Gemini API key" below.': 'Tap "Get free Gemini API key" below.',
+  'Tap "Get free Gemini API key" below.':
+      'Tap "Get free Gemini API key" below.',
   'Sign in with your Google account (free, no credit card).':
       'Sign in with your Google account (free, no credit card).',
   'Tap "Create API key" and copy it (it starts with AIza).':
@@ -549,9 +548,6 @@ const Map<String, String> en = {
 
   // ── Gavesana FTS Build Dialog ───────────────────────────────────────
 
-  
-  
-
   // ── Indexing ────────────────────────────────────────────────────────
   'Available Translations': 'Available Translations',
   'No translations available.\nPlease download a translation first.':
@@ -582,7 +578,8 @@ const Map<String, String> en = {
   'Unknown error': 'Unknown error',
   'Download the required databases to get started.':
       'Download the required databases to get started.',
-  'You can add more translations later.': 'You can add more translations later.',
+  'You can add more translations later.':
+      'You can add more translations later.',
   'Required Databases': 'Required Databases',
   'These are needed for the app to function.':
       'These are needed for the app to function.',
@@ -597,17 +594,17 @@ const Map<String, String> en = {
   'Loading available translations…': 'Loading available translations…',
   'Building Heading Index…': 'Building Heading Index…',
   'This will delete and rebuild the full-text search index from scratch. '
-      'It may take a few seconds on slower devices. '
-      'You can continue using the app while indexing runs in the background.':
-      'This will delete and rebuild the full-text search index from scratch. '
           'It may take a few seconds on slower devices. '
-          'You can continue using the app while indexing runs in the background.',
+          'You can continue using the app while indexing runs in the background.':
+      'This will delete and rebuild the full-text search index from scratch. '
+      'It may take a few seconds on slower devices. '
+      'You can continue using the app while indexing runs in the background.',
   'This will clear the current search index and rebuild it from '
-      'scratch. Previously indexed data will be lost until the rebuild '
-      'completes.':
-      'This will clear the current search index and rebuild it from '
           'scratch. Previously indexed data will be lost until the rebuild '
-          'completes.',
+          'completes.':
+      'This will clear the current search index and rebuild it from '
+      'scratch. Previously indexed data will be lost until the rebuild '
+      'completes.',
 
   // ── Index Build Dialog ──────────────────────────────────────────────
   'Build Search Index': 'Build Search Index',
@@ -697,13 +694,13 @@ const Map<String, String> en = {
       'Heading index needed for @ — build now?',
   'Ask about the Tipitaka': 'Ask about the Tipitaka',
   'Vimaṃsa — investigation through questioning.\n'
-      'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
-      'and provides detailed answers with clickable citations.\n'
-      'Each chat thread is saved — you can continue later.':
-      'Vimaṃsa — investigation through questioning.\n'
           'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
           'and provides detailed answers with clickable citations.\n'
-          'Each chat thread is saved — you can continue later.',
+          'Each chat thread is saved — you can continue later.':
+      'Vimaṃsa — investigation through questioning.\n'
+      'The AI searches the Tipitaka using tools, gathers relevant passages,\n'
+      'and provides detailed answers with clickable citations.\n'
+      'Each chat thread is saved — you can continue later.',
   'View past conversations': 'View past conversations',
   'Orthodox': 'Orthodox',
   'Answers use only the passages found in the Tipitaka.':
@@ -792,7 +789,8 @@ const Map<String, String> en = {
       'Select any text in the reader and a toolbar of smart actions appears above it.',
   'Select text — tap and drag, or double-tap a word.':
       'Select text — tap and drag, or double-tap a word.',
-  'Copy — copy the selection as plain text.': 'Copy — copy the selection as plain text.',
+  'Copy — copy the selection as plain text.':
+      'Copy — copy the selection as plain text.',
   'Excerpt — copy with a formatted citation.':
       'Excerpt — copy with a formatted citation.',
   'Copy Link — copy a shareable link to this exact passage.':

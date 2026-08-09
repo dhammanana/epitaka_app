@@ -18,6 +18,10 @@ import '../../indexing/index_controller.dart';
 /// Items per page when paginating within a book.
 const int kSearchPageSize = 30;
 
+/// Minimum prefix length before autocomplete suggestions are shown.
+/// Shorter queries are too ambiguous — don't suggest from the beginning.
+const int kSearchSuggestionMinLength = 3;
+
 /// If total results across all books exceeds this, collapse all books.
 const int kCollapseThreshold = 30;
 
@@ -963,8 +967,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   /// Get suggestions for autocomplete.
+  ///
+  /// Only returns suggestions once the prefix is at least
+  /// [kSearchSuggestionMinLength] characters — short prefixes are too
+  /// ambiguous to suggest from.
   Future<List<SearchSuggestion>> getSuggestions(String prefix) async {
-    if (prefix.trim().isEmpty) return [];
+    if (prefix.trim().length < kSearchSuggestionMinLength) return [];
     try {
       final appDb = await _ref.read(appDbProvider.future);
       return appDb.getSearchSuggestions(prefix, limit: 10);
