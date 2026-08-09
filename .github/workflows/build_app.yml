@@ -261,6 +261,35 @@ jobs:
 
           Get-ChildItem "C:\Users\runneradmin" -Force
 
+      - name: Patch clipboard plugin (MSVC C4189 under /WX)
+        shell: pwsh
+        run: |
+          # clipboard 3.0.14 (latest published) declares an unused local
+          # 'headerSize' in windows/clipboard_plugin.cpp (HandlePasteImage)
+          # and compiles that file with /W4 /WX, so MSVC promotes warning
+          # C4189 to error C2220 and the Windows build fails. The variable
+          # is dead code (the code uses pBih->biSize / GlobalSize instead),
+          # so delete it at the source. /wd4189 in the CL env var of the
+          # build step below is kept as a second line of defense.
+          $pubCache = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { Join-Path $env:LOCALAPPDATA "Pub\Cache" }
+          $pluginFile = Get-ChildItem (Join-Path $pubCache "hosted\pub.dev\clipboard-*\windows\clipboard_plugin.cpp") -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $pluginFile) {
+            Write-Host "clipboard plugin source not found under $pubCache; skipping patch"
+            exit 0
+          }
+          $content = Get-Content $pluginFile.FullName -Raw
+          if ($content -match "DWORD headerSize") {
+            $patched = $content -replace "(?m)^[ \t]*DWORD headerSize = .*;\r?\n", ""
+            if ($patched -eq $content) {
+              Write-Host "WARNING: found 'DWORD headerSize' but the patch regex did not match; relying on /wd4189 in the build step"
+            } else {
+              Set-Content -Path $pluginFile.FullName -Value $patched -NoNewline -Encoding utf8
+              Write-Host "Patched $($pluginFile.FullName): removed unused headerSize"
+            }
+          } else {
+            Write-Host "clipboard plugin already patched (or no longer needs it)"
+          }
+
       - name: Build Windows Release
         shell: pwsh
         run: |
