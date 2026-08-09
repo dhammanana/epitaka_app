@@ -261,33 +261,65 @@ jobs:
 
           Get-ChildItem "C:\Users\runneradmin" -Force
 
-      - name: Patch clipboard plugin (MSVC C4189 under /WX)
+      - name: Patch clipboard 3.0.14 Windows plugin (C4189 + C1083)
         shell: pwsh
         run: |
-          # clipboard 3.0.14 (latest published) declares an unused local
-          # 'headerSize' in windows/clipboard_plugin.cpp (HandlePasteImage)
-          # and compiles that file with /W4 /WX, so MSVC promotes warning
-          # C4189 to error C2220 and the Windows build fails. The variable
-          # is dead code (the code uses pBih->biSize / GlobalSize instead),
-          # so delete it at the source. /wd4189 in the CL env var of the
-          # build step below is kept as a second line of defense.
+          # clipboard 3.0.14 (latest published) has two Windows build bugs:
+          #
+          # 1. C4189/C2220: windows/clipboard_plugin.cpp declares an unused
+          #    local 'headerSize' (dead code; the code uses pBih->biSize /
+          #    GlobalSize) and the plugin compiles with /W4 /WX, so MSVC
+          #    promotes C4189 to error C2220. Delete the variable at the
+          #    source. /wd4189 in the build step's CL env var is a second
+          #    line of defense.
+          #
+          # 2. C1083: windows/CMakeLists.txt adds PLUGIN_SYMLINKS_DIR (the
+          #    .plugin_symlinks container) as the include dir, so the
+          #    generated registrant's '#include <clipboard/clipboard_plugin.h>'
+          #    resolves to <package-root>/clipboard_plugin.h - but the header
+          #    actually ships at windows/clipboard_plugin.h, so the include
+          #    fails. Copy it to the package root, where the CMake include
+          #    path already looks for it.
           $pubCache = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { Join-Path $env:LOCALAPPDATA "Pub\Cache" }
-          $pluginFile = Get-ChildItem (Join-Path $pubCache "hosted\pub.dev\clipboard-*\windows\clipboard_plugin.cpp") -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $pluginFile) {
-            Write-Host "clipboard plugin source not found under $pubCache; skipping patch"
+          # Patch EVERY clipboard-* root in the cache: subosito/flutter-action
+          # persists the pub cache across runs, so several versions can coexist
+          # and the build only compiles the resolved one (from pubspec.lock).
+          $pluginRoots = Get-ChildItem (Join-Path $pubCache "hosted\pub.dev\clipboard-*") -Directory -ErrorAction SilentlyContinue
+          if (-not $pluginRoots) {
+            Write-Host "clipboard plugin not found under $pubCache; skipping patch"
             exit 0
           }
-          $content = Get-Content $pluginFile.FullName -Raw
-          if ($content -match "DWORD headerSize") {
-            $patched = $content -replace "(?m)^[ \t]*DWORD headerSize = .*;\r?\n", ""
-            if ($patched -eq $content) {
-              Write-Host "WARNING: found 'DWORD headerSize' but the patch regex did not match; relying on /wd4189 in the build step"
-            } else {
-              Set-Content -Path $pluginFile.FullName -Value $patched -NoNewline -Encoding utf8
-              Write-Host "Patched $($pluginFile.FullName): removed unused headerSize"
+          foreach ($pluginRoot in $pluginRoots) {
+            $pluginDir = $pluginRoot.FullName
+            $cppFile = Join-Path $pluginDir "windows\clipboard_plugin.cpp"
+            if (-not (Test-Path $cppFile)) {
+              Write-Host "Skipping $pluginDir (no windows implementation)"
+              continue
             }
-          } else {
-            Write-Host "clipboard plugin already patched (or no longer needs it)"
+
+            # Fix 1: remove the dead headerSize variable (C4189 -> C2220)
+            $content = Get-Content $cppFile -Raw
+            if ($content -match "DWORD headerSize") {
+              $patched = $content -replace "(?m)^[ \t]*DWORD headerSize = .*;\r?\n", ""
+              if ($patched -eq $content) {
+                Write-Host "WARNING ($pluginDir): found 'DWORD headerSize' but the patch regex did not match; relying on /wd4189 in the build step"
+              } else {
+                Set-Content -Path $cppFile -Value $patched -NoNewline -Encoding utf8
+                Write-Host "Fixed C4189: removed unused headerSize from $cppFile"
+              }
+            } else {
+              Write-Host "clipboard_plugin.cpp ($pluginDir): no headerSize to remove (already patched)"
+            }
+
+            # Fix 2: make <clipboard/clipboard_plugin.h> resolvable (C1083).
+            # No fallback for this one, so fail loudly if it cannot apply.
+            $headerSource = Join-Path $pluginDir "windows\clipboard_plugin.h"
+            if (-not (Test-Path $headerSource)) {
+              throw "Cannot fix C1083: $headerSource does not exist"
+            }
+            $headerTarget = Join-Path $pluginDir "clipboard_plugin.h"
+            Copy-Item -Path $headerSource -Destination $headerTarget -Force
+            Write-Host "Fixed C1083: copied windows\clipboard_plugin.h to plugin root ($headerTarget)"
           }
 
       - name: Build Windows Release
