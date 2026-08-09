@@ -3,8 +3,7 @@
 /// This is NOT a pass/fail functional test — it measures wall-clock time for
 /// the operations that dominate the reader's per-frame work (Pāli script
 /// conversion, HTML parsing, paragraph widget builds) and the dictionary
-/// sheet's per-keystroke work (velthuis conversion, HTML stripping,
-/// clickable-word linking).
+/// sheet's per-keystroke work (velthuis conversion, HTML stripping).
 ///
 /// Run with:
 ///   flutter test test/reader_performance_benchmark_test.dart

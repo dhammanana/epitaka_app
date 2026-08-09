@@ -1930,6 +1930,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       currentParaId: activeTab?.currentParaId,
       currentLineId: activeTab?.currentLineId,
       selectedText: selectedText,
+      // Let the Dictionary context-menu item hit-test the render tree at
+      // the toolbar anchor — the same word lookup the double-tap performs.
+      contentHitTestKey: _contentHitTestKey,
       onExplainTap: selectedText != null && selectedText.isNotEmpty
           ? _onExplainTap
           : null,

@@ -18,7 +18,8 @@ import '../../../core/models/context_menu_action.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/utils/pali_script_converter.dart' show Script;
+import '../../../core/utils/pali_script_converter.dart'
+    show Script, convertToRomanPali;
 import '../../../core/utils/process_text_service.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
@@ -27,6 +28,7 @@ import '../../dictionary/widgets/dictionary_open.dart';
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
+import '../utils/reader_word_hit_test.dart' show cleanPali, selectWordAt;
 import '../widgets/reader_context_menu.dart' show ContextMenuButton;
 
 /// One selectable unit of text (a Pāli line, or one enabled translation of
@@ -81,6 +83,12 @@ class ReaderCopyService {
     required int? currentParaId,
     required int? currentLineId,
     required String? selectedText,
+
+    /// Key of the [Listener] wrapping the reader content, used to
+    /// hit-test the render tree at the toolbar anchor and extract the
+    /// exact word under it — the same lookup the double-tap detector
+    /// performs. May be null when no hit-testable content exists.
+    GlobalKey? contentHitTestKey,
     VoidCallback? onExplainTap,
     VoidCallback? onSummarizeChapterTap,
     void Function(String prompt)? onAiPrompt,
@@ -131,6 +139,8 @@ class ReaderCopyService {
                 selectedText: selectedText,
                 script: script,
                 builtinId: action.builtinId,
+                contentHitTestKey: contentHitTestKey,
+                anchor: anchors.primaryAnchor,
                 onExplainTap: onExplainTap,
                 onSummarizeChapterTap: onSummarizeChapterTap,
               ),
@@ -170,6 +180,8 @@ class ReaderCopyService {
     required String? selectedText,
     required Script script,
     required String? builtinId,
+    GlobalKey? contentHitTestKey,
+    Offset? anchor,
     VoidCallback? onExplainTap,
     VoidCallback? onSummarizeChapterTap,
   }) {
@@ -270,12 +282,23 @@ class ReaderCopyService {
           colors: colors,
         );
       case ContextMenuBuiltins.dictionary:
-        // ── Look up in Dictionary ──────────────────────────────────
+        // ── Look up in Dictionary (same as double-tap) ────────────────
+        //
+        // Mirrors the double-tap lookup: hit-test the render tree at the
+        // toolbar anchor (the point the menu appears at — the right-click
+        // / long-press position on desktop/mobile) and extract the exact
+        // word under it, converting any Pāli script to Roman. Falls back
+        // to the first word of the selected text (normalized the same
+        // way) when hit-testing can't resolve a word.
         return ContextMenuButton(
           icon: Icons.menu_book,
           label: loc.dictionary,
           onTap: () async {
-            final word = _extractLookupWord(lastSelectedContent);
+            final word = _dictionaryLookupWord(
+              contentHitTestKey: contentHitTestKey,
+              anchor: anchor,
+              lastSelectedContent: lastSelectedContent,
+            );
             if (word != null) {
               _openDictionary(context, ref, word);
             }
@@ -418,8 +441,44 @@ class ReaderCopyService {
     }
   }
 
+  /// Resolve the word to look up for the context-menu Dictionary item,
+  /// mirroring the reader's double-tap lookup.
+  ///
+  /// 1. Hit-tests the render tree at the toolbar anchor (the position the
+  ///    menu is shown at — for a right-click / long-press that's the
+  ///    pointer position) to find the exact word under the menu, exactly
+  ///    like [_selectWordAt] does for double-tap.
+  /// 2. If hit-testing can't resolve a word (no hit-test key, zero anchor,
+  ///    or the point isn't over text), falls back to the first word of the
+  ///    selected text, normalized the same way.
+  static String? _dictionaryLookupWord({
+    required GlobalKey? contentHitTestKey,
+    required Offset? anchor,
+    required SelectedContent? lastSelectedContent,
+  }) {
+    // [buildContextMenu] falls back to a zero anchor when Flutter's
+    // contextMenuAnchors throws (a known SelectableRegion crash path) — a
+    // zero anchor is not a real position, so skip hit-testing then.
+    if (contentHitTestKey != null &&
+        anchor != null &&
+        anchor != Offset.zero) {
+      try {
+        final hit = selectWordAt(contentHitTestKey, anchor);
+        if (hit != null && hit.isNotEmpty) return hit;
+      } catch (_) {
+        // Hit-test can throw if the content isn't laid out; fall back to
+        // the selection text below.
+      }
+    }
+    return _extractLookupWord(lastSelectedContent);
+  }
+
   /// Extract the first Pāli word from the selected text for dictionary lookup.
   /// Returns null if no suitable word is found.
+  ///
+  /// The word is normalized like the double-tap lookup: any Pāli script is
+  /// converted to Roman and non-word punctuation is stripped, so a lookup
+  /// works even when the reader displays non-Roman scripts.
   static String? _extractLookupWord(SelectedContent? lastSelectedContent) {
     if (lastSelectedContent == null) return null;
     final raw = lastSelectedContent.plainText.trim();
@@ -429,8 +488,12 @@ class ReaderCopyService {
       (w) => w.isNotEmpty,
       orElse: () => '',
     );
-    if (word.isEmpty || word.length < 2 || word.length > 50) return null;
-    return word;
+    if (word.isEmpty) return null;
+    final cleaned = cleanPali(convertToRomanPali(word));
+    if (cleaned.isEmpty || cleaned.length < 2 || cleaned.length > 50) {
+      return null;
+    }
+    return cleaned;
   }
 
   /// Open the dictionary for [word], routing to the panel/dock (desktop

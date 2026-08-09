@@ -428,11 +428,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               if (book.id == 11) {
                 if (lookup.hasHeadwords || lookup.hasDeconstructor) {
                   children.add(
-                    _DpdSection(
-                      colors: colors,
-                      lookup: lookup,
-                      onWordTap: _selectWord,
-                    ),
+                    _DpdSection(colors: colors, lookup: lookup),
                   );
                 }
               } else if (book.id == 100) {
@@ -475,12 +471,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 class _DpdSection extends ConsumerWidget {
   final ColorScheme colors;
   final DpdFullLookup lookup;
-  final ValueChanged<String> onWordTap;
 
   const _DpdSection({
     required this.colors,
     required this.lookup,
-    required this.onWordTap,
   });
 
   @override
@@ -523,7 +517,6 @@ class _DpdSection extends ConsumerWidget {
             lemma: hw.lemma1,
             meaningHtml: hw.meaningHtml,
             colors: colors,
-            onWordTap: onWordTap,
             compact: true,
           ),
         ),

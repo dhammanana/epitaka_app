@@ -991,7 +991,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 lemma: hw.lemma1,
                 meaningHtml: hw.meaningHtml,
                 colors: colors,
-                onWordTap: _selectWord,
               );
             }),
           const SizedBox(height: 8),
@@ -1188,7 +1187,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             lemma: hw.lemma1,
             meaningHtml: hw.meaningHtml,
             colors: colors,
-            onWordTap: _selectWord,
             compact: true,
           );
         }).toList(),

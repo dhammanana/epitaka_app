@@ -70,123 +70,45 @@ final dictionaryDefinitionProvider = FutureProvider.autoDispose
       }
     });
 
-// ── Clickable-word HTML transform (memoized) ───────────────────────────────
-//
-// Turning plain-text Pāli words inside DPD's meaning_html into clickable
-// <a href="lookup://..."> anchors is the most expensive step in rendering a
-// DPD entry (two regex passes over the whole HTML string). The bottom sheet
-// (DraggableScrollableSheet) rebuilds its entire content tree on every drag
-// frame, so without caching this work was being redone dozens of times per
-// second while the user simply resized the sheet. Since the same raw HTML
-// keeps coming back for a given headword, a small cache makes repeat calls
-// effectively free.
-
-final RegExp _htmlTagContentRegex = RegExp(r'>([^<]+)<');
-final RegExp _paliWordRegex = RegExp(
-  r'[āīūṅñṭḍṇḷṃṛṣūēōĀĪŪṄÑṬḌṆḶṂṚṢŪĒŌa-zA-Z]+(?:\.[\d]+)?',
-);
-
-// Spans that should never be broken up into individual clickable words:
-//  - <summary>...</summary> — the headword's own gloss (e.g. "free from
-//    desire") reads as one heading, not a list of lookup targets, and its
-//    English gloss words aren't valid Pāli dictionary entries anyway.
-//  - <b>Label:</b> — bold section labels like "Grammar:", "Root:",
-//    "Example:" are structural headings, not text to look up.
-// Both were previously getting wrapped in <a> like everything else, which
-// visually fragmented them (some letters linked/colored, some plain) and,
-// combined with the <a> style below, stripped their bold weight entirely.
-final RegExp _protectedSpanRegex = RegExp(
-  r'(<summary>.*?</summary>)|(<b>[^<]*:</b>)',
-  dotAll: true,
-);
-
-final Map<String, String> _clickableHtmlCache = {};
-const int _clickableHtmlCacheLimit = 200;
-
-/// Wraps Pāli words in [html] with clickable anchor tags so tapping them
-/// triggers a dictionary lookup, caching the result per input string.
-String _clickableHtmlFor(String html) {
-  final cached = _clickableHtmlCache[html];
-  if (cached != null) return cached;
-
-  // Swap out protected spans for placeholders so the word-linking pass
-  // below can't touch them, then restore the originals afterward.
-  final protectedSpans = <String>[];
-  final withPlaceholders = html.replaceAllMapped(_protectedSpanRegex, (m) {
-    protectedSpans.add(m.group(0)!);
-    return '\u0000${protectedSpans.length - 1}\u0000';
-  });
-
-  final linked = withPlaceholders.replaceAllMapped(_htmlTagContentRegex, (
-    match,
-  ) {
-    final text = match.group(1)!;
-    final processed = text.splitMapJoin(
-      _paliWordRegex,
-      onMatch: (m) {
-        final word = m.group(0)!;
-        return '<a href="lookup://$word">$word</a>';
-      },
-      onNonMatch: (s) => s,
-    );
-    return '>$processed<';
-  });
-
-  final result = linked.replaceAllMapped(RegExp(r'\u0000(\d+)\u0000'), (m) {
-    return protectedSpans[int.parse(m.group(1)!)];
-  });
-
-  if (_clickableHtmlCache.length >= _clickableHtmlCacheLimit) {
-    _clickableHtmlCache.remove(_clickableHtmlCache.keys.first);
-  }
-  _clickableHtmlCache[html] = result;
-  return result;
-}
-
 // ── HTML Rich Text Widget ──────────────────────────────────────────────────
 
 /// Renders DPD `meaning_html` using real HTML rendering with `flutter_html`.
 /// Supports `<details>/<summary>` expand/collapse, `<b>`, `<i>`, and proper
-/// text spacing. Pāli words in the text are wrapped in clickable anchors that
-/// trigger [onWordTap] when tapped.
+/// text spacing.
+///
+/// The raw HTML is rendered as-is — identical to how the other dictionaries'
+/// definitions render ([DictHtmlContent]) — with no clickable-word
+/// transformation. (DPD entries used to have every Pāli word wrapped in
+/// `lookup://` anchors via two regex passes over the whole HTML string,
+/// which was the most expensive step in rendering a DPD entry and slowed
+/// the first dictionary load; word-links in the meaning were dropped in
+/// favor of parity with the other dictionaries.)
 class DpdHtmlRichText extends StatelessWidget {
   final String html;
   final TextStyle baseStyle;
   final Color linkColor;
-  final ValueChanged<String> onWordTap;
 
   const DpdHtmlRichText({
     super.key,
     required this.html,
     required this.baseStyle,
     required this.linkColor,
-    required this.onWordTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final processedHtml = _clickableHtmlFor(html);
-
     // flutter_html's Html widget emits WidgetSpan placeholders for inline
     // elements (links, <details>/<summary>, etc). During flushSemantics,
     // Flutter groups sibling placeholder fragments and asserts they merge
     // up compatibly; several of these in the same tree (e.g. multiple
     // headword cards stacked in a scroll view) can produce incompatible
     // merge groups and trip the framework's '!conflict' assertion, or a
-    // re-entrant flush that trips '!semantics.parentDataDirty'. Word taps
-    // are already handled by onLinkTap/onWordTap, so no accessibility is
-    // lost by excluding this subtree from the semantics tree.
+    // re-entrant flush that trips '!semantics.parentDataDirty'. The content
+    // isn't independently tappable, so excluding this subtree from the
+    // semantics tree loses no accessibility.
     return ExcludeSemantics(
       child: Html(
-        data: processedHtml,
-        onLinkTap: (url, attributes, element) {
-          if (url != null && url.startsWith('lookup://')) {
-            final word = url.substring(9);
-            if (word.isNotEmpty) {
-              onWordTap(word);
-            }
-          }
-        },
+        data: html,
         style: {
           'body': Style(
             margin: Margins.zero,
@@ -281,7 +203,8 @@ class DictHtmlContent extends StatelessWidget {
 
 // ── DPD Headword Card ──────────────────────────────────────────────────────
 
-/// Displays a DPD headword with lemma and clickable HTML meaning.
+/// Displays a DPD headword with lemma and HTML meaning (rendered as-is,
+/// like the other dictionaries' definitions).
 ///
 /// Font sizes follow the app's Pāli typography settings so they scale with
 /// the reader (Ctrl/Cmd + / − and the Typography settings screen).
@@ -289,7 +212,6 @@ class DpdHeadwordCard extends ConsumerWidget {
   final String lemma;
   final String? meaningHtml;
   final ColorScheme colors;
-  final ValueChanged<String> onWordTap;
   final bool compact;
 
   const DpdHeadwordCard({
@@ -297,7 +219,6 @@ class DpdHeadwordCard extends ConsumerWidget {
     required this.lemma,
     this.meaningHtml,
     required this.colors,
-    required this.onWordTap,
     this.compact = false,
   });
 
@@ -350,7 +271,6 @@ class DpdHeadwordCard extends ConsumerWidget {
                   fontFamily: paliFontFamily,
                 ),
                 linkColor: colors.primary,
-                onWordTap: onWordTap,
               )
             else
               const SizedBox.shrink(),

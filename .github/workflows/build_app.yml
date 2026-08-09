@@ -264,7 +264,7 @@ jobs:
       - name: Build Windows Release
         shell: pwsh
         run: |
-          $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
+          $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /wd4189"
           flutter build windows --release
 
       # ---------------------------------------------------------
