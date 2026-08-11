@@ -73,6 +73,18 @@ enum LibraryExpandLevel {
 /// Display mode for translations in the reader.
 enum TranslationDisplayMode { hideJoinLines, lineByLine, sideBySide }
 
+/// How a tap on reader text opens the dictionary.
+///
+/// Values are appended (never reordered/removed) so the integer stored in
+/// SharedPreferences stays stable across app updates.
+enum WordLookupGesture {
+  /// Two quick taps open the dictionary (the long-standing behavior).
+  doubleTap,
+
+  /// A single tap opens the dictionary immediately.
+  singleTap,
+}
+
 /// Font family choices for reading.
 enum ReadingFontFamily {
   serif('serif', 'Serif'),
@@ -254,6 +266,15 @@ class TypographySettings {
   }
 }
 
+/// Safely resolve a stored word-lookup gesture, falling back to double-tap
+/// when the value is missing or out of range.
+WordLookupGesture _safeWordLookupGesture(int? index) {
+  if (index == null || index < 0 || index >= WordLookupGesture.values.length) {
+    return WordLookupGesture.doubleTap;
+  }
+  return WordLookupGesture.values[index];
+}
+
 /// Safely resolve a stored theme index, falling back to the system theme
 /// when the value is missing or out of range.
 ThemePreference _safeThemePreference(int? index) {
@@ -401,6 +422,10 @@ class AppSettings {
   /// the reader. Defaults to true.
   final bool showBookLinks;
 
+  /// How a tap on a word opens the dictionary from the reader: double-tap
+  /// (default) or single-tap.
+  final WordLookupGesture wordLookupGesture;
+
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
 
@@ -474,6 +499,7 @@ class AppSettings {
     this.paliScript = Script.roman,
     this.stripVariantAnnotations = true,
     this.showBookLinks = true,
+    this.wordLookupGesture = WordLookupGesture.doubleTap,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.translationVersionMap = const {},
     this.leftPanelWidth = 0,
@@ -520,6 +546,7 @@ class AppSettings {
     LibraryExpandLevel? libraryExpandLevel,
     bool? stripVariantAnnotations,
     bool? showBookLinks,
+    WordLookupGesture? wordLookupGesture,
     Map<String, String>? translationVersionMap,
     double? leftPanelWidth,
     double? rightPanelWidth,
@@ -570,6 +597,7 @@ class AppSettings {
       stripVariantAnnotations:
           stripVariantAnnotations ?? this.stripVariantAnnotations,
       showBookLinks: showBookLinks ?? this.showBookLinks,
+      wordLookupGesture: wordLookupGesture ?? this.wordLookupGesture,
       translationVersionMap:
           translationVersionMap ?? this.translationVersionMap,
       leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
@@ -794,6 +822,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       stripVariantAnnotations:
           prefs.getBool('strip_variant_annotations') ?? true,
       showBookLinks: prefs.getBool('show_book_links') ?? true,
+      wordLookupGesture: _safeWordLookupGesture(
+        prefs.getInt('word_lookup_gesture'),
+      ),
       translationVersionMap: _loadTranslationVersionMap(),
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
@@ -1073,6 +1104,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setStripVariantAnnotations(bool value) async {
     state = state.copyWith(stripVariantAnnotations: value);
     await _prefs?.setBool('strip_variant_annotations', value);
+  }
+
+  /// Set how a tap on reader text opens the dictionary (double-tap or
+  /// single-tap).
+  Future<void> setWordLookupGesture(WordLookupGesture gesture) async {
+    state = state.copyWith(wordLookupGesture: gesture);
+    await _prefs?.setInt('word_lookup_gesture', gesture.index);
   }
 
   /// Toggle the inlined book-link chips (commentary links) in the reader.

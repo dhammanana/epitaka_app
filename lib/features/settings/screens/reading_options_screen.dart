@@ -83,6 +83,35 @@ class ReadingOptionsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppDimensions.md),
           SettingsSection(
+            title: loc.dictionaryLookup,
+            colors: colors,
+            children: [
+              _DropdownTile<WordLookupGesture>(
+                icon: Icons.touch_app,
+                title: loc.wordLookupGesture,
+                subtitle: loc.wordLookupGestureSubtitle,
+                value: _wordLookupGestureLabel(
+                  settings.wordLookupGesture,
+                  loc,
+                ),
+                options: [loc.doubleTap, loc.singleTap],
+                selectedValue: _wordLookupGestureLabel(
+                  settings.wordLookupGesture,
+                  loc,
+                ),
+                onSelected: (label) {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setWordLookupGesture(
+                        _wordLookupGestureCode(label, loc),
+                      );
+                },
+                colors: colors,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimensions.md),
+          SettingsSection(
             title: loc.copyClipboard,
             colors: colors,
             children: [
@@ -241,6 +270,26 @@ CopyScope _copyScopeCode(String label, AppLocalizations loc) {
   if (label == loc.paliOnly) return CopyScope.pali;
   if (label == loc.translationOnly) return CopyScope.translation;
   return CopyScope.both;
+}
+
+String _wordLookupGestureLabel(
+  WordLookupGesture gesture,
+  AppLocalizations loc,
+) {
+  switch (gesture) {
+    case WordLookupGesture.doubleTap:
+      return loc.doubleTap;
+    case WordLookupGesture.singleTap:
+      return loc.singleTap;
+  }
+}
+
+WordLookupGesture _wordLookupGestureCode(
+  String label,
+  AppLocalizations loc,
+) {
+  if (label == loc.singleTap) return WordLookupGesture.singleTap;
+  return WordLookupGesture.doubleTap;
 }
 
 /// Settings section for customizing the quote/citation format.

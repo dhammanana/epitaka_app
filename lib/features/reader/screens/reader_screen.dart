@@ -16,7 +16,6 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -25,13 +24,13 @@ import '../../../shared/utils/reading_clipboard.dart';
 import '../../../shared/widgets/reader_toolbar_controller.dart';
 import '../../../features/ai_qa/providers/ai_qa_provider.dart' show aiQaInitialPromptProvider;
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
-import '../../dictionary/widgets/dictionary_open.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../library/screens/library_screen.dart';
 import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
+import '../providers/reader_dictionary_lookup_controller.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_search_notifier.dart';
 import '../providers/reader_selection_notifier.dart';
@@ -39,7 +38,6 @@ import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
 import '../services/reader_copy_service.dart';
-import '../utils/reader_word_hit_test.dart' show wordRangeAt;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
@@ -121,10 +119,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// "_scrollableListState == null" assertion and stalls jumps.
   String? _lastControllerFetchBookId;
 
-  /// Tracks the last word we looked up via double-tap, to avoid
-  /// re-triggering the dictionary for the same word.
-  String? _lastLookedUpWord;
-
   /// Key for the [SelectionArea]'s [SelectableRegionState] so we can clear
   /// any selection it created after our own double-tap detector looks up a
   /// word (keeping the region in a clean state for the next tap).
@@ -137,13 +131,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// the [SelectionArea]'s render object, whose `hitTest` is overridden to
   /// only consider selection handles/toolbar and would never find the text.
   final GlobalKey _contentHitTestKey = GlobalKey();
-
-  /// Double-tap detection state (raw pointer events, independent of the
-  /// gesture arena that [SelectionArea] and the tab-swipe [GestureDetector]
-  /// fight over).
-  int? _lastTapDownTime;
-  Offset? _lastTapDownPosition;
-  int _tapCounter = 0;
 
   /// Tab-swipe tracking via raw pointer events (bypasses gesture arena).
   /// The outer GestureDetector was removed because it added a
@@ -1331,15 +1318,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _onWordLookup(String word) {
     if (word.trim().isEmpty) return;
     developer.log('[DBG] _onWordLookup word="$word"', name: 'epitaka.dict');
-    developer.log(
-      '[DICT] reader word lookup tap word="$word"',
-      name: 'epitaka.dict',
-    );
     // Route the lookup into the dictionary dock/panel FIRST — the
     // dictionary must receive the word before any selection is cleared
     // (clearing first broke lookups and triggered framework assertions).
-    openDictionaryInPanel(context, ref, word);
-    _lastLookedUpWord = null;
+    ref
+        .read(readerDictionaryLookupController)
+        .openDictionary(ref, context, word);
     // The dictionary now owns the screen. Drop the reader's cached
     // selection state too: if SelectionArea's own double-tap word selection
     // (created on this same gesture, inside the framework) survives, the
@@ -1403,22 +1387,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _selectableRegionKey.currentState?.clearSelection();
     }
 
-    // Dictionary lookup is now driven explicitly by our own double-tap
-    // detector (see [_handlePointerDown] + [_selectWordAt]), which hit-tests
-    // the render tree to find the word under the tap. We no longer infer a
-    // double-tap from a single-word selection here, because that heuristic
-    // competed with the tab-swipe [GestureDetector] and was flaky from the
-    // second tap onward.
+    // Dictionary lookup is driven explicitly by the
+    // [ReaderDictionaryLookupController] (see [_handlePointerDown] /
+    // [_handlePointerUpForTabSwipe]), which hit-tests the render tree to
+    // find the word under the tap. We no longer infer a tap from a
+    // single-word selection here, because that heuristic competed with the
+    // tab-swipe [GestureDetector] and was flaky from the second tap onward.
     //
     // We still cache the selection for the copy context menu / Ctrl+C
-    // (long-press selection, which is a separate gesture from double-tap).
+    // (long-press selection, which is a separate gesture from tap).
   }
 
-  /// Detect a double-tap from raw pointer-down events. This runs *before*
-  /// the gesture arena resolves, so it is not subject to the race between
-  /// [SelectionArea]'s double-tap recognizer and the tab-swipe
-  /// [GestureDetector]. When a double-tap is detected we look up the word
-  /// at the tap point ourselves and open the dictionary.
+  /// Handle raw pointer-down events: forward to the
+  /// [readerDictionaryLookupController] (double-tap detection) and record the
+  /// start of a potential tab-swipe. This runs *before* the gesture arena
+  /// resolves, so it is not subject to the race between [SelectionArea]'s
+  /// double-tap recognizer and the tab-swipe [GestureDetector].
   void _handlePointerDown(PointerDownEvent event) {
     // Record start position for potential tab-swipe (mobile/tablet only)
     if (!PlatformInfo.isDesktop) {
@@ -1428,35 +1412,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _swipeSamples.clear();
     }
 
-    final now = event.timeStamp.inMilliseconds;
-    final lastTime = _lastTapDownTime;
-    final lastPos = _lastTapDownPosition;
-    _lastTapDownTime = now;
-    _lastTapDownPosition = event.localPosition;
-    developer.log(
-      '[DBG] pointerDown #${_tapCounter++} at=${event.localPosition} '
-      'dt=${lastTime != null ? now - lastTime : '-'} '
-      'dist=${lastPos != null ? (event.localPosition - lastPos).distance : '-'}',
-      name: 'epitaka.dict',
+    final controller = ref.read(readerDictionaryLookupController);
+    controller.setGesture(ref.read(settingsProvider).wordLookupGesture);
+    final result = controller.handlePointerDown(
+      pointer: event.pointer,
+      localPosition: event.localPosition,
+      globalPosition: event.position,
+      timestampMs: event.timeStamp.inMilliseconds,
+      contentHitTestKey: _contentHitTestKey,
     );
-
-    if (lastTime != null && lastPos != null) {
-      final dt = now - lastTime;
-      final dist = (event.localPosition - lastPos).distance;
-      const kDoubleTapTime = 400; // ms
-      const kDoubleTapSlop = 40.0; // px
-      if (dt >= 0 && dt <= kDoubleTapTime && dist <= kDoubleTapSlop) {
-        // Double-tap confirmed. Look up the word at this point.
-        developer.log('[DBG] DOUBLE-TAP detected', name: 'epitaka.dict');
-        _lastTapDownTime = null;
-        _lastTapDownPosition = null;
-        _selectWordAt(event.position);
-      } else {
-        developer.log(
-          '[DBG] tap too slow/far (dt=$dt dist=$dist) — not a double-tap',
-          name: 'epitaka.dict',
-        );
-      }
+    if (result.shouldLookup) {
+      _onWordLookup(result.word!);
     }
   }
 
@@ -1471,109 +1437,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// with the tab-swipe [GestureDetector] in the gesture arena and caused
   /// the lookup to work only intermittently (reliably on the first tap,
   /// then sporadically afterwards).
-  void _selectWordAt(Offset globalPosition) {
-    final context = _contentHitTestKey.currentContext;
-    if (context == null) {
-      developer.log('[DBG] _selectWordAt: no context', name: 'epitaka.dict');
-      return;
-    }
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox) {
-      developer.log(
-        '[DBG] _selectWordAt: renderObject not RenderBox '
-        '(${renderObject.runtimeType})',
-        name: 'epitaka.dict',
-      );
-      return;
-    }
-
-    // Walk the hit-test path to find the RenderParagraph under the tap.
-    final local = renderObject.globalToLocal(globalPosition);
-    final result = BoxHitTestResult();
-    renderObject.hitTest(result, position: local);
-    developer.log(
-      '[DBG] _selectWordAt: hitTest path len=${result.path.length} '
-      'firstTarget=${result.path.isNotEmpty ? result.path.first.target.runtimeType : 'none'}',
-      name: 'epitaka.dict',
-    );
-
-    RenderParagraph? paragraph;
-    for (final entry in result.path) {
-      final target = entry.target;
-      if (target is RenderParagraph) {
-        paragraph = target;
-        break;
-      }
-    }
-    // Fallback: if the path didn't contain a RenderParagraph (e.g. the hit
-    // landed on a non-text decorator), walk up from the first hit target's
-    // parent chain to find an enclosing RenderParagraph.
-    if (paragraph == null && result.path.isNotEmpty) {
-      RenderObject? node = result.path.first.target as RenderObject?;
-      while (node != null) {
-        if (node is RenderParagraph) {
-          paragraph = node;
-          break;
-        }
-        node = node.parent;
-      }
-    }
-    if (paragraph == null) {
-      developer.log(
-        '[DBG] _selectWordAt: NO RenderParagraph found',
-        name: 'epitaka.dict',
-      );
-      return;
-    }
-
-    // Position must be local to the paragraph's coordinate system.
-    final paragraphOrigin = paragraph.localToGlobal(Offset.zero);
-    final localInParagraph = globalPosition - paragraphOrigin;
-    if (localInParagraph.dx < 0 ||
-        localInParagraph.dy < 0 ||
-        localInParagraph.dx > paragraph.size.width ||
-        localInParagraph.dy > paragraph.size.height) {
-      return;
-    }
-
-    // Extract the word with a script-aware expansion instead of
-    // [RenderParagraph.getWordBoundary], which splits words in scripts like
-    // Myanmar/Thai/Tamil (e.g. "ဘဂဝတော" → "ဘ","ဂ","ဝ","တော") and would
-    // look up only part of the word.
-    final textPosition = paragraph.getPositionForOffset(localInParagraph);
-    final fullText = paragraph.text.toPlainText();
-    final range = wordRangeAt(fullText, textPosition.offset);
-    if (range.isCollapsed) return;
-    final rawWord = fullText.substring(range.start, range.end);
-    developer.log(
-      '[DBG] _selectWordAt: rawWord="$rawWord" range=$range',
-      name: 'epitaka.dict',
-    );
-
-    // Convert from any Pali script to Roman for dictionary lookup.
-    final romanWord = convertToRomanPali(rawWord);
-    final word = _cleanPali(romanWord);
-    if (word.length >= 2 &&
-        word.length <= 50 &&
-        !word.contains(' ') &&
-        !word.contains('\n') &&
-        word != _lastLookedUpWord) {
-      _lastLookedUpWord = word;
-      developer.log(
-        '[DBG] _selectWordAt: LOOKUP word="$word"',
-        name: 'epitaka.dict',
-      );
-      _onWordLookup(word);
-      // NOTE: We deliberately do NOT call clearSelection() here. Selection
-      // cleanup happens in [_onWordLookup] (synchronous clear + post-frame
-      // backstop clears + reader selection-state reset) so the dictionary
-      // receives the word first and the framework's own double-tap word
-      // selection — which lands at a timing that races this callback — is
-      // cleared reliably without triggering '!conflict' / 'parentDataDirty'
-      // framework assertions.
-    }
-  }
-
   /// Handle raw pointer move for tab-swipe detection and auto-scroll.
   /// Uses the existing [Listener] (passive — no gesture arena participation)
   /// to track horizontal drags without competing with [SelectionArea].
@@ -1591,20 +1454,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _stopAutoScroll();
     }
 
-    // ── Invalidate pending double-tap state on any real movement ──
+    // ── Invalidate pending tap state on any real movement ──
     // This MUST run before the selection/desktop early returns below: while
     // a selection lingers (e.g. the word highlight left by the double-tap
     // that opened the dictionary), `hasSelection` used to short-circuit
     // before this clearing, so a scroll never invalidated the cached
     // tap-down. The next pointer-down within the double-tap window (a
     // second scroll fling, or a tap right after a scroll) was then misread
-    // as a double-tap and opened the dictionary for a random word.
-    final tapDownPos = _lastTapDownPosition;
-    if (tapDownPos != null &&
-        (event.localPosition - tapDownPos).distance > 10.0) {
-      _lastTapDownTime = null;
-      _lastTapDownPosition = null;
-    }
+    // as a double-tap and opened the dictionary for a random word. (Moved
+    // into the [readerDictionaryLookupController].)
+    ref
+        .read(readerDictionaryLookupController)
+        .handlePointerMove(event.pointer, event.localPosition);
 
     // ── Tab-swipe detection (mobile/tablet only, and not while selecting text) ──
     if (PlatformInfo.isDesktop) return;
@@ -1618,6 +1479,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (!_isSwiping) {
       if (dx.abs() < 10 || dx.abs() < dy) return;
       _isSwiping = true;
+      // A confirmed tab-swipe can never be a tap — kill any half-detected
+      // tap/double-tap state outright (covers the exact-threshold case where
+      // the movement distance is at, not beyond, the controller's slop).
+      ref.read(readerDictionaryLookupController).clearTapState();
       _lastSwipeDx = dx;
       _swipeSamples.clear();
       _swipeSamples.add((dx: dx, ms: event.timeStamp.inMilliseconds));
@@ -1732,12 +1597,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// Handle raw pointer up for tab-swipe completion.
   void _handlePointerUpForTabSwipe(PointerUpEvent event) {
+    // Single-tap word lookup (when enabled in settings) is confirmed on
+    // pointer-up — by then we know the pointer didn't move (no scroll/drag)
+    // and no text selection was created (e.g. by a long-press).
+    final result = ref.read(readerDictionaryLookupController).handlePointerUp(
+      pointer: event.pointer,
+      globalPosition: event.position,
+      timestampMs: event.timeStamp.inMilliseconds,
+      contentHitTestKey: _contentHitTestKey,
+      hasSelection: ref.read(readerSelectionProvider).hasSelection,
+    );
+    if (result.shouldLookup) {
+      _onWordLookup(result.word!);
+    }
     _finishTabSwipe();
   }
 
   /// Handle raw pointer cancel (e.g. system gesture interrupts).
   /// A cancelled gesture never commits a tab switch — see [_finishTabSwipe].
   void _handlePointerCancelForTabSwipe(PointerCancelEvent event) {
+    ref
+        .read(readerDictionaryLookupController)
+        .handlePointerCancel(event.pointer);
     _finishTabSwipe(cancelled: true);
   }
 
@@ -1785,10 +1666,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _isSwiping = false;
     _lastSwipeDx = 0;
     _swipeSamples.clear();
-  }
-
-  String _cleanPali(String text) {
-    return text.replaceAll(RegExp(r'[^\wāīūōṅñṭḍṇḷṃĀĪŪŌṄÑṬḌṆḶṀ\s]'), '').trim();
   }
 
   // ── Copy with style ──────────────────────────────────────────────────

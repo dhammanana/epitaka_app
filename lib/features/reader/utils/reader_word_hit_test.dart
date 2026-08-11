@@ -98,6 +98,13 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
 
   if (paragraph == null) return null;
 
+  // Skip paragraphs that are NOT part of the selectable region: widgets like
+  // the book-link chips are wrapped in SelectionContainer.disabled, which
+  // gives their RenderParagraphs a null registrar. Tapping such a widget
+  // should perform its own action (e.g. open the linked book), not a
+  // dictionary lookup.
+  if (paragraph.registrar == null) return null;
+
   // Convert to paragraph-local coordinates.
   final paragraphOrigin = paragraph.localToGlobal(Offset.zero);
   final localInParagraph = globalPosition - paragraphOrigin;

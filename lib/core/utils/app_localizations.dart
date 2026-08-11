@@ -79,6 +79,11 @@ class AppLocalizations {
   String get readingPreferences => _t('Reading Preferences');
   String get readingOptions => _t('Reading Options');
   String get readingOptionsSubtitle => _t('Layout, numbering & scroll');
+  String get dictionaryLookup => _t('Dictionary');
+  String get wordLookupGesture => _t('Word lookup');
+  String get wordLookupGestureSubtitle => _t('How a tap on a word opens the dictionary');
+  String get doubleTap => _t('Double tap');
+  String get singleTap => _t('Single tap');
   String get textToSpeech => _t('Text-to-Speech');
   String get ttsSubtitle => _t('Voice & speed');
   String get ttsReplacements => _t('TTS Replacements');
