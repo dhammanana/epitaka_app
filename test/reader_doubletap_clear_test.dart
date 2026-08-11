@@ -2,30 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Regression test for "the first double-tap clears the SelectionArea
-/// selection after the dictionary sheet opens, but the second time onward
-/// the selection (and its context menu) stays and covers the sheet."
+/// Regression tests for the double-tap → dictionary flow:
 ///
-/// The reader pushes the modal dictionary sheet on the second tap's
-/// pointer-DOWN, but SelectionArea creates its word selection on that same
-/// gesture AFTER the push (onTapDown fires after the ~100ms press deadline)
-/// and shows its context menu on the pointer-UP — over the sheet. The reader
-/// fixes this two ways:
-///
-///  1. `_handleSelectionChanged` clears any selection reported while a sheet
-///     is open (event-driven — not timing-sensitive like the old
-///     pointer-up/post-frame flag, which missed the second and later
-///     double-taps).
-///  2. `_buildCopyContextMenu` returns an empty widget while a sheet is open,
-///     so the context menu can never render over the sheet even if a
-///     selection somehow lingers.
+/// 1. The word selection (its highlight pin) that SelectionArea creates on
+///    the opening double-tap must never remain behind — neither over the
+///    sheet nor after it closes. The reader clears it synchronously in
+///    `_onWordLookup` and re-suppresses it (clear + hideToolbar +
+///    ContextMenuController.removeAny) on every frame for ~250ms while the
+///    sheet is open — the framework's tap-UP can land many frames after the
+///    lookup and re-creates the selection AND its toolbar (in the root
+///    overlay, so it survives the sheet and reappears with the real menu
+///    afterwards). It also drops the cached selection state.
+/// 2. The context menu is suppressed while a sheet is open.
+/// 3. Scrolling invalidates the pending double-tap state regardless of any
+///    lingering selection — so closing the dictionary and scrolling can
+///    never be misread as a double-tap that opens the dictionary for a
+///    random word.
 ///
 /// This harness mirrors the reader's wiring (passive [Listener] inside a
 /// [SelectionArea], own double-tap detector, modal sheet pushed on the
-/// second tap) plus both fixes. NOTE: in widget tests the framework reports
+/// second tap) plus those fixes. NOTE: in widget tests the framework reports
 /// an empty plainText for the double-tap word selection, so the
-/// onSelectionChanged guard cannot be exercised here; the menu suppression is
-/// the observable, tested behavior.
+/// onSelectionChanged guard cannot be exercised here; the menu suppression
+/// and the tap-state invalidation are the observable, tested behaviors.
 void main() {
   testWidgets('baseline: a double-tap shows the context menu', (tester) async {
     // Proves the double-tap gesture in this harness really produces a word
@@ -84,6 +83,152 @@ void main() {
     expect(find.text('CTX-MENU'), findsNothing,
         reason: 'the context menu must never cover the sheet');
   });
+
+  testWidgets('no toolbar after closing the sheet — two consecutive flows',
+      (tester) async {
+    // Regression for "close the dictionary → the selected text and the
+    // context menu are still there": SelectionArea shows its double-tap
+    // toolbar in the root overlay on the second tap's pointer-UP; once the
+    // sheet closes that toolbar rebuilds with the real menu. The harness
+    // mirrors the reader's suppression (clear + hideToolbar post-frames),
+    // so the toolbar must never be visible after either sheet closes, and
+    // the second double-tap must still register (the leftover toolbar used
+    // to swallow it).
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _DoubleTapHarness(),
+        ),
+      ),
+    );
+
+    // Flow 1: double-tap opens the sheet, then close it.
+    await _doubleTapAt(tester, const Offset(200, 300));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.text('CTX-MENU', skipOffstage: false), findsNothing,
+        reason: 'no toolbar may reappear after the first sheet closes');
+
+    // Flow 2: double-tap again at the same spot and close again.
+    await _doubleTapAt(tester, const Offset(200, 300));
+    await tester.pumpAndSettle();
+    final state = tester.state<_DoubleTapHarnessState>(
+      find.byType(_DoubleTapHarness),
+    );
+    expect(state.doubleTapCount, 2,
+        reason: 'the second double-tap must still be detected');
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.text('CTX-MENU', skipOffstage: false), findsNothing,
+        reason: 'no toolbar may reappear after the second sheet closes');
+  });
+
+  testWidgets('a scroll invalidates the pending double-tap state',
+      (tester) async {
+    // Regression for "close the dictionary, scroll, and the scroll becomes a
+    // double-tap that opens the dictionary for a new word". A scroll must
+    // clear the cached tap-down so the NEXT pointer-down (a second fling, or
+    // a tap right after a scroll) can never be misread as the second tap of
+    // a double-tap. Mirrors the reader's [_handlePointerMoveForTabSwipe]
+    // clearing, which runs before any selection-based early return.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _ScrollInvalidatesTapStateHarness(),
+        ),
+      ),
+    );
+
+    // Scroll: pointer down, move well beyond tap slop, lift.
+    final g = await tester.startGesture(const Offset(200, 300));
+    await tester.pump();
+    await g.moveBy(const Offset(0, 120));
+    await tester.pump();
+    await g.up();
+    await tester.pump();
+
+    // A quick tap right where the scroll started — within the double-tap
+    // time window and position slop of the scroll's pointer-down. Without
+    // the invalidation this would be detected as a double-tap.
+    await tester.tapAt(const Offset(200, 300));
+    await tester.pump();
+
+    final state = tester.state<_ScrollInvalidatesTapStateHarnessState>(
+      find.byType(_ScrollInvalidatesTapStateHarness),
+    );
+    expect(state.lookupCount, 0,
+        reason: 'scrolling must invalidate the pending double-tap state');
+  });
+}
+
+/// Mirrors the reader's double-tap detector + the fixed
+/// [_handlePointerMoveForTabSwipe] clearing: movement invalidates the
+/// pending double-tap state.
+class _ScrollInvalidatesTapStateHarness extends StatefulWidget {
+  const _ScrollInvalidatesTapStateHarness();
+
+  @override
+  State<_ScrollInvalidatesTapStateHarness>
+  createState() => _ScrollInvalidatesTapStateHarnessState();
+}
+
+class _ScrollInvalidatesTapStateHarnessState
+    extends State<_ScrollInvalidatesTapStateHarness> {
+  int lookupCount = 0;
+
+  // ── Mirror of reader_screen.dart ────────────────────────────────────
+  int? _lastTapDownTime;
+  Offset? _lastTapDownPosition;
+
+  void _onPointerDown(PointerDownEvent event) {
+    final now = event.timeStamp.inMilliseconds;
+    final lastTime = _lastTapDownTime;
+    final lastPos = _lastTapDownPosition;
+    _lastTapDownTime = now;
+    _lastTapDownPosition = event.localPosition;
+
+    if (lastTime != null && lastPos != null) {
+      final dt = now - lastTime;
+      final dist = (event.localPosition - lastPos).distance;
+      const kDoubleTapTime = 400;
+      const kDoubleTapSlop = 40.0;
+      if (dt >= 0 && dt <= kDoubleTapTime && dist <= kDoubleTapSlop) {
+        _lastTapDownTime = null;
+        _lastTapDownPosition = null;
+        lookupCount++;
+      }
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    // Mirror of the reader's fixed handler: invalidate pending double-tap
+    // state on any real movement, before any selection-state early return.
+    final tapDownPos = _lastTapDownPosition;
+    if (tapDownPos != null &&
+        (event.localPosition - tapDownPos).distance > 10.0) {
+      _lastTapDownTime = null;
+      _lastTapDownPosition = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'bhagavā etad avoca sāvatthiṃ anuppatto',
+            style: TextStyle(fontSize: 20),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Two taps at [pos] ~90ms apart, the second held past kPressTimeout (100ms)
@@ -142,8 +287,10 @@ class _DoubleTapHarnessState extends State<_DoubleTapHarness> {
 
   void _onWordLookup(Offset globalPosition) {
     doubleTapCount++;
-    // Dictionary receives the word FIRST (the counter goes up and the sheet
-    // opens before any selection can exist)…
+    // Mirror of the reader: SelectionArea actually lands its word selection
+    // on the second tap's pointer-DOWN BEFORE this runs (the framework's
+    // recognizer dispatches first), so the counter below is a backstop, not
+    // a guarantee — the clears are what remove the pin.
     sheetOpen++;
     showModalBottomSheet<void>(
       context: context,
@@ -153,9 +300,37 @@ class _DoubleTapHarnessState extends State<_DoubleTapHarness> {
       ),
     ).whenComplete(() {
       if (mounted) setState(() => sheetOpen--);
+      // Mirror of the reader's sheet-close cleanup: anything the framework
+      // left behind after the suppression window is dismissed now.
+      final region = _regionKey.currentState;
+      region?.clearSelection();
+      ContextMenuController.removeAny();
     });
-    // …then clear any pre-existing selection…
+    // …then clear any pre-existing selection, and for the next ~250ms while
+    // the sheet is open re-clear, hide handles, and dismiss the global
+    // context menu (mirror of the reader's post-frame suppression):
+    // SelectionArea shows its double-tap toolbar on the second tap's
+    // pointer-UP, in the ROOT overlay — it would survive the sheet and
+    // reappear with the real menu afterwards. The suppression re-schedules
+    // itself each frame because that tap-up can land many frames later.
     _regionKey.currentState?.clearSelection();
+    final suppressUntil =
+        DateTime.now().add(const Duration(milliseconds: 250));
+    void suppressLeftoverSelection() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (sheetOpen <= 0) return;
+        final region = _regionKey.currentState;
+        region?.clearSelection();
+        region?.hideToolbar();
+        ContextMenuController.removeAny();
+        if (DateTime.now().isBefore(suppressUntil)) {
+          suppressLeftoverSelection();
+        }
+      });
+    }
+
+    suppressLeftoverSelection();
   }
 
   /// Mirror of [_handleSelectionChanged]'s guard: any selection reported

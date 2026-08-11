@@ -1,0 +1,44 @@
+name: Trigger Flathub update
+
+# OPTIONAL instant-update trigger — see flathub/README.md.
+#
+# When a v* tag is pushed, this dispatches an update run in the
+# flathub/org.epitaka.Epitaka repo so the new release is published to
+# Flathub almost immediately instead of waiting for the global External
+# Data Checker (which polls every ~2 h anyway — that works with zero
+# setup, this just makes it instant).
+#
+# Until you configure the FLATHUB_TRIGGER_TOKEN secret (a PAT with write
+# access to flathub/org.epitaka.Epitaka), the job runs and exits without
+# dispatching anything — it never fails, so release tags are safe.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    name: Notify flathub/org.epitaka.Epitaka
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check trigger token is configured
+        id: token-check
+        env:
+          TRIGGER_TOKEN: ${{ secrets.FLATHUB_TRIGGER_TOKEN }}
+        run: |
+          if [ -z "$TRIGGER_TOKEN" ]; then
+            echo "FLATHUB_TRIGGER_TOKEN not configured — skipping (Flathub's global External Data Checker still handles updates)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger update workflow in the Flathub repo
+        if: steps.token-check.outputs.skip != 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          repository: flathub/org.epitaka.Epitaka
+          event-type: trigger-workflow
+          token: ${{ secrets.FLATHUB_TRIGGER_TOKEN }}

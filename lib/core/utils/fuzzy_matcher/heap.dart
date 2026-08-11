@@ -44,9 +44,17 @@ class TopKHeap {
   }
 
   /// Extract all items in descending score order.
+  ///
+  /// Ties are broken by the original candidate index, so equal-scoring
+  /// candidates keep their insertion order (Dart's `List.sort` is not
+  /// stable on its own).
   List<ScoredMatch> toSortedList() {
     final result = List<ScoredMatch>.from(_heap);
-    result.sort((a, b) => b.score.compareTo(a.score));
+    result.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      if (byScore != 0) return byScore;
+      return a.index.compareTo(b.index);
+    });
     return result;
   }
 

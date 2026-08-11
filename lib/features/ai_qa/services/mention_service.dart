@@ -13,7 +13,10 @@
 ///
 /// Performance:
 ///  - Build runs once (~1s) and is triggered at startup or on first @ use.
-///  - Search uses LIKE on search_text (indexed) — sub-10ms on 100k+ rows.
+///  - Search is FZF-style: the whole index (id + normalized search_text) is
+///    loaded into a cached in-memory list and every candidate is ranked by
+///    the fuzzy matcher — no SQL pre-filter that could bias results toward
+///    the earliest-ordered books.
 ///  - Full Pāli text is fetched ON SELECTION (not on keystroke).
 library;
 
@@ -43,6 +46,11 @@ class MentionService {
 
   /// Guard against concurrent [buildIndex] calls.
   bool _isBuilding = false;
+
+  /// In-memory copy of the index (id + normalized search_text) used for
+  /// FZF-style ranking.  Rebuilt lazily on first search and invalidated
+  /// whenever the index table is rebuilt.
+  List<_IndexEntry>? _entriesCache;
 
   MentionService(this._ref);
 
@@ -183,6 +191,8 @@ class MentionService {
 
     // Drop old data
     await appDb.customStatement('DELETE FROM mention_index');
+    // The in-memory search cache is now stale.
+    _entriesCache = null;
 
     debugPrint('[MENTION] Building mention index…');
     final stopwatch = Stopwatch()..start();
@@ -345,89 +355,108 @@ class MentionService {
 
   // ── Search index ──────────────────────────────────────────────────────
 
-  /// Search the mention index using ffuzzy (FZF-style) fuzzy matching.
+  /// Search the mention index with FZF-style fuzzy matching.
+  ///
+  /// Unlike a SQL `LIKE` pre-filter (which, combined with a row limit,
+  /// could only ever surface candidates from the earliest-ordered books —
+  /// e.g. Dīgha/Aṅguttara — while perfect matches in later books were
+  /// silently dropped), this ranks **every** entry in the index via the
+  /// pure-Dart fuzzy matcher, then fetches the full rows for the top hits.
+  /// The candidate list is cached in memory (fzf keeps all candidates in
+  /// memory too), so search-as-you-type stays fast.
   Future<List<MentionSearchResult>> search(
     String query, {
     int limit = 20,
   }) async {
-    final appDb = await _ref.read(appDbProvider.future);
-    await _ensureIndexTable(appDb);
-
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
 
     final normalized = normalizeQuery(trimmed);
     if (normalized.isEmpty) return [];
 
-    final firstChars = normalized.replaceAll('/', '').replaceAll('-', '');
-    final prefixLen = firstChars.length >= 2 ? 2 : firstChars.length;
-    if (prefixLen == 0) return [];
-    final prefix = firstChars.substring(0, prefixLen);
-    final likePattern = prefix.split('').join('%');
-    final broadPattern = '%$likePattern%';
-
     try {
-      var rows = await appDb
-          .customSelect(
-            '''
-        SELECT entry_type, book_id, para_id, title, book_name,
-               hierarchy_json, path, search_text, is_mula, chapter_len,
-               mula_ref, attha_ref, tika_ref
-        FROM mention_index
-        WHERE search_text LIKE ?
-        ORDER BY is_mula DESC, book_order_id ASC, para_id ASC
-        LIMIT 200
-      ''',
-            variables: [Variable.withString(broadPattern)],
-          )
-          .get();
+      final entries = await _loadIndexEntries();
+      if (entries.isEmpty) return [];
 
-      if (rows.isEmpty) {
-        final fallbackPattern = '%${firstChars.substring(0, prefixLen)}%';
-        rows = await appDb
-            .customSelect(
-              '''
-          SELECT entry_type, book_id, para_id, title, book_name,
-                 hierarchy_json, path, search_text, is_mula, chapter_len,
-                 mula_ref, attha_ref, tika_ref
-          FROM mention_index
-          WHERE search_text LIKE ?
-          ORDER BY is_mula DESC, book_order_id ASC, para_id ASC
-          LIMIT 200
-        ''',
-              variables: [Variable.withString(fallbackPattern)],
-            )
-            .get();
-      }
+      final matches = fuzzySearchWith(
+        query: normalized,
+        items: entries,
+        stringOf: (e) => e.searchText,
+        limit: limit,
+      );
+      if (matches.isEmpty) return [];
 
-      if (rows.isEmpty) return [];
-
-      return _filterWithFfuzzy(rows, normalized, limit: limit);
+      final rankedIds = [for (final m in matches) entries[m.index].id];
+      return _fetchRowsByIds(rankedIds);
     } catch (e) {
       debugPrint('[MENTION] Search error: $e');
       return [];
     }
   }
 
-  /// Filter and rank SQL rows using the pure-Dart fuzzy matcher.
+  /// Load the full index (id + normalized search_text) into memory,
+  /// caching it for subsequent keystrokes.
   ///
-  /// Uses [fuzzySearchWith] — our fzf/nucleo-inspired algorithm — which
-  /// requires no native libraries and works on all platforms.
-  List<MentionSearchResult> _filterWithFfuzzy(
-    List<QueryRow> rows,
-    String normalized, {
-    int limit = 20,
-  }) {
-    final candidates = rows.map((r) => _rowToResult(r.data)).toList();
+  /// The list is kept in the same order the index was built (mūla first,
+  /// then book order, then paragraph) so that equal-scoring candidates
+  /// break ties canonically.  ~37k entries on the real Tipiṭaka DB — a few
+  /// MB — which makes every keystroke an in-memory O(n) fuzzy scan that is
+  /// comfortably fast on all platforms.
+  Future<List<_IndexEntry>> _loadIndexEntries() async {
+    final cached = _entriesCache;
+    if (cached != null) return cached;
 
-    final results = fuzzySearchWith(
-      query: normalized,
-      items: candidates,
-      stringOf: (r) => r.searchText,
-      limit: limit,
-    );
+    final appDb = await _ref.read(appDbProvider.future);
+    await _ensureIndexTable(appDb);
 
-    return results.map((r) => candidates[r.index]).toList();
+    final rows = await appDb.customSelect(
+      'SELECT id, search_text FROM mention_index '
+      'ORDER BY is_mula DESC, book_order_id ASC, para_id ASC',
+    ).get();
+
+    final entries = [
+      for (final r in rows)
+        _IndexEntry(
+          id: r.data['id'] as int,
+          searchText: r.data['search_text'] as String? ?? '',
+        ),
+    ];
+
+    // Don't cache an empty result: a concurrent build may have just
+    // emptied the table (the DELETE at the start of _buildIndexInternal),
+    // so this query raced the rebuild.  Cache only real data — an empty
+    // result is re-queried on the next keystroke instead of poisoning the
+    // cache for the whole session.
+    if (entries.isEmpty) return entries;
+
+    _entriesCache = entries;
+    debugPrint('[MENTION] Loaded ${entries.length} entries into memory');
+    return entries;
+  }
+
+  /// Fetch full rows for [ids] (in ranked order) and convert to results.
+  Future<List<MentionSearchResult>> _fetchRowsByIds(List<int> ids) async {
+    if (ids.isEmpty) return [];
+    final appDb = await _ref.read(appDbProvider.future);
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await appDb.customSelect(
+      '''
+      SELECT id, entry_type, book_id, para_id, title, book_name,
+             hierarchy_json, path, search_text, is_mula, chapter_len,
+             mula_ref, attha_ref, tika_ref
+      FROM mention_index
+      WHERE id IN ($placeholders)
+      ''',
+      variables: [for (final id in ids) Variable.withInt(id)],
+    ).get();
+
+    final byId = <int, QueryRow>{
+      for (final r in rows) r.data['id'] as int: r,
+    };
+    return [
+      for (final id in ids)
+        if (byId[id] != null) _rowToResult(byId[id]!.data),
+    ];
   }
 
   // ── Fetch full Pāli text ──────────────────────────────────────────────
@@ -551,6 +580,17 @@ class MentionService {
     );
   }
 
+}
+
+/// A single mention-index entry held in the in-memory search cache.
+///
+/// Only the primary key and the normalized search text are cached — the
+/// remaining columns are fetched from the DB for the top hits only.
+class _IndexEntry {
+  final int id;
+  final String searchText;
+
+  const _IndexEntry({required this.id, required this.searchText});
 }
 
 /// Riverpod provider for the MentionService.

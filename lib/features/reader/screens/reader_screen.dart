@@ -1340,12 +1340,47 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // (clearing first broke lookups and triggered framework assertions).
     openDictionaryInPanel(context, ref, word);
     _lastLookedUpWord = null;
-    // Clear any pre-existing selection right away (the dictionary already
-    // has the word by now). Leftover selections from THIS double-tap are
-    // handled event-driven in [_handleSelectionChanged] (the framework
-    // creates its word selection after the sheet is already open) and the
-    // context menu is suppressed in [_buildCopyContextMenu].
+    // The dictionary now owns the screen. Drop the reader's cached
+    // selection state too: if SelectionArea's own double-tap word selection
+    // (created on this same gesture, inside the framework) survives, the
+    // reader must still not think text is selected. A lingering
+    // `hasSelection` disables the scroll-time double-tap invalidation in
+    // [_handlePointerMoveForTabSwipe] and leaves stale tap state that can
+    // re-trigger a lookup after the sheet closes.
     _selectableRegionKey.currentState?.clearSelection();
+    ref.read(readerSelectionProvider.notifier).clearSelection();
+
+    // SelectionArea keeps processing this same double-tap AFTER the sheet
+    // is pushed: on the second tap's pointer-DOWN it creates its own word
+    // selection (the pin), and on the pointer-UP it shows selection handles
+    // and creates its toolbar in the ROOT overlay (via the global
+    // ContextMenuController). That toolbar is built while the sheet is open
+    // (suppressed by [_buildCopyContextMenu]) but it PERSISTS: the moment
+    // the sheet closes it rebuilds with the real menu and pops up over the
+    // text, and its leftover selection state can even swallow the next
+    // double-tap. Suppress the whole thing for the next ~250ms — clear the
+    // selection, hide the handles, and dismiss the global context menu —
+    // until the gesture and the sheet's route push have fully settled.
+    // (Note: SelectableRegionState.hideToolbar alone does NOT remove the
+    // ContextMenuController overlay; removeAny is required, and the
+    // tap-up that creates it can land many frames after this lookup, so
+    // the suppression re-schedules itself each frame.)
+    final suppressUntil = DateTime.now().add(const Duration(milliseconds: 250));
+    void suppressLeftoverSelection() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (ref.read(dictionarySheetOpenProvider) <= 0) return;
+        final region = _selectableRegionKey.currentState;
+        region?.clearSelection();
+        region?.hideToolbar();
+        ContextMenuController.removeAny();
+        if (DateTime.now().isBefore(suppressUntil)) {
+          suppressLeftoverSelection();
+        }
+      });
+    }
+
+    suppressLeftoverSelection();
   }
 
   void _handleSelectionChanged(SelectedContent? selection) {
@@ -1357,19 +1392,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
 
     // When a modal dictionary/book-link sheet is open, any NEW selection
-    // reported here is a leftover from the double-tap that opened it: the
-    // sheet is pushed on the second tap's pointer-*down*, while
-    // SelectionArea creates its word selection on that same gesture *after*
-    // the push (and shows its context menu on the pointer-up). Clearing it
-    // here — the instant it appears — keeps the selection highlight and its
-    // context menu from ever covering the sheet. This is event-driven, so it
-    // works regardless of when the framework happens to land the selection
-    // (the earlier pointer-up + post-frame flag approach was timing-sensitive
-    // and missed the second and later double-taps). Desktop is unaffected:
-    // the sheet-open counter stays 0 there.
-    //
-    // The dictionary has already received the word by this point (the lookup
-    // runs before any selection can exist), so clearing can't race the lookup.
+    // reported here is a leftover of the double-tap that opened it — clear
+    // it the instant it appears so its highlight and context menu can never
+    // cover the sheet. Note this is a backstop only: the framework actually
+    // lands its double-tap word selection on the second tap's pointer-DOWN
+    // BEFORE [_onWordLookup] runs, so this guard usually fires while the
+    // sheet counter is still 0. The reliable clears are in [_onWordLookup]
+    // (synchronous + post-frame backstops + reader selection-state reset).
     if (selection != null && ref.read(dictionarySheetOpenProvider) > 0) {
       _selectableRegionKey.currentState?.clearSelection();
     }
@@ -1535,12 +1564,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         name: 'epitaka.dict',
       );
       _onWordLookup(word);
-      // NOTE: We deliberately do NOT call clearSelection() here. Clearing the
-      // selection while the modal dictionary sheet is opening was fighting
-      // SelectionArea's own (now suppressed) selection and triggered
-      // '!conflict' / 'parentDataDirty' framework assertions. Because the
-      // double-tap is now claimed by the inner GestureDetector, SelectionArea
-      // no longer selects the word, so there is nothing to clear.
+      // NOTE: We deliberately do NOT call clearSelection() here. Selection
+      // cleanup happens in [_onWordLookup] (synchronous clear + post-frame
+      // backstop clears + reader selection-state reset) so the dictionary
+      // receives the word first and the framework's own double-tap word
+      // selection — which lands at a timing that races this callback — is
+      // cleared reliably without triggering '!conflict' / 'parentDataDirty'
+      // framework assertions.
     }
   }
 
@@ -1561,6 +1591,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _stopAutoScroll();
     }
 
+    // ── Invalidate pending double-tap state on any real movement ──
+    // This MUST run before the selection/desktop early returns below: while
+    // a selection lingers (e.g. the word highlight left by the double-tap
+    // that opened the dictionary), `hasSelection` used to short-circuit
+    // before this clearing, so a scroll never invalidated the cached
+    // tap-down. The next pointer-down within the double-tap window (a
+    // second scroll fling, or a tap right after a scroll) was then misread
+    // as a double-tap and opened the dictionary for a random word.
+    final tapDownPos = _lastTapDownPosition;
+    if (tapDownPos != null &&
+        (event.localPosition - tapDownPos).distance > 10.0) {
+      _lastTapDownTime = null;
+      _lastTapDownPosition = null;
+    }
+
     // ── Tab-swipe detection (mobile/tablet only, and not while selecting text) ──
     if (PlatformInfo.isDesktop) return;
     if (ref.read(readerSelectionProvider).hasSelection) return;
@@ -1568,15 +1613,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final dx = event.localPosition.dx - _swipeStartPos!.dx;
     final dy = (event.localPosition.dy - _swipeStartPos!.dy).abs();
-
-    // Clear double-tap state on significant movement in any direction.
-    // When the user scrolls (vertical movement), the old tap-down position
-    // stays cached and the NEXT pointer-down can be misinterpreted as the
-    // second tap of a double-tap, triggering a false dictionary lookup.
-    if (dx.abs() > 10 || dy > 10) {
-      _lastTapDownTime = null;
-      _lastTapDownPosition = null;
-    }
 
     // Must be primarily horizontal and past a small threshold
     if (!_isSwiping) {
@@ -2714,6 +2750,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int initialScrollIndex,
   ) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
+
+    // Final cleanup the moment a dictionary sheet closes: the framework's
+    // double-tap processing can land its leftover selection / toolbar after
+    // the ~250ms suppression window in [_onWordLookup] (e.g. a second tap
+    // held unusually long), and it would pop up over the text now that the
+    // sheet is gone.
+    ref.listen(dictionarySheetOpenProvider, (previous, next) {
+      if (previous != null && previous > 0 && next <= 0 && mounted) {
+        final region = _selectableRegionKey.currentState;
+        region?.clearSelection();
+        ContextMenuController.removeAny();
+      }
+    });
 
     Widget content = ReaderContentWithSelection(
       bookId: activeTab.bookId,

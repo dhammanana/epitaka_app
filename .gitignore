@@ -7,7 +7,7 @@ assets/models/*
 # big files — Play Asset Delivery pack (downloaded at CI time)
 android/packs/core_db/src/main/assets/*
 !android/packs/core_db/src/main/assets/.gitkeep
-docs/*
+docs/*.md
 
 # Miscellaneous
 *.class

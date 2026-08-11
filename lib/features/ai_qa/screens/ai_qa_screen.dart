@@ -13,6 +13,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
@@ -52,6 +53,10 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
 
   /// Whether the mention overlay is currently showing.
   bool _mentionActive = false;
+
+  /// Prevents re-entry while the controller text is being updated after
+  /// Velthuis conversion (the value setter notifies listeners synchronously).
+  bool _isConverting = false;
 
   /// Whether we have checked the mention index status at least once.
   bool _mentionIndexChecked = false;
@@ -95,6 +100,25 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   }
 
   void _onTextChanged() {
+    // Prevent re-entry when updating the controller text after conversion.
+    if (_isConverting) return;
+
+    // Apply Velthuis conversion on-the-fly so users can type Velthuis
+    // notation (dhamma.m → dhammaṃ) or any Pāli script — same behavior
+    // as the search boxes. The converted text is what the mention search
+    // (and, later, the AI prompt) sees.
+    final raw = _textController.text;
+    final converted = velthuis(raw);
+    if (converted != raw) {
+      _isConverting = true;
+      _textController.value = convertedTextEditingValue(_textController.value);
+      _isConverting = false;
+    }
+
+    // Read the post-conversion text: when a conversion happened the setter
+    // above already replaced the controller with `converted`; reading it
+    // back (instead of reusing the local) keeps the mention search in sync
+    // even if the two conversion helpers ever diverge.
     final text = _textController.text;
     ref.read(mentionSearchProvider.notifier).onTextChanged(text);
 
@@ -139,7 +163,9 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   }
 
   Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
+    // Convert one more time for safety (idempotent — the on-the-fly
+    // conversion in _onTextChanged already keeps the field converted).
+    final text = velthuis(_textController.text).trim();
     if (text.isEmpty) return;
 
     // Collect attachments and clear input immediately

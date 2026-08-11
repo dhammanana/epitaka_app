@@ -29,11 +29,15 @@ String _applyVariantStripping(String text) {
 /// falling back to a general-purpose font otherwise.
 ///
 /// For scripts that don't yet have a dedicated bundled font (Thai, Khmer,
-/// Tibetan, Bengali, etc.) this returns `null` so Flutter falls back to the
+/// Bengali, etc.) this returns `null` so Flutter falls back to the
 /// platform's default font — which includes proper rendering (and correct
 /// combining-mark shaping) for those scripts. Returning a Latin font such as
 /// `NotoSerif` here would drop the script's vowel signs / tone marks, since
 /// that font has no glyphs for them.
+///
+/// Tibetan is an exception: Android's platform font stack includes Noto
+/// Sans Tibetan, but iOS has NO system Tibetan font at all, so we bundle
+/// NotoSerifTibetan and return it here (fixes tofu boxes on iOS).
 String? scriptFontFamily(Script script) {
   switch (script) {
     case Script.sinhala:
@@ -55,6 +59,9 @@ String? scriptFontFamily(Script script) {
       return 'NotoSansBrahmi';
     case Script.cyrillic:
       return 'DejaVuSans';
+    case Script.tibetan:
+      // Bundled — iOS ships no system Tibetan font (see doc comment above).
+      return 'NotoSerifTibetan';
     case Script.bengali:
     case Script.gurmukhi:
     case Script.gujarati:
@@ -63,7 +70,6 @@ String? scriptFontFamily(Script script) {
     case Script.malayalam:
     case Script.thai:
     case Script.khmer:
-    case Script.tibetan:
     case Script.tamil:
       // No dedicated font bundled yet — let the platform font handle these
       // scripts (it has the required glyphs and OpenType shaping).

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 import '../../search/providers/search_provider.dart';
 import '../../search/widgets/search_results_view.dart';
@@ -26,6 +27,10 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
   final _queryController = TextEditingController();
   final _focusNode = FocusNode();
 
+  /// Prevents re-entry while the controller text is being updated after
+  /// Velthuis conversion (the value setter notifies listeners synchronously).
+  bool _isConverting = false;
+
   @override
   void initState() {
     super.initState();
@@ -41,8 +46,28 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     super.dispose();
   }
 
+  /// Applies Velthuis conversion on-the-fly while typing (same behavior as
+  /// the regular search boxes): `dhamma.m` becomes `dhammaṃ`, `raaga`
+  /// becomes `rāga`, and any non-Roman script is converted to IAST Roman.
+  void _onSearchChanged(String value) {
+    // Prevent re-entry when updating the controller text after conversion.
+    if (_isConverting) return;
+
+    final converted = velthuis(value);
+    if (converted != value && converted.trim().isNotEmpty) {
+      _isConverting = true;
+      _queryController.value = convertedTextEditingValue(
+        _queryController.value,
+      );
+      _isConverting = false;
+    }
+
+    // Refresh the suffix (clear) button visibility.
+    setState(() {});
+  }
+
   void _executeSearch() {
-    final query = _queryController.text.trim();
+    final query = velthuis(_queryController.text.trim());
     if (query.isEmpty) return;
     _focusNode.unfocus();
     ref.read(aiSearchProvider.notifier).search(query);
@@ -52,6 +77,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     _queryController.clear();
     ref.read(searchProvider.notifier).clear();
     ref.read(aiSearchProvider.notifier).reset();
+    setState(() {});
   }
 
   @override
@@ -160,6 +186,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
                 fontSize: 16,
                 color: colors.onSurface,
               ),
+              onChanged: _onSearchChanged,
               onSubmitted: (_) => _executeSearch(),
             ),
           ),

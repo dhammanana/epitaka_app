@@ -150,6 +150,12 @@ flutter:
       fonts:
         - asset: assets/fonts/NotoSansChakma-Regular.ttf
 
+    # Bundled because iOS has NO system Tibetan font (Android does) —
+    # without it, Tibetan Pāli renders as boxes (tofu) on iOS.
+    - family: NotoSerifTibetan
+      fonts:
+        - asset: assets/fonts/NotoSerifTibetan-Regular.ttf
+
 
 dev_dependencies:
   flutter_test:
