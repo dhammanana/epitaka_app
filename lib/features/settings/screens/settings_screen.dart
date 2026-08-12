@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/app_localizations.dart';
+import '../../annotations/widgets/account_sync_tile.dart';
 import '../../../core/utils/l10n/app_strings.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
@@ -54,6 +55,14 @@ class SettingsScreen extends ConsumerWidget {
               _LanguagePickerTile(colors: colors),
               _ScriptPickerTile(),
               _LibraryExpandTile(colors: colors),
+              // Script Converter — reachable on desktop too (no drawer
+              // there; the settings dialog embeds this screen).
+              _SettingsTile(
+                icon: Icons.swap_horiz,
+                title: loc.scriptConverter,
+                subtitle: loc.scriptConverterSubtitle,
+                onTap: () => context.push(AppRoutes.scriptConverter),
+              ),
             ],
           ),
 
@@ -169,10 +178,10 @@ class SettingsScreen extends ConsumerWidget {
             colors: colors,
             showDividers: true,
             children: [
-              _SettingsTile(
-                icon: Icons.account_circle,
-                title: loc.profile,
-                onTap: () {},
+              // Cloud sync: Google account + annotation sync status.
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: AccountSyncTile(),
               ),
             ],
           ),

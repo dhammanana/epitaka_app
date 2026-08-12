@@ -24,6 +24,7 @@ import '../../../core/utils/process_text_service.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
 import '../../../shared/utils/reading_clipboard.dart';
+import '../../annotations/services/annotation_actions.dart';
 import '../../dictionary/widgets/dictionary_open.dart';
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -186,6 +187,30 @@ class ReaderCopyService {
     VoidCallback? onSummarizeChapterTap,
   }) {
     switch (builtinId) {
+      case ContextMenuBuiltins.highlight:
+        // ── Highlight (color palette) ─────────────────────────────
+        return ContextMenuButton(
+          icon: Icons.border_color,
+          label: loc.highlight,
+          onTap: () {
+            _createHighlight(context, ref, lastSelectedContent,
+                visibleStartIndex, visibleEndIndex, anchor);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
+      case ContextMenuBuiltins.note:
+        // ── Note (markdown editor) ────────────────────────────────
+        return ContextMenuButton(
+          icon: Icons.sticky_note_2_outlined,
+          label: loc.note,
+          onTap: () {
+            _createNote(context, ref, lastSelectedContent,
+                visibleStartIndex, visibleEndIndex);
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
       case ContextMenuBuiltins.copy:
         // ── Copy (same as Cmd+C) ────────────────────────────────────
         return ContextMenuButton(
@@ -418,6 +443,69 @@ class ReaderCopyService {
         selectableRegionState.clearSelection();
       },
       colors: colors,
+    );
+  }
+
+  /// Open the highlight color palette for the current selection.
+  static void _createHighlight(
+    BuildContext context,
+    WidgetRef ref,
+    SelectedContent? lastSelectedContent,
+    int visibleStartIndex,
+    int visibleEndIndex,
+    Offset? anchor,
+  ) {
+    final sel = lastSelectedContent?.plainText.trim() ?? '';
+    developer.log(
+      '[ANNOT] toolbar tap highlight '
+      'sel="${sel.length > 60 ? sel.substring(0, 60) : sel}" '
+      'len=${sel.length} visible=$visibleStartIndex..$visibleEndIndex '
+      'hasSelection=${lastSelectedContent != null}',
+      name: 'epitaka.annotations',
+    );
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    final anchorPos = anchor ?? Offset.zero;
+    AnnotationActions.showHighlightPalette(
+      context: context,
+      ref: ref,
+      bookId: activeTab.bookId,
+      bookName: readerState.bookName ?? activeTab.bookId,
+      selection: lastSelectedContent,
+      visibleStartIndex: visibleStartIndex,
+      visibleEndIndex: visibleEndIndex,
+      anchor: anchorPos,
+    );
+  }
+
+  /// Open the markdown note editor for the current selection.
+  static void _createNote(
+    BuildContext context,
+    WidgetRef ref,
+    SelectedContent? lastSelectedContent,
+    int visibleStartIndex,
+    int visibleEndIndex,
+  ) {
+    final sel = lastSelectedContent?.plainText.trim() ?? '';
+    developer.log(
+      '[ANNOT] toolbar tap note '
+      'sel="${sel.length > 60 ? sel.substring(0, 60) : sel}" '
+      'len=${sel.length} visible=$visibleStartIndex..$visibleEndIndex '
+      'hasSelection=${lastSelectedContent != null}',
+      name: 'epitaka.annotations',
+    );
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final readerState = ref.read(readerDataProvider(activeTab.bookId));
+    AnnotationActions.showNoteEditor(
+      context: context,
+      ref: ref,
+      bookId: activeTab.bookId,
+      bookName: readerState.bookName ?? activeTab.bookId,
+      selection: lastSelectedContent,
+      visibleStartIndex: visibleStartIndex,
+      visibleEndIndex: visibleEndIndex,
     );
   }
 

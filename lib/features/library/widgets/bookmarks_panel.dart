@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
@@ -10,6 +9,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../annotations/models/annotation.dart';
+import '../../annotations/providers/annotations_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
 /// A self-contained bookmarks list panel for the desktop sidebar.
@@ -67,7 +68,7 @@ class BookmarksPanel extends ConsumerWidget {
                     onTap: () => _openBook(context, ref, bm.bookId,
                         bm.bookName, bm.paraId, bm.lineId),
                     onDelete: () => _confirmDeleteBookmark(
-                        context, ref, bm.id, bm.name),
+                        context, ref, bm.id, bm.name ?? ''),
                   )).toList(),
             );
           },
@@ -92,7 +93,7 @@ class BookmarksPanel extends ConsumerWidget {
   }
 
   void _confirmDeleteBookmark(
-      BuildContext context, WidgetRef ref, int id, String name) {
+      BuildContext context, WidgetRef ref, String id, String name) {
     final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
@@ -106,8 +107,8 @@ class BookmarksPanel extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              ref.read(appDbProvider.future).then((db) async {
-                await db.deleteBookmark(id);
+              ref.read(annotationRepositoryProvider.future).then((repo) async {
+                await repo.delete(id);
                 ref.invalidate(bookmarksProvider);
               });
             },
@@ -123,7 +124,7 @@ class BookmarksPanel extends ConsumerWidget {
 }
 
 class _BookmarkCard extends ConsumerWidget {
-  final Bookmark bookmark;
+  final Annotation bookmark;
   final ColorScheme colors;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -154,7 +155,7 @@ class _BookmarkCard extends ConsumerWidget {
           child: Row(children: [
             Expanded(
               child: PaliTextStatic(
-                bookmark.name,
+                bookmark.name ?? '',
                 script,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurface,

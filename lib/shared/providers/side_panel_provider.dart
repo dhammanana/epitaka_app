@@ -22,6 +22,12 @@ enum SidePanelType {
 
   /// Bookmarks panel (desktop sidebar).
   bookmarks,
+
+  /// Highlights / notes / bookmarks panel (desktop sidebar).
+  annotations,
+
+  /// Pāli script converter panel (desktop sidebar).
+  scriptConverter,
 }
 
 /// Which slot a panel occupies.
@@ -196,6 +202,8 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
       case SidePanelType.gavesana:
       case SidePanelType.history:
       case SidePanelType.bookmarks:
+      case SidePanelType.annotations:
+      case SidePanelType.scriptConverter:
         return PanelSlot.left;
       case SidePanelType.contents:
         return PanelSlot.left;

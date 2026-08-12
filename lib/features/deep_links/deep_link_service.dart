@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/config/supabase_config.dart';
+import '../annotations/services/auth_service.dart';
 import '../../router/app_router.dart';
 
 /// Handles incoming deep links and navigates to the appropriate app
@@ -94,8 +96,66 @@ class DeepLinkService {
   /// Resolve the current navigator context. Returns null if not mounted.
   BuildContext? get _context => _navigatorKey?.currentContext;
 
+  /// The full string of the last OAuth callback already exchanged. On
+  /// Android a cold-start callback is delivered BOTH by
+  /// [AppLinks.getInitialLink] AND again by [AppLinks.uriLinkStream] (the
+  /// plugin pushes the initial link through the stream when it is first
+  /// listened to). The PKCE code is single-use — the second
+  /// [AuthService.handleRedirectUri] would throw "Code verifier could not
+  /// be found in local storage" because gotrue deletes the verifier after
+  /// the first successful exchange. Dedupe on the whole URI so the
+  /// exchange runs exactly once regardless of where the params live.
+  String? _lastOAuthCallbackUri;
+
+  /// True while a PKCE exchange is in flight; repeat callbacks are ignored
+  /// so rapid duplicate deliveries can't race each other.
+  bool _oauthExchangeInFlight = false;
+
   /// Parse an incoming [uri] and navigate accordingly.
   void _handleUri(Uri uri) {
+    developer.log(
+      '[DEEPLINK] Handling URI: scheme=${uri.scheme} host=${uri.host} '
+      'path=${uri.path} query=${uri.query}',
+      name: 'epitaka.deeplink',
+    );
+
+    // OAuth PKCE callback — MUST be handled before any path-segment
+    // routing AND before the navigator-context check below. The callback
+    // URI is `epitaka://login-callback/?code=…` which has an EMPTY path
+    // (the route lives in the host), so the `pathSegments.isEmpty` checks
+    // below would return early and drop it. Dropping it means the PKCE
+    // exchange never completes → the Google sign-in looks like an infinite
+    // loop (every account tap starts a fresh OAuth that never finishes).
+    //
+    // It must also run even when the navigator context is not mounted yet
+    // (cold start via the redirect): exchanging the code needs no
+    // navigator, but returning early here would lose the only copy of the
+    // callback and leave the user stuck in the browser.
+    if (uri.scheme == SupabaseConfig.oauthScheme &&
+        (uri.host == SupabaseConfig.oauthRedirectPath ||
+            (uri.pathSegments.isNotEmpty &&
+                uri.pathSegments.first ==
+                    SupabaseConfig.oauthRedirectPath))) {
+      final uriString = uri.toString();
+      if (uriString == _lastOAuthCallbackUri || _oauthExchangeInFlight) {
+        developer.log(
+          '[DEEPLINK] OAuth callback already being handled — skipping',
+          name: 'epitaka.deeplink',
+        );
+        return;
+      }
+      developer.log(
+        '[DEEPLINK] OAuth callback received — completing session',
+        name: 'epitaka.deeplink',
+      );
+      _lastOAuthCallbackUri = uriString;
+      _oauthExchangeInFlight = true;
+      AuthService.instance.handleRedirectUri(uri).whenComplete(() {
+        _oauthExchangeInFlight = false;
+      });
+      return;
+    }
+
     final ctx = _context;
     if (ctx == null || !ctx.mounted) {
       developer.log(
@@ -104,12 +164,6 @@ class DeepLinkService {
       );
       return;
     }
-
-    developer.log(
-      '[DEEPLINK] Handling URI: scheme=${uri.scheme} host=${uri.host} '
-      'path=${uri.path} query=${uri.query}',
-      name: 'epitaka.deeplink',
-    );
 
     // Support both custom scheme (epitaka://reader/...) and universal
     // links (https://epitaka.org/app/...).

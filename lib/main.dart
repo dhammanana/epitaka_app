@@ -6,8 +6,10 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'core/config/supabase_config.dart';
 import 'core/utils/database_initializer.dart';
 import 'features/settings/services/download_notification_service.dart';
 
@@ -93,6 +95,39 @@ Future<void> main() async {
     developer.log(
       '[DL_NOTIF] Failed to initialise notification service: $e',
       name: 'epitaka.download',
+    );
+  }
+
+  // Initialise Supabase (auth + cloud sync). Failures here only disable
+  // cloud features; the app must still start fully offline.
+  try {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.anonKey,
+      authOptions: FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+        persistSession: true,
+        // Native: the app handles the OAuth redirect itself via
+        // DeepLinkService → AuthService.handleRedirectUri, so disable the
+        // plugin's built-in deep-link session detection to avoid a double
+        // PKCE exchange.
+        //
+        // Web: DeepLinkService never runs on web (there are no custom
+        // scheme links), so the plugin must recover the session from the
+        // callback URL itself — otherwise the Google redirect lands back
+        // on the app with a `?code=…` query that nobody consumes, and the
+        // sign-in never completes.
+        detectSessionInUri: kIsWeb,
+      ),
+    );
+    developer.log(
+      '[SUPABASE] Initialized (url=${SupabaseConfig.url})',
+      name: 'epitaka.sync',
+    );
+  } catch (e) {
+    developer.log(
+      '[SUPABASE] Initialization failed — cloud sync disabled: $e',
+      name: 'epitaka.sync',
     );
   }
 

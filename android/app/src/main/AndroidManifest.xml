@@ -44,6 +44,17 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+
+            <!-- Disable Flutter's built-in deep-link handling so that
+                 app_links receives the epitaka:// custom-scheme intents
+                 (including the OAuth login callback) instead of the Flutter
+                 engine consuming them first. Without this, the login
+                 redirect can be swallowed and the PKCE exchange never runs
+                 — the user is left hanging in the Google account chooser. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

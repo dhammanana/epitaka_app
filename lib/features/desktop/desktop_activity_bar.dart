@@ -69,10 +69,22 @@ class DesktopActivityBar extends StatelessWidget {
         loc.bookmarks,
       ),
       _ActivityItem(
+        SidePanelType.annotations,
+        Icons.edit_note,
+        Icons.edit_note,
+        loc.annotations,
+      ),
+      _ActivityItem(
         SidePanelType.contents,
         Icons.format_list_bulleted,
         Icons.format_list_bulleted,
         loc.contents,
+      ),
+      _ActivityItem(
+        SidePanelType.scriptConverter,
+        Icons.swap_horiz,
+        Icons.swap_horiz,
+        loc.scriptConverter,
       ),
       _ActivityItem(
         SidePanelType.gavesana,
@@ -96,29 +108,41 @@ class DesktopActivityBar extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 6),
-          for (final item in items)
-            _ActivityBarButton(
-              icon: item.isActive(activeSidebar) ? item.activeIcon : item.icon,
-              tooltip: item.label,
-              active: item.isActive(activeSidebar),
-              onTap: () {
-                if (item.onTapOverride != null) {
-                  item.onTapOverride!();
-                } else if (item.toggleSidebar != null) {
-                  onToggleSidebar(item.toggleSidebar!);
-                }
-              },
+          // The top group scrolls vertically so the rail never overflows on
+          // short windows — there are many sidebar panels now.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (final item in items)
+                    _ActivityBarButton(
+                      icon: item.isActive(activeSidebar)
+                          ? item.activeIcon
+                          : item.icon,
+                      tooltip: item.label,
+                      active: item.isActive(activeSidebar),
+                      onTap: () {
+                        if (item.onTapOverride != null) {
+                          item.onTapOverride!();
+                        } else if (item.toggleSidebar != null) {
+                          onToggleSidebar(item.toggleSidebar!);
+                        }
+                      },
+                    ),
+                  // Vimaṃsa center tab (separate group)
+                  _ActivityBarButton(
+                    icon: vimamsaActive
+                        ? Icons.auto_awesome
+                        : Icons.auto_awesome_outlined,
+                    tooltip: loc.vimamsa,
+                    active: vimamsaActive,
+                    onTap: onToggleVimamsa,
+                  ),
+                ],
+              ),
             ),
-          // Vimaṃsa center tab (separate group)
-          _ActivityBarButton(
-            icon: vimamsaActive
-                ? Icons.auto_awesome
-                : Icons.auto_awesome_outlined,
-            tooltip: loc.vimamsa,
-            active: vimamsaActive,
-            onTap: onToggleVimamsa,
           ),
-          const Spacer(),
+          // Bottom group stays pinned to the rail.
           _ActivityBarButton(
             icon: Icons.restart_alt,
             tooltip: loc.resetLayout,

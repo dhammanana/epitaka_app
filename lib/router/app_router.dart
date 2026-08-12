@@ -3,7 +3,10 @@ import 'package:flutter/src/widgets/navigator.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/ai_qa/screens/ai_qa_screen.dart';
+import '../features/annotations/screens/annotations_screen.dart';
+import '../features/dictionary/screens/dictionary_screen.dart';
 import '../features/gavesana/screens/gavesana_screen.dart';
+import '../features/script_converter/screens/script_converter_screen.dart';
 import '../features/guide/screens/feature_guide_screen.dart';
 import '../features/library/screens/library_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
@@ -28,6 +31,9 @@ class AppRoutes {
   static const library = '/';
   static const reader = '/reader';
   static const search = '/search';
+  static const annotations = '/annotations';
+  static const scriptConverter = '/script-converter';
+  static const dictionary = '/dictionary';
   static const settings = '/settings';
   static const appearanceSettings = '/settings/appearance';
   static const readingOptions = '/settings/reading';
@@ -81,6 +87,21 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
         path: '/search',
         name: 'search',
         builder: (context, state) => const SearchScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.annotations,
+        name: 'annotations',
+        builder: (context, state) => const AnnotationsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.scriptConverter,
+        name: 'scriptConverter',
+        builder: (context, state) => const ScriptConverterScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.dictionary,
+        name: 'dictionary',
+        builder: (context, state) => const DictionaryScreen(),
       ),
       GoRoute(
         path: '/settings',

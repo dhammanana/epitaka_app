@@ -59,28 +59,80 @@ class TranslationDownloadNotifier
     return state[versionKey] ?? const TranslationDownloadState();
   }
 
+  /// Stable per-version key used for download state and installed-date
+  /// metadata (e.g. `en`, `my_nissaya`).
+  static String versionKeyFor(TranslationVersion version) {
+    return version.suffix != null && version.suffix!.isNotEmpty
+        ? '${version.languageCode}_${version.suffix}'
+        : version.languageCode;
+  }
+
   /// Get the download URL for a translation version.
   /// Returns null if no URL is available from the manifest.
   static String? getDownloadUrl(TranslationVersion version) {
     return version.hasDownloadUrl ? version.downloadUrl : null;
   }
 
+  /// The date (`yyyy-MM-dd`) of the version currently installed on disk.
+  ///
+  /// For databases downloaded through the app this is the manifest date that
+  /// was recorded when the download finished. For bundled databases (which
+  /// are copied from the app assets on first launch and never downloaded
+  /// through the app, e.g. English) it falls back to the DB file's
+  /// last-modified date. Returns null when the version isn't installed.
+  ///
+  /// [dbDir] overrides the database directory (tests inject a temp dir;
+  /// production leaves it null to use the real per-user directory).
+  static Future<String?> getInstalledDate(
+    TranslationVersion version, {
+    Directory? dbDir,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(
+      'version_updated_${versionKeyFor(version)}',
+    );
+    if (saved != null && saved.isNotEmpty) return saved;
+    return _fileModifiedDate(version, dbDir: dbDir);
+  }
+
+  /// The DB file's last-modified date formatted `yyyy-MM-dd`, or null when
+  /// the file isn't on disk. Used as the installed-date fallback for
+  /// bundled translations that never went through the download flow.
+  static Future<String?> _fileModifiedDate(
+    TranslationVersion version, {
+    Directory? dbDir,
+  }) async {
+    try {
+      final dir = dbDir ?? await getDatabaseDirectory();
+      final file = File(p.join(dir.path, version.filename));
+      if (!await file.exists()) return null;
+      final stat = await file.stat();
+      final t = stat.modified;
+      return '${t.year.toString().padLeft(4, '0')}-'
+          '${t.month.toString().padLeft(2, '0')}-'
+          '${t.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Check if an update is available for a locally installed version.
-  /// Returns true when the manifest's updatedAt is different from what was
-  /// saved when the version was last downloaded.
-  static Future<bool> isUpdateAvailable(TranslationVersion version) async {
+  /// Returns true when the installed date is older than the manifest's
+  /// [TranslationVersion.updatedAt] (dates always move forward). Works for
+  /// both app-downloaded and bundled databases — bundled ones fall back to
+  /// the file's modification date instead of a recorded download date.
+  ///
+  /// [dbDir] overrides the database directory (tests inject a temp dir).
+  static Future<bool> isUpdateAvailable(
+    TranslationVersion version, {
+    Directory? dbDir,
+  }) async {
     if (!version.isAvailable || !version.hasDownloadUrl) return false;
     if (version.updatedAt == null || version.updatedAt!.isEmpty) return false;
 
-    final versionKey = version.suffix != null && version.suffix!.isNotEmpty
-        ? '${version.languageCode}_${version.suffix}'
-        : version.languageCode;
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('version_updated_$versionKey');
-    // If nothing saved locally, treat as not available for update
-    if (saved == null || saved.isEmpty) return false;
-    // Compare dates — different means a newer version is available
-    return saved != version.updatedAt;
+    final installed = await getInstalledDate(version, dbDir: dbDir);
+    if (installed == null || installed.isEmpty) return false;
+    return installed.compareTo(version.updatedAt!) < 0;
   }
 
   /// Cancel an in-progress download for a version key.

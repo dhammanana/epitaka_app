@@ -741,6 +741,24 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
     _checkUpdate();
   }
 
+  @override
+  void didUpdateWidget(covariant _TranslationVersionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-evaluate when the merged provider hands the tile a fresh version
+    // object (manifest refresh changes updatedAt) AND when a download
+    // finishes (the new installed date is recorded in prefs, so the update
+    // badge should clear without leaving the screen).
+    final downloadFinished =
+        oldWidget.downloadState.status != widget.downloadState.status &&
+        (widget.downloadState.status == DownloadStatus.completed ||
+            widget.downloadState.status == DownloadStatus.cancelled);
+    if (oldWidget.version.updatedAt != widget.version.updatedAt ||
+        oldWidget.version.isAvailable != widget.version.isAvailable ||
+        downloadFinished) {
+      _checkUpdate();
+    }
+  }
+
   Future<void> _checkUpdate() async {
     final hasUpdate = await TranslationDownloadNotifier.isUpdateAvailable(
       widget.version,
@@ -1403,15 +1421,53 @@ class _SmallButton extends StatelessWidget {
 
 // ── Version Info ────────────────────────────────────────────────────────────
 
-class _VersionInfo extends StatelessWidget {
+class _VersionInfo extends StatefulWidget {
   final TranslationVersion version;
   final ColorScheme colors;
 
   const _VersionInfo({required this.version, required this.colors});
 
   @override
+  State<_VersionInfo> createState() => _VersionInfoState();
+}
+
+class _VersionInfoState extends State<_VersionInfo> {
+  String? _installedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInstalledDate();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VersionInfo oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Refresh whenever the version object changes (manifest refresh) or a
+    // download updates the recorded installed date.
+    if (oldWidget.version.updatedAt != widget.version.updatedAt ||
+        oldWidget.version.isAvailable != widget.version.isAvailable) {
+      _loadInstalledDate();
+    }
+  }
+
+  Future<void> _loadInstalledDate() async {
+    final date = await TranslationDownloadNotifier.getInstalledDate(
+      widget.version,
+    );
+    if (mounted && date != _installedDate) {
+      setState(() => _installedDate = date);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
+    final version = widget.version;
+    final colors = widget.colors;
+    final hasNewerVersion = _installedDate != null &&
+        version.updatedAt != null &&
+        _installedDate!.compareTo(version.updatedAt!) < 0;
     final items = <String, String>{
       loc.filename: version.filename,
       loc.type: version.isNissaya
@@ -1421,7 +1477,11 @@ class _VersionInfo extends StatelessWidget {
       loc.suffix: version.suffix ?? loc.defaultLabel,
       if (version.fileSize != null)
         loc.size: '${(version.fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
-      if (version.updatedAt != null) loc.updated: version.updatedAt!,
+      // The version actually on this device (old date).
+      if (_installedDate != null) loc.installedOn: _installedDate!,
+      // The newest available date from the manifest.
+      if (version.updatedAt != null && hasNewerVersion)
+        loc.updated: version.updatedAt!,
       if (version.isAvailable) loc.status: loc.installed,
     };
 

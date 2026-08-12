@@ -273,6 +273,70 @@ class AppLocalizations {
   String get pickColor => _t('Pick Color');
   String get updateCheckComplete => _t('Update check complete.');
 
+  // ── Annotations (highlights, notes, bookmarks, sync) ──────────────────
+  String get annotations => _t('Annotations');
+  String get noAnnotations => _t('No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.');
+  String get noBookOpenForAnnotations => _t('Open a book to see your annotations.');
+  String get errorLoadingAnnotations => _t('Error loading annotations:');
+  String get highlight => _t('Highlight');
+  String get highlightDesc => _t('Highlight the selected text');
+  String get note => _t('Note');
+  String get noteDesc => _t('Attach a markdown note to the selection');
+  String get highlightAdded => _t('Highlight added');
+  String get annotationNoAnchor => _t('Could not anchor the selection — try again.');
+  String get addNote => _t('Add Note');
+  String get editNote => _t('Edit');
+  String get previewNote => _t('Preview');
+  String get noteHint => _t('Write a note… supports **markdown**');
+  String get highlightColor => _t('Color');
+  String get changeColor => _t('Change color');
+  String get editNoteLabel => _t('Edit note');
+  String get colorUpdated => _t('Color updated');
+  String get moreActions => _t('More actions');
+  String get markdownSupported => _t('Markdown supported');
+  String get deleteAnnotation => _t('Delete annotation?');
+  String get deleteAnnotationMsg => _t('This removes the highlight or note.');
+  String get deleteAnnotationBookmarkMsg => _t('This removes the bookmark.');
+
+  // ── Annotations screen (all books) ──────────────────────────────────
+  String get allLabel => _t('All');
+  String get highlights => _t('Highlights');
+  String get notesLabel => _t('Notes');
+  String get highlightsNotesBookmarks => _t('Highlights, notes & bookmarks');
+  String get noHighlightsYet => _t('No highlights yet.');
+  String get noNotesYet => _t('No notes yet.');
+  String get searchAnnotations => _t('Search annotations…');
+  String get tryDifferentSearchTerm => _t('Try a different search term.');
+  String get clearSearch => _t('Clear search');
+  String get filterByBook => _t('Filter by book');
+  String get allBooks => _t('All books');
+  String get noAnnotationsInBooks => _t('No annotations in the selected books.');
+  String get moreColors => _t('More colors');
+  String get collapseLabel => _t('Collapse');
+
+  // ── Script Converter screen ──────────────────────────────────────────
+  String get scriptConverter => _t('Script Converter');
+  String get scriptConverterTitle => _t('Pāli Script Converter');
+  String get scriptConverterSubtitle => _t(
+    'Convert Pāli text between any scripts — the same converter the reader uses.',
+  );
+  String get from => _t('From');
+  String get to => _t('To');
+  String get useResultAsInput => _t('Use result as input');
+  String get typePaliText => _t('Type or paste Pāli text…');
+  String get characters => _t('characters');
+  String get converterOutputHint => _t(
+    'Your converted text will appear here.',
+  );
+
+  // ── Account / Cloud Sync ──────────────────────────────────────────────
+  String get signIn => _t('Sign in');
+  String get signOut => _t('Sign out');
+  String get signInTitle => _t('Sign in to sync');
+  String get signInFailed => _t('Sign in failed. Please try again.');
+  String get syncActive => _t('Sync active — highlights, notes & bookmarks are backed up');
+  String get syncDisabled => _t('Sync off — annotations are stored on this device only');
+
   // ── Context Menu (reader selection toolbar) ───────────────────────────
   String get contextMenu => _t('Context Menu');
   String get contextMenuSubtitle => _t('Customize the selection toolbar');
@@ -933,6 +997,7 @@ class AppLocalizations {
   String get defaultLabel => _t('Default');
   String get size => _t('Size');
   String get updated => _t('Updated');
+  String get installedOn => _t('Installed on');
   String get status => _t('Status');
   String get nissayaInfo => _t(
     'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.',

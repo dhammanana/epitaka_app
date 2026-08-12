@@ -39,6 +39,7 @@ class ReaderBottomToolbar extends StatelessWidget {
   final VoidCallback? onBookmarkTap;
   final VoidCallback? onSearchTap;
   final VoidCallback? onJumpTap;
+  final VoidCallback? onAnnotationsTap;
 
   const ReaderBottomToolbar({
     super.key,
@@ -57,6 +58,7 @@ class ReaderBottomToolbar extends StatelessWidget {
     this.onBookmarkTap,
     this.onSearchTap,
     this.onJumpTap,
+    this.onAnnotationsTap,
   });
 
   @override
@@ -150,6 +152,19 @@ class ReaderBottomToolbar extends StatelessWidget {
         enabled: enabled,
         onTap: onBookmarkTap,
       ),
+      // Highlights / notes / bookmarks manager. Only rendered when a
+      // handler is provided (mobile pill); the desktop status bar omits it
+      // because the activity bar already hosts the annotations panel — and
+      // adding an extra button here would break the toolbar centering.
+      if (onAnnotationsTap != null) ...[if (!flat) const SizedBox(width: 2)],
+      if (onAnnotationsTap != null)
+        ToolbarButton(
+          icon: Icons.edit_note,
+          label: loc.annotations,
+          compact: compact,
+          enabled: enabled,
+          onTap: onAnnotationsTap,
+        ),
     ];
 
     if (flat) {

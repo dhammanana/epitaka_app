@@ -32,9 +32,13 @@ class ContextMenuBuiltins {
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
+  static const highlight = 'highlight'; // text highlight with color
+  static const note = 'note'; // markdown note
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
+    highlight,
+    note,
     copy,
     excerpt,
     copyLink,

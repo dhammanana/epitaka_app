@@ -7,9 +7,10 @@ import 'package:path/path.dart' as p;
 
 import '../../../../core/providers/app_db_provider.dart';
 import '../../../../core/theme/app_dimensions.dart';
-import '../../../../core/utils/database_initializer.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/app_localizations.dart';
+import '../../../../core/utils/database_initializer.dart';
+import '../../../annotations/models/annotation.dart';
 import '../index_progress_screen.dart';
 
 /// Tile to reset all app data (bookmarks, history, search index) and
@@ -188,13 +189,15 @@ class ResetDataTile extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
     try {
       final appDb = await ref.read(appDbProvider.future);
-      final bookmarks = await appDb.getAllBookmarks();
+      final rows = await appDb.getAllAnnotations();
+      final annotations = rows.map(Annotation.fromDrift).toList();
       final history = await appDb.getAllHistory();
 
       final backup = {
         'exportedAt': DateTime.now().toIso8601String(),
         'appVersion': 'ePitaka',
-        'bookmarks': bookmarks
+        'bookmarks': annotations
+            .where((a) => a.type == 'bookmark' && a.deletedAt == null)
             .map(
               (b) => {
                 'name': b.name,
@@ -205,6 +208,29 @@ class ResetDataTile extends ConsumerWidget {
                 'pageNumber': b.pageNumber,
                 'createdAt': b.createdAt.toIso8601String(),
                 'updatedAt': b.updatedAt.toIso8601String(),
+              },
+            )
+            .toList(),
+        'highlightsAndNotes': annotations
+            .where((a) => a.type != 'bookmark' && a.deletedAt == null)
+            .map(
+              (a) => {
+                'id': a.id,
+                'type': a.type,
+                'bookId': a.bookId,
+                'paraId': a.paraId,
+                'lineId': a.lineId,
+                'segment': a.segment,
+                'langCode': a.langCode,
+                'startOffset': a.startOffset,
+                'endOffset': a.endOffset,
+                'exactText': a.exactText,
+                'prefixText': a.prefixText,
+                'suffixText': a.suffixText,
+                'color': a.color?.wire,
+                'note': a.note,
+                'createdAt': a.createdAt.toIso8601String(),
+                'updatedAt': a.updatedAt.toIso8601String(),
               },
             )
             .toList(),

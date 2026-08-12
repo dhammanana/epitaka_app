@@ -77,8 +77,12 @@ dependencies:
   # URL launcher for help links
   url_launcher: ^6.3.1
 
+  # Cloud sync: auth + annotations (highlights, notes, bookmarks)
+  supabase_flutter: ^2.8.1
+
   # Download progress notifications on Android
   flutter_local_notifications: ^18.0.1
+  google_sign_in: ^7.2.0
 
 flutter:
   uses-material-design: true

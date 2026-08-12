@@ -439,6 +439,10 @@ class _ActionRow extends StatelessWidget {
 
   (IconData, String, String) _builtinInfo(String? id, AppLocalizations loc) {
     switch (id) {
+      case ContextMenuBuiltins.highlight:
+        return (Icons.border_color, loc.highlight, loc.highlightDesc);
+      case ContextMenuBuiltins.note:
+        return (Icons.sticky_note_2_outlined, loc.note, loc.noteDesc);
       case ContextMenuBuiltins.copy:
         return (Icons.copy, loc.copy, loc.copyDesc);
       case ContextMenuBuiltins.excerpt:

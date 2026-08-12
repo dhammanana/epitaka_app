@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../annotations/models/annotation.dart';
+import '../../annotations/providers/annotations_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 
 class BookmarkDialog extends ConsumerStatefulWidget {
@@ -37,10 +39,18 @@ class _BookmarkDialogState extends ConsumerState<BookmarkDialog> {
     final name = _nameController.text.trim(); if (name.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final db = await ref.read(appDbProvider.future);
+      final repo = await ref.read(annotationRepositoryProvider.future);
       final tabsState = ref.read(readerTabsProvider);
       final activeTab = tabsState.activeTab;
-      await db.addBookmark(name: name, bookId: widget.bookId, bookName: widget.bookName, pageNumber: widget.pageNumber, paraId: activeTab?.currentParaId, lineId: activeTab?.currentLineId);
+      await repo.create(
+        type: AnnotationType.bookmark,
+        bookId: widget.bookId,
+        bookName: widget.bookName,
+        name: name,
+        pageNumber: widget.pageNumber,
+        paraId: activeTab?.currentParaId,
+        lineId: activeTab?.currentLineId,
+      );
       if (context.mounted) ref.invalidate(bookmarksProvider);
       if (mounted) { Navigator.of(context).pop(true); final loc = AppLocalizations.of(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${loc.bookmarkSaved} $name'), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2))); }
     } catch (e) { if (mounted) { setState(() => _saving = false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).failedToSaveBookmark} $e'), behavior: SnackBarBehavior.floating, backgroundColor: Theme.of(context).colorScheme.error)); } }

@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 
@@ -9,6 +10,9 @@ import '../../features/reader/providers/reader_provider.dart';
 import '../../core/utils/pali_search_utils.dart';
 import '../../core/utils/pali_text_utils.dart';
 import '../../core/utils/pali_script_converter.dart';
+import '../../features/annotations/models/annotation.dart';
+import '../../features/annotations/services/highlight_interval_resolver.dart';
+import '../../features/annotations/services/highlight_span_painter.dart';
 import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
@@ -69,6 +73,10 @@ class ReadingParagraph extends StatelessWidget {
   /// widget so this paragraph does not need to watch [settingsProvider].
   final Script script;
 
+  /// User annotations (highlights / notes) for THIS paragraph. Filtered by
+  /// the widget per line + segment before painting.
+  final List<Annotation> annotations;
+
   /// Page numbering system label ("VRI", "PTS", "Thai", "Myanmar").
   /// Extracted from settings by the parent so this paragraph does not
   /// need to watch [settingsProvider].
@@ -114,11 +122,20 @@ class ReadingParagraph extends StatelessWidget {
     this.paliLineHeight = 32 / 19,
     this.translationFontSize = 17,
     this.translationLineHeight = 28 / 17,
+    this.annotations = const [],
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+
+    if (annotations.isNotEmpty) {
+      developer.log(
+        '[RENDER] para=${paragraph.paraId} received ${annotations.length} '
+        'annotations types=[${annotations.map((a) => a.type.wire).join(',')}]',
+        name: 'epitaka.annotations',
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +145,7 @@ class ReadingParagraph extends StatelessWidget {
 
         // Heading (if this paragraph starts a new section)
         if (paragraph.heading != null)
-          _buildHeading(paragraph.heading!, colors),
+          _buildHeading(context, paragraph.heading!, colors),
 
         // Page break marker at paragraph page start. In lineByLine mode the
         // marker is rendered at the exact line where the page begins (see
@@ -175,10 +192,40 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Render a heading with style matching its level (h1=largest, h6=smallest).
-  Widget _buildHeading(ParagraphHeading heading, ColorScheme colors) {
+  Widget _buildHeading(
+    BuildContext context,
+    ParagraphHeading heading,
+    ColorScheme colors,
+  ) {
     final level = heading.level.clamp(1, 6);
     final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
+
+    final baseStyle = TextStyle(
+      fontSize: fontSize,
+      fontWeight: weight,
+      color: colors.primary,
+      height: 1.3,
+    );
+    final fontStyle = baseStyle.copyWith(fontFamily: scriptFontFamily(script));
+
+    // Headings are anchored with lineId == -1 and segment == 'pali'.
+    final headingAnnotations = _annotationsForLine(-1, 'pali', null);
+
+    final Widget title;
+    if (headingAnnotations.isNotEmpty) {
+      final converted = convertPaliToScriptPreservingHtml(heading.title, script);
+      title = _buildHighlightedText(
+        context,
+        converted,
+        null,
+        fontStyle,
+        colors,
+        annotations: headingAnnotations,
+      );
+    } else {
+      title = PaliTextStatic(heading.title, script, style: baseStyle);
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8, left: 10),
@@ -194,16 +241,7 @@ class ReadingParagraph extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          PaliTextStatic(
-            heading.title,
-            script,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: weight,
-              color: colors.primary,
-              height: 1.3,
-            ),
-          ),
+          title,
         ],
       ),
     );
@@ -310,22 +348,22 @@ class ReadingParagraph extends StatelessWidget {
   Widget _buildContentBlock(BuildContext context, ColorScheme colors) {
     switch (displayMode) {
       case ParagraphDisplayMode.sideBySide:
-        return _buildSideBySide(colors);
+        return _buildSideBySide(context, colors);
       case ParagraphDisplayMode.hideJoinLines:
-        return _buildJoinedPali(colors);
+        return _buildJoinedPali(context, colors);
       case ParagraphDisplayMode.lineByLine:
         return _buildLinesStacked(context, colors);
     }
   }
 
-  Widget _buildSideBySide(ColorScheme colors) {
+  Widget _buildSideBySide(BuildContext context, ColorScheme colors) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: _buildJoinedPali(colors),
+            child: _buildJoinedPali(context, colors),
           ),
         ),
         Container(
@@ -335,7 +373,7 @@ class ReadingParagraph extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(left: 8),
-            child: _buildAllTranslations(colors),
+            child: _buildAllTranslations(context, colors),
           ),
         ),
       ],
@@ -382,13 +420,21 @@ class ReadingParagraph extends StatelessWidget {
               if (startsNewPage) _buildPageBreakMarker(linePage, colors),
               // Build the Pāli line lazily (only when it exists) so a line
               // carrying page data but no Pāli text can't crash.
-              if (hasPali) _buildPaliLine(line.paliText!, colors),
+              if (hasPali)
+                _buildPaliLine(
+                  context,
+                  line.paliText!,
+                  colors,
+                  lineId: lineId,
+                ),
               if (displayMode == ParagraphDisplayMode.lineByLine &&
                   showTranslation)
                 _buildTranslationBlock(
+                  context,
                   line.translations,
                   colors,
                   isHighlighted,
+                  lineId: lineId,
                 ),
               if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
                 Padding(
@@ -433,10 +479,12 @@ class ReadingParagraph extends StatelessWidget {
 
   /// Translation lines with optional TTS highlight.
   Widget _buildTranslationBlock(
+    BuildContext context,
     Map<String, String> translations,
     ColorScheme colors,
-    bool isHighlighted,
-  ) {
+    bool isHighlighted, {
+    required int lineId,
+  }) {
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
     if (langs == null || langs.isEmpty) return const SizedBox.shrink();
 
@@ -445,7 +493,10 @@ class ReadingParagraph extends StatelessWidget {
       final text = translations[langCode];
       if (text == null || text.trim().isEmpty) continue;
       final typo = langTypographies[langCode];
-      children.add(_buildTranslationLine(langCode, text, typo, colors));
+      children.add(
+        _buildTranslationLine(context, langCode, text, typo, colors,
+            lineId: lineId),
+      );
     }
     if (children.isEmpty) return const SizedBox.shrink();
 
@@ -472,11 +523,13 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   Widget _buildTranslationLine(
+    BuildContext context,
     String langCode,
     String text,
     LanguageTypography? typo,
-    ColorScheme colors,
-  ) {
+    ColorScheme colors, {
+    required int lineId,
+  }) {
     final versionLabel = translationVersionLabels[langCode];
 
     final style = typo != null
@@ -498,7 +551,16 @@ class ReadingParagraph extends StatelessWidget {
             _buildVersionBadge(versionLabel, colors),
             const SizedBox(width: 6),
           ],
-          Expanded(child: _buildTranslationText(text, style, colors)),
+          Expanded(
+            child: _buildTranslationText(
+              context,
+              text,
+              style,
+              colors,
+              lineId: lineId,
+              langCode: langCode,
+            ),
+          ),
         ],
       ),
     );
@@ -531,7 +593,7 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  Widget _buildJoinedPali(ColorScheme colors) {
+  Widget _buildJoinedPali(BuildContext context, ColorScheme colors) {
     if (!showPali) return const SizedBox.shrink();
 
     final text = paragraph.lines
@@ -541,10 +603,20 @@ class ReadingParagraph extends StatelessWidget {
 
     if (text.isEmpty) return const SizedBox.shrink();
 
-    return _buildPaliLine(text, colors);
+    // Joined mode has no per-line anchors — pass every Pāli annotation for
+    // this paragraph; the resolver re-anchors each by its quote text.
+    return _buildPaliLine(
+      context,
+      text,
+      colors,
+      lineId: null,
+      extraAnnotations: annotations
+          .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
+          .toList(),
+    );
   }
 
-  Widget _buildAllTranslations(ColorScheme colors) {
+  Widget _buildAllTranslations(BuildContext context, ColorScheme colors) {
     if (!showTranslation) return const SizedBox.shrink();
 
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
@@ -561,7 +633,10 @@ class ReadingParagraph extends StatelessWidget {
       if (texts.isEmpty) continue;
 
       final typo = langTypographies[langCode];
-      widgets.add(_buildTranslationLine(langCode, texts, typo, colors));
+      widgets.add(
+        _buildTranslationLine(context, langCode, texts, typo, colors,
+            lineId: -1),
+      );
     }
     if (widgets.isEmpty) return const SizedBox.shrink();
 
@@ -572,7 +647,16 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  Widget _buildPaliLine(String text, ColorScheme colors) {
+  /// Build a single Pāli line, painting any user highlights for [lineId].
+  /// When [lineId] is null (joined/side-by-side mode) [extraAnnotations]
+  /// carries the annotations for the joined text instead.
+  Widget _buildPaliLine(
+    BuildContext context,
+    String text,
+    ColorScheme colors, {
+    int? lineId,
+    List<Annotation>? extraAnnotations,
+  }) {
     final paliTypography = this.paliTypography;
     final effectiveColor = paliTypography.effectiveColor(paliColor);
     final baseStyle = TextStyle(
@@ -587,10 +671,16 @@ class ReadingParagraph extends StatelessWidget {
     );
 
     final query = searchQuery;
+    final lineAnnotations = extraAnnotations ??
+        (lineId != null
+            ? _annotationsForLine(lineId, 'pali', null)
+            : const <Annotation>[]);
 
-    if (query != null && query.isNotEmpty) {
+    if (query != null && query.isNotEmpty || lineAnnotations.isNotEmpty) {
       final convertedText = convertPaliToScriptPreservingHtml(text, script);
-      final convertedQuery = convertSearchQueryForScript(query, script);
+      final convertedQuery = query != null && query.isNotEmpty
+          ? convertSearchQueryForScript(query, script)
+          : null;
       // The non-search path renders through [PaliTextWithVariants], which
       // applies the script-specific font. The highlight path builds spans
       // directly from [baseStyle], so the script font must be applied here
@@ -600,10 +690,12 @@ class ReadingParagraph extends StatelessWidget {
       final scriptStyle =
           baseStyle.copyWith(fontFamily: scriptFontFamily(script));
       return _buildHighlightedText(
+        context,
         convertedText,
         convertedQuery,
         scriptStyle,
         colors,
+        annotations: lineAnnotations,
       );
     }
 
@@ -616,55 +708,125 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   Widget _buildTranslationText(
+    BuildContext context,
     String text,
     TextStyle style,
-    ColorScheme colors,
-  ) {
+    ColorScheme colors, {
+    required int lineId,
+    String? langCode,
+  }) {
     if (NissayaTextParser.isNissayaFormat(text)) {
       return NissayaText(text: text, baseStyle: style, plainStyle: style);
     }
 
     final query = searchQuery;
-    if (query != null && query.isNotEmpty) {
-      return _buildHighlightedText(text, query, style, colors);
+    final lineAnnotations = _annotationsForLine(
+      lineId,
+      'translation',
+      langCode,
+    );
+
+    if (query != null && query.isNotEmpty || lineAnnotations.isNotEmpty) {
+      return _buildHighlightedText(
+        context,
+        text,
+        query,
+        style,
+        colors,
+        annotations: lineAnnotations,
+      );
     }
 
     final spans = _parseHtml(text);
     return Text.rich(TextSpan(style: style, children: spans));
   }
 
-  Widget _buildHighlightedText(
-    String text,
-    String query,
-    TextStyle baseStyle,
-    ColorScheme colors,
+  /// Filter this paragraph's annotations to one (line, segment, lang) slot.
+  List<Annotation> _annotationsForLine(
+    int lineId,
+    String segment,
+    String? langCode,
   ) {
-    if (query.isEmpty) {
-      final spans = _parseHtml(text);
-      return Text.rich(TextSpan(style: baseStyle, children: spans));
-    }
+    return annotations
+        .where(
+          (a) =>
+              a.paraId == paragraph.paraId &&
+              a.lineId == lineId &&
+              a.segment == segment &&
+              a.langCode == langCode,
+        )
+        .toList();
+  }
 
+  /// Resolve + paint user highlight intervals onto [text]'s spans, combined
+  /// with search-term highlighting when [query] is non-empty.
+  Widget _buildHighlightedText(
+    BuildContext context,
+    String text,
+    String? query,
+    TextStyle baseStyle,
+    ColorScheme colors, {
+    List<Annotation> annotations = const [],
+  }) {
     final spans = _parseHtml(text);
-    final result = <InlineSpan>[];
-    for (final span in spans) {
-      if (span is TextSpan) {
-        final text = span.text;
-        if (text == null) {
+
+    // 1) Search-term highlighting (optional).
+    List<InlineSpan> result = spans;
+    if (query != null && query.isNotEmpty) {
+      result = <InlineSpan>[];
+      for (final span in spans) {
+        if (span is TextSpan) {
+          final text = span.text;
+          if (text == null) {
+            result.add(span);
+            continue;
+          }
+          final subSpans = _highlightInText(
+            text,
+            query,
+            span.style ?? baseStyle,
+            colors,
+          );
+          result.addAll(subSpans);
+        } else {
           result.add(span);
-          continue;
         }
-        final subSpans = _highlightInText(
-          text,
-          query,
-          span.style ?? baseStyle,
-          colors,
-        );
-        result.addAll(subSpans);
-      } else {
-        result.add(span);
       }
     }
+
+    // 2) User highlight annotations painted on top.
+    if (annotations.isNotEmpty) {
+      final stripped = _stripHtmlTags(text);
+      final highlights = HighlightIntervalResolver.resolve(
+        strippedText: stripped,
+        annotations: annotations,
+        segmentType: annotations.first.segment ?? 'pali',
+        langCode: annotations.first.langCode,
+        script: script,
+      );
+      developer.log(
+        '[RENDER] para=${paragraph.paraId} resolver ${highlights.length}'
+        '/${annotations.length} seg=${annotations.first.segment} '
+        'text="${stripped.length > 40 ? stripped.substring(0, 40) : stripped}"',
+        name: 'epitaka.annotations',
+      );
+      if (highlights.isNotEmpty) {
+        result = HighlightSpanPainter.paint(
+          context: context,
+          spans: result,
+          baseStyle: baseStyle,
+          highlights: highlights,
+        );
+      }
+    }
+
     return Text.rich(TextSpan(style: baseStyle, children: result));
+  }
+
+  /// Strip HTML tags (normalizing `<br>` to `\n` like the display parser).
+  static String _stripHtmlTags(String html) {
+    final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
+    return normalized.replaceAll(RegExp(r'<[^>]*>'), '');
   }
 
   List<_HighlightInterval> _findTermIntervals(String text, List<String> terms) {

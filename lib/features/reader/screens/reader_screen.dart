@@ -18,6 +18,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../annotations/providers/annotations_provider.dart';
+import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../../shared/utils/reading_clipboard.dart';
@@ -463,6 +465,76 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final activeTab = _toolbarActiveTab();
     if (activeTab == null) return;
     _onBookmarkTap(activeTab, _toolbarReaderState(activeTab));
+  }
+
+  /// Open the annotations manager (highlights / notes / bookmarks).
+  /// Desktop opens the dockable sidebar panel; mobile shows a bottom sheet.
+  void _handleToolbarAnnotations() {
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      ref.read(sidePanelProvider.notifier).toggle(SidePanelType.annotations);
+      return;
+    }
+    _showMobileAnnotationsSheet();
+  }
+
+  /// Mobile: annotations list as a modal bottom sheet (uses the same panel
+  /// widget, wrapped in a scroll view).
+  void _showMobileAnnotationsSheet() {
+    final colors = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 8, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.edit_note, size: 20, color: colors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context).annotations,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    color: colors.onSurfaceVariant,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            // AnnotationsPanel is a Column with an internal Expanded — it
+            // must NOT be placed inside a ListView (unbounded height would
+            // crash with "RenderFlex children have non-zero flex but
+            // incoming height constraints are unbounded"). Give it bounded
+            // height and pass the sheet's scroll controller so the
+            // DraggableScrollableSheet keeps driving the list. The old
+            // ListView applied 16px side padding — keep that look.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: AnnotationsPanel(scrollController: scrollController),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -2592,6 +2664,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             onListenTap: _handleToolbarListen,
                             onStopTap: _handleToolbarStop,
                             onBookmarkTap: _handleToolbarBookmark,
+                            onAnnotationsTap: _handleToolbarAnnotations,
                           ),
                         ),
                       ),
@@ -2664,6 +2737,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       scrollOffsetController: _autoScrollOffsetController,
       onSelectionChanged: _handleSelectionChanged,
       contextMenuBuilder: _buildCopyContextMenu,
+      annotations: ref.watch(paragraphAnnotationsProvider(activeTab.bookId)),
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
       ttsTargetParaId: ref

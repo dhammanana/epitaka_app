@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,8 +27,11 @@ class _MainDrawerState extends State<MainDrawer> {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
+    // ~78% of the screen on portrait phones, but capped so the drawer never
+    // dominates landscape / tablet / desktop windows (Material 3 caps
+    // navigation drawers at 360dp).
     return Drawer(
-      width: MediaQuery.sizeOf(context).width * 0.78,
+      width: math.min(MediaQuery.sizeOf(context).width * 0.78, 360.0),
       child: Column(
         children: [
           // ── Header ─────────────────────────────────────────
@@ -117,6 +122,63 @@ class _MainDrawerState extends State<MainDrawer> {
                   title: loc.search,
                   onTap: () => _closeAndGo(context, '/search?fromDrawer=true'),
                   selected: _isRouteActive(context, '/search'),
+                ),
+
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  indent: 20,
+                  endIndent: 20,
+                  color: colors.outlineVariant.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 4),
+
+                // ── Annotations ──────────────────────────────
+                _DrawerItem(
+                  icon: Icons.edit_note,
+                  title: loc.annotations,
+                  subtitle: loc.highlightsNotesBookmarks,
+                  onTap: () =>
+                      _closeAndGo(context, '/annotations?fromDrawer=true'),
+                  selected: _isRouteActive(context, '/annotations'),
+                ),
+
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  indent: 20,
+                  endIndent: 20,
+                  color: colors.outlineVariant.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 4),
+
+                // ── Script Converter ─────────────────────────
+                _DrawerItem(
+                  icon: Icons.swap_horiz,
+                  title: loc.scriptConverter,
+                  subtitle: loc.scriptConverterSubtitle,
+                  onTap: () => _closeAndGo(
+                    context,
+                    '/script-converter?fromDrawer=true',
+                  ),
+                  selected: _isRouteActive(context, '/script-converter'),
+                ),
+
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  indent: 20,
+                  endIndent: 20,
+                  color: colors.outlineVariant.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 4),
+
+                // ── Dictionary ────────────────────────────────
+                _DrawerItem(
+                  icon: Icons.menu_book_outlined,
+                  title: loc.dictionary,
+                  onTap: () => _closeAndGo(context, '/dictionary'),
+                  selected: _isRouteActive(context, '/dictionary'),
                 ),
 
                 const SizedBox(height: 4),

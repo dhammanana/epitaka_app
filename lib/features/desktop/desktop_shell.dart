@@ -12,6 +12,8 @@ import '../ai_qa/screens/ai_qa_screen.dart';
 import '../contents/widgets/contents_panel.dart';
 import '../dictionary/widgets/dictionary_panel.dart';
 import '../gavesana/widgets/gavesana_panel.dart';
+import '../annotations/widgets/global_annotations_view.dart';
+import '../script_converter/widgets/script_converter_panel.dart';
 import '../library/widgets/bookmarks_panel.dart';
 import '../library/widgets/history_panel.dart';
 import '../library/widgets/library_panel.dart';
@@ -76,9 +78,10 @@ const Duration _kDictSwapDelay = Duration(milliseconds: 280);
 /// ```
 ///
 /// * **Sidebar** — the activity-bar items (library, search, history,
-///   bookmarks, contents, gavesana) open the sidebar next to the rail one
-///   at a time (clicking another item replaces the previous one; clicking
-///   the active item closes the sidebar). It starts closed.
+///   bookmarks, annotations, contents, script converter, gavesana) open the
+///   sidebar next to the rail one at a time (clicking another item replaces
+///   the previous one; clicking the active item closes the sidebar). It
+///   starts closed. The rail itself scrolls when the window is short.
 /// * **Dictionary dock** — by default the dictionary is docked at the
 ///   bottom of the sidebar, so it collapses with it. Its height can be
 ///   resized by dragging the divider above it, and it can be dragged (via
@@ -419,6 +422,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         return loc.history;
       case SidePanelType.bookmarks:
         return loc.bookmarks;
+      case SidePanelType.annotations:
+        return loc.annotations;
+      case SidePanelType.scriptConverter:
+        return loc.scriptConverter;
       case SidePanelType.contents:
         return loc.contents;
       case SidePanelType.gavesana:
@@ -792,6 +799,13 @@ class DesktopSidebar extends StatelessWidget {
         return const HistoryPanel();
       case SidePanelType.bookmarks:
         return const BookmarksPanel();
+      case SidePanelType.annotations:
+        // The desktop sidebar shows the global annotations overview (search,
+        // type counts, book filter, collapsible groups) — the same view as
+        // the full-screen annotations route.
+        return const GlobalAnnotationsView();
+      case SidePanelType.scriptConverter:
+        return const ScriptConverterPanel();
       case SidePanelType.contents:
         return const ContentsPanel();
       case SidePanelType.gavesana:

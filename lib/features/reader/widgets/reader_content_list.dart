@@ -4,6 +4,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../annotations/models/annotation.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
 import '../providers/reader_provider.dart';
 
@@ -40,6 +41,7 @@ class ReaderContentList extends StatelessWidget {
     this.searchQuery,
     this.onFirstContentFrame,
     this.initialScrollIndex,
+    this.annotations = const {},
   });
 
   /// Book ID for keying the list instance.
@@ -103,6 +105,10 @@ class ReaderContentList extends StatelessWidget {
   /// index instead of 0, preventing a flash-to-top on tab switch before
   /// the post-frame [_jumpToParagraph] correction.
   final int? initialScrollIndex;
+
+  /// User annotations (highlights/notes) grouped by paragraph id, for the
+  /// reader's highlight painting.
+  final Map<int, List<Annotation>> annotations;
 
   /// Convert translation display mode settings into [ParagraphDisplayMode].
   static ParagraphDisplayMode _toParagraphDisplayMode(
@@ -210,6 +216,7 @@ class ReaderContentList extends StatelessWidget {
           ttsHighlightLineId: ttsHighlightLineId,
           ttsHighlightParaId: ttsHighlightParaId,
           lineKeys: lineKeys,
+          annotations: annotations[paragraph.paraId] ?? const [],
           // Pass script and pageNumberingSystem from parent instead of
           // forcing ReadingParagraph to watch settingsProvider directly.
           // This avoids rebuilding ALL visible paragraphs on every

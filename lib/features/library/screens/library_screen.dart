@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
+import '../../annotations/models/annotation.dart';
+import '../../annotations/providers/annotations_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -564,7 +565,7 @@ class _BookmarksTab extends ConsumerWidget {
                         bm.lineId,
                       ),
                       onDelete: () =>
-                          _confirmDeleteBookmark(context, ref, bm.id, bm.name),
+                          _confirmDeleteBookmark(context, ref, bm.id, bm.name ?? ''),
                     ),
                   )
                   .toList(),
@@ -601,7 +602,7 @@ class _BookmarksTab extends ConsumerWidget {
   void _confirmDeleteBookmark(
     BuildContext context,
     WidgetRef ref,
-    int id,
+    String id,
     String name,
   ) {
     final loc = AppLocalizations.of(context);
@@ -638,10 +639,10 @@ class _BookmarksTab extends ConsumerWidget {
     );
   }
 
-  Future<void> _deleteBookmark(WidgetRef ref, int id) async {
+  Future<void> _deleteBookmark(WidgetRef ref, String id) async {
     try {
-      final db = await ref.read(appDbProvider.future);
-      await db.deleteBookmark(id);
+      final repo = await ref.read(annotationRepositoryProvider.future);
+      await repo.delete(id);
       ref.invalidate(bookmarksProvider);
     } catch (e) {
       // Silently fail
@@ -652,7 +653,7 @@ class _BookmarksTab extends ConsumerWidget {
 // ── Bookmark Card ────────────────────────────────────────────────────────
 
 class _BookmarkCard extends ConsumerWidget {
-  final Bookmark bookmark;
+  final Annotation bookmark;
   final ColorScheme colors;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -667,7 +668,7 @@ class _BookmarkCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final script = ref.watch(settingsProvider).paliScript;
-    final displayName = bookmark.name;
+    final displayName = bookmark.name ?? '';
 
     // Look up nearest heading title
     final headingAsync = bookmark.paraId != null

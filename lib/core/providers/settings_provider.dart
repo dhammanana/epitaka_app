@@ -733,10 +733,40 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
           .where((a) => a.id.isNotEmpty)
           .toList();
       if (actions.isEmpty) return defaultContextMenuActions();
-      return actions;
+      // A saved list from an older app version won't contain built-ins that
+      // were added later (e.g. highlight, note). Append the missing ones
+      // (enabled, in default order) so they show up in the reader toolbar
+      // and in Settings without wiping the user's custom order/toggles.
+      return _mergeMissingBuiltins(actions);
     } catch (_) {
       return defaultContextMenuActions();
     }
+  }
+
+  /// Append any built-in actions from [ContextMenuBuiltins.defaults] that
+  /// are missing from [actions], preserving the user's existing order and
+  /// only touching the tail of the list.
+  List<ContextMenuAction> _mergeMissingBuiltins(
+    List<ContextMenuAction> actions,
+  ) {
+    final present = actions
+        .where((a) => a.builtinId != null)
+        .map((a) => a.builtinId)
+        .toSet();
+    final missing = [
+      for (final id in ContextMenuBuiltins.defaults)
+        if (!present.contains(id)) id,
+    ];
+    if (missing.isEmpty) return actions;
+    return [
+      ...actions,
+      for (final id in missing)
+        ContextMenuAction(
+          id: 'builtin:$id',
+          kind: ContextMenuActionKind.builtin,
+          builtinId: id,
+        ),
+    ];
   }
 
   Map<String, String> _loadTranslationVersionMap() {

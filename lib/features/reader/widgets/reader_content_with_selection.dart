@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../../annotations/models/annotation.dart';
 import '../providers/reader_provider.dart';
 import 'reader_content_list.dart';
 
@@ -41,6 +42,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.searchQuery,
     this.onFirstContentFrame,
     this.initialScrollIndex,
+    this.annotations = const {},
   });
 
   final String bookId;
@@ -87,6 +89,9 @@ class ReaderContentWithSelection extends StatelessWidget {
   // Starting scroll index (prevents flash-to-top on tab restore)
   final int? initialScrollIndex;
 
+  // User annotations (highlights/notes) grouped by paragraph id.
+  final Map<int, List<Annotation>> annotations;
+
   // Misc
   final VoidCallback? onFirstContentFrame;
 
@@ -113,6 +118,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       searchQuery: searchQuery,
       onFirstContentFrame: onFirstContentFrame,
       initialScrollIndex: initialScrollIndex,
+      annotations: annotations,
     );
 
     // The Listener provides a stable hit-test anchor for

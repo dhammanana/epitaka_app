@@ -65,6 +65,7 @@ const Map<String, String> vi = {
   'Default': 'Mặc định',
   'Size': 'Kích thước',
   'Updated': 'Đã cập nhật',
+  'Installed on': 'Cài đặt lúc',
   'Status': 'Trạng thái',
   'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.':
       'Bản dịch Nissaya hiển thị phân tích từng chữ Pāli kèm nghĩa, dạng pali: nghĩa | pali: nghĩa.',
@@ -76,6 +77,42 @@ const Map<String, String> vi = {
   'Could not load preview: ': 'Không thể tải xem trước: ',
   'Bookmark saved: ': 'Đã lưu đánh dấu: ',
   'Failed to save bookmark: ': 'Không thể lưu đánh dấu: ',
+
+  // ── Annotations (highlights, notes) ─────────────────────────────────
+  'Change color': 'Đổi màu',
+  'Edit note': 'Sửa ghi chú',
+  'Color updated': 'Đã cập nhật màu',
+  'More actions': 'Thao tác khác',
+  'Search annotations…': 'Tìm trong ghi chú…',
+  'Try a different search term.': 'Thử tìm bằng từ khóa khác.',
+  'Clear search': 'Xóa tìm kiếm',
+  'Filter by book': 'Lọc theo sách',
+  'All books': 'Tất cả sách',
+  'No annotations in the selected books.':
+      'Không có ghi chú nào trong các sách đã chọn.',
+  'More colors': 'Thêm màu',
+  'Collapse': 'Thu gọn',
+
+  // ── Annotations screen (all books) ──────────────────────────────────
+  'All': 'Tất cả',
+  'Highlights': 'Đánh dấu màu',
+  'Notes': 'Ghi chú',
+  'Highlights, notes & bookmarks': 'Đánh dấu màu, ghi chú & đánh dấu trang',
+  'No highlights yet.': 'Chưa có đánh dấu màu nào.',
+  'No notes yet.': 'Chưa có ghi chú nào.',
+
+  // ── Script Converter screen ──────────────────────────────────────────
+  'Script Converter': 'Chuyển đổi chữ viết',
+  'Pāli Script Converter': 'Chuyển đổi chữ viết Pāli',
+  'Convert Pāli text between any scripts — the same converter the reader uses.':
+      'Chuyển đổi văn bản Pāli giữa mọi bộ chữ — cùng bộ chuyển đổi mà trình đọc sử dụng.',
+  'From': 'Từ',
+  'To': 'Đến',
+  'Use result as input': 'Dùng kết quả làm đầu vào',
+  'Type or paste Pāli text…': 'Nhập hoặc dán văn bản Pāli…',
+  'characters': 'ký tự',
+  'Your converted text will appear here.':
+      'Văn bản đã chuyển đổi sẽ hiển thị ở đây.',
 
   // ── Settings ────────────────────────────────────────────────────────
   'Settings': 'Cài đặt',
@@ -501,6 +538,7 @@ const Map<String, String> vi = {
       'Chạm "Lấy khóa API Gemini miễn phí" bên dưới.',
   'Sign in with your Google account (free, no credit card).':
       'Đăng nhập bằng tài khoản Google của bạn (miễn phí, không cần thẻ tín dụng).',
+  'Sign in failed. Please try again.': 'Đăng nhập thất bại. Vui lòng thử lại.',
   'Tap "Create API key" and copy it (it starts with AIza).':
       'Chạm "Tạo khóa API" và sao chép nó (bắt đầu bằng AIza).',
   'Paste it in the API Key field above — it is checked automatically.':

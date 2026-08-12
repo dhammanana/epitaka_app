@@ -59,6 +59,69 @@ class Bookmarks extends Table {
 }
 
 // ---------------------------------------------------------------------------
+// Table: annotations (highlights, notes, bookmarks — unified & synced)
+// ---------------------------------------------------------------------------
+// The generated row class is named `AnnotationRow` (via @DataClassName) so it
+// doesn't collide with the domain model `Annotation` in
+// features/annotations/models/annotation.dart.
+@DataClassName('AnnotationRow')
+class Annotations extends Table {
+  /// Client-generated UUID. Identical on the local device and on Supabase,
+  /// which makes upsert-based sync idempotent. Marked as the primary key so
+  /// Drift's `insertOnConflictUpdate` can build its `ON CONFLICT (id)`
+  /// clause — without it, saving a bookmark/highlight/note throws
+  /// "Invalid arguments: table has no primary key".
+  @override
+  Set<Column> get primaryKey => {id};
+  TextColumn get id => text()();
+
+  /// 'highlight' | 'note' | 'bookmark'.
+  TextColumn get type => text()();
+  TextColumn get bookId => text()();
+  TextColumn get bookName => text().nullable()();
+  IntColumn get paraId => integer().nullable()();
+  IntColumn get lineId => integer().nullable()();
+
+  /// Which text the anchor points at: 'pali' | 'translation' | null (bookmark).
+  TextColumn get segment => text().nullable()();
+
+  /// Translation language code when [segment] == 'translation'.
+  TextColumn get langCode => text().nullable()();
+
+  /// Character offsets inside the segment's *stripped* text.
+  IntColumn get startOffset => integer().nullable()();
+  IntColumn get endOffset => integer().nullable()();
+
+  /// Text-quote selector for re-anchoring (robust across script/font changes).
+  TextColumn get exactText => text().nullable()();
+  TextColumn get prefixText => text().nullable()();
+  TextColumn get suffixText => text().nullable()();
+
+  /// Highlight color key ('yellow', 'green', …) — null for bookmarks.
+  TextColumn get color => text().nullable()();
+
+  /// Markdown note body — non-null when this is a note/highlight-with-note.
+  TextColumn get note => text().nullable()();
+
+  /// Bookmark name / page number (bookmark-only fields).
+  TextColumn get name => text().nullable()();
+  TextColumn get pageNumber => text().nullable()();
+
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  /// Soft-delete marker; deletions propagate through sync without races.
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  /// True when this row has local changes not yet pushed to Supabase.
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+
+  /// `updated_at` on the server — used for last-write-wins conflict
+  /// resolution during pull/merge.
+  DateTimeColumn get serverUpdatedAt => dateTime().nullable()();
+}
+
+// ---------------------------------------------------------------------------
 // Table: tts_replacements
 // ---------------------------------------------------------------------------
 class TtsReplacements extends Table {
@@ -87,7 +150,7 @@ class ReadingHistory extends Table {
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
-@DriftDatabase(tables: [Bookmarks, ReadingHistory, TtsReplacements])
+@DriftDatabase(tables: [Bookmarks, ReadingHistory, TtsReplacements, Annotations])
 class AppDatabase extends _$AppDatabase {
   // ── Chat Threads & Messages (raw SQL tables) ──────────────────────────
 
@@ -296,7 +359,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -310,6 +373,102 @@ class AppDatabase extends _$AppDatabase {
         }
         if (from < 3) {
           // Chat tables are created lazily via _ensureChatTables()
+        }
+        if (from < 4) {
+          // Unified annotations table (highlights / notes / bookmarks).
+          // Existing bookmarks are copied in as type='bookmark' rows with a
+          // freshly generated UUID, so users keep their saved positions and
+          // the new cloud sync has a single source of truth.
+          await m.createTable(annotations);
+          await customStatement('''
+            INSERT INTO annotations (
+              id, type, book_id, book_name, para_id, line_id,
+              name, page_number, created_at, updated_at, deleted_at, dirty
+            )
+            SELECT
+              lower(
+                hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-' ||
+                '4' || substr(hex(randomblob(2)), 2) || '-' ||
+                substr('89ab', abs(random()) % 4 + 1, 1) ||
+                substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))
+              ),
+              'bookmark', book_id, book_name, para_id, line_id,
+              name, page_number, created_at, updated_at, NULL, 0
+            FROM bookmarks
+          ''');
+        }
+        if (from < 5) {
+          // The v4 table was created WITHOUT a primary key on `id`, which
+          // makes Drift's insertOnConflictUpdate (used for every annotation
+          // save) throw "table has no primary key". SQLite cannot add a
+          // primary key via ALTER TABLE, so rebuild the table in place:
+          // rename old → create new (with PK) → copy rows → drop old. All
+          // existing bookmarks/highlights/notes are preserved.
+          await customStatement('ALTER TABLE annotations RENAME TO annotations_old');
+          await m.createTable(annotations);
+          await customStatement('''
+            INSERT INTO annotations (
+              id, type, book_id, book_name, para_id, line_id,
+              segment, lang_code, start_offset, end_offset,
+              exact_text, prefix_text, suffix_text, color, note,
+              name, page_number, created_at, updated_at, deleted_at,
+              dirty, server_updated_at
+            )
+            SELECT
+              id, type, book_id, book_name, para_id, line_id,
+              segment, lang_code, start_offset, end_offset,
+              exact_text, prefix_text, suffix_text, color, note,
+              name, page_number, created_at, updated_at, deleted_at,
+              dirty, server_updated_at
+            FROM annotations_old
+          ''');
+          await customStatement('DROP TABLE annotations_old');
+        }
+        if (from < 6) {
+          // Self-healing migration: some devices reached schemaVersion 5
+          // with an annotations table that STILL lacks a PRIMARY KEY on
+          // `id` (the v5 migration could run against generated code that
+          // hadn't yet declared the key). Drift's insertOnConflictUpdate
+          // then emits `ON CONFLICT (id)`, which SQLite rejects with
+          // "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+          // constraint". Rebuild the table only when the key is actually
+          // missing, so already-correct tables pass straight through.
+          final tables = await customSelect(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='annotations'",
+          ).get();
+          if (tables.isEmpty) {
+            await m.createTable(annotations);
+          } else {
+            final info = await customSelect(
+              "SELECT name, pk FROM pragma_table_info('annotations')",
+            ).get();
+            final idIsPk = info.any(
+              (r) => r.data['name'] == 'id' && r.data['pk'] != 0,
+            );
+            if (!idIsPk) {
+              await customStatement(
+                'ALTER TABLE annotations RENAME TO annotations_old',
+              );
+              await m.createTable(annotations);
+              await customStatement('''
+                INSERT INTO annotations (
+                  id, type, book_id, book_name, para_id, line_id,
+                  segment, lang_code, start_offset, end_offset,
+                  exact_text, prefix_text, suffix_text, color, note,
+                  name, page_number, created_at, updated_at, deleted_at,
+                  dirty, server_updated_at
+                )
+                SELECT
+                  id, type, book_id, book_name, para_id, line_id,
+                  segment, lang_code, start_offset, end_offset,
+                  exact_text, prefix_text, suffix_text, color, note,
+                  name, page_number, created_at, updated_at, deleted_at,
+                  dirty, server_updated_at
+                FROM annotations_old
+              ''');
+              await customStatement('DROP TABLE annotations_old');
+            }
+          }
         }
       },
       beforeOpen: (details) async {
@@ -519,6 +678,143 @@ class AppDatabase extends _$AppDatabase {
                 OrderingTerm(expression: b.createdAt, mode: OrderingMode.desc),
           ]))
         .get();
+  }
+
+  // ── Annotations (highlights, notes, bookmarks — unified) ───────────────
+
+  /// Insert or update an annotation row. [id] is client-generated so the
+  /// same UUID exists locally and on the server (idempotent upserts).
+  ///
+  /// Implemented as a manual read-then-write (not `insertOnConflictUpdate`)
+  /// so it works even when the SQLite table has no PRIMARY KEY / UNIQUE
+  /// constraint on `id` — e.g. devices whose `annotations` table predates
+  /// the primary-key migration. `insertOnConflictUpdate` emits
+  /// `ON CONFLICT (id)`, which SQLite rejects with "ON CONFLICT clause does
+  /// not match any PRIMARY KEY or UNIQUE constraint" on such tables,
+  /// silently failing every highlight/note/bookmark save.
+  Future<void> upsertAnnotation(AnnotationRow annotation) async {
+    try {
+      final existing = await getAnnotation(annotation.id);
+      if (existing == null) {
+        await into(annotations).insert(annotation);
+      } else {
+        await (update(annotations)..where((a) => a.id.equals(annotation.id)))
+            .write(annotation.toCompanion(false));
+      }
+      debugPrint(
+        '[DB] upsertAnnotation ok id=${annotation.id} '
+        'type=${annotation.type} book=${annotation.bookId} '
+        'insert=${existing == null} para=${annotation.paraId} '
+        'line=${annotation.lineId} seg=${annotation.segment}',
+      );
+    } catch (e, st) {
+      debugPrint('[DB] upsertAnnotation FAILED id=${annotation.id}: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Get a single annotation by id.
+  Future<AnnotationRow?> getAnnotation(String id) async {
+    final rows = await (select(annotations)
+          ..where((a) => a.id.equals(id)))
+        .get();
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// All annotations for a book (including soft-deleted, so sync can
+  /// reconcile tombstones), newest first.
+  Future<List<AnnotationRow>> getAnnotationsForBook(String bookId) async {
+    return (select(annotations)
+          ..where((a) => a.bookId.equals(bookId))
+          ..orderBy([
+            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+          ]))
+        .get();
+  }
+
+  /// All non-deleted annotations for a book, newest first (UI queries).
+  Future<List<AnnotationRow>> getVisibleAnnotationsForBook(String bookId) async {
+    return (select(annotations)
+          ..where((a) => a.bookId.equals(bookId) & a.deletedAt.isNull())
+          ..orderBy([
+            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+          ]))
+        .get();
+  }
+
+  /// Watch (live) all visible annotations for a book.
+  Stream<List<AnnotationRow>> watchVisibleAnnotationsForBook(String bookId) {
+    return (select(annotations)
+          ..where((a) => a.bookId.equals(bookId) & a.deletedAt.isNull())
+          ..orderBy([
+            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// All annotations across every book (used by sync and backup export).
+  Future<List<AnnotationRow>> getAllAnnotations() async {
+    return (select(annotations)..orderBy([
+          (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+        ]))
+        .get();
+  }
+
+  /// Watch (live) all visible (non-deleted) annotations across every book,
+  /// most recently updated first — used by the global annotations screen.
+  Stream<List<AnnotationRow>> watchAllVisibleAnnotations() {
+    return (select(annotations)
+          ..where((a) => a.deletedAt.isNull())
+          ..orderBy([
+            (a) =>
+                OrderingTerm(expression: a.updatedAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// Rows with local changes that still need pushing to Supabase.
+  Future<List<AnnotationRow>> getDirtyAnnotations() async {
+    return (select(annotations)..where((a) => a.dirty.equals(true))).get();
+  }
+
+  /// Mark a row as clean after a successful server upsert and record the
+  /// server's `updated_at` for LWW conflict resolution.
+  Future<void> markAnnotationSynced(
+    String id, {
+    DateTime? serverUpdatedAt,
+  }) async {
+    await (update(annotations)..where((a) => a.id.equals(id))).write(
+      AnnotationsCompanion(
+        dirty: const Value(false),
+        serverUpdatedAt: Value(serverUpdatedAt),
+      ),
+    );
+  }
+
+  /// Soft-delete an annotation: tombstone stays local (and later remote)
+  /// so deletes propagate to other devices without resurrection races.
+  Future<void> softDeleteAnnotation(String id) async {
+    await (update(annotations)..where((a) => a.id.equals(id))).write(
+      AnnotationsCompanion(
+        deletedAt: Value(DateTime.now()),
+        updatedAt: Value(DateTime.now()),
+        dirty: const Value(true),
+      ),
+    );
+  }
+
+  /// Permanently remove soft-deleted tombstones older than [before]. Called
+  /// after a successful sync so the local DB doesn't accumulate them.
+  Future<void> purgeAnnotationTombstones(DateTime before) async {
+    await (delete(annotations)
+          ..where((a) => a.deletedAt.isNotNull() & a.deletedAt.isSmallerThanValue(before)))
+        .go();
+  }
+
+  /// Hard-delete a row locally. Used when the server reports a DELETE (the
+  /// row no longer exists remotely, so there is nothing to tombstone).
+  Future<void> hardDeleteAnnotation(String id) async {
+    await (delete(annotations)..where((a) => a.id.equals(id))).go();
   }
 
   /// Add or update reading history entry.

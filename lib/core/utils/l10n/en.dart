@@ -67,6 +67,7 @@ const Map<String, String> en = {
   'Default': 'Default',
   'Size': 'Size',
   'Updated': 'Updated',
+  'Installed on': 'Installed on',
   'Status': 'Status',
   'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.':
       'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.',
@@ -78,6 +79,72 @@ const Map<String, String> en = {
   'Could not load preview: ': 'Could not load preview: ',
   'Bookmark saved: ': 'Bookmark saved: ',
   'Failed to save bookmark: ': 'Failed to save bookmark: ',
+
+  // ── Annotations (highlights, notes, bookmarks, sync) ──────────────────
+  'Annotations': 'Annotations',
+  'No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.':
+      'No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.',
+  'Open a book to see your annotations.': 'Open a book to see your annotations.',
+  'Error loading annotations:': 'Error loading annotations:',
+  'Highlight': 'Highlight',
+  'Highlight the selected text': 'Highlight the selected text',
+  'Note': 'Note',
+  'Attach a markdown note to the selection':
+      'Attach a markdown note to the selection',
+  'Highlight added': 'Highlight added',
+  'Could not anchor the selection — try again.':
+      'Could not anchor the selection — try again.',
+  'Add Note': 'Add Note',
+  'Edit': 'Edit',
+  'Write a note… supports **markdown**': 'Write a note… supports **markdown**',
+  'Change color': 'Change color',
+  'Markdown supported': 'Markdown supported',
+  'Delete annotation?': 'Delete annotation?',
+  'This removes the highlight or note.': 'This removes the highlight or note.',
+  'This removes the bookmark.': 'This removes the bookmark.',
+  'Edit note': 'Edit note',
+  'Color updated': 'Color updated',
+  'More actions': 'More actions',
+
+  // ── Annotations screen (all books) ──────────────────────────────────
+  'All': 'All',
+  'Highlights': 'Highlights',
+  'Notes': 'Notes',
+  'Highlights, notes & bookmarks': 'Highlights, notes & bookmarks',
+  'No highlights yet.': 'No highlights yet.',
+  'No notes yet.': 'No notes yet.',
+  'Search annotations…': 'Search annotations…',
+  'Try a different search term.': 'Try a different search term.',
+  'Clear search': 'Clear search',
+  'Filter by book': 'Filter by book',
+  'All books': 'All books',
+  'No annotations in the selected books.':
+      'No annotations in the selected books.',
+  'More colors': 'More colors',
+  'Collapse': 'Collapse',
+
+  // ── Script Converter screen ──────────────────────────────────────────
+  'Script Converter': 'Script Converter',
+  'Pāli Script Converter': 'Pāli Script Converter',
+  'Convert Pāli text between any scripts — the same converter the reader uses.':
+      'Convert Pāli text between any scripts — the same converter the reader uses.',
+  'From': 'From',
+  'To': 'To',
+  'Use result as input': 'Use result as input',
+  'Type or paste Pāli text…': 'Type or paste Pāli text…',
+  'characters': 'characters',
+  'Your converted text will appear here.':
+      'Your converted text will appear here.',
+
+  // ── Account / Cloud Sync ──────────────────────────────────────────────
+  'Sign in': 'Sign in',
+  'Sign out': 'Sign out',
+  'Sign in to sync': 'Sign in to sync',
+  'Sign in failed. Please try again.': 'Sign in failed. Please try again.',
+  'Sync active — highlights, notes & bookmarks are backed up':
+      'Sync active — highlights, notes & bookmarks are backed up',
+  'Sync off — annotations are stored on this device only':
+      'Sync off — annotations are stored on this device only',
 
   // ── Settings ────────────────────────────────────────────────────────
   'Settings': 'Settings',
