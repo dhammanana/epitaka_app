@@ -13,6 +13,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -332,6 +333,17 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             onPressed: () {
               selectableRegionState.clearSelection();
               _selectWord(searchable);
+            },
+          ),
+        if (searchable != null && NativeLookupService.isSupported)
+          ContextMenuButtonItem(
+            label: '${loc.lookUp} “${_truncateLabel(searchable)}”',
+            onPressed: () {
+              selectableRegionState.clearSelection();
+              NativeLookupService.lookUp(
+                searchable,
+                anchor: anchors.primaryAnchor,
+              );
             },
           ),
         ContextMenuButtonItem(

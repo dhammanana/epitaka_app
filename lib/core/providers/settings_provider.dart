@@ -1299,6 +1299,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await setContextMenuActions(actions);
   }
 
+  /// Reset context-menu actions and their display order to defaults.
+  Future<void> resetContextMenuActions() async {
+    await setContextMenuActions(defaultContextMenuActions());
+  }
+
   /// Mark the one-time Feature Guide welcome as shown (or reset it).
   Future<void> setFeatureGuideSeen(bool seen) async {
     state = state.copyWith(featureGuideSeen: seen);
