@@ -7,10 +7,12 @@
 /// the "App isn't responding" dialog (the Vimaṃsa / Gavesana AI tool searches
 /// used to trigger this).
 ///
-/// On mobile and desktop this opens the database in a **background isolate**
+/// On mobile (Android / iOS) this opens the database in a **background isolate**
 /// ([NativeDatabase.createInBackground]) so queries never block the UI.
-/// Drift cannot run in a background isolate on web (no isolate + FFI there),
-/// so web keeps the inline executor — web is single-threaded regardless.
+/// On desktop (macOS / Windows / Linux), standard [NativeDatabase] is used
+/// to prevent Dart VM / FFI callback assertion crashes on application exit
+/// when isolates tear down. On web, Drift cannot run in a background isolate
+/// (no isolate + FFI there), so web keeps the inline executor.
 library;
 
 import 'dart:io';
@@ -28,14 +30,16 @@ QueryExecutor openDriftExecutor(
   DatabaseSetup? setup,
   bool logStatements = false,
 }) {
-  if (kIsWeb) {
-    return NativeDatabase(
+  final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  if (isMobile) {
+    return NativeDatabase.createInBackground(
       file,
       setup: setup,
       logStatements: logStatements,
     );
   }
-  return NativeDatabase.createInBackground(
+
+  return NativeDatabase(
     file,
     setup: setup,
     logStatements: logStatements,
