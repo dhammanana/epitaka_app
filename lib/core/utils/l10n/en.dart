@@ -863,6 +863,12 @@ const Map<String, String> en = {
   'Share': 'Share',
   'Share the selected text': 'Share the selected text',
   'Look up the selected word': 'Look up the selected word',
+  'Look Up': 'Look Up',
+  'Look up in device dictionary (iOS/macOS)':
+      'Look up in device dictionary (iOS/macOS)',
+  'Reset to default': 'Reset to default',
+  'Reset context menu actions and order to default?':
+      'Reset context menu actions and order to default?',
 
   // ── Feature Guide ──────────────────────────────────────────────────
   'Feature Guide': 'Feature Guide',

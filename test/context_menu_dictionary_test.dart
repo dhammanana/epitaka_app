@@ -90,6 +90,57 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Look Up context-menu item is rendered in toolbar and triggers native or fallback lookup',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final prefs = await SharedPreferences.getInstance();
+      container.read(settingsProvider.notifier).init(prefs);
+
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final hitTestKey = GlobalKey();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            locale: const Locale('en'),
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizationsDelegate(),
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: Scaffold(
+              body: Center(
+                child: _ContextMenuHarness(hitTestKey: hitTestKey),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final textPos = tester.getCenter(find.text('bhagavā'));
+      await _doubleTapAt(tester, textPos);
+      await tester.pumpAndSettle();
+
+      // The toolbar shows the Look Up item.
+      expect(find.text('Look Up'), findsOneWidget,
+          reason: 'context menu shows the Look Up item');
+
+      // Tapping Look Up triggers lookup
+      await tester.tap(find.text('Look Up'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
+
   testWidgets('sanity: double-tap shows a plain-text context menu', (
     tester,
   ) async {

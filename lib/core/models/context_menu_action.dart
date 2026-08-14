@@ -25,15 +25,16 @@ enum ContextMenuActionKind {
 class ContextMenuBuiltins {
   ContextMenuBuiltins._();
 
+  static const highlight = 'highlight'; // text highlight with color
+  static const note = 'note'; // markdown note
   static const copy = 'copy';
   static const excerpt = 'excerpt'; // copy with citation
   static const copyLink = 'copyLink';
   static const dictionary = 'dictionary';
+  static const lookUp = 'lookUp'; // device dictionary (iOS/macOS native Look Up)
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
-  static const highlight = 'highlight'; // text highlight with color
-  static const note = 'note'; // markdown note
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
@@ -43,6 +44,7 @@ class ContextMenuBuiltins {
     excerpt,
     copyLink,
     dictionary,
+    lookUp,
     explain,
     summarizeChapter,
     share,

@@ -814,6 +814,12 @@ const Map<String, String> vi = {
   'Share': 'Chia sẻ',
   'Share the selected text': 'Chia sẻ văn bản đã chọn',
   'Look up the selected word': 'Tra từ đã chọn',
+  'Look Up': 'Tra cứu',
+  'Look up in device dictionary (iOS/macOS)':
+      'Tra cứu trong từ điển thiết bị (iOS/macOS)',
+  'Reset to default': 'Khôi phục mặc định',
+  'Reset context menu actions and order to default?':
+      'Khôi phục danh sách và thứ tự menu ngữ cảnh về mặc định?',
 
   // ── Feature Guide ──────────────────────────────────────────────────
   'Feature Guide': 'Hướng dẫn tính năng',

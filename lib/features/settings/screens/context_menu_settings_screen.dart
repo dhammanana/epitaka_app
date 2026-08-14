@@ -85,18 +85,26 @@ class _ContextMenuSettingsBodyState
                 ),
               ),
               const SizedBox(width: AppDimensions.sm),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: _loadInstalledApps,
-                  icon: _loadingApps
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.apps, size: 18),
-                  label: Text(loc.addApp),
+              if (ProcessTextService.isSupported) ...[
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: _loadInstalledApps,
+                    icon: _loadingApps
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.apps, size: 18),
+                    label: Text(loc.addApp),
+                  ),
                 ),
+                const SizedBox(width: AppDimensions.sm),
+              ],
+              IconButton.outlined(
+                tooltip: loc.resetToDefault,
+                icon: const Icon(Icons.restart_alt, size: 20),
+                onPressed: () => _confirmReset(context),
               ),
             ],
           ),
@@ -116,6 +124,7 @@ class _ContextMenuSettingsBodyState
             )
           else
             ReorderableListView.builder(
+              buildDefaultDragHandles: false,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _actions.length,
@@ -227,6 +236,31 @@ class _ContextMenuSettingsBodyState
       _loadingApps = false;
       _installedApps = apps;
     });
+  }
+
+  Future<void> _confirmReset(BuildContext context) async {
+    final loc = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(loc.resetToDefault),
+        content: Text(loc.resetToDefaultConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(loc.resetToDefault),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await ref.read(settingsProvider.notifier).resetContextMenuActions();
+    }
   }
 
   Future<void> _showAddPromptDialog(
@@ -463,6 +497,8 @@ class _ActionRow extends StatelessWidget {
         return (Icons.link, loc.copyLink, loc.copyLinkDesc);
       case ContextMenuBuiltins.dictionary:
         return (Icons.menu_book, loc.dictionary, loc.dictionaryDesc);
+      case ContextMenuBuiltins.lookUp:
+        return (Icons.apple, loc.lookUp, loc.lookUpDesc);
       case ContextMenuBuiltins.explain:
         return (Icons.auto_awesome, loc.explain, loc.explainDesc);
       case ContextMenuBuiltins.summarizeChapter:

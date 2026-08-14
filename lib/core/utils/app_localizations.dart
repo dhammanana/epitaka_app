@@ -366,6 +366,11 @@ class AppLocalizations {
   String get copyLink => _t('Copy Link');
   String get copyLinkDesc => _t('Copy a link to this passage');
   String get dictionaryDesc => _t('Look up the selected word');
+  String get lookUp => _t('Look Up');
+  String get lookUpDesc => _t('Look up in device dictionary (iOS/macOS)');
+  String get resetToDefault => _t('Reset to default');
+  String get resetToDefaultConfirm =>
+      _t('Reset context menu actions and order to default?');
   String get explain => _t('Explain');
   String get explainDesc => _t('Explain the selected text with AI');
   String get summarizeChapter => _t('Summarize Ch.');

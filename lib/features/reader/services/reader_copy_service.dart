@@ -18,6 +18,7 @@ import '../../../core/models/context_menu_action.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/pali_script_converter.dart'
     show Script, convertToRomanPali;
 import '../../../core/utils/process_text_service.dart';
@@ -334,6 +335,29 @@ class ReaderCopyService {
           },
           colors: colors,
         );
+      case ContextMenuBuiltins.lookUp:
+        // ── Look Up (iOS/macOS device dictionary) ───────────────────
+        return ContextMenuButton(
+          icon: Icons.apple,
+          label: loc.lookUp,
+          onTap: () async {
+            final word = _lookUpWord(
+              selectedText: selectedText,
+              lastSelectedContent: lastSelectedContent,
+              contentHitTestKey: contentHitTestKey,
+              anchor: anchor,
+            );
+            if (word != null && word.isNotEmpty) {
+              final ok = await NativeLookupService.lookUp(word, anchor: anchor);
+              if (!ok && context.mounted) {
+                // If native lookup is unsupported / unavailable, fallback to in-app dictionary
+                _openDictionary(context, ref, word);
+              }
+            }
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
       case ContextMenuBuiltins.explain:
         // ── Explain (send to Vimaṃsa AI) ────────────────────────────
         if (onExplainTap == null) return const SizedBox.shrink();
@@ -530,6 +554,37 @@ class ReaderCopyService {
     } catch (_) {
       // Can't show snackbar, ignore silently
     }
+  }
+
+  /// Resolve the word or phrase to look up in the device dictionary.
+  /// Prefers the full selected text (stripped of placeholders and normalized)
+  /// so users can look up multi-word phrases or English translations.
+  /// Falls back to the word hit-tested under the pointer/anchor when no
+  /// text selection is active.
+  static String? _lookUpWord({
+    required String? selectedText,
+    required SelectedContent? lastSelectedContent,
+    required GlobalKey? contentHitTestKey,
+    required Offset? anchor,
+  }) {
+    if (selectedText != null && selectedText.trim().isNotEmpty) {
+      return selectedText
+          .replaceAll('\uFFFC', ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+    if (lastSelectedContent != null &&
+        lastSelectedContent.plainText.trim().isNotEmpty) {
+      return lastSelectedContent.plainText
+          .replaceAll('\uFFFC', ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+    return _dictionaryLookupWord(
+      contentHitTestKey: contentHitTestKey,
+      anchor: anchor,
+      lastSelectedContent: lastSelectedContent,
+    );
   }
 
   /// Resolve the word to look up for the context-menu Dictionary item,
