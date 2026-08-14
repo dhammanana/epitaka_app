@@ -306,12 +306,27 @@ class TranslationDownloadNotifier
         return;
       }
 
-      // Write the .db file
+      // Write the .db file safely via a temp file to prevent corruption/truncation
       final destPath = p.join(dbDir.path, version.filename);
-      await File(destPath).writeAsBytes(
+      final tempPath = '$destPath.tmp';
+      final tempFile = File(tempPath);
+
+      await tempFile.writeAsBytes(
         dbEntry.content as List<int>,
         flush: true,
       );
+
+      final writtenSize = await tempFile.length();
+      if (writtenSize == 0) {
+        if (await tempFile.exists()) await tempFile.delete();
+        throw Exception('Extracted database file is empty (0 bytes)');
+      }
+
+      // Remove stale WAL/SHM files before replacing the database
+      await cleanWalFiles(destPath);
+
+      // Atomically replace destination
+      await tempFile.rename(destPath);
 
       // Save the updatedAt metadata for update-checking
       if (version.updatedAt != null && version.updatedAt!.isNotEmpty) {
@@ -467,10 +482,25 @@ class TranslationDownloadNotifier
       }
 
       final destPath = p.join(dbDir.path, filename);
-      await File(destPath).writeAsBytes(
+      final tempPath = '$destPath.tmp';
+      final tempFile = File(tempPath);
+
+      await tempFile.writeAsBytes(
         dbEntry.content as List<int>,
         flush: true,
       );
+
+      final writtenSize = await tempFile.length();
+      if (writtenSize == 0) {
+        if (await tempFile.exists()) await tempFile.delete();
+        throw Exception('Extracted database file is empty (0 bytes)');
+      }
+
+      // Clean up stale WAL / SHM files
+      await cleanWalFiles(destPath);
+
+      // Atomically replace destination
+      await tempFile.rename(destPath);
 
       // If the DPD dictionary was just replaced on disk, drop the memoized
       // lookup/headword results in the open handle so it never serves stale

@@ -1,7 +1,8 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 
-import 'package:flutter/services.dart' show MethodChannel, rootBundle;
+import 'package:flutter/services.dart'
+    show AssetManifest, MethodChannel, rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -39,6 +40,18 @@ Future<Directory> getDatabaseDirectory() async {
   return getApplicationSupportDirectory();
 }
 
+/// Removes any SQLite WAL, SHM, or journal files associated with [dbPath].
+Future<void> cleanWalFiles(String dbPath) async {
+  for (final suffix in ['-wal', '-shm', '-journal']) {
+    final walFile = File('$dbPath$suffix');
+    if (await walFile.exists()) {
+      try {
+        await walFile.delete();
+      } catch (_) {}
+    }
+  }
+}
+
 /// Copies bundled database files from assets to the app's writable database
 /// directory on first launch.
 ///
@@ -56,22 +69,40 @@ Future<void> ensureBundledDatabases() async {
     await dbDir.create(recursive: true);
   }
 
-  // List of bundled databases to copy from assets.
-  const bundledDbs = [
-    'assets/db/epitaka.db',
-    'assets/db/epitaka_en.db',
-    'assets/db/dpd-dictionary.db',
-    'assets/db/epitaka_my_nissaya.db',
-  ];
+  // Auto Dynamic Discovery: instead of hardcoded list of database assets.
+  // discover any .db files actually bundled in the Flutter asset bundle, instead of har
+  // On mobile release builds, no .db files are bundled in assets/ (translations
+  // are downloaded on demand).
+  // On desktop or standalone offline builds where .db files are bundled,
+  // this extracts them to the writable database directory.
+  final bundledDbs = <String>{};
+  try {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    for (final asset in manifest.listAssets()) {
+      if (asset.startsWith('assets/db/') && asset.endsWith('.db')) {
+        bundledDbs.add(asset);
+      }
+    }
+  } catch (_) {}
+
+  if (bundledDbs.isEmpty) return;
 
   for (final assetPath in bundledDbs) {
     final filename = p.basename(assetPath);
     final destPath = p.join(appDir.path, filename);
+    final destFile = File(destPath);
 
-    // Only copy if the destination doesn't already exist.
-    if (await File(destPath).exists()) continue;
+    // Only skip if the destination exists and is not empty (0-byte file).
+    if (await destFile.exists()) {
+      try {
+        if (await destFile.length() > 0) continue;
+      } catch (_) {}
+    }
 
     try {
+      // Clean up stale WAL / SHM files before writing or copying
+      await cleanWalFiles(destPath);
+
       // On desktop the assets are real files inside the app bundle — copy
       // them directly (streamed) instead of loading hundreds of MB into
       // memory through rootBundle.
@@ -82,15 +113,29 @@ Future<void> ensureBundledDatabases() async {
           // never shadow the real database (which arrives later from the
           // install-time asset pack on Android).
           if (onDisk.lengthSync() == 0) continue;
-          await onDisk.copy(destPath);
-          continue;
+          final tempPath = '$destPath.tmp';
+          final tempFile = File(tempPath);
+          await onDisk.copy(tempFile.path);
+          if (await tempFile.length() > 0) {
+            await tempFile.rename(destPath);
+            continue;
+          } else {
+            if (await tempFile.exists()) await tempFile.delete();
+          }
         }
       }
+
       final data = await rootBundle.load(assetPath);
       // Skip 0-byte assets for the same reason as above.
       if (data.lengthInBytes == 0) continue;
-      final file = File(destPath);
-      await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      final tempPath = '$destPath.tmp';
+      final tempFile = File(tempPath);
+      await tempFile.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      if (await tempFile.length() > 0) {
+        await tempFile.rename(destPath);
+      } else {
+        if (await tempFile.exists()) await tempFile.delete();
+      }
     } catch (e) {
       // Asset might not exist in this build variant — skip silently.
       continue;
