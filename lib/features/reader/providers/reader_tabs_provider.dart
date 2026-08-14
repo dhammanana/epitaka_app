@@ -10,6 +10,14 @@ class ReaderTabInfo {
   /// Specific line ID to scroll to within [initialParaId] on first load.
   final int? initialLineId;
 
+  /// Monotonically increasing id assigned by [ReaderTabsNotifier.openTab]
+  /// to every explicit jump request (annotation/book-link/history tap). The
+  /// reader compares this instead of the para value so a SECOND request to
+  /// the same paragraph still triggers a jump — the old para-value guard
+  /// silently swallowed re-requests for the paragraph the reader was
+  /// already on.
+  final int? initialJumpId;
+
   /// Optional search query to highlight in the reader content.
   final String? searchQuery;
 
@@ -28,6 +36,7 @@ class ReaderTabInfo {
     this.bookDescription,
     this.initialParaId,
     this.initialLineId,
+    this.initialJumpId,
     this.searchQuery,
     this.scrollOffset,
     this.currentParaId,
@@ -57,20 +66,41 @@ class ReaderTabsState {
 class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
   ReaderTabsNotifier() : super(const ReaderTabsState(tabs: []));
 
+  /// Incremented for every explicit jump request so the reader can tell a
+  /// NEW request (even for the same paragraph) from a stale rebuild.
+  int _jumpRequestCounter = 0;
+
   /// Open a tab (by bookId). If already open, switch to it and update
   /// fields like [searchQuery].
   void openTab(ReaderTabInfo tab) {
+    // Assign a fresh jump id whenever a position is requested, so a repeat
+    // request for the paragraph the reader is already on still jumps (and
+    // fine-scrolls to the line).
+    final resolvedTab = tab.initialParaId != null
+        ? ReaderTabInfo(
+            bookId: tab.bookId,
+            bookName: tab.bookName,
+            bookDescription: tab.bookDescription,
+            initialParaId: tab.initialParaId,
+            initialLineId: tab.initialLineId,
+            initialJumpId: ++_jumpRequestCounter,
+            searchQuery: tab.searchQuery,
+          )
+        : tab;
+
     final existingIndex =
-        state.tabs.indexWhere((t) => t.bookId == tab.bookId);
+        state.tabs.indexWhere((t) => t.bookId == resolvedTab.bookId);
     if (existingIndex >= 0) {
       final existing = state.tabs[existingIndex];
       final updated = ReaderTabInfo(
         bookId: existing.bookId,
         bookName: existing.bookName,
         bookDescription: existing.bookDescription,
-        initialParaId: tab.initialParaId ?? existing.initialParaId,
-        initialLineId: tab.initialLineId ?? existing.initialLineId,
-        searchQuery: tab.searchQuery ?? existing.searchQuery,
+        initialParaId: resolvedTab.initialParaId ?? existing.initialParaId,
+        initialLineId: resolvedTab.initialLineId ?? existing.initialLineId,
+        initialJumpId:
+            resolvedTab.initialJumpId ?? existing.initialJumpId,
+        searchQuery: resolvedTab.searchQuery ?? existing.searchQuery,
         scrollOffset: existing.scrollOffset,
         currentParaId: existing.currentParaId,
         currentLineId: existing.currentLineId,
@@ -84,7 +114,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       return;
     }
     state = ReaderTabsState(
-      tabs: [...state.tabs, tab],
+      tabs: [...state.tabs, resolvedTab],
       activeIndex: state.tabs.length,
     );
   }
@@ -145,6 +175,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
         bookDescription: tab.bookDescription,
         initialParaId: tab.initialParaId,
         initialLineId: tab.initialLineId,
+        initialJumpId: tab.initialJumpId,
         searchQuery: tab.searchQuery,
         scrollOffset: offset,
         currentParaId: paraId ?? tab.currentParaId,
@@ -169,6 +200,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       bookDescription: tab.bookDescription,
       initialParaId: null,
       initialLineId: null,
+      initialJumpId: null,
       searchQuery: tab.searchQuery,
       scrollOffset: tab.scrollOffset,
       currentParaId: tab.currentParaId,

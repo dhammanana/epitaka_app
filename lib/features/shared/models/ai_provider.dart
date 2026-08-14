@@ -3,7 +3,8 @@
 /// Each provider has its own API format, base URL, and authentication.
 enum AiProvider {
   gemini,
-  openai;
+  openai,
+  openrouter;
 
   String get displayName {
     switch (this) {
@@ -11,6 +12,8 @@ enum AiProvider {
         return 'Google Gemini';
       case AiProvider.openai:
         return 'OpenAI-compatible';
+      case AiProvider.openrouter:
+        return 'OpenRouter';
     }
   }
 
@@ -20,6 +23,8 @@ enum AiProvider {
         return 'https://generativelanguage.googleapis.com/v1beta/models';
       case AiProvider.openai:
         return 'https://api.openai.com/v1';
+      case AiProvider.openrouter:
+        return 'https://openrouter.ai/api/v1';
     }
   }
 
@@ -30,6 +35,8 @@ enum AiProvider {
         return 'https://ai.google.dev/gemini-api/docs/api-key';
       case AiProvider.openai:
         return 'https://platform.openai.com/api-keys';
+      case AiProvider.openrouter:
+        return 'https://openrouter.ai/docs/quickstart';
     }
   }
 
@@ -40,6 +47,8 @@ enum AiProvider {
         return 'Get a Gemini API key';
       case AiProvider.openai:
         return 'Get an OpenAI API key';
+      case AiProvider.openrouter:
+        return 'Get an OpenRouter API key';
     }
   }
 
@@ -51,6 +60,8 @@ enum AiProvider {
         return 'https://aistudio.google.com/app/apikey';
       case AiProvider.openai:
         return 'https://platform.openai.com/api-keys';
+      case AiProvider.openrouter:
+        return 'https://openrouter.ai/keys';
     }
   }
 
@@ -83,6 +94,25 @@ enum AiProvider {
             url: 'https://ai.google.dev/gemini-api/docs/api-key',
           ),
         ];
+      case AiProvider.openrouter:
+        return [
+          (
+            label: 'OpenRouter models',
+            url: 'https://openrouter.ai/models',
+          ),
+          (
+            label: 'Free models',
+            url: 'https://openrouter.ai/collections/free-models',
+          ),
+          (
+            label: 'DeepSeek',
+            url: 'https://platform.deepseek.com/api_keys',
+          ),
+          (
+            label: 'Google Gemini',
+            url: 'https://ai.google.dev/gemini-api/docs/api-key',
+          ),
+        ];
     }
   }
 
@@ -93,6 +123,8 @@ enum AiProvider {
         return AiProvider.gemini;
       case 'openai':
         return AiProvider.openai;
+      case 'openrouter':
+        return AiProvider.openrouter;
       default:
         return AiProvider.gemini;
     }

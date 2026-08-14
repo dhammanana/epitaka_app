@@ -18,7 +18,11 @@ import 'library_browser.dart';
 /// Contains three tabs: Browse (Tipitaka book tree), Reading (open tabs +
 /// reading/listening history), and Bookmarks (saved positions).
 class LibraryPanel extends ConsumerStatefulWidget {
-  const LibraryPanel({super.key});
+  /// When true, the type-to-filter field in the Browse tab is focused once
+  /// the panel is built (used by the Cmd/Ctrl+L shortcut).
+  final bool autoFocus;
+
+  const LibraryPanel({super.key, this.autoFocus = false});
 
   @override
   ConsumerState<LibraryPanel> createState() => _LibraryPanelState();
@@ -128,7 +132,10 @@ class _LibraryPanelState extends ConsumerState<LibraryPanel> {
       case 2:
         return const BookmarksPanel();
       default:
-        return LibraryBrowser(maxWidth: double.infinity);
+        return LibraryBrowser(
+          maxWidth: double.infinity,
+          autoFocusFilter: widget.autoFocus,
+        );
     }
   }
 }

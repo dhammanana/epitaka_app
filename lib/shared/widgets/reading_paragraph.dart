@@ -57,6 +57,15 @@ class ReadingParagraph extends StatelessWidget {
   /// not individual lines within them.
   final Map<int, GlobalKey>? lineKeys;
 
+  /// Keyboard-navigation focus line: when this paragraph holds the focused
+  /// line (keyboard reading cursor), that line gets a subtle highlight.
+  final int? keyboardFocusParaId;
+  final int? keyboardFocusLineId;
+
+  /// Which book-link chip on the focused line is selected by the keyboard
+  /// (0-based), or null when none. Only meaningful on the focus line.
+  final int? keyboardFocusChipIndex;
+
   /// Book links for this paragraph, keyed by lineId.
   /// When non-empty, chips are rendered below the linked lines.
   final ParaBookLinks bookLinks;
@@ -115,6 +124,9 @@ class ReadingParagraph extends StatelessWidget {
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.lineKeys,
+    this.keyboardFocusParaId,
+    this.keyboardFocusLineId,
+    this.keyboardFocusChipIndex,
     required this.script,
     required this.pageNumberingSystem,
     this.previousLinePageNumber,
@@ -402,31 +414,36 @@ class ReadingParagraph extends StatelessWidget {
             paragraph.paraId == ttsHighlightParaId &&
             lineId == ttsHighlightLineId;
 
+        final isKeyboardFocus =
+            keyboardFocusParaId != null &&
+            keyboardFocusLineId != null &&
+            paragraph.paraId == keyboardFocusParaId &&
+            lineId == keyboardFocusLineId;
+        final selectedChipIndex =
+            isKeyboardFocus ? keyboardFocusChipIndex : null;
+
         final lineLinks = bookLinks[lineId];
 
         final hasPali =
             showPali && line.paliText != null && line.paliText!.isNotEmpty;
 
-        return Padding(
-          key: lineKeys?[lineId],
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Page break marker at the exact line where a new page begins —
-              // a divider with the page number on the right, like a printed
-              // book (PDF page break). Drawn even when this line carries no
-              // Pāli text, so a mid-paragraph break is always visible.
-              if (startsNewPage) _buildPageBreakMarker(linePage, colors),
-              // Build the Pāli line lazily (only when it exists) so a line
-              // carrying page data but no Pāli text can't crash.
-              if (hasPali)
-                _buildPaliLine(
-                  context,
-                  line.paliText!,
-                  colors,
-                  lineId: lineId,
-                ),
+        final lineContent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Page break marker at the exact line where a new page begins —
+            // a divider with the page number on the right, like a printed
+            // book (PDF page break). Drawn even when this line carries no
+            // Pāli text, so a mid-paragraph break is always visible.
+            if (startsNewPage) _buildPageBreakMarker(linePage, colors),
+            // Build the Pāli line lazily (only when it exists) so a line
+            // carrying page data but no Pāli text can't crash.
+            if (hasPali)
+              _buildPaliLine(
+                context,
+                line.paliText!,
+                colors,
+                lineId: lineId,
+              ),
               if (displayMode == ParagraphDisplayMode.lineByLine &&
                   showTranslation)
                 _buildTranslationBlock(
@@ -436,13 +453,46 @@ class ReadingParagraph extends StatelessWidget {
                   isHighlighted,
                   lineId: lineId,
                 ),
-              if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, left: 4),
-                  child: _buildChips(lineLinks, colors, context),
+            if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: _buildChips(
+                  lineLinks,
+                  colors,
+                  context,
+                  selectedIndex: selectedChipIndex,
                 ),
-            ],
-          ),
+              ),
+          ],
+        );
+
+        // The keyboard focus line gets a subtle backdrop so the reading
+        // cursor is visible; the TTS highlight (isHighlighted) takes
+        // precedence when both would apply.
+        if (isKeyboardFocus && !isHighlighted) {
+          return Padding(
+            key: lineKeys?[lineId],
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Container(
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(6),
+                border: Border(
+                  left: BorderSide(
+                    color: colors.primary.withValues(alpha: 0.55),
+                    width: 3,
+                  ),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: lineContent,
+            ),
+          );
+        }
+        return Padding(
+          key: lineKeys?[lineId],
+          padding: const EdgeInsets.only(bottom: 6),
+          child: lineContent,
         );
       }).toList(),
     );
@@ -451,18 +501,21 @@ class ReadingParagraph extends StatelessWidget {
   Widget _buildChips(
     List<BookLinkData> links,
     ColorScheme colors,
-    BuildContext context,
-  ) {
+    BuildContext context, {
+    int? selectedIndex,
+  }) {
     if (links.length <= 6) {
       return Wrap(
         spacing: 4,
         runSpacing: 2,
-        children: links.map((link) {
+        children: links.indexed.map((entry) {
+          final (i, link) = entry;
           final chipColor = link.isSource ? colors.primary : colors.tertiary;
           return BookLinkChip(
             word: link.word,
             color: chipColor,
             script: script,
+            selected: i == selectedIndex,
             onTap: () => showBookLinkSectionSheet(context, link: link),
           );
         }).toList(),
@@ -473,6 +526,7 @@ class ReadingParagraph extends StatelessWidget {
       links: links,
       colors: colors,
       script: script,
+      selectedIndex: selectedIndex,
       onChipTap: (link) => showBookLinkSectionSheet(context, link: link),
     );
   }
@@ -992,32 +1046,50 @@ class ReadingParagraph extends StatelessWidget {
     // translations, …), so only the markup property is baked in here. Font
     // family, size, color, etc. inherit from the root TextSpan style when
     // the paragraph is painted, keeping the cache correct for every base.
-    final boldStyle = TextStyle(fontWeight: FontWeight.w700);
-    final italicStyle = TextStyle(fontStyle: FontStyle.italic);
-    final underlineStyle = TextStyle(decoration: TextDecoration.underline);
-
     final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
+    // A stack of open tag names lets a closing tag pop only its own element,
+    // so nested markup like `<b><i>x</i></b>` (produced by the markdown
+    // `***…***` converter) keeps the outer style active after the inner
+    // close — the old `.*?` regex rendered nested tags literally instead.
+    final tagStack = <String>[];
     final pattern = RegExp(
-      r'<b>(.*?)</b>|<i>(.*?)</i>|<u>(.*?)</u>|'
-      r'<h[1-6][^>]*>(.*?)</h[1-6]>|'
-      r'([^<]+)',
+      r'<(/?)(b|i|u|h[1-6])(\s[^>]*)?/?>|([^<]+)',
       dotAll: true,
       caseSensitive: false,
     );
 
+    TextStyle? currentStyle() {
+      if (tagStack.isEmpty) return null;
+      var style = const TextStyle();
+      final hasBold = tagStack.any((t) {
+        if (t == 'b') return true;
+        if (t.length != 2 || t[0] != 'h') return false;
+        final n = t.codeUnitAt(1);
+        return n >= 0x31 && n <= 0x36; // '1'..'6'
+      });
+      if (hasBold) style = style.copyWith(fontWeight: FontWeight.w700);
+      if (tagStack.contains('i')) {
+        style = style.copyWith(fontStyle: FontStyle.italic);
+      }
+      if (tagStack.contains('u')) {
+        style = style.copyWith(decoration: TextDecoration.underline);
+      }
+      return style;
+    }
+
     for (final m in pattern.allMatches(normalized)) {
-      if (m.group(1) != null) {
-        spans.add(TextSpan(text: m.group(1), style: boldStyle));
+      if (m.group(1) == '/') {
+        // Closing tag — remove the matching open tag (and anything opened
+        // after it), leaving outer tags' styles active.
+        final name = m.group(2)!.toLowerCase();
+        final idx = tagStack.lastIndexOf(name);
+        if (idx >= 0) tagStack.removeRange(idx, tagStack.length);
       } else if (m.group(2) != null) {
-        spans.add(TextSpan(text: m.group(2), style: italicStyle));
-      } else if (m.group(3) != null) {
-        spans.add(TextSpan(text: m.group(3), style: underlineStyle));
+        tagStack.add(m.group(2)!.toLowerCase());
       } else if (m.group(4) != null) {
-        spans.add(TextSpan(text: m.group(4), style: boldStyle));
-      } else if (m.group(5) != null) {
-        final text = m.group(5)!;
+        final text = m.group(4)!;
         if (text.trim().isNotEmpty || text == '\n') {
-          spans.add(TextSpan(text: text));
+          spans.add(TextSpan(text: text, style: currentStyle()));
         }
       }
     }
@@ -1072,11 +1144,16 @@ class _ExpandableChips extends StatefulWidget {
   final Script? script;
   final void Function(BookLinkData link) onChipTap;
 
+  /// Index of the keyboard-selected chip; when it's hidden behind the
+  /// "+N" button the row auto-expands so the selection is visible.
+  final int? selectedIndex;
+
   const _ExpandableChips({
     required this.links,
     required this.colors,
     this.script,
     required this.onChipTap,
+    this.selectedIndex,
   });
 
   @override
@@ -1090,20 +1167,25 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
   Widget build(BuildContext context) {
     const int maxVisible = 6;
     final links = widget.links;
-    final displayLinks = _expanded ? links : links.take(maxVisible).toList();
+    // Auto-expand when the keyboard-selected chip would be hidden.
+    final needsExpansion = widget.selectedIndex != null &&
+        widget.selectedIndex! >= maxVisible;
+    final displayLinks = _expanded || needsExpansion
+        ? links
+        : links.take(maxVisible).toList();
 
     return Wrap(
       spacing: 4,
       runSpacing: 2,
       children: [
-        ...displayLinks.map(_buildChip),
-        if (!_expanded) _buildExpandButton(),
-        if (_expanded) _buildCollapseButton(),
+        ...displayLinks.indexed.map((entry) => _buildChip(entry.$2, entry.$1)),
+        if (!_expanded && !needsExpansion) _buildExpandButton(),
+        if (_expanded || needsExpansion) _buildCollapseButton(),
       ],
     );
   }
 
-  Widget _buildChip(BookLinkData link) {
+  Widget _buildChip(BookLinkData link, int index) {
     final chipColor = link.isSource
         ? widget.colors.primary
         : widget.colors.tertiary;
@@ -1111,6 +1193,7 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
       word: link.word,
       color: chipColor,
       script: widget.script,
+      selected: index == widget.selectedIndex,
       onTap: () => widget.onChipTap(link),
     );
   }

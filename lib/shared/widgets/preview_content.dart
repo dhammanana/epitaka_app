@@ -44,14 +44,11 @@ class PreviewContent extends ConsumerWidget {
   final int? firstSnippetIndex;
   final String? paliSnippet;
 
-  /// Paragraph + line to scroll into view when the content is first shown
-  /// (e.g. the line containing the word being defined in a book-link sheet).
-  final int? scrollToParaId;
-  final int? scrollToLineId;
-
-  /// Key attached to the target line's widget so a parent scroll view can
-  /// bring it into view via [Scrollable.ensureVisible].
-  final GlobalKey? targetLineKey;
+  /// Per-line [GlobalKey]s indexed by position in [lines]. The owning sheet
+  /// uses them both to scroll the target line into view on open and to
+  /// resolve the currently-visible line when the user taps an action (e.g.
+  /// "open in reader" should jump to where the user stopped reading).
+  final Map<int, GlobalKey>? lineKeys;
 
   /// Called when the user double-taps on a Pāli text (opens dictionary).
   final ValueChanged<String>? onPaliWordTap;
@@ -63,9 +60,7 @@ class PreviewContent extends ConsumerWidget {
     this.highlightLineId,
     this.firstSnippetIndex,
     this.paliSnippet,
-    this.scrollToParaId,
-    this.scrollToLineId,
-    this.targetLineKey,
+    this.lineKeys,
     this.onPaliWordTap,
   });
 
@@ -79,19 +74,6 @@ class PreviewContent extends ConsumerWidget {
     final script = settings.paliScript;
     final paliTypo = settings.typography.pali;
 
-    // Decide up front whether the exact target line exists in the rendered
-    // range. If it does, we attach the key to that exact line only; otherwise
-    // we fall back to the first line of the target paragraph. This keeps the
-    // two cases mutually exclusive so the same GlobalKey is never attached to
-    // two widgets (which would throw "Duplicate GlobalKey detected").
-    final bool hasExactTarget =
-        scrollToParaId != null &&
-        scrollToLineId != null &&
-        lines.any(
-          (l) => l.paraId == scrollToParaId && l.lineId == scrollToLineId,
-        );
-
-    bool targetKeyPlaced = false;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,23 +94,8 @@ class PreviewContent extends ConsumerWidget {
 
         final isNewPara = index == 0 || line.paraId != lines[index - 1].paraId;
 
-        // Attach the target key to the exact line containing the defined word,
-        // or — only when that exact line is absent — to the first line of the
-        // target paragraph.
-        final isExactTarget =
-            hasExactTarget &&
-            line.paraId == scrollToParaId &&
-            line.lineId == scrollToLineId;
-        final isFirstLineOfTargetPara =
-            !hasExactTarget &&
-            scrollToParaId != null &&
-            line.paraId == scrollToParaId &&
-            !targetKeyPlaced;
-        final isTargetLine = isExactTarget || isFirstLineOfTargetPara;
-        if (isTargetLine) targetKeyPlaced = true;
-
         return Column(
-          key: isTargetLine ? targetLineKey : null,
+          key: lineKeys?[index],
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

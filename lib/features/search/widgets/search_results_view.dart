@@ -23,6 +23,7 @@ import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 import 'search_result_highlight.dart';
+import 'search_results_navigator.dart';
 
 /// Phone-only horizontal padding budget for one search result line.
 ///
@@ -39,15 +40,109 @@ const double _phoneLineHPad = 10;
 /// Used by both the full-page Search screen and the Gavesana AI search
 /// screen, so AI-found passages render exactly like normal FTS results
 /// (book cards, expand/collapse, tap-to-open, long-press preview).
-class SearchResultsView extends ConsumerWidget {
+///
+/// Supports keyboard navigation (j/k + Enter) when [resultsFocusNode] is
+/// provided by the parent (or via an internal node): the list is wrapped in
+/// a [Focus] that consumes j/k/arrows/Enter/Escape.
+class SearchResultsView extends ConsumerStatefulWidget {
   final SearchResults state;
 
-  const SearchResultsView({super.key, required this.state});
+  /// Optional external focus node for the results list; when the parent
+  /// provides one it can move focus here after a search executes.
+  final FocusNode? resultsFocusNode;
+
+  /// Called when Esc is pressed in the results (parent usually refocuses
+  /// its search field).
+  final VoidCallback? onEscape;
+
+  const SearchResultsView({
+    super.key,
+    required this.state,
+    this.resultsFocusNode,
+    this.onEscape,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SearchResultsView> createState() =>
+      _SearchResultsViewState();
+}
+
+class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
+  final SearchResultsNavigator _searchNav = SearchResultsNavigator();
+  final GlobalKey _selectedRowKey = GlobalKey();
+  final FocusNode _internalFocusNode = FocusNode();
+  SearchResults? _lastNavState;
+  SearchResultRow? _lastSelectedRow;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchNav.addListener(_onNavChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchNav.removeListener(_onNavChanged);
+    _internalFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onNavChanged() {
+    if (!mounted) return;
+    setState(() {});
+    final row = _searchNav.selectedRow;
+    if (row == null || identical(row, _lastSelectedRow)) return;
+    _lastSelectedRow = row;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _selectedRowKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.25,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _syncNavigator() {
+    if (!identical(widget.state, _lastNavState)) {
+      _lastNavState = widget.state;
+      _searchNav.rebuild(widget.state);
+    }
+  }
+
+  void _activateSelectedRow() {
+    final row = _searchNav.selectedRow;
+    if (row == null) return;
+    switch (row.kind) {
+      case SearchRowKind.headingCard:
+        final headings = row.headings;
+        if (headings != null && headings.isNotEmpty) {
+          _onHeadingResultTap(context, ref, headings.first);
+        }
+      case SearchRowKind.bookHeader:
+        final notifier = ref.read(searchProvider.notifier);
+        if (row.summary!.isExpanded) {
+          notifier.collapseBook(row.summaryIndex);
+        } else {
+          notifier.expandBook(row.summaryIndex);
+        }
+      case SearchRowKind.resultItem:
+        _onResultTap(context, ref, row.summary!, row.item!);
+      case SearchRowKind.loadMore:
+        ref.read(searchProvider.notifier).loadMoreForBook(row.summaryIndex);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _syncNavigator();
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final state = widget.state;
 
     if (state.bookSummaries.isEmpty && state.headings.isEmpty) {
       return Center(
@@ -71,8 +166,8 @@ class SearchResultsView extends ConsumerWidget {
       );
     }
 
-    final totalItems =
-        state.bookSummaries.length + (state.headings.isNotEmpty ? 1 : 0);
+    final focusNode = widget.resultsFocusNode ?? _internalFocusNode;
+    final rows = _searchNav.rows;
 
     // On phones the result cards go edge-to-edge (no outer screen margin)
     // so the long snippet lines get as much width as possible. Together
@@ -80,49 +175,79 @@ class SearchResultsView extends ConsumerWidget {
     // screen edge (10px total, see _phoneListHPad). Desktop keeps the
     // wider margins.
     final isPhone = ResponsiveBreakpoint.isPhone(context);
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(
-        isPhone ? _phoneListHPad : AppDimensions.marginMobile,
-        AppDimensions.sm,
-        isPhone ? _phoneListHPad : AppDimensions.marginMobile,
-        AppDimensions.bottomToolbarHeight + AppDimensions.lg,
+    return Focus(
+      focusNode: focusNode,
+      onKeyEvent: (node, event) => handleSearchNavKey(
+        event,
+        _searchNav,
+        onActivate: _activateSelectedRow,
+        onEscape: () => widget.onEscape?.call(),
       ),
-      itemCount: totalItems,
-      itemBuilder: (context, index) {
-        // Show heading results card first (if any)
-        if (state.headings.isNotEmpty && index == 0) {
-          return _HeadingResultsCard(
-            headings: state.headings,
+      child: ListView.builder(
+        padding: EdgeInsets.fromLTRB(
+          isPhone ? _phoneListHPad : AppDimensions.marginMobile,
+          AppDimensions.sm,
+          isPhone ? _phoneListHPad : AppDimensions.marginMobile,
+          AppDimensions.bottomToolbarHeight + AppDimensions.lg,
+        ),
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          final isSelected = index == _searchNav.selected;
+          final Widget child = switch (row.kind) {
+            SearchRowKind.headingCard => _HeadingResultsCard(
+              headings: row.headings!,
+              colors: colors,
+              onTap: (heading) =>
+                  _onHeadingResultTap(context, ref, heading),
+            ),
+            SearchRowKind.bookHeader => _BookResultHeader(
+              summary: row.summary!,
+              colors: colors,
+              onToggleExpanded: () {
+                final notifier = ref.read(searchProvider.notifier);
+                if (row.summary!.isExpanded) {
+                  notifier.collapseBook(row.summaryIndex);
+                } else {
+                  notifier.expandBook(row.summaryIndex);
+                }
+              },
+            ),
+            SearchRowKind.resultItem => _SearchResultItemTile(
+              item: row.item!,
+              colors: colors,
+              onTap: () => _onResultTap(context, ref, row.summary!, row.item!),
+              onLongPress: () => _onResultLongPress(
+                context,
+                ref,
+                row.summary!,
+                row.item!,
+              ),
+            ),
+            SearchRowKind.loadMore => SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () => ref
+                    .read(searchProvider.notifier)
+                    .loadMoreForBook(row.summaryIndex),
+                icon: const Icon(Icons.expand_more, size: 18),
+                label: Text(
+                  '${loc.showMore} (${row.summary!.totalCount - row.summary!.loadedCount} ${loc.remaining})',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.primary,
+                  ),
+                ),
+              ),
+            ),
+          };
+          return _SearchRowHighlight(
+            key: isSelected ? _selectedRowKey : null,
+            selected: isSelected,
             colors: colors,
-            onTap: (heading) => _onHeadingResultTap(context, ref, heading),
+            child: child,
           );
-        }
-
-        // Then show book summary cards
-        final summaryIndex = state.headings.isNotEmpty ? index - 1 : index;
-        if (summaryIndex >= state.bookSummaries.length) {
-          return const SizedBox.shrink();
-        }
-
-        final summary = state.bookSummaries[summaryIndex];
-        return _BookResultCard(
-          summary: summary,
-          colors: colors,
-          onTapResult: (item) => _onResultTap(context, ref, summary, item),
-          onLongPressResult: (item) =>
-              _onResultLongPress(context, ref, summary, item),
-          onToggleExpanded: () {
-            if (summary.isExpanded) {
-              ref.read(searchProvider.notifier).collapseBook(summaryIndex);
-            } else {
-              ref.read(searchProvider.notifier).expandBook(summaryIndex);
-            }
-          },
-          onLoadMore: () {
-            ref.read(searchProvider.notifier).loadMoreForBook(summaryIndex);
-          },
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -134,7 +259,7 @@ class SearchResultsView extends ConsumerWidget {
     BookResultSummary summary,
     SearchResultItem item,
   ) {
-    final query = state.query;
+    final query = widget.state.query;
 
     // Find the first matching line's lineId for precise line-level jumping
     final int? initialLineId;
@@ -172,7 +297,7 @@ class SearchResultsView extends ConsumerWidget {
             bookId: heading.bookId,
             bookName: heading.bookName ?? heading.bookId,
             initialParaId: heading.paraId,
-            searchQuery: state.query,
+            searchQuery: widget.state.query,
           ),
         );
     if (!ResponsiveBreakpoint.isDesktop(context)) {
@@ -198,7 +323,7 @@ class SearchResultsView extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
 
-    final searchQuery = state.query;
+    final searchQuery = widget.state.query;
 
     try {
       final epitakaDb = await ref.read(epitakaDbProvider.future);
@@ -316,8 +441,6 @@ class SearchResultsView extends ConsumerWidget {
               orElse: () => item.lines.first,
             )
           : null;
-      final targetLineKey = GlobalKey();
-
       // Find the snippet line index: prefer the matched line itself so the
       // visible <mark>-highlighted snippet sits on the highlighted line.
       final firstSnippetIndex = firstMatchLine == null
@@ -342,32 +465,21 @@ class SearchResultsView extends ConsumerWidget {
         highlightLineId: firstMatchLine?.lineId,
         scrollToParaId: item.paraId,
         scrollToLineId: firstMatchLine?.lineId,
-        targetLineKey: targetLineKey,
         firstSnippetIndex: firstSnippetIndex >= 0 ? firstSnippetIndex : null,
         paliSnippet: item.lines.isNotEmpty
             ? item.lines.where((l) => l.isMatch).map((l) => l.pali).join(' ')
             : '',
         actionLabel: loc.openInReader,
-        onAction: () {
-          // Find the first matching line's lineId for precise line-level jumping
-          final int? initialLineId;
-          if (item.lines.isNotEmpty) {
-            final firstMatchLine = item.lines.firstWhere(
-              (l) => l.isMatch,
-              orElse: () => item.lines.first,
-            );
-            initialLineId = firstMatchLine.lineId;
-          } else {
-            initialLineId = null;
-          }
-
+        // Open the reader at where the user stopped reading in the sheet,
+        // not the original match line.
+        onAction: (currentParaId, currentLineId) {
           // Open the reader tab
           ref.read(readerTabsProvider.notifier).openTab(
                 ReaderTabInfo(
                   bookId: item.bookId,
                   bookName: summary.book.bookName ?? item.bookId,
-                  initialParaId: item.paraId,
-                  initialLineId: initialLineId,
+                  initialParaId: currentParaId,
+                  initialLineId: currentLineId,
                   searchQuery: searchQuery,
                 ),
               );
@@ -387,28 +499,21 @@ class SearchResultsView extends ConsumerWidget {
   }
 }
 
-// ── Book Result Card ─────────────────────────────────────────────────────
+// ── Book Result Header (collapsible row) ──────────────────────────────
 
-class _BookResultCard extends ConsumerWidget {
+class _BookResultHeader extends ConsumerWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
-  final void Function(SearchResultItem item) onTapResult;
-  final void Function(SearchResultItem item)? onLongPressResult;
   final VoidCallback onToggleExpanded;
-  final VoidCallback onLoadMore;
 
-  const _BookResultCard({
+  const _BookResultHeader({
     required this.summary,
     required this.colors,
-    required this.onTapResult,
-    this.onLongPressResult,
     required this.onToggleExpanded,
-    required this.onLoadMore,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final loc = AppLocalizations.of(context);
     final script = ref.watch(settingsProvider).paliScript;
     final displayName = _displayBookName(summary.book);
     final subtitleStyle = AppTypography.labelSmall.copyWith(
@@ -425,11 +530,7 @@ class _BookResultCard extends ConsumerWidget {
         side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header ─────────────────────────────────────────────────
-          InkWell(
+      child: InkWell(
             onTap: onToggleExpanded,
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -553,50 +654,48 @@ class _BookResultCard extends ConsumerWidget {
                 ],
               ),
             ),
-          ),
-
-          // ── Expanded results ───────────────────────────────────────
-          if (summary.isExpanded) ...[
-            ...summary.loadedPages.expand(
-              (page) => page.map(
-                (item) => _SearchResultItemTile(
-                  item: item,
-                  colors: colors,
-                  onTap: () => onTapResult(item),
-                  onLongPress: () => onLongPressResult?.call(item),
-                ),
-              ),
-            ),
-
-            // Load more button
-            if (!summary.fullyLoaded)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.md,
-                  vertical: 4,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: onLoadMore,
-                    icon: const Icon(Icons.expand_more, size: 18),
-                    label: Text(
-                      '${loc.showMore} (${summary.totalCount - summary.loadedCount} ${loc.remaining})',
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ],
-      ),
+        ),
     );
   }
 
   String _displayBookName(BookInfo book) {
     return book.displayName;
+  }
+}
+
+/// Wraps a keyboard-navigable result row with the selection highlight.
+class _SearchRowHighlight extends StatelessWidget {
+  final bool selected;
+  final ColorScheme colors;
+  final Widget child;
+
+  const _SearchRowHighlight({
+    super.key,
+    required this.selected,
+    required this.colors,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.6)
+              : Colors.transparent,
+          width: 1.2,
+        ),
+      ),
+      child: child,
+    );
   }
 }
 

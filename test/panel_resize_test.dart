@@ -3,6 +3,7 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/contents/providers/contents_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:epitaka/shared/widgets/responsive_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -374,7 +375,9 @@ void main() {
     await pumpScaffold(tester, settings: settings);
     // Toggle the dictionary from the activity bar (sidebar closed). The
     // status bar no longer duplicates the dictionary button.
-    await tester.tap(find.byTooltip('Dictionary'));
+    await tester.tap(
+      find.byTooltip(AppShortcuts.tooltip('Dictionary', 'dictionary')),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -400,17 +403,32 @@ void main() {
 
     // Contents / search / dictionary now live only in the activity bar —
     // exactly one tooltip each, i.e. the status bar no longer duplicates
-    // them.
-    expect(find.byTooltip('Contents'), findsOneWidget);
-    expect(find.byTooltip('Search'), findsOneWidget);
-    expect(find.byTooltip('Dictionary'), findsOneWidget);
+    // them. Tooltips carry the shortcut hint (computed the same way the
+    // widgets build them, so the assertions hold on any platform).
+    expect(
+      find.byTooltip(AppShortcuts.tooltip('Contents', 'contents')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(AppShortcuts.tooltip('Search', 'find-everywhere')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(AppShortcuts.tooltip('Dictionary', 'dictionary')),
+      findsOneWidget,
+    );
 
     // The remaining toolbar actions are still present…
-    expect(find.byTooltip('Jump'), findsOneWidget);
+    expect(
+      find.byTooltip(AppShortcuts.tooltip('Jump', 'jump')),
+      findsOneWidget,
+    );
     expect(find.byTooltip('Save'), findsOneWidget);
 
     // …and the group is centered in the bar (window 1280 → center 640).
-    final jumpX = tester.getCenter(find.byTooltip('Jump')).dx;
+    final jumpX = tester
+        .getCenter(find.byTooltip(AppShortcuts.tooltip('Jump', 'jump')))
+        .dx;
     final saveX = tester.getCenter(find.byTooltip('Save')).dx;
     expect((jumpX + saveX) / 2, closeTo(640, 8));
   });

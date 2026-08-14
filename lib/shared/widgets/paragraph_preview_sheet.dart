@@ -19,10 +19,14 @@ Future<void> showParagraphPreviewSheet(
   int? firstSnippetIndex,
   String? paliSnippet,
   String? actionLabel,
-  VoidCallback? onAction,
+
+  /// Called when the sheet's action button is tapped. Receives the paragraph
+  /// (and optional line) the user is currently reading in the sheet, so the
+  /// caller can jump the reader to that position instead of the original
+  /// match. `lineId` is null when the sheet can't resolve a specific line.
+  void Function(int paraId, int? lineId)? onAction,
   int? scrollToParaId,
   int? scrollToLineId,
-  GlobalKey? targetLineKey,
 
   /// Optional Pāli heading rendered above the lines (e.g. the linked
   /// section title in a book-link sheet).
@@ -53,7 +57,6 @@ Future<void> showParagraphPreviewSheet(
       onAction: onAction,
       scrollToParaId: scrollToParaId,
       scrollToLineId: scrollToLineId,
-      targetLineKey: targetLineKey,
       heading: heading,
       footer: footer,
     ),
@@ -69,14 +72,13 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
   final int? firstSnippetIndex;
   final String paliSnippet;
   final String? actionLabel;
-  final VoidCallback? onAction;
+
+  /// Called with the currently-read (para, line) when the action is tapped.
+  final void Function(int paraId, int? lineId)? onAction;
 
   /// Paragraph + line to scroll into view when the sheet opens.
   final int? scrollToParaId;
   final int? scrollToLineId;
-
-  /// Key attached to the target line so the sheet can bring it into view.
-  final GlobalKey? targetLineKey;
 
   /// Optional Pāli heading rendered above the lines (e.g. the linked
   /// section title in a book-link sheet).
@@ -97,7 +99,6 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
     this.onAction,
     this.scrollToParaId,
     this.scrollToLineId,
-    this.targetLineKey,
     this.heading,
     this.footer,
   });
@@ -108,8 +109,24 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
 }
 
 class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> {
+  final ScrollController _scrollController = ScrollController();
+
+  /// Key on the scroll viewport, used to resolve the currently-visible line
+  /// when the action button is tapped.
+  final GlobalKey _viewportKey = GlobalKey();
+
+  /// One GlobalKey per rendered line (indexed by position in
+  /// [widget.lines]): used to scroll the target line into view on open and
+  /// to resolve which line the user is currently reading.
+  final Map<int, GlobalKey> _lineKeys = {};
+
   bool _didScrollToTarget = false;
   int _scrollRetries = 0;
+
+  /// Index into [widget.lines] the sheet lands on when it opens — the exact
+  /// scrollTo line, or the first line of the target paragraph when the exact
+  /// line isn't in the rendered range.
+  int? _targetLineIndex;
 
   /// Max attempts to locate the target line before giving up (the cited
   /// line may be absent from the rendered lines, e.g. hallucinated IDs).
@@ -118,13 +135,43 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
   @override
   void initState() {
     super.initState();
+    for (var i = 0; i < widget.lines.length; i++) {
+      _lineKeys[i] = GlobalKey();
+    }
+    _targetLineIndex = _resolveTargetLineIndex();
     // Scroll the exact target line into view once the sheet is laid out.
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToTarget());
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  int? _resolveTargetLineIndex() {
+    final lines = widget.lines;
+    if (lines.isEmpty) return null;
+    final para = widget.scrollToParaId;
+    final line = widget.scrollToLineId;
+    if (para != null && line != null) {
+      final exact = lines.indexWhere(
+        (l) => l.paraId == para && l.lineId == line,
+      );
+      if (exact >= 0) return exact;
+    }
+    if (para != null) {
+      final first = lines.indexWhere((l) => l.paraId == para);
+      if (first >= 0) return first;
+    }
+    return null;
+  }
+
   void _scrollToTarget() {
     if (_didScrollToTarget) return;
-    final key = widget.targetLineKey;
+    final targetIndex = _targetLineIndex;
+    if (targetIndex == null) return;
+    final key = _lineKeys[targetIndex];
     if (key == null) return;
 
     final ctx = key.currentContext;
@@ -145,6 +192,55 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeInOut,
     );
+  }
+
+  /// Resolve which line the user is currently reading: the first line whose
+  /// top is at or below the top edge of the scroll viewport (i.e. not yet
+  /// scrolled past). When the sheet has no layout yet, falls back to the
+  /// target line so opening immediately still lands on the match.
+  (int, int?) _currentAnchor() {
+    final lines = widget.lines;
+    if (lines.isEmpty) return (0, null);
+
+    final viewportTop = _viewportTop();
+    if (viewportTop == null) {
+      final target = _targetLineIndex;
+      if (target != null && target < lines.length) {
+        final t = lines[target];
+        return (t.paraId, t.lineId);
+      }
+      return (lines.first.paraId, lines.first.lineId);
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      final ctx = _lineKeys[i]?.currentContext;
+      if (ctx == null || !ctx.mounted) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      if (box.localToGlobal(Offset.zero).dy >= viewportTop - 1) {
+        final l = lines[i];
+        return (l.paraId, l.lineId);
+      }
+    }
+    final last = lines.last;
+    return (last.paraId, last.lineId);
+  }
+
+  /// Top edge of the sheet's scroll viewport in global coordinates, or null
+  /// when not laid out yet.
+  double? _viewportTop() {
+    final ctx = _viewportKey.currentContext;
+    if (ctx == null || !ctx.mounted) return null;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return null;
+    return box.localToGlobal(Offset.zero).dy;
+  }
+
+  void _handleAction() {
+    final onAction = widget.onAction;
+    if (onAction == null) return;
+    final (paraId, lineId) = _currentAnchor();
+    onAction(paraId, lineId);
   }
 
   @override
@@ -220,7 +316,7 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                   ),
                   if (w.actionLabel != null && w.onAction != null)
                     TextButton.icon(
-                      onPressed: w.onAction,
+                      onPressed: _handleAction,
                       icon: const Icon(Icons.open_in_new, size: 14),
                       label: Text(w.actionLabel!, style: const TextStyle(fontSize: 12)),
                       style: TextButton.styleFrom(
@@ -247,6 +343,8 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                       ),
                     )
                   : SingleChildScrollView(
+                      key: _viewportKey,
+                      controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(
                         AppDimensions.marginMobile,
                         AppDimensions.sm,
@@ -284,9 +382,7 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                             highlightLineId: w.highlightLineId,
                             firstSnippetIndex: w.firstSnippetIndex,
                             paliSnippet: w.paliSnippet,
-                            scrollToParaId: w.scrollToParaId,
-                            scrollToLineId: w.scrollToLineId,
-                            targetLineKey: w.targetLineKey,
+                            lineKeys: _lineKeys,
                             onPaliWordTap: (word) {
                               // Close the preview sheet and open the dictionary
                               // in the panel/dock instead (desktop sidebar or

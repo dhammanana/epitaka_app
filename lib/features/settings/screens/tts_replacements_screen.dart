@@ -8,19 +8,30 @@ import '../../../core/theme/app_typography.dart';
 import '../providers/tts_replacements_provider.dart';
 import '../widgets/settings_app_bar.dart';
 
-class TtsReplacementsScreen extends ConsumerStatefulWidget {
+class TtsReplacementsScreen extends StatelessWidget {
   const TtsReplacementsScreen({super.key});
-  @override ConsumerState<TtsReplacementsScreen> createState() => _TtsReplacementsScreenState();
+  @override Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const TtsReplacementsBody(),
+    );
+  }
 }
 
-class _TtsReplacementsScreenState extends ConsumerState<TtsReplacementsScreen> {
+/// Scrollable body of the TTS replacements screen — shared between the mobile
+/// screen and the desktop settings window.
+class TtsReplacementsBody extends ConsumerStatefulWidget {
+  const TtsReplacementsBody({super.key});
+  @override ConsumerState<TtsReplacementsBody> createState() => _TtsReplacementsBodyState();
+}
+
+class _TtsReplacementsBodyState extends ConsumerState<TtsReplacementsBody> {
   @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(ttsReplacementsNotifierProvider.notifier).load()); }
 
   @override Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme; final loc = AppLocalizations.of(context); final replacementsAsync = ref.watch(ttsReplacementsNotifierProvider);
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(padding: const EdgeInsets.fromLTRB(AppDimensions.marginMobile, AppDimensions.md, AppDimensions.marginMobile, 120), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(AppDimensions.marginMobile, AppDimensions.md, AppDimensions.marginMobile, 120), children: [
         Text(loc.ttsReplacements, style: AppTypography.headlineLarge.copyWith(color: colors.onSurface)),
         const SizedBox(height: AppDimensions.sm),
         Text(loc.ttsReplacementsDesc, style: AppTypography.labelMedium.copyWith(color: colors.onSurfaceVariant)),
@@ -36,7 +47,7 @@ class _TtsReplacementsScreenState extends ConsumerState<TtsReplacementsScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('${loc.error} $e', style: AppTypography.labelMedium.copyWith(color: colors.error))),
         ),
-      ]),
+      ],
     );
   }
 

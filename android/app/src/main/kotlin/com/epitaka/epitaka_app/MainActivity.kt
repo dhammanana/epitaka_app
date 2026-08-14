@@ -143,7 +143,11 @@ class MainActivity : FlutterActivity() {
         val copied = mutableListOf<String>()
         for (name in CORE_DB_FILES) {
             val dest = File(destDir, name)
-            if (dest.exists()) continue // already present — never overwrite
+            // Skip only when a real (non-empty) database is already present.
+            // A 0-byte file may have been written by the bundled-assets copy
+            // step (ensureBundledDatabases) before this runs — overwrite it
+            // with the real database so fresh installs don't end up empty.
+            if (dest.exists() && dest.length() > 0) continue
             val input = openAsset(name) ?: continue // pack not available
             input.use { ins ->
                 dest.outputStream().use { out -> ins.copyTo(out) }

@@ -650,10 +650,13 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
           maxTokens: maxTokens,
         );
       case AiProvider.openai:
+      case AiProvider.openrouter:
+        // OpenRouter speaks the OpenAI chat-completions protocol, so both
+        // providers share the same streaming code path.
         yield* _openaiStreamAnswer(
           model: model,
           apiKey: apiKey,
-          baseUrl: baseUrl,
+          baseUrl: baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
           systemPrompt: systemPrompt,
           userPrompt: userPrompt,
           maxTokens: maxTokens,

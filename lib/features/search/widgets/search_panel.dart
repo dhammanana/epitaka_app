@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/database/app_database.dart';
+import '../../../core/database/app_database.dart' hide SearchResultRow;
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
@@ -19,6 +20,7 @@ import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 import 'search_result_highlight.dart';
+import 'search_results_navigator.dart';
 
 /// A search panel that can be shown in a sidebar.
 ///
@@ -46,6 +48,14 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   bool _isMultiWord = false;
   bool _showFilters = false;
 
+  /// Keyboard navigation over the results list (j/k + Enter).
+  final SearchResultsNavigator _searchNav = SearchResultsNavigator();
+  final FocusNode _resultsFocusNode = FocusNode();
+  final ScrollController _resultsScrollController = ScrollController();
+  final GlobalKey _selectedRowKey = GlobalKey();
+  SearchResults? _lastNavState;
+  SearchResultRow? _lastSelectedRow;
+
   @override
   void initState() {
     super.initState();
@@ -57,14 +67,82 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(searchProvider.notifier).ensureIndexBuilt();
     });
+    _searchNav.addListener(_onNavChanged);
   }
 
   @override
   void dispose() {
+    _searchNav.removeListener(_onNavChanged);
+    _resultsFocusNode.dispose();
+    _resultsScrollController.dispose();
     _searchController.dispose();
     _focusNode.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Rebuild + scroll to the newly selected row.
+  void _onNavChanged() {
+    if (!mounted) return;
+    setState(() {});
+    final row = _searchNav.selectedRow;
+    if (row == null || identical(row, _lastSelectedRow)) return;
+    _lastSelectedRow = row;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _selectedRowKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.25,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  /// Keep the navigator in sync with the provider state.
+  void _syncNavigator(SearchState searchState) {
+    if (searchState is SearchResults) {
+      if (!identical(searchState, _lastNavState)) {
+        _lastNavState = searchState;
+        _searchNav.rebuild(searchState, includeHeadings: false);
+      }
+    } else {
+      if (_lastNavState != null) {
+        _lastNavState = null;
+        _searchNav.rows = const [];
+        _searchNav.selected = 0;
+        _lastSelectedRow = null;
+      }
+    }
+  }
+
+  /// Activate the currently selected result row.
+  void _activateSelectedRow() {
+    final row = _searchNav.selectedRow;
+    if (row == null) return;
+    switch (row.kind) {
+      case SearchRowKind.headingCard:
+        break; // the panel never renders heading rows
+      case SearchRowKind.bookHeader:
+        final notifier = ref.read(searchProvider.notifier);
+        if (row.summary!.isExpanded) {
+          notifier.collapseBook(row.summaryIndex);
+        } else {
+          notifier.expandBook(row.summaryIndex);
+        }
+      case SearchRowKind.resultItem:
+        final summaries = ref.read(searchProvider);
+        if (summaries is SearchResults && row.summary != null) {
+          _onResultTap(row.summary!, row.item!);
+        }
+      case SearchRowKind.loadMore:
+        ref
+            .read(searchProvider.notifier)
+            .loadMoreForBook(row.summaryIndex);
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -131,6 +209,13 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     ref
         .read(searchProvider.notifier)
         .search(query: query, distance: _wordDistance);
+    // On desktop, move keyboard focus to the results so j/k navigation
+    // works right after searching.
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resultsFocusNode.requestFocus();
+      });
+    }
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
@@ -185,6 +270,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final searchState = ref.watch(searchProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    _syncNavigator(searchState);
 
     return Column(
       children: [
@@ -447,8 +533,19 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           ),
 
         const Divider(height: 1),
-        // Results
-        Expanded(child: _buildResults(searchState, colors)),
+        // Results — wrapped in a Focus so j/k navigate the list (desktop).
+        Expanded(
+          child: Focus(
+            focusNode: _resultsFocusNode,
+            onKeyEvent: (node, event) => handleSearchNavKey(
+              event,
+              _searchNav,
+              onActivate: _activateSelectedRow,
+              onEscape: () => _focusNode.requestFocus(),
+            ),
+            child: _buildResults(searchState, colors),
+          ),
+        ),
       ],
     );
   }
@@ -631,25 +728,64 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
       );
     }
 
+    // Flattened rows (book headers + expanded items + load-more), driven by
+    // the keyboard navigator; j/k move the selection, Enter activates.
+    final rows = _searchNav.rows;
     return ListView.builder(
+      controller: _resultsScrollController,
       padding: const EdgeInsets.all(AppDimensions.sm),
-      itemCount: summaries.length,
+      itemCount: rows.length,
       itemBuilder: (context, index) {
-        final summary = summaries[index];
-        return _BookResultCard(
-          summary: summary,
+        final row = rows[index];
+        final isSelected = index == _searchNav.selected;
+        final Widget child = switch (row.kind) {
+          SearchRowKind.headingCard => const SizedBox.shrink(),
+          SearchRowKind.bookHeader => _BookResultHeader(
+            summary: row.summary!,
+            colors: colors,
+            query: query,
+            onToggleExpanded: () {
+              final notifier = ref.read(searchProvider.notifier);
+              if (row.summary!.isExpanded) {
+                notifier.collapseBook(row.summaryIndex);
+              } else {
+                notifier.expandBook(row.summaryIndex);
+              }
+            },
+          ),
+          SearchRowKind.resultItem => _ResultItemTile(
+            item: row.item!,
+            colors: colors,
+            query: query,
+            onTap: () => _onResultTap(row.summary!, row.item!),
+          ),
+          SearchRowKind.loadMore => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () => ref
+                    .read(searchProvider.notifier)
+                    .loadMoreForBook(row.summaryIndex),
+                icon: Icon(Icons.expand_more, size: 14),
+                label: Text(
+                  loc.showNMore(
+                    row.summary!.totalCount - row.summary!.loadedCount,
+                  ),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.primary,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        };
+        return _SearchRowHighlight(
+          key: isSelected ? _selectedRowKey : null,
+          selected: isSelected,
           colors: colors,
-          query: query,
-          onTapResult: (item) => _onResultTap(summary, item),
-          onToggleExpanded: () {
-            if (summary.isExpanded) {
-              ref.read(searchProvider.notifier).collapseBook(index);
-            } else {
-              ref.read(searchProvider.notifier).expandBook(index);
-            }
-          },
-          onLoadMore: () =>
-              ref.read(searchProvider.notifier).loadMoreForBook(index),
+          child: child,
         );
       },
     );
@@ -704,28 +840,23 @@ class _PanelFilterChip extends StatelessWidget {
   }
 }
 
-// ── Book Result Card ───────────────────────────────────────────────────
+// ── Book Result Header (collapsible row) ──────────────────────────────
 
-class _BookResultCard extends ConsumerWidget {
+class _BookResultHeader extends ConsumerWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
   final String query;
-  final void Function(SearchResultItem item) onTapResult;
   final VoidCallback onToggleExpanded;
-  final VoidCallback onLoadMore;
 
-  const _BookResultCard({
+  const _BookResultHeader({
     required this.summary,
     required this.colors,
     required this.query,
-    required this.onTapResult,
     required this.onToggleExpanded,
-    required this.onLoadMore,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final loc = AppLocalizations.of(context);
     final script = ref.watch(settingsProvider).paliScript;
     final displayName = summary.book.displayName;
     return Card(
@@ -737,110 +868,103 @@ class _BookResultCard extends ConsumerWidget {
         side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: onToggleExpanded,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.sm,
-                vertical: 8,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.import_contacts, size: 14, color: colors.primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    // Book names are Pāli — render in the user's script
-                    // with the script font, like the library.
-                    child: PaliTextStatic(
-                      displayName,
-                      script,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: summary.isExpanded
-                          ? colors.primaryContainer
-                          : colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${summary.totalCount}',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: summary.isExpanded
-                                ? colors.primary
-                                : colors.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  AnimatedRotation(
-                    turns: summary.isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.expand_more,
-                      size: 16,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      child: InkWell(
+        onTap: onToggleExpanded,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.sm,
+            vertical: 8,
           ),
-          if (summary.isExpanded) ...[
-            ...summary.loadedPages.expand(
-              (page) => page.map(
-                (item) => _ResultItemTile(
-                  item: item,
-                  colors: colors,
-                  query: query,
-                  onTap: () => onTapResult(item),
+          child: Row(
+            children: [
+              Icon(Icons.import_contacts, size: 14, color: colors.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                // Book names are Pāli — render in the user's script
+                // with the script font, like the library.
+                child: PaliTextStatic(
+                  displayName,
+                  script,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-            if (!summary.fullyLoaded)
-              Padding(
+              Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.sm,
+                  horizontal: 6,
                   vertical: 2,
                 ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: onLoadMore,
-                    icon: Icon(Icons.expand_more, size: 14),
-                    label: Text(
-                      loc.showNMore(summary.totalCount - summary.loadedCount),
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.primary,
-                        fontSize: 10,
-                      ),
-                    ),
+                decoration: BoxDecoration(
+                  color: summary.isExpanded
+                      ? colors.primaryContainer
+                      : colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${summary.totalCount}',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: summary.isExpanded
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 10,
                   ),
                 ),
               ),
-          ],
-        ],
+              const SizedBox(width: 4),
+              AnimatedRotation(
+                turns: summary.isExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  Icons.expand_more,
+                  size: 16,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+}
+
+/// Wraps a keyboard-navigable result row with the selection highlight.
+class _SearchRowHighlight extends StatelessWidget {
+  final bool selected;
+  final ColorScheme colors;
+  final Widget child;
+
+  const _SearchRowHighlight({
+    super.key,
+    required this.selected,
+    required this.colors,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.6)
+              : Colors.transparent,
+          width: 1.2,
+        ),
+      ),
+      child: child,
     );
   }
 }

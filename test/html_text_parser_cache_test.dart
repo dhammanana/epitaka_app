@@ -58,6 +58,50 @@ void main() {
     expect(rest.style?.fontStyle, isNull);
   });
 
+  test('closing an inner tag leaves the outer style active', () {
+    // <b>a<i>b</i>c</b> — the old parser popped EVERY style stack on </i>,
+    // so "c" lost its bold after the inner italic closed.
+    final spans = HtmlTextParser.parse('<b>a<i>b</i>c</b>', base(null));
+    final a = spans[0] as TextSpan;
+    final b = spans[1] as TextSpan;
+    final c = spans[2] as TextSpan;
+    expect(a.text, 'a');
+    expect(a.style?.fontWeight, FontWeight.w700);
+    expect(a.style?.fontStyle, isNull);
+    expect(b.text, 'b');
+    expect(b.style?.fontWeight, FontWeight.w700);
+    expect(b.style?.fontStyle, FontStyle.italic);
+    // "c" sits after </i> but still inside <b> — must stay bold, not italic.
+    expect(c.text, 'c');
+    expect(c.style?.fontWeight, FontWeight.w700);
+    expect(c.style?.fontStyle, isNull);
+  });
+
+  test('outer italic survives an inner bold close', () {
+    final spans = HtmlTextParser.parse('<i>x<b>y</b>z</i>', base(null));
+    final x = spans[0] as TextSpan;
+    final y = spans[1] as TextSpan;
+    final z = spans[2] as TextSpan;
+    expect(x.style?.fontStyle, FontStyle.italic);
+    expect(x.style?.fontWeight, isNull);
+    expect(y.style?.fontStyle, FontStyle.italic);
+    expect(y.style?.fontWeight, FontWeight.w700);
+    // "z" must keep italic after </b>.
+    expect(z.style?.fontStyle, FontStyle.italic);
+    expect(z.style?.fontWeight, isNull);
+  });
+
+  test('markdown-style ***bold italic*** nesting keeps both styles', () {
+    // The translation converter emits <b><i>…</i></b> for ***…*** — the
+    // exact nesting that previously rendered the inner tags literally.
+    final spans = HtmlTextParser.parse('<b><i>both</i></b>', base(null));
+    expect(spans.length, 1);
+    final span = spans.single as TextSpan;
+    expect(span.text, 'both');
+    expect(span.style?.fontWeight, FontWeight.w700);
+    expect(span.style?.fontStyle, FontStyle.italic);
+  });
+
   test('base style is re-applied on every call even for cached html', () {
     const html = '<b>x</b>y';
     const styled = TextStyle(

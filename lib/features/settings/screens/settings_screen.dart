@@ -47,24 +47,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.lg),
 
           // Sections
-          SettingsSection(
-            title: loc.general,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _LanguagePickerTile(colors: colors),
-              _ScriptPickerTile(),
-              _LibraryExpandTile(colors: colors),
-              // Script Converter — reachable on desktop too (no drawer
-              // there; the settings dialog embeds this screen).
-              _SettingsTile(
-                icon: Icons.swap_horiz,
-                title: loc.scriptConverter,
-                subtitle: loc.scriptConverterSubtitle,
-                onTap: () => context.push(AppRoutes.scriptConverter),
-              ),
-            ],
-          ),
+          const SettingsGeneralSection(),
 
           const SizedBox(height: AppDimensions.md),
 
@@ -135,15 +118,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.md),
 
           // ── Search ──────────────────────────────────────────────────
-          SettingsSection(
-            title: loc.search,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _SearchExpandToggle(colors: colors),
-              _RebuildIndexTile(colors: colors),
-            ],
-          ),
+          const SettingsSearchSection(),
 
           const SizedBox(height: AppDimensions.md),
 
@@ -163,95 +138,167 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: AppDimensions.md),
 
-          // ── AI Q&A ──────────────────────────────────────────────────
-          _buildAiQaSection(context, colors),
+          // ── AI Q&A + Gavesana ───────────────────────────────────────
+          const SettingsAiSection(),
 
           const SizedBox(height: AppDimensions.md),
 
-          // ── Gavesana ───────────────────────────────────────────────
-          _buildGavesanaSection(context, colors, ref),
+          const SettingsAccountSection(),
 
           const SizedBox(height: AppDimensions.md),
 
-          SettingsSection(
-            title: loc.account,
-            colors: colors,
-            showDividers: true,
-            children: [
-              // Cloud sync: Google account + annotation sync status.
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: AccountSyncTile(),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: AppDimensions.md),
-
-          SettingsSection(
-            title: loc.system,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _SettingsTile(
-                icon: Icons.explore_outlined,
-                title: loc.featureGuide,
-                subtitle: loc.featureGuideSubtitle,
-                onTap: () => context.push(AppRoutes.featureGuide),
-              ),
-              _SettingsTile(
-                icon: Icons.help_outline,
-                title: loc.help,
-                subtitle: loc.keyboardShortcuts,
-                onTap: () => context.push('/settings/help'),
-              ),
-              ResetDataTile(),
-              _SettingsTile(icon: Icons.info, title: loc.about, onTap: () {}),
-            ],
-          ),
+          const SettingsSystemSection(),
         ],
       ),
     );
   }
 
-  /// AI Q&A settings section.
-  Widget _buildAiQaSection(BuildContext context, ColorScheme colors) {
+}
+
+/// General settings section: language, script, library expand, script
+/// converter. Shared between the mobile settings screen and the desktop
+/// settings window.
+class SettingsGeneralSection extends ConsumerWidget {
+  const SettingsGeneralSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     return SettingsSection(
-      title: loc.aiQa,
+      title: loc.general,
       colors: colors,
+      showDividers: true,
       children: [
+        _LanguagePickerTile(colors: colors),
+        _ScriptPickerTile(),
+        _LibraryExpandTile(colors: colors),
+        // Script Converter — reachable on desktop too (no drawer there;
+        // the settings dialog embeds this section).
         _SettingsTile(
-          icon: Icons.question_answer,
-          title: loc.aiQaSettings,
-          subtitle: loc.aiQaSettingsSubtitle,
-          onTap: () => showAiQaSettingsSheet(context),
+          icon: Icons.swap_horiz,
+          title: loc.scriptConverter,
+          subtitle: loc.scriptConverterSubtitle,
+          onTap: () => context.push(AppRoutes.scriptConverter),
         ),
       ],
     );
   }
+}
 
-  /// Gavesana AI-powered search settings section.
-  ///
-  /// Gavesana now runs on the cloud AI (same settings as Vimaṃsa), so this
-  /// section simply links to the shared AI settings sheet — no on-device
-  /// asset downloads anymore.
-  Widget _buildGavesanaSection(
-    BuildContext context,
-    ColorScheme colors,
-    WidgetRef ref,
-  ) {
+/// Search settings section: default result expansion + index rebuild.
+class SettingsSearchSection extends ConsumerWidget {
+  const SettingsSearchSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     return SettingsSection(
-      title: loc.aiSearch,
+      title: loc.search,
       colors: colors,
+      showDividers: true,
+      children: [
+        _SearchExpandToggle(colors: colors),
+        _RebuildIndexTile(colors: colors),
+      ],
+    );
+  }
+}
+
+/// AI Q&A + Gavesana AI-powered search settings section.
+///
+/// Gavesana runs on the cloud AI (same settings as Vimaṃsa), so both link
+/// to the shared AI settings sheet — no on-device asset downloads anymore.
+class SettingsAiSection extends ConsumerWidget {
+  const SettingsAiSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return Column(
+      children: [
+        SettingsSection(
+          title: loc.aiQa,
+          colors: colors,
+          children: [
+            _SettingsTile(
+              icon: Icons.question_answer,
+              title: loc.aiQaSettings,
+              subtitle: loc.aiQaSettingsSubtitle,
+              onTap: () => showAiQaSettingsSheet(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppDimensions.md),
+        SettingsSection(
+          title: loc.aiSearch,
+          colors: colors,
+          children: [
+            _SettingsTile(
+              icon: Icons.auto_awesome,
+              title: loc.gavesanaAiSearch,
+              subtitle: loc.aiQaSettingsSubtitle,
+              onTap: () => showAiQaSettingsSheet(context),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Account section: cloud sync (Google account + annotation sync status).
+class SettingsAccountSection extends StatelessWidget {
+  const SettingsAccountSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return SettingsSection(
+      title: loc.account,
+      colors: colors,
+      showDividers: true,
+      children: [
+        // Cloud sync: Google account + annotation sync status.
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 4),
+          child: AccountSyncTile(),
+        ),
+      ],
+    );
+  }
+}
+
+/// System section: feature guide, help, reset data, about.
+class SettingsSystemSection extends StatelessWidget {
+  const SettingsSystemSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return SettingsSection(
+      title: loc.system,
+      colors: colors,
+      showDividers: true,
       children: [
         _SettingsTile(
-          icon: Icons.auto_awesome,
-          title: loc.gavesanaAiSearch,
-          subtitle: loc.aiQaSettingsSubtitle,
-          onTap: () => showAiQaSettingsSheet(context),
+          icon: Icons.explore_outlined,
+          title: loc.featureGuide,
+          subtitle: loc.featureGuideSubtitle,
+          onTap: () => context.push(AppRoutes.featureGuide),
         ),
+        _SettingsTile(
+          icon: Icons.help_outline,
+          title: loc.help,
+          subtitle: loc.keyboardShortcuts,
+          onTap: () => context.push('/settings/help'),
+        ),
+        ResetDataTile(),
+        _SettingsTile(icon: Icons.info, title: loc.about, onTap: () {}),
       ],
     );
   }

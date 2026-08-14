@@ -78,11 +78,17 @@ Future<void> ensureBundledDatabases() async {
       if (!Platform.isAndroid && !Platform.isIOS) {
         final onDisk = _assetOnDisk(assetPath);
         if (onDisk != null) {
+          // Skip 0-byte stray files — an empty db bundled into the app must
+          // never shadow the real database (which arrives later from the
+          // install-time asset pack on Android).
+          if (onDisk.lengthSync() == 0) continue;
           await onDisk.copy(destPath);
           continue;
         }
       }
       final data = await rootBundle.load(assetPath);
+      // Skip 0-byte assets for the same reason as above.
+      if (data.lengthInBytes == 0) continue;
       final file = File(destPath);
       await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
     } catch (e) {

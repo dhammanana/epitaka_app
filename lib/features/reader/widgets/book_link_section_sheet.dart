@@ -98,22 +98,30 @@ Future<void> showBookLinkSectionSheet(
       );
     }).toList();
 
+    // Highlight only the linked line; fall back to the paragraph-wide
+    // highlight when the line isn't inside the loaded window.
+    final hasExactLinkedLine = previewLines.any(
+      (l) => l.paraId == link.linkedParaId && l.lineId == link.linkedLineId,
+    );
+
     await showParagraphPreviewSheet(
       context,
       title: content?.bookName ?? link.linkedBookId,
       subtitle: '${loc.linkedFrom} “${link.word}”',
       lines: previewLines,
       highlightParaId: content?.paraId,
+      highlightLineId: hasExactLinkedLine ? link.linkedLineId : null,
       heading: content?.headingTitle,
       scrollToParaId: link.linkedParaId,
       scrollToLineId: link.linkedLineId,
-      targetLineKey: GlobalKey(),
       footer: content != null
           ? 'para ${content.paraId} · line ${link.linkedLineId}'
               '${content.isTrimmed && content.lines.length < content.totalLines ? ' · ${content.lines.length} of ${content.totalLines} lines' : ''}'
           : null,
       actionLabel: loc.open,
-      onAction: () {
+      // Open at the position the user stopped reading in the sheet, not the
+      // linked word's line.
+      onAction: (currentParaId, currentLineId) {
         final c = content;
         if (c == null) return;
         // Deliberately no context.push('/reader') here: this sheet is opened
@@ -125,8 +133,8 @@ Future<void> showBookLinkSectionSheet(
               ReaderTabInfo(
                 bookId: link.linkedBookId,
                 bookName: c.bookName,
-                initialParaId: link.linkedParaId,
-                initialLineId: link.linkedLineId,
+                initialParaId: currentParaId,
+                initialLineId: currentLineId,
               ),
             );
         Navigator.of(context, rootNavigator: true).pop();

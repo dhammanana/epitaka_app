@@ -10,8 +10,23 @@ import '../../../features/reader/utils/reader_quote_utils.dart' show pageSystemL
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
-class ReadingOptionsScreen extends ConsumerWidget {
+class ReadingOptionsScreen extends StatelessWidget {
   const ReadingOptionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const ReadingOptionsBody(),
+    );
+  }
+}
+
+/// Scrollable body of the reading options — shared between the mobile screen
+/// and the desktop settings window.
+class ReadingOptionsBody extends ConsumerWidget {
+  const ReadingOptionsBody({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,16 +34,14 @@ class ReadingOptionsScreen extends ConsumerWidget {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
           Text(
             loc.readingOptions,
             style: AppTypography.headlineLarge.copyWith(
@@ -242,7 +255,6 @@ class ReadingOptionsScreen extends ConsumerWidget {
             ],
           ),
         ],
-      ),
     );
   }
 

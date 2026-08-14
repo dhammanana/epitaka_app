@@ -25,14 +25,29 @@ const _supertonicVoices = [
 ];
 
 /// Text-to-Speech settings with engine selection, voice, speed, and pitch.
-class TtsSettingsScreen extends ConsumerStatefulWidget {
+class TtsSettingsScreen extends StatelessWidget {
   const TtsSettingsScreen({super.key});
 
   @override
-  ConsumerState<TtsSettingsScreen> createState() => _TtsSettingsScreenState();
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const TtsSettingsBody(),
+    );
+  }
 }
 
-class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
+/// Scrollable body of the TTS settings — shared between the mobile screen and
+/// the desktop settings window.
+class TtsSettingsBody extends ConsumerStatefulWidget {
+  const TtsSettingsBody({super.key});
+
+  @override
+  ConsumerState<TtsSettingsBody> createState() => _TtsSettingsBodyState();
+}
+
+class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
   @override
   void initState() {
     super.initState();
@@ -56,16 +71,14 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
 
     final isSupertonic = settings.ttsEngine == 'supertonic';
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
           Text(
             loc.textToSpeech,
             style: AppTypography.headlineLarge.copyWith(
@@ -346,7 +359,6 @@ class _TtsSettingsScreenState extends ConsumerState<TtsSettingsScreen> {
             ],
           ),
         ],
-      ),
     );
   }
 

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../models/heading_attachment.dart';
 import '../providers/mention_provider.dart';
 
@@ -53,7 +54,7 @@ class AttachmentBar extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'Attached headings',
+                  AppLocalizations.of(context).attachedHeadings,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.primary.withValues(alpha: 0.7),
                     fontSize: 10,
@@ -73,7 +74,7 @@ class AttachmentBar extends ConsumerWidget {
                 GestureDetector(
                   onTap: () => ref.read(attachmentsProvider.notifier).clear(),
                   child: Text(
-                    'Clear all',
+                    AppLocalizations.of(context).clearAll,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.error.withValues(alpha: 0.7),
                       fontSize: 10,

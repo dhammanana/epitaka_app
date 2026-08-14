@@ -20,9 +20,6 @@ enum SidePanelType {
   /// Reading/listening history panel (desktop sidebar).
   history,
 
-  /// Bookmarks panel (desktop sidebar).
-  bookmarks,
-
   /// Highlights / notes / bookmarks panel (desktop sidebar).
   annotations,
 
@@ -201,7 +198,6 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
       case SidePanelType.library:
       case SidePanelType.gavesana:
       case SidePanelType.history:
-      case SidePanelType.bookmarks:
       case SidePanelType.annotations:
       case SidePanelType.scriptConverter:
         return PanelSlot.left;

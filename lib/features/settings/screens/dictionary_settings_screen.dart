@@ -8,8 +8,23 @@ import '../../../core/theme/app_typography.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
-class DictionarySettingsScreen extends ConsumerWidget {
+class DictionarySettingsScreen extends StatelessWidget {
   const DictionarySettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const DictionarySettingsBody(),
+    );
+  }
+}
+
+/// Scrollable body of the dictionary settings — shared between the mobile
+/// screen and the desktop settings window.
+class DictionarySettingsBody extends ConsumerWidget {
+  const DictionarySettingsBody({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -17,16 +32,14 @@ class DictionarySettingsScreen extends ConsumerWidget {
     final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
     final loc = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
           Text(
             loc.dictionarySettings,
             style: AppTypography.headlineLarge.copyWith(
@@ -148,7 +161,6 @@ class DictionarySettingsScreen extends ConsumerWidget {
             },
           ),
         ],
-      ),
     );
   }
 }

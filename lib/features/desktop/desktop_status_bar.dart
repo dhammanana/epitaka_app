@@ -7,6 +7,7 @@ import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/reader/providers/tts_reading_provider.dart';
 import '../../features/reader/widgets/reader_bottom_toolbar.dart';
 import '../../features/settings/providers/tts_provider.dart';
+import '../../shared/utils/app_shortcuts.dart';
 import '../../shared/widgets/reader_toolbar_controller.dart';
 
 /// The attached status bar at the very bottom of the desktop shell.
@@ -90,14 +91,20 @@ class DesktopStatusBar extends ConsumerWidget {
                           // ── Shell actions ──────────────────────────────
                           _StatusIconButton(
                             icon: Icons.text_decrease,
-                            tooltip: loc.decreaseFontSize,
+                            tooltip: AppShortcuts.tooltip(
+                              loc.decreaseFontSize,
+                              'font-decrease',
+                            ),
                             onTap: () => ref
                                 .read(settingsProvider.notifier)
                                 .decreaseFontSize(),
                           ),
                           _StatusIconButton(
                             icon: Icons.text_increase,
-                            tooltip: loc.increaseFontSize,
+                            tooltip: AppShortcuts.tooltip(
+                              loc.increaseFontSize,
+                              'font-increase',
+                            ),
                             onTap: () => ref
                                 .read(settingsProvider.notifier)
                                 .increaseFontSize(),
@@ -116,7 +123,7 @@ class DesktopStatusBar extends ConsumerWidget {
                           ),
                           _StatusIconButton(
                             icon: Icons.settings_outlined,
-                            tooltip: loc.settings,
+                            tooltip: AppShortcuts.tooltip(loc.settings, 'settings'),
                             onTap: onOpenSettings,
                           ),
                         ],

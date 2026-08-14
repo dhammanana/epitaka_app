@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -110,6 +112,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   // -1 means no candidate card is expanded (all collapsed by default).
   int _activeDeconCardIndex = -1;
   int _activeDeconTokenIndex = 0;
+
+  /// The last selection made inside the results, tracked via the
+  /// SelectionArea's `onSelectionChanged`. The toolbar reads it because
+  /// [SelectableRegionState] exposes no public accessor for the selected
+  /// text (the reader tracks it the same way).
+  SelectedContent? _lastSelectedContent;
 
   /// Cached sub-lookup results for deconstructor tokens.
   /// key: token word, value: list of headword rows
@@ -280,6 +288,75 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _addToHistory(converted);
     _initiateSearch(converted);
   }
+
+  /// Toolbar shown when the user selects text inside a dictionary result.
+  ///
+  /// Leading action: re-search the selection in the dictionary, so a Pāli
+  /// word spotted inside a definition (e.g. in bold) can be looked up with
+  /// one more tap instead of copy-pasting it into the search field. Falls
+  /// back to Copy / Select All when there is no selection to search.
+  Widget _resultsContextMenu(
+    BuildContext context,
+    SelectableRegionState selectableRegionState,
+  ) {
+    final loc = AppLocalizations.of(context);
+    TextSelectionToolbarAnchors anchors;
+    try {
+      anchors = selectableRegionState.contextMenuAnchors;
+    } catch (_) {
+      // Flutter bug: SelectableRegionState.startGlyphHeight can be null when
+      // selecting very long content — fall back to a zero anchor so the
+      // toolbar still shows instead of crashing.
+      anchors = const TextSelectionToolbarAnchors(
+        primaryAnchor: Offset.zero,
+      );
+    }
+
+    // Selection's plain text. Drop the U+FFFC placeholders flutter_html
+    // inserts for inline elements (<details>, links…) and collapse newlines
+    // so a re-search of the surrounding words is clean.
+    final raw = _lastSelectedContent?.plainText;
+    final searchable = raw == null || raw.trim().isEmpty
+        ? null
+        : raw
+              .replaceAll('\uFFFC', ' ')
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .trim();
+
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: anchors,
+      buttonItems: [
+        if (searchable != null)
+          ContextMenuButtonItem(
+            label: '${loc.search} “${_truncateLabel(searchable)}”',
+            onPressed: () {
+              selectableRegionState.clearSelection();
+              _selectWord(searchable);
+            },
+          ),
+        ContextMenuButtonItem(
+          label: loc.copy,
+          onPressed: () {
+            final text = _lastSelectedContent?.plainText;
+            if (text != null && text.isNotEmpty) {
+              Clipboard.setData(ClipboardData(text: text));
+            }
+            selectableRegionState.clearSelection();
+          },
+        ),
+        ContextMenuButtonItem(
+          label: loc.selectAll,
+          onPressed: () =>
+              selectableRegionState.selectAll(SelectionChangedCause.toolbar),
+        ),
+      ],
+    );
+  }
+
+  /// Shorten a long selection for the toolbar label (the full text is still
+  /// searched).
+  static String _truncateLabel(String s) =>
+      s.length <= 28 ? s : '${s.substring(0, 28)}…';
 
   // ── Swipe-down-to-close helpers ──────────────────────────────────────
 
@@ -841,19 +918,35 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               return _cachedResultsWidget!;
             }
 
-            final built = CustomScrollView(
-              controller: scrollController,
-              slivers: [
-                ..._buildDictionarySections(
-                  colors,
-                  lookup,
-                  searchWord,
-                  enabledBooks,
-                ),
-                if (includePrefixSuggestions)
-                  ..._prefixSuggestionsSlivers(colors, ref),
-                const SliverToBoxAdapter(child: SizedBox(height: 40)),
-              ],
+            // Select-and-search: the whole results block sits inside a
+            // SelectionArea so any word inside a definition can be
+            // long-pressed/double-tapped (or drag-selected on desktop) and
+            // re-looked-up via the toolbar's "Search" action — the cheap
+            // alternative to wrapping every Pāli word in a tappable link
+            // (that regex linkification was the single most expensive step
+            // in rendering a DPD entry and was removed for performance).
+            // Being inside the memoized widget means dragging the sheet
+            // never rebuilds this subtree, so selection costs nothing on
+            // drag frames.
+            final built = SelectionArea(
+              onSelectionChanged: (content) =>
+                  _lastSelectedContent = content,
+              contextMenuBuilder: (context, selectableRegionState) =>
+                  _resultsContextMenu(context, selectableRegionState),
+              child: CustomScrollView(
+                controller: scrollController,
+                slivers: [
+                  ..._buildDictionarySections(
+                    colors,
+                    lookup,
+                    searchWord,
+                    enabledBooks,
+                  ),
+                  if (includePrefixSuggestions)
+                    ..._prefixSuggestionsSlivers(colors, ref),
+                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                ],
+              ),
             );
             _cachedResultsWidget = built;
             _cachedResultsQuery = _query;

@@ -6,6 +6,8 @@ import '../../../core/providers/books_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -24,10 +26,21 @@ import '../providers/library_filter_provider.dart';
 /// doesn't stretch into an awkwardly long single-column list. When shown in
 /// a dialog, wrap this in a [SizedBox] (or give the dialog a fixed size) so
 /// it has a bounded height to lay out the tab view in.
-class LibraryBrowser extends ConsumerWidget {
+///
+/// When [autoFocusFilter] is true (used by the Cmd/Ctrl+L shortcut), the
+/// filter field above the tree is focused on first build so the user can
+/// type immediately to narrow the book list.
+class LibraryBrowser extends ConsumerStatefulWidget {
   final double maxWidth;
 
-  const LibraryBrowser({super.key, this.maxWidth = 640});
+  /// Focus the type-to-filter field as soon as the browser appears.
+  final bool autoFocusFilter;
+
+  const LibraryBrowser({
+    super.key,
+    this.maxWidth = 640,
+    this.autoFocusFilter = false,
+  });
 
   static const List<LibraryFilter> _tabFilters = [
     LibraryFilter.mula,
@@ -37,39 +50,211 @@ class LibraryBrowser extends ConsumerWidget {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryBrowser> createState() => _LibraryBrowserState();
+}
+
+class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
+  final _filterController = TextEditingController();
+  final _filterFocusNode = FocusNode();
+  String _filterQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoFocusFilter) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _filterFocusNode.requestFocus();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _filterController.dispose();
+    _filterFocusNode.dispose();
+    super.dispose();
+  }
+
+  /// Normalized filter query (diacritic + case insensitive).
+  String get _query => normalizePaliFuzzy(_filterQuery.trim()).toLowerCase();
+
+  /// All books across every category/nikaya, deduplicated by bookId.
+  List<BookItem> _allBooks(List<BookCategory> categories) {
+    final seen = <String>{};
+    final books = <BookItem>[];
+    for (final category in categories) {
+      for (final nikaya in category.nikayas) {
+        for (final sub in nikaya.subNikayas) {
+          for (final book in sub.books) {
+            if (seen.add(book.book.bookId)) books.add(book);
+          }
+        }
+      }
+    }
+    return books;
+  }
+
+  bool _matches(BookItem book) {
+    final query = _query;
+    if (query.isEmpty) return true;
+    return normalizePaliFuzzy(book.book.displayName)
+            .toLowerCase()
+            .contains(query) ||
+        book.book.bookId.toLowerCase().contains(query);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final treeAsync = ref.watch(booksTreeProvider);
     final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
 
     return Center(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: treeAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, stack) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppDimensions.lg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.cloud_off, size: 48, color: colors.error),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Could not load the Tipitaka library.\n$e',
-                    textAlign: TextAlign.center,
+        constraints: BoxConstraints(maxWidth: widget.maxWidth),
+        child: Column(
+          children: [
+            // ── Type-to-filter field ────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimensions.marginMobile,
+                0,
+                AppDimensions.marginMobile,
+                AppDimensions.sm,
+              ),
+              child: TextField(
+                controller: _filterController,
+                focusNode: _filterFocusNode,
+                style: AppTypography.labelMedium.copyWith(
+                  fontSize: 13,
+                  color: colors.onSurface,
+                ),
+                decoration: InputDecoration(
+                  hintText: loc.searchBooks,
+                  isDense: true,
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
                   ),
-                ],
+                  suffixIcon: _filterQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _filterController.clear();
+                            setState(() => _filterQuery = '');
+                          },
+                        ),
+                  filled: true,
+                  fillColor: colors.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.sm,
+                    vertical: 6,
+                  ),
+                ),
+                onChanged: (v) => setState(() => _filterQuery = v),
               ),
             ),
-          ),
-          data: (categories) => _buildTabs(context, categories, colors),
+            // ── Content: filtered flat list or the tabbed tree ─────
+            Expanded(
+              child: treeAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+                error: (e, stack) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppDimensions.lg),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_off, size: 48, color: colors.error),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Could not load the Tipitaka library.\n$e',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                data: (categories) => _query.isEmpty
+                    ? _buildTabs(context, categories, colors)
+                    : _buildFilteredList(context, categories, colors, loc),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  /// Flat list of books matching the current filter query.
+  Widget _buildFilteredList(
+    BuildContext context,
+    List<BookCategory> categories,
+    ColorScheme colors,
+    AppLocalizations loc,
+  ) {
+    final matches = _allBooks(categories).where(_matches).toList();
+    if (matches.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 40, color: colors.outlineVariant),
+            const SizedBox(height: 8),
+            Text(
+              loc.noResultsForQuery(_filterQuery.trim()),
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        0,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Column(
+            children: [
+              for (final (index, book) in matches.indexed)
+                Column(
+                  children: [
+                    _BookRow(book: book, colors: colors, depth: 0),
+                    if (index != matches.length - 1)
+                      Divider(height: 1, color: colors.outlineVariant),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTabs(
-      BuildContext context, List<BookCategory> categories, ColorScheme colors) {
+    BuildContext context,
+    List<BookCategory> categories,
+    ColorScheme colors,
+  ) {
     BookCategory? categoryFor(LibraryFilter filter) {
       for (final c in categories) {
         if (c.name == filter.label) return c;
@@ -78,15 +263,15 @@ class LibraryBrowser extends ConsumerWidget {
     }
 
     return DefaultTabController(
-      length: _tabFilters.length,
+      length: LibraryBrowser._tabFilters.length,
       child: Column(
         children: [
-          _CategoryTabBar(colors: colors, filters: _tabFilters),
+          _CategoryTabBar(colors: colors, filters: LibraryBrowser._tabFilters),
           const SizedBox(height: AppDimensions.sm),
           Expanded(
             child: TabBarView(
               children: [
-                for (final filter in _tabFilters)
+                for (final filter in LibraryBrowser._tabFilters)
                   _CategoryTabContent(
                     category: categoryFor(filter),
                     colors: colors,

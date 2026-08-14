@@ -493,10 +493,13 @@ class AiApiClient {
         );
         return jsonDecode(response) as Map<String, dynamic>;
       case AiProvider.openai:
+      case AiProvider.openrouter:
+        // OpenRouter speaks the OpenAI chat-completions protocol, so both
+        // providers share the same code path (only the base URL differs).
         final response = await _callOpenAiApiRaw(
           model: toolModel,
           apiKey: apiKey,
-          baseUrl: baseUrl,
+          baseUrl: baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
           payload: payload,
           logTag: logTag,
         );
@@ -526,6 +529,7 @@ class AiApiClient {
           'generationConfig': {'maxOutputTokens': 2048, 'temperature': 0.3},
         };
       case AiProvider.openai:
+      case AiProvider.openrouter:
         // Convert Gemini-style conversation to OpenAI messages format
         final messages = <Map<String, dynamic>>[];
         messages.add({'role': 'system', 'content': systemPrompt});

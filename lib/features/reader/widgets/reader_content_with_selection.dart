@@ -39,6 +39,9 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.ttsHighlightParaId,
     this.ttsTargetParaId,
     this.ttsTargetLineKeys = const {},
+    this.keyboardFocusParaId,
+    this.keyboardFocusLineId,
+    this.keyboardFocusChipIndex,
     this.searchQuery,
     this.onFirstContentFrame,
     this.initialScrollIndex,
@@ -83,6 +86,11 @@ class ReaderContentWithSelection extends StatelessWidget {
   final int? ttsTargetParaId;
   final Map<int, GlobalKey> ttsTargetLineKeys;
 
+  // Keyboard navigation focus (reading cursor)
+  final int? keyboardFocusParaId;
+  final int? keyboardFocusLineId;
+  final int? keyboardFocusChipIndex;
+
   // Search
   final String? searchQuery;
 
@@ -114,6 +122,9 @@ class ReaderContentWithSelection extends StatelessWidget {
       ttsHighlightParaId: ttsHighlightParaId,
       ttsTargetParaId: ttsTargetParaId,
       ttsTargetLineKeys: ttsTargetLineKeys,
+      keyboardFocusParaId: keyboardFocusParaId,
+      keyboardFocusLineId: keyboardFocusLineId,
+      keyboardFocusChipIndex: keyboardFocusChipIndex,
       showBookLinks: settings.showBookLinks,
       searchQuery: searchQuery,
       onFirstContentFrame: onFirstContentFrame,

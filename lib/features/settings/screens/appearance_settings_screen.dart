@@ -12,8 +12,23 @@ import '../widgets/color_swatch.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
-class AppearanceSettingsScreen extends ConsumerWidget {
+class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const AppearanceSettingsBody(),
+    );
+  }
+}
+
+/// Scrollable body of the appearance settings — shared between the mobile
+/// screen and the desktop settings window.
+class AppearanceSettingsBody extends ConsumerWidget {
+  const AppearanceSettingsBody({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,13 +38,11 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final darkAccent = ColorPair.deriveDark(settings.accentColor);
     final loc = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile, AppDimensions.md, AppDimensions.marginMobile, 120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile, AppDimensions.md, AppDimensions.marginMobile, 120,
+      ),
+      children: [
           Text(loc.appearance, style: AppTypography.headlineLarge.copyWith(color: colors.onSurface)),
           const SizedBox(height: AppDimensions.lg),
           _AccentPairCard(lightAccent: settings.accentColor, darkAccent: darkAccent, isDarkMode: isDark, colors: colors),
@@ -52,7 +65,6 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             ])),
           ]),
         ],
-      ),
     );
   }
 }

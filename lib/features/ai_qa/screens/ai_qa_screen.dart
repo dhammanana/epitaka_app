@@ -51,6 +51,10 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _mentionLayerLink = LayerLink();
 
+  /// Attached to the newest assistant message so the screen can scroll the
+  /// start of a freshly-rendered response into view once streaming finishes.
+  final GlobalKey _latestResponseKey = GlobalKey();
+
   /// Whether the mention overlay is currently showing.
   bool _mentionActive = false;
 
@@ -222,6 +226,30 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     } catch (_) {}
   }
 
+  /// Bring the top of the newest assistant message (the just-finished
+  /// response) to the top of the viewport. Retries briefly until the message
+  /// has rendered and its key is attached.
+  void _scrollToResponseStart({int retries = 0}) {
+    final ctx = _latestResponseKey.currentContext;
+    if (ctx == null || !ctx.mounted) {
+      if (retries < 5) {
+        Future.delayed(const Duration(milliseconds: 80), () {
+          if (!mounted) return;
+          _scrollToResponseStart(retries: retries + 1);
+        });
+      }
+      return;
+    }
+    try {
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } catch (_) {}
+  }
+
   void _showHistorySheet() {
     showModalBottomSheet(
       context: context,
@@ -284,6 +312,20 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     final attachments = ref.watch(attachmentsProvider);
 
     ref.listen(aiQaProvider, (prev, next) {
+      // A streamed response just finished rendering — jump to the START of
+      // the response so the user reads from the beginning. Staying pinned at
+      // the end of a long answer was annoying.
+      final hadStreaming = (prev?.messages ?? []).any((m) => m.isStreaming);
+      final hasStreaming = next.messages.any((m) => m.isStreaming);
+      if (hadStreaming &&
+          !hasStreaming &&
+          next.messages.isNotEmpty &&
+          !next.messages.last.isUser) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _scrollToResponseStart(),
+        );
+        return;
+      }
       if (next.messages.length > (prev?.messages.length ?? 0) ||
           next.isLoading != (prev?.isLoading ?? false)) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -451,6 +493,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                   : AiQaMessageListView(
                       scrollController: _scrollController,
                       messages: messages,
+                      latestResponseKey: _latestResponseKey,
                     ),
             ),
 
@@ -1088,7 +1131,7 @@ class _ThreadHistoryTile extends ConsumerWidget {
       subtitle: Row(
         children: [
           Text(
-            _formatDate(thread.updatedAt),
+            _formatDate(context, thread.updatedAt),
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.6),
               fontSize: 10,
@@ -1190,11 +1233,13 @@ class _ThreadHistoryTile extends ConsumerWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
+  String _formatDate(BuildContext context, DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
 
-    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 1) {
+      return AppLocalizations.of(context).justNow;
+    }
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
@@ -1210,23 +1255,44 @@ class AiQaMessageListView extends ConsumerWidget {
   final ScrollController scrollController;
   final List<AiQaMessage> messages;
 
+  /// Attached to the newest assistant message so the screen can scroll the
+  /// response's start into view once streaming finishes.
+  final GlobalKey? latestResponseKey;
+
   const AiQaMessageListView({
     super.key,
     required this.scrollController,
     required this.messages,
+    this.latestResponseKey,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Index of the newest assistant (non-user, non-placeholder) message.
+    int? latestResponseIndex;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (!messages[i].isUser && messages[i].id != 'thinking') {
+        latestResponseIndex = i;
+        break;
+      }
+    }
+
     final listContent = ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final message = messages[index];
+        final bubble = AiQaMessageBubble(
+          key: ValueKey(message.id),
+          message: message,
+        );
+        final child = index == latestResponseIndex && latestResponseKey != null
+            ? KeyedSubtree(key: latestResponseKey, child: bubble)
+            : bubble;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: AiQaMessageBubble(key: ValueKey(message.id), message: message),
+          child: child,
         );
       },
     );

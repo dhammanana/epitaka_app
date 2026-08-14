@@ -7,6 +7,7 @@ import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../shared/providers/side_panel_provider.dart';
+import '../../shared/providers/vimamsa_panel_provider.dart';
 import '../../shared/widgets/reader_toolbar_controller.dart';
 import '../ai_qa/screens/ai_qa_screen.dart';
 import '../contents/widgets/contents_panel.dart';
@@ -14,9 +15,9 @@ import '../dictionary/widgets/dictionary_panel.dart';
 import '../gavesana/widgets/gavesana_panel.dart';
 import '../annotations/widgets/global_annotations_view.dart';
 import '../script_converter/widgets/script_converter_panel.dart';
-import '../library/widgets/bookmarks_panel.dart';
 import '../library/widgets/history_panel.dart';
 import '../library/widgets/library_panel.dart';
+import '../reader/widgets/reader_keyboard_navigation.dart';
 import '../search/widgets/search_panel.dart';
 import '../settings/widgets/settings_dialog.dart';
 import 'desktop_activity_bar.dart';
@@ -116,9 +117,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// Bridges the reader's toolbar actions to the attached status bar.
   final ReaderToolbarController _toolbarController =
       ReaderToolbarController();
-
-  /// Whether the center tab shows Vimaṃsa instead of the reader.
-  bool _vimamsaOpen = false;
 
   /// Whether the sidebar is docked on the right side of the window.
   bool _sidebarOnRight = false;
@@ -340,10 +338,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   void resetLayout() {
     _dictSettleToken++;
+    ref.read(vimamsaOpenProvider.notifier).close();
     setState(() {
       _sidebarOnRight = false;
       _dictOnRight = false;
-      _vimamsaOpen = false;
       _leftWidth = _kDefaultLeftWidth;
       _rightWidth = _kDefaultRightWidth;
       _dictDockFraction = _kDefaultDockFraction;
@@ -420,8 +418,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         return loc.search;
       case SidePanelType.history:
         return loc.history;
-      case SidePanelType.bookmarks:
-        return loc.bookmarks;
       case SidePanelType.annotations:
         return loc.annotations;
       case SidePanelType.scriptConverter:
@@ -438,6 +434,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   Widget build(BuildContext context) {
     final panels = ref.watch(sidePanelProvider);
+    final vimamsaOpen = ref.watch(vimamsaOpenProvider);
     final left = panels.left.openPanel;
     final dictVisible = panels.right.openPanel == SidePanelType.dictionary;
     final colors = Theme.of(context).colorScheme;
@@ -510,8 +507,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     // Opening a book while Vimaṃsa is showing returns to the reader.
     ref.listen(readerTabsProvider, (prev, next) {
       if (!mounted) return;
-      if (_vimamsaOpen && next.tabs.length > (prev?.tabs.length ?? 0)) {
-        setState(() => _vimamsaOpen = false);
+      if (ref.read(vimamsaOpenProvider) &&
+          next.tabs.length > (prev?.tabs.length ?? 0)) {
+        ref.read(vimamsaOpenProvider.notifier).close();
       }
     });
 
@@ -528,11 +526,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                   DesktopActivityBar(
                     activeSidebar: left,
                     dictionaryVisible: dictVisible,
-                    vimamsaActive: _vimamsaOpen,
+                    vimamsaActive: vimamsaOpen,
                     onToggleSidebar: _toggleSidebar,
                     onToggleDictionary: _toggleDictionary,
-                    onToggleVimamsa: () =>
-                        setState(() => _vimamsaOpen = !_vimamsaOpen),
+                    onToggleVimamsa: () => ref
+                        .read(vimamsaOpenProvider.notifier)
+                        .toggle(),
                     onResetLayout: resetLayout,
                     onOpenSettings: () => showSettingsDialog(context),
                   ),
@@ -614,24 +613,28 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     ColorScheme colors,
     AppLocalizations loc,
   ) {
+    final vimamsaOpen = ref.watch(vimamsaOpenProvider);
     return ReaderToolbarScope(
       controller: _toolbarController,
       child: Column(
         children: [
           _CenterTabs(
             colors: colors,
-            vimamsaSelected: _vimamsaOpen,
+            vimamsaSelected: vimamsaOpen,
             readingLabel: loc.reading,
             vimamsaLabel: loc.vimamsa,
-            onReadingTap: () => setState(() => _vimamsaOpen = false),
-            onVimamsaTap: () => setState(() => _vimamsaOpen = true),
+            onReadingTap: () =>
+                ref.read(vimamsaOpenProvider.notifier).close(),
+            onVimamsaTap: () => ref.read(vimamsaOpenProvider.notifier).open(),
           ),
           Divider(height: 1, color: colors.outlineVariant),
           Expanded(
             child: IndexedStack(
-              index: _vimamsaOpen ? 1 : 0,
+              index: vimamsaOpen ? 1 : 0,
               children: [
-                widget.child,
+                // Keyboard navigation (j/k focus line, h/l chips, Space to
+                // open) wraps only the reader — Vimaṃsa keeps its own keys.
+                ReaderKeyboardNavigation(child: widget.child),
                 const VimamsaScreen(panelMode: true),
               ],
             ),
@@ -792,13 +795,11 @@ class DesktopSidebar extends StatelessWidget {
   Widget _panelContent(BuildContext context) {
     switch (panel) {
       case SidePanelType.library:
-        return const LibraryPanel();
+        return LibraryPanel(autoFocus: autoFocus);
       case SidePanelType.search:
         return SearchPanel(autoFocus: autoFocus);
       case SidePanelType.history:
         return const HistoryPanel();
-      case SidePanelType.bookmarks:
-        return const BookmarksPanel();
       case SidePanelType.annotations:
         // The desktop sidebar shows the global annotations overview (search,
         // type counts, book filter, collapsible groups) — the same view as

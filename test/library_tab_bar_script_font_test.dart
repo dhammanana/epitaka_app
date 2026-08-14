@@ -9,10 +9,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/core/providers/books_provider.dart';
+import '../lib/core/utils/app_localizations.dart';
 import '../lib/core/providers/settings_provider.dart';
 import '../lib/core/utils/pali_script_converter.dart';
 import '../lib/features/library/widgets/library_browser.dart';
@@ -35,7 +37,16 @@ void main() {
             return notifier;
           }),
         ],
-        child: const MaterialApp(home: Scaffold(body: LibraryBrowser())),
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppLocalizationsDelegate(),
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizationsDelegate.supportedLocales,
+          home: const Scaffold(body: LibraryBrowser()),
+        ),
       );
 
   testWidgets('category tab bar labels use the script font and converted text',

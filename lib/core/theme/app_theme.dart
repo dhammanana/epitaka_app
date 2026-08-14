@@ -37,28 +37,46 @@ class AppTheme {
   }
 
   /// Build the light („Tālapatta“) theme, optionally seeded from [accentColor].
-  static ThemeData light({Color? accentColor}) =>
-      _themed(base: AppColors.lightColorScheme(), accentColor: accentColor);
+  static ThemeData light({Color? accentColor}) => _themed(
+        base: AppColors.lightColorScheme(),
+        accentColor: accentColor,
+        radius: AppDimensions.radiusXl,
+      );
 
   /// Build the dark („Samādhi“) theme, optionally seeded from [accentColor].
-  static ThemeData dark({Color? accentColor}) =>
-      _themed(base: AppColors.darkColorScheme(), accentColor: accentColor);
+  static ThemeData dark({Color? accentColor}) => _themed(
+        base: AppColors.darkColorScheme(),
+        accentColor: accentColor,
+        radius: AppDimensions.radiusXl,
+      );
 
-  /// Build the sepia („Paññā-āloka“) light theme.
-  static ThemeData sepia({Color? accentColor}) =>
-      _themed(base: AppColors.sepiaColorScheme(), accentColor: accentColor);
+  /// Build the sepia („Paññā-āloka“) light theme — soft, rounded surfaces.
+  static ThemeData sepia({Color? accentColor}) => _themed(
+        base: AppColors.sepiaColorScheme(),
+        accentColor: accentColor,
+        radius: 20,
+      );
 
-  /// Build the ocean („Vimutti-rasa“) light theme.
-  static ThemeData ocean({Color? accentColor}) =>
-      _themed(base: AppColors.oceanColorScheme(), accentColor: accentColor);
+  /// Build the ocean („Vimutti-rasa“) light theme — crisper, modern corners.
+  static ThemeData ocean({Color? accentColor}) => _themed(
+        base: AppColors.oceanColorScheme(),
+        accentColor: accentColor,
+        radius: 12,
+      );
 
-  /// Build the midnight („Passaddhi“) dark theme.
-  static ThemeData midnight({Color? accentColor}) =>
-      _themed(base: AppColors.midnightColorScheme(), accentColor: accentColor);
+  /// Build the midnight („Passaddhi“) dark theme — sharp, focused corners.
+  static ThemeData midnight({Color? accentColor}) => _themed(
+        base: AppColors.midnightColorScheme(),
+        accentColor: accentColor,
+        radius: 10,
+      );
 
-  /// Build the forest („Arañña“) dark theme.
-  static ThemeData forest({Color? accentColor}) =>
-      _themed(base: AppColors.forestColorScheme(), accentColor: accentColor);
+  /// Build the forest („Arañña“) dark theme — rounded, organic surfaces.
+  static ThemeData forest({Color? accentColor}) => _themed(
+        base: AppColors.forestColorScheme(),
+        accentColor: accentColor,
+        radius: 20,
+      );
 
   /// Build a theme from a fixed base palette, optionally seeding accent colors.
   ///
@@ -67,7 +85,11 @@ class AppTheme {
   /// the accent only drives the primary/secondary/tertiary roles.  In dark
   /// themes the seeded primary is left untouched so it stays readable on the
   /// dark background.
-  static ThemeData _themed({required ColorScheme base, Color? accentColor}) {
+  static ThemeData _themed({
+    required ColorScheme base,
+    Color? accentColor,
+    double radius = AppDimensions.radiusXl,
+  }) {
     final ColorScheme colors;
     if (accentColor == null) {
       colors = base;
@@ -92,10 +114,13 @@ class AppTheme {
         inversePrimary: base.inversePrimary,
       );
     }
-    return _buildTheme(colors);
+    return _buildTheme(colors, radius: radius);
   }
 
-  static ThemeData _buildTheme(ColorScheme colors) {
+  static ThemeData _buildTheme(
+    ColorScheme colors, {
+    double radius = AppDimensions.radiusXl,
+  }) {
     return ThemeData(
       useMaterial3: true,
       brightness: colors.brightness,
@@ -141,12 +166,28 @@ class AppTheme {
       ),
 
       // ── Card ────────────────────────────────────────────────────────
+      // The border width is bumped above the Material default so card
+      // outlines read clearly on every theme (the spec's default 1px +
+      // outlineVariant washes out on the low-contrast manuscript palettes).
       cardTheme: CardThemeData(
         color: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(color: colors.outlineVariant, width: 1.5),
+        ),
+      ),
+
+      // ── Dialog ──────────────────────────────────────────────────────
+      // Theme-level dialog border so popups read as clearly defined
+      // elements instead of floating shadows. Mirrors the card treatment.
+      dialogTheme: DialogThemeData(
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
           side: BorderSide(color: colors.outlineVariant, width: 1),
         ),
       ),
@@ -155,9 +196,9 @@ class AppTheme {
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
-        shape: const RoundedRectangleBorder(
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
-            top: Radius.circular(AppDimensions.radiusSheet),
+            top: Radius.circular(radius + 4),
           ),
         ),
       ),

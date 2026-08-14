@@ -68,7 +68,10 @@
                 <data android:scheme="epitaka" />
             </intent-filter>
 
-            <!-- ── Android App Links: https://epitaka.org/app/... ────── -->
+            <!-- ── Android App Links: https://epitaka.org/app/... ──────
+                 Canonical share links: /app/{lang}/{bookId}/{slug}#{paraId}-{lineId}
+                 (see lib/features/deep_links/DEEP_LINKS.md). The pathPrefix
+                 matches any /app/... path. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

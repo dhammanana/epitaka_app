@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/dictionary_books_provider.dart';
@@ -46,6 +48,11 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   String _query = '';
   final List<String> _searchHistory = [];
+
+  /// The last selection made inside the results, tracked via the
+  /// SelectionArea's `onSelectionChanged` (SelectableRegionState exposes no
+  /// public accessor for the selected text).
+  SelectedContent? _lastSelectedContent;
 
   @override
   void initState() {
@@ -158,6 +165,64 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _searchController.text = converted;
     _initiateSearch(converted);
   }
+
+  /// Toolbar shown when the user selects text inside a result: re-search
+  /// the selection in the dictionary, plus Copy / Select All. Mirrors the
+  /// dictionary sheet's toolbar.
+  Widget _resultsContextMenu(
+    BuildContext context,
+    SelectableRegionState selectableRegionState,
+  ) {
+    final loc = AppLocalizations.of(context);
+    TextSelectionToolbarAnchors anchors;
+    try {
+      anchors = selectableRegionState.contextMenuAnchors;
+    } catch (_) {
+      anchors = const TextSelectionToolbarAnchors(
+        primaryAnchor: Offset.zero,
+      );
+    }
+
+    final raw = _lastSelectedContent?.plainText;
+    final searchable = raw == null || raw.trim().isEmpty
+        ? null
+        : raw
+              .replaceAll('\uFFFC', ' ')
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .trim();
+
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: anchors,
+      buttonItems: [
+        if (searchable != null)
+          ContextMenuButtonItem(
+            label: '${loc.search} “${_truncateLabel(searchable)}”',
+            onPressed: () {
+              selectableRegionState.clearSelection();
+              _selectWord(searchable);
+            },
+          ),
+        ContextMenuButtonItem(
+          label: loc.copy,
+          onPressed: () {
+            final text = _lastSelectedContent?.plainText;
+            if (text != null && text.isNotEmpty) {
+              Clipboard.setData(ClipboardData(text: text));
+            }
+            selectableRegionState.clearSelection();
+          },
+        ),
+        ContextMenuButtonItem(
+          label: loc.selectAll,
+          onPressed: () =>
+              selectableRegionState.selectAll(SelectionChangedCause.toolbar),
+        ),
+      ],
+    );
+  }
+
+  static String _truncateLabel(String s) =>
+      s.length <= 28 ? s : '${s.substring(0, 28)}…';
 
   @override
   Widget build(BuildContext context) {
@@ -454,10 +519,21 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               children.addAll(_prefixSuggestionChildren(colors));
             }
             children.add(const SizedBox(height: 24));
-            return ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(AppDimensions.sm),
-              children: children,
+            // Select-and-search: same treatment as the dictionary sheet — a
+            // SelectionArea over the results lets any word inside a
+            // definition be selected and re-looked-up via the toolbar's
+            // "Search" action, without the per-word linkification that was
+            // dropped for performance.
+            return SelectionArea(
+              onSelectionChanged: (content) =>
+                  _lastSelectedContent = content,
+              contextMenuBuilder: (context, selectableRegionState) =>
+                  _resultsContextMenu(context, selectableRegionState),
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(AppDimensions.sm),
+                children: children,
+              ),
             );
           },
         );

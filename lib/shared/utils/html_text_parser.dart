@@ -83,16 +83,15 @@ final Map<String, List<_HtmlSegment>> _segmentCache = {};
 
 /// Tokenize [html] into plain-text runs with their active markup flags.
 ///
-/// Mirrors the observable output of the parser's style-stack walk: opening
-/// tags push a flag, closing tags pop, `<br>` emits a newline, and every
-/// plain-text run is stamped with the flags active at its position (so
-/// nested tags like `<b><i>x</i></b>` accumulate correctly).
+/// Keeps a stack of open tag *names* rather than parallel flag stacks, so a
+/// closing tag pops only its own element and outer styles survive:
+/// `<b>a<i>b</i>c</b>` keeps "c" bold and `<i>x<b>y</b>z</i>` keeps "z"
+/// italic. Every plain-text run is stamped with the flags active at its
+/// position, so nested tags like `<b><i>x</i></b>` accumulate correctly.
 List<_HtmlSegment> _tokenize(String html) {
   final segments = <_HtmlSegment>[];
-  final boldStack = <bool>[false];
-  final italicStack = <bool>[false];
-  final underlineStack = <bool>[false];
-  final backgroundStack = <Color?>[null];
+  // Open tag names (lowercased), outermost first.
+  final tagStack = <String>[];
 
   final normalized = html.replaceAll('<br>', '\n').replaceAll('<br/>', '\n');
   // Match opening tags, closing tags, <br>, and plain text
@@ -102,12 +101,19 @@ List<_HtmlSegment> _tokenize(String html) {
     dotAll: true,
   );
 
+  bool isBoldTag(String tag) {
+    if (tag == 'b' || tag == 'mark') return true;
+    if (tag.length != 2 || tag[0] != 'h') return false;
+    final n = tag.codeUnitAt(1);
+    return n >= 0x31 && n <= 0x36; // '1'..'6'
+  }
+
   _HtmlSegment seg(String text) => _HtmlSegment(
         text,
-        bold: boldStack.last,
-        italic: italicStack.last,
-        underline: underlineStack.last,
-        background: backgroundStack.last,
+        bold: tagStack.any(isBoldTag),
+        italic: tagStack.contains('i'),
+        underline: tagStack.contains('u'),
+        background: tagStack.contains('mark') ? _markColor : null,
       );
 
   for (final m in tagPattern.allMatches(normalized)) {
@@ -115,26 +121,15 @@ List<_HtmlSegment> _tokenize(String html) {
     if (tag.startsWith('<br')) {
       segments.add(seg('\n'));
     } else if (m.group(1) == '/') {
-      // Closing tag — pop the style stack
-      if (boldStack.length > 1) boldStack.removeLast();
-      if (italicStack.length > 1) italicStack.removeLast();
-      if (underlineStack.length > 1) underlineStack.removeLast();
-      if (backgroundStack.length > 1) backgroundStack.removeLast();
+      // Closing tag — remove the matching open tag (and anything opened
+      // after it), leaving outer tags' styles active.
+      final name = m.group(2)!.toLowerCase();
+      final idx = tagStack.lastIndexOf(name);
+      if (idx >= 0) {
+        tagStack.removeRange(idx, tagStack.length);
+      }
     } else if (m.group(2) != null) {
-      // Opening tag — push a new style
-      final tagName = m.group(2)!.toLowerCase();
-      final isMark = tagName == 'mark';
-      final isBold = isMark ||
-          switch (tagName) {
-            'b' || 'h1' || 'h2' || 'h3' || 'h4' || 'h5' || 'h6' => true,
-            _ => false,
-          };
-      final isItalic = tagName == 'i';
-      final isUnderline = tagName == 'u';
-      boldStack.add(isBold || boldStack.last);
-      italicStack.add(isItalic || italicStack.last);
-      underlineStack.add(isUnderline || underlineStack.last);
-      backgroundStack.add(isMark ? _markColor : backgroundStack.last);
+      tagStack.add(m.group(2)!.toLowerCase());
     } else if (m.group(3) != null) {
       // Plain text
       final text = m.group(3)!;

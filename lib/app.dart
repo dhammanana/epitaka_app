@@ -13,6 +13,7 @@ import 'core/utils/l10n/app_strings.dart';
 import 'core/providers/settings_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/annotations/widgets/sync_lifecycle_observer.dart';
+import 'features/changelog/changelog_service.dart';
 import 'features/deep_links/deep_link_service.dart';
 import 'features/indexing/index_gate.dart';
 import 'features/settings/services/tts_audio_handler.dart';
@@ -166,6 +167,13 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     // first frame so the GoRouter is already attached to the navigator key.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DeepLinkService.instance.init(_navigatorKey);
+    });
+
+    // After the first frame, show the "What's New" dialog when a freshly
+    // installed build differs from the last-seen one. Runs on the navigator
+    // key so the dialog appears above whatever screen the user lands on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ChangelogService.showIfNewBuild(_navigatorKey);
     });
 
     final settings = ref.watch(settingsProvider);

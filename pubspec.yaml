@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.0.17+20
+version: 1.0.17+22
 
 environment:
   sdk: ^3.12.2
@@ -39,6 +39,9 @@ dependencies:
 
   # Storage for preferences
   shared_preferences: ^2.3.5
+
+  # App version/build number for the "What's New" changelog dialog
+  package_info_plus: ^8.3.1
 
   # Networking & file handling
   http: ^1.6.0
@@ -89,6 +92,7 @@ flutter:
   assets:
     - assets/db/
     - assets/fonts/
+    - assets/changelog.md
 
   fonts:
     - family: NotoSansSinhala

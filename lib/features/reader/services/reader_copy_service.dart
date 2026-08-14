@@ -292,12 +292,15 @@ class ReaderCopyService {
               );
               _showSnackBar(context, 'Link copied!');
             } catch (_) {
-              // Fallback: copy just the URL
+              // Fallback: copy just the URL. App-link format so tapping it
+              // opens the app; the website redirects /app → /{lang}/book.
               final settings = ref.read(settingsProvider);
               final lang = settings.primaryTranslationLang;
-              final url = currentParaId != null
-                  ? 'https://epitaka.org/$lang/book/$bookId#$currentParaId'
-                  : 'https://epitaka.org/$lang/book/$bookId';
+              final url = buildShareUrl(
+                lang: lang,
+                bookId: bookId,
+                paraId: currentParaId,
+              );
               await Clipboard.setData(ClipboardData(text: url));
               _showSnackBar(context, 'Link copied!');
             } finally {
@@ -1385,8 +1388,10 @@ class ReaderCopyService {
   /// Copy a share link to the current position (paragraph + optional line)
   /// to the clipboard, optionally including the selected text.
   ///
-  /// Generates a URL matching the website's canonical format:
-  ///   https://epitaka.org/{lang}/book/{bookId}/{heading-slug}#{paraId}-{lineId}
+  /// Generates an app-link URL (https://epitaka.org/app/...) so tapping it
+  /// opens the app at the passage. The website rewrites the same URL to its
+  /// canonical /{lang}/book/... form when the app isn't available:
+  ///   https://epitaka.org/app/{lang}/{bookId}/{heading-slug}#{paraId}-{lineId}
   ///
   /// The heading slug is built from the nearest section heading's lowercased
   /// title (spaces → hyphens) plus its para_id, e.g. "the-net-of-views-123".
@@ -1421,12 +1426,14 @@ class ReaderCopyService {
       }
     }
 
-    // Build URL: https://epitaka.org/{lang}/book/{bookId}/{slug}#{paraId}-{lineId}
-    final baseUri = 'https://epitaka.org/$lang/book/$bookId';
-    final path = slug.isNotEmpty ? '$baseUri/$slug' : baseUri;
-    final fragment =
-        paraId != null ? '#$paraId${lineId != null ? '-$lineId' : ''}' : '';
-    final url = '$path$fragment';
+    // Build URL: https://epitaka.org/app/{lang}/{bookId}/{slug}#{paraId}-{lineId}
+    final url = buildShareUrl(
+      lang: lang,
+      bookId: bookId,
+      slug: slug.isNotEmpty ? slug : null,
+      paraId: paraId,
+      lineId: lineId,
+    );
 
     final String shareText;
     if (text != null && text.trim().isNotEmpty) {
@@ -1439,6 +1446,26 @@ class ReaderCopyService {
   }
 
   // ── Public helpers ───────────────────────────────────────────────
+
+  /// Build a shareable app-link URL for a book position:
+  ///   https://epitaka.org/app/{lang}/{bookId}/{heading-slug}#{paraId}-{lineId}
+  ///
+  /// The heading slug and paragraph/line are optional. Tapping the URL opens
+  /// the app (universal link); the website rewrites `/app` → `/{lang}/book`
+  /// keeping the remainder identical (see lib/features/deep_links/DEEP_LINKS.md).
+  static String buildShareUrl({
+    required String lang,
+    required String bookId,
+    String? slug,
+    int? paraId,
+    int? lineId,
+  }) {
+    final baseUri = 'https://epitaka.org/app/$lang/$bookId';
+    final path = (slug != null && slug.isNotEmpty) ? '$baseUri/$slug' : baseUri;
+    final fragment =
+        paraId != null ? '#$paraId${lineId != null ? '-$lineId' : ''}' : '';
+    return '$path$fragment';
+  }
 
   /// Strip HTML tags from a string.
   static String stripTags(String html) {

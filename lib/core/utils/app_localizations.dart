@@ -62,6 +62,9 @@ class AppLocalizations {
   String get check => _t('Check');
   String get rebuild => _t('Rebuild');
 
+  /// Title of the "What's New" dialog shown after an app update.
+  String get whatsNew => _t("What's New");
+
   /// Error prefix for `Error: $message` lines.
   String errorMessage(String message) => '${_t('Error')}: $message';
 
@@ -163,6 +166,7 @@ class AppLocalizations {
   String get help => _t('Help');
   String get keyboardShortcuts => _t('Keyboard Shortcuts');
   String get searchInBook => _t('Search within the book');
+  String get searchBooks => _t('Search books…');
   String get globalSearch => _t('Open global search');
   String get closeFocusTab => _t('Close the focus tab');
   String get closeAllTabs => _t('Close all tabs');
@@ -773,11 +777,66 @@ class AppLocalizations {
   String get noCreditCard => _t(
     'No credit card needed. The free tier includes generous daily limits for Gemini Flash models.',
   );
+  String get getFreeOpenRouterKey => _t('Get a free OpenRouter API key');
+  String get openRouterFree4Steps =>
+      _t('OpenRouter is free to join — just 4 easy steps:');
+  String get openRouterStep1 => _t('Tap "Get free OpenRouter API key" below.');
+  String get openRouterStep2 =>
+      _t('Sign in with Google or GitHub (free, no credit card).');
+  String get openRouterStep3 =>
+      _t('Tap "Create API key" and copy it (it starts with sk-or-).');
+  String get openRouterStep4 =>
+      _t('Paste it in the API Key field above — it is checked automatically.');
+  String get openRouterFreeNote => _t(
+    'No credit card needed. Free models (marked :free) are selected automatically.',
+  );
+  String get apiKeyRequiredOpenRouter =>
+      _t('API key required — get your free OpenRouter key below');
   String get apiKeyRejected => _t('API key rejected — see the error below');
   String get keyEnteredVerify =>
       _t('Key entered — press Enter or "Check key" to verify');
   String get checkingApiKey => _t('Checking API key...');
   String get apiKeyValid => _t('API key valid');
+  String get apiKeyRequiredGemini =>
+      _t('API key required — get your free Gemini key below');
+
+  /// `API key valid — $count models available`
+  String apiKeyValidModels(int count) =>
+      '${_t('API key valid')} — $count ${_t('models available')}';
+
+  String get baseUrlExamples => _t(
+    'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
+  );
+  String get toolModelHint => _t(
+    'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)',
+  );
+  String get answerModelHint => _t(
+    'Capable model for final answers (e.g. gemini-2.0-flash, '
+    'gemini-2.5-flash)',
+  );
+  String get maxCharsPerToolResultDesc => _t(
+    'Max characters per tool result sent to the model. Set to 0 for no '
+    'truncation (full content). Large values may increase API usage.',
+  );
+  String get answerMaxOutputTokensDesc => _t(
+    'Max output tokens for the answer model. Higher values allow longer '
+    'answers. (Default: 64000)',
+  );
+  String get maxQueriesPerChatDesc => _t(
+    'Max user queries (messages) allowed per chat thread before starting a '
+    'new one. (Default: 8, min: 1)',
+  );
+  String get customSystemPromptHint => _t(
+    'Leave empty to use the default system prompt.\n\n'
+    'Customize how the AI behaves, what tools to use,\n'
+    'and how to format answers.',
+  );
+  String get suggestionIndexDesc => _t(
+    'Reset the @ mention suggestion index to pick up any new or updated '
+    'books/headings.',
+  );
+  String get attachedHeadings => _t('Attached headings');
+  String get clearAll => _t('Clear all');
 
   /// `${count} models found`
   String modelsFound(int count) => '$count models found';

@@ -17,16 +17,31 @@ import '../widgets/settings_app_bar.dart';
 ///   • add installed apps that can process selected text (discovered via
 ///     [ProcessTextService] — dictionaries, translators, …),
 ///   • add custom AI prompts that run the selected text through AI Q&A.
-class ContextMenuSettingsScreen extends ConsumerStatefulWidget {
+class ContextMenuSettingsScreen extends StatelessWidget {
   const ContextMenuSettingsScreen({super.key});
 
   @override
-  ConsumerState<ContextMenuSettingsScreen> createState() =>
-      _ContextMenuSettingsScreenState();
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const ContextMenuSettingsBody(),
+    );
+  }
 }
 
-class _ContextMenuSettingsScreenState
-    extends ConsumerState<ContextMenuSettingsScreen> {
+/// Scrollable body of the context menu settings — shared between the mobile
+/// screen and the desktop settings window.
+class ContextMenuSettingsBody extends ConsumerStatefulWidget {
+  const ContextMenuSettingsBody({super.key});
+
+  @override
+  ConsumerState<ContextMenuSettingsBody> createState() =>
+      _ContextMenuSettingsBodyState();
+}
+
+class _ContextMenuSettingsBodyState
+    extends ConsumerState<ContextMenuSettingsBody> {
   bool _loadingApps = false;
   List<ProcessTextApp>? _installedApps;
 
@@ -38,16 +53,14 @@ class _ContextMenuSettingsScreenState
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
           Text(
             loc.contextMenu,
             style: AppTypography.headlineLarge.copyWith(
@@ -150,7 +163,6 @@ class _ContextMenuSettingsScreenState
             for (final app in _installedApps!) _buildInstalledAppRow(app),
           ],
         ],
-      ),
     );
   }
 

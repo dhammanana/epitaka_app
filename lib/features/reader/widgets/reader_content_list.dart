@@ -37,6 +37,9 @@ class ReaderContentList extends StatelessWidget {
     this.ttsHighlightParaId,
     this.ttsTargetParaId,
     this.ttsTargetLineKeys = const {},
+    this.keyboardFocusParaId,
+    this.keyboardFocusLineId,
+    this.keyboardFocusChipIndex,
     this.showBookLinks = true,
     this.searchQuery,
     this.onFirstContentFrame,
@@ -88,6 +91,11 @@ class ReaderContentList extends StatelessWidget {
 
   /// Per-line GlobalKeys for fine-scroll to a specific line.
   final Map<int, GlobalKey> ttsTargetLineKeys;
+
+  /// Keyboard-navigation focus line (reading cursor) to highlight.
+  final int? keyboardFocusParaId;
+  final int? keyboardFocusLineId;
+  final int? keyboardFocusChipIndex;
 
   /// Whether inlined book-link chips (commentary links) are rendered.
   final bool showBookLinks;
@@ -216,6 +224,9 @@ class ReaderContentList extends StatelessWidget {
           ttsHighlightLineId: ttsHighlightLineId,
           ttsHighlightParaId: ttsHighlightParaId,
           lineKeys: lineKeys,
+          keyboardFocusParaId: keyboardFocusParaId,
+          keyboardFocusLineId: keyboardFocusLineId,
+          keyboardFocusChipIndex: keyboardFocusChipIndex,
           annotations: annotations[paragraph.paraId] ?? const [],
           // Pass script and pageNumberingSystem from parent instead of
           // forcing ReadingParagraph to watch settingsProvider directly.

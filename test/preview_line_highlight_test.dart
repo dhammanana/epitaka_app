@@ -109,7 +109,7 @@ void main() {
     );
   });
 
-  testWidgets('targetLineKey attaches to the exact scroll target line',
+  testWidgets('lineKeys attach a key to the exact line at its index',
       (tester) async {
     final targetKey = GlobalKey();
     await tester.pumpWidget(
@@ -117,9 +117,8 @@ void main() {
         SingleChildScrollView(
           child: PreviewContent(
             lines: makeLines(3, 3),
-            scrollToParaId: 2,
-            scrollToLineId: 3,
-            targetLineKey: targetKey,
+            // para 2 line 3 is the 6th line → index 5.
+            lineKeys: {5: targetKey},
           ),
         ),
       ),
@@ -142,7 +141,6 @@ void main() {
   testWidgets('preview sheet scrolls the target line into view',
       (tester) async {
     final openKey = GlobalKey();
-    final targetKey = GlobalKey();
 
     await tester.pumpWidget(
       ProviderScope(
@@ -174,7 +172,8 @@ void main() {
       highlightLineId: 2,
       scrollToParaId: 25,
       scrollToLineId: 2,
-      targetLineKey: targetKey,
+      actionLabel: 'Open',
+      onAction: (paraId, lineId) {},
     );
     await tester.pumpAndSettle();
 
@@ -200,6 +199,64 @@ void main() {
       reason: 'target line (y=$targetTop..$targetBottom) must be within the '
           'sheet viewport (y=$scrollTop..$scrollBottom) — it was not '
           'scrolled into view',
+    );
+  });
+
+  testWidgets('action reports the line the user stopped reading at',
+      (tester) async {
+    final openKey = GlobalKey();
+    (int, int?)? reported;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) {
+            final notifier = SettingsNotifier(null);
+            notifier.state = const AppSettings();
+            return notifier;
+          }),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [AppLocalizationsDelegate()],
+          home: Builder(
+            key: openKey,
+            builder: (context) => const Scaffold(body: SizedBox()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(openKey.currentContext, isNotNull);
+
+    showParagraphPreviewSheet(
+      openKey.currentContext!,
+      title: 'Section title',
+      lines: makeLines(30, 3),
+      scrollToParaId: 10,
+      scrollToLineId: 1,
+      actionLabel: 'Open',
+      onAction: (paraId, lineId) => reported = (paraId, lineId),
+    );
+    await tester.pumpAndSettle();
+
+    // Scroll the sheet well past the original target (para 10) to para ~25.
+    final scrollFinder = find.byType(SingleChildScrollView);
+    final scrollable = tester.widget<SingleChildScrollView>(scrollFinder.last);
+    final controller = scrollable.controller!;
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+
+    // Tap the action button (the sheet header's "Open").
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(reported, isNotNull, reason: 'the action must have fired');
+    expect(
+      reported!.$1,
+      inInclusiveRange(27, 30),
+      reason:
+          'after scrolling to the bottom the reported paragraph must be near '
+          'the end, NOT the original scroll target 10 — got ${reported!.$1}',
     );
   });
 }

@@ -8,6 +8,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
 import '../providers/search_provider.dart';
@@ -24,6 +25,9 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
+
+  /// Focus node for the results list (j/k navigation on desktop).
+  final FocusNode _resultsFocusNode = FocusNode();
   Timer? _debounce;
   int _wordDistance = 0;
   bool _showSuggestions = false;
@@ -45,6 +49,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _searchController.dispose();
     _focusNode.dispose();
+    _resultsFocusNode.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -123,6 +128,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref
         .read(searchProvider.notifier)
         .search(query: query, distance: _wordDistance);
+    // Desktop: hand keyboard focus to the results so j/k navigate them.
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resultsFocusNode.requestFocus();
+      });
+    }
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
@@ -581,8 +592,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return _buildIndexingState(colors, status, progress);
       case SearchLoading():
         return const Center(child: CircularProgressIndicator());
-      case SearchResults(): 
-        return SearchResultsView(state: state);
+      case SearchResults():
+        return SearchResultsView(
+          state: state,
+          resultsFocusNode: _resultsFocusNode,
+          onEscape: () => _focusNode.requestFocus(),
+        );
       case SearchError(:final message):
         return _buildErrorState(colors, message);
     }

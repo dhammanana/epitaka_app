@@ -33,6 +33,7 @@ import '../../settings/providers/tts_provider.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
 import '../providers/reader_dictionary_lookup_controller.dart';
+import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_search_notifier.dart';
 import '../providers/reader_selection_notifier.dart';
@@ -190,6 +191,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // Track the last paraId we've jumped to per book, so we don't re-jump
   // every time the tab rebuilds (e.g. on unrelated provider changes).
   final Map<String, int> _lastJumpedParaId = {};
+
+  // Track the last EXPLICIT jump request id consumed per book. The tabs
+  // provider stamps every openTab-with-position call with a fresh
+  // initialJumpId, so comparing ids (instead of the para value) lets a
+  // repeat request for the paragraph the reader is already on still jump
+  // and fine-scroll to the line.
+  final Map<String, int?> _lastInitialJumpId = {};
 
   // Guards against overlapping jump attempts for the same (bookId, paraId)
   // request racing each other.
@@ -2201,9 +2209,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
 
     // ── Resolve which paragraph to jump to ───────────────────────────
+    // initialJumpId distinguishes a NEW explicit jump request (annotation
+    // tap, book link, history…) from a stale rebuild — so requesting the
+    // same paragraph twice still re-jumps and reaches the exact line.
     final isNewInitialParaId =
         activeTab.initialParaId != null &&
-        _lastJumpedParaId[activeTab.bookId] != activeTab.initialParaId;
+        _lastInitialJumpId[activeTab.bookId] != activeTab.initialJumpId;
     final isTabRestore =
         !isNewInitialParaId &&
         activeTab.currentParaId != null &&
@@ -2214,6 +2225,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final targetParaId = activeTab.initialParaId!;
       final targetLineId = activeTab.initialLineId;
       _lastJumpedParaId[activeTab.bookId] = targetParaId;
+      _lastInitialJumpId[activeTab.bookId] = activeTab.initialJumpId;
       _lastRestoredBookId = activeTab.bookId;
       developer.log(
         '[BUILD] ${activeTab.bookId} isNewInitialParaId → jump to $targetParaId'
@@ -2306,6 +2318,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
         ? ttsReadingState.currentParaId
         : null;
+
+    // ── Keyboard-navigation cleanup on tab close ──────────────────
+    // Drop the bridge registrations for books that are no longer open (the
+    // reader may have disposed their ScrollablePositionedList) and clear the
+    // focus line when the active book changes.
+    ref.listen(readerTabsProvider, (
+      ReaderTabsState? prev,
+      ReaderTabsState next,
+    ) {
+      if (prev == null) return;
+      final prevIds = prev.tabs.map((t) => t.bookId).toSet();
+      final nextIds = next.tabs.map((t) => t.bookId).toSet();
+      final bridge = ref.read(readerKeyboardBridgeProvider);
+      for (final id in prevIds) {
+        if (!nextIds.contains(id)) bridge.unregister(id);
+      }
+      if (next.activeTab?.bookId != prev.activeTab?.bookId) {
+        ref
+            .read(readerKeyboardNavProvider.notifier)
+            .clearIfDifferentBook(next.activeTab?.bookId);
+      }
+    });
 
     // Save reading history when switching tabs
     ref.listen(readerTabsProvider, (
@@ -2701,6 +2735,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   ) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
 
+    // Hand the scroll controller / positions listener to the keyboard
+    // navigation layer (j/k reading cursor + Cmd/Ctrl+J). Registration is
+    // idempotent per bookId and cleaned up when the tab closes.
+    ref.read(readerKeyboardBridgeProvider).register(
+          activeTab.bookId,
+          _scrollControllerFor(activeTab.bookId),
+          _positionsListenerFor(activeTab.bookId),
+        );
+
+    // The keyboard reading cursor (focus line + selected chip), threaded
+    // down to the paragraph renderer so the highlight is drawn.
+    final kbNav = ref.watch(readerKeyboardNavProvider);
+    final keyboardFocusParaId =
+        kbNav.engaged && kbNav.bookId == activeTab.bookId ? kbNav.paraId : null;
+    final keyboardFocusLineId =
+        kbNav.engaged && kbNav.bookId == activeTab.bookId ? kbNav.lineId : null;
+    final keyboardFocusChipIndex = keyboardFocusLineId != null
+        ? kbNav.chipIndex
+        : null;
+
     // Final cleanup the moment a dictionary sheet closes: the framework's
     // double-tap processing can land its leftover selection / toolbar after
     // the ~250ms suppression window in [_onWordLookup] (e.g. a second tap
@@ -2746,6 +2800,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ttsTargetLineKeys: ref
           .read(ttsSyncProvider(activeTab.bookId))
           .ttsTargetLineKeys,
+      keyboardFocusParaId: keyboardFocusParaId,
+      keyboardFocusLineId: keyboardFocusLineId,
+      keyboardFocusChipIndex: keyboardFocusChipIndex,
       searchQuery:
           ref.watch(inBookSearchProvider).effectiveQuery ??
           activeTab.searchQuery,

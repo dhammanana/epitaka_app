@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/utils/app_localizations.dart';
 import '../../shared/providers/side_panel_provider.dart';
+import '../../shared/utils/app_shortcuts.dart';
 
 /// A VS Code-style vertical icon rail on the far left of the desktop shell.
 ///
@@ -44,41 +45,43 @@ class DesktopActivityBar extends StatelessWidget {
     final loc = AppLocalizations.of(context);
 
     final items = <_ActivityItem>[
+      // Each entry carries the id of its global shortcut (see
+      // AppShortcuts.shortcutCatalog) so the tooltip can show the key
+      // hint; entries without one get the plain label.
       _ActivityItem(
         SidePanelType.library,
         Icons.library_books_outlined,
         Icons.library_books,
         loc.libraryLabel,
+        shortcutId: 'library-sidebar',
       ),
       _ActivityItem(
         SidePanelType.search,
         Icons.search,
         Icons.search,
         loc.search,
+        shortcutId: 'find-everywhere',
       ),
       _ActivityItem(
         SidePanelType.history,
         Icons.history,
         Icons.history,
         loc.history,
-      ),
-      _ActivityItem(
-        SidePanelType.bookmarks,
-        Icons.bookmark_outline,
-        Icons.bookmark,
-        loc.bookmarks,
+        shortcutId: 'history',
       ),
       _ActivityItem(
         SidePanelType.annotations,
         Icons.edit_note,
         Icons.edit_note,
         loc.annotations,
+        shortcutId: 'annotations',
       ),
       _ActivityItem(
         SidePanelType.contents,
         Icons.format_list_bulleted,
         Icons.format_list_bulleted,
         loc.contents,
+        shortcutId: 'contents',
       ),
       _ActivityItem(
         SidePanelType.scriptConverter,
@@ -97,6 +100,7 @@ class DesktopActivityBar extends StatelessWidget {
         Icons.menu_book_outlined,
         Icons.menu_book,
         loc.dictionary,
+        shortcutId: 'dictionary',
         activeOverride: dictionaryVisible,
         onTapOverride: onToggleDictionary,
       ),
@@ -119,7 +123,9 @@ class DesktopActivityBar extends StatelessWidget {
                       icon: item.isActive(activeSidebar)
                           ? item.activeIcon
                           : item.icon,
-                      tooltip: item.label,
+                      tooltip: item.shortcutId == null
+                          ? item.label
+                          : AppShortcuts.tooltip(item.label, item.shortcutId!),
                       active: item.isActive(activeSidebar),
                       onTap: () {
                         if (item.onTapOverride != null) {
@@ -134,7 +140,7 @@ class DesktopActivityBar extends StatelessWidget {
                     icon: vimamsaActive
                         ? Icons.auto_awesome
                         : Icons.auto_awesome_outlined,
-                    tooltip: loc.vimamsa,
+                    tooltip: AppShortcuts.tooltip(loc.vimamsa, 'vimamsa'),
                     active: vimamsaActive,
                     onTap: onToggleVimamsa,
                   ),
@@ -151,7 +157,7 @@ class DesktopActivityBar extends StatelessWidget {
           ),
           _ActivityBarButton(
             icon: Icons.settings_outlined,
-            tooltip: loc.settings,
+            tooltip: AppShortcuts.tooltip(loc.settings, 'settings'),
             active: false,
             onTap: onOpenSettings,
           ),
@@ -168,6 +174,11 @@ class _ActivityItem {
   final IconData activeIcon;
   final String label;
 
+  /// Id of the global shortcut for this action (see
+  /// [AppShortcuts.shortcutCatalog]) whose hint is appended to the
+  /// tooltip. Null when the action has no keyboard shortcut.
+  final String? shortcutId;
+
   /// For items that aren't plain sidebar toggles (e.g. dictionary).
   final bool? activeOverride;
   final VoidCallback? onTapOverride;
@@ -177,6 +188,7 @@ class _ActivityItem {
     this.icon,
     this.activeIcon,
     this.label, {
+    this.shortcutId,
     this.activeOverride,
     this.onTapOverride,
   });

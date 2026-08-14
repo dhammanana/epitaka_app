@@ -33,6 +33,7 @@ const Map<String, String> en = {
   'Apply': 'Apply',
   'Check': 'Check',
   'Rebuild': 'Rebuild',
+  "What's New": "What's New",
   'Required': 'Required',
   'Installed': 'Installed',
   'Not installed': 'Not installed',
@@ -199,6 +200,7 @@ const Map<String, String> en = {
   'Help': 'Help',
   'Keyboard Shortcuts': 'Keyboard Shortcuts',
   'Search within the book': 'Search within the book',
+  'Search books…': 'Search books…',
   'Open global search': 'Open global search',
   'Close the focus tab': 'Close the focus tab',
   'Close all tabs': 'Close all tabs',
@@ -591,12 +593,55 @@ const Map<String, String> en = {
       'Paste it in the API Key field above — it is checked automatically.',
   'No credit card needed. The free tier includes generous daily limits for Gemini Flash models.':
       'No credit card needed. The free tier includes generous daily limits for Gemini Flash models.',
+  'Get a free OpenRouter API key': 'Get a free OpenRouter API key',
+  'OpenRouter is free to join — just 4 easy steps:':
+      'OpenRouter is free to join — just 4 easy steps:',
+  'Tap "Get free OpenRouter API key" below.':
+      'Tap "Get free OpenRouter API key" below.',
+  'Sign in with Google or GitHub (free, no credit card).':
+      'Sign in with Google or GitHub (free, no credit card).',
+  'Tap "Create API key" and copy it (it starts with sk-or-).':
+      'Tap "Create API key" and copy it (it starts with sk-or-).',
+  'No credit card needed. Free models (marked :free) are selected automatically.':
+      'No credit card needed. Free models (marked :free) are selected automatically.',
+  'API key required — get your free OpenRouter key below':
+      'API key required — get your free OpenRouter key below',
   'API key rejected — see the error below':
       'API key rejected — see the error below',
   'Key entered — press Enter or "Check key" to verify':
       'Key entered — press Enter or "Check key" to verify',
   'Checking API key...': 'Checking API key...',
   'API key valid': 'API key valid',
+  'API key required — enter your key below':
+      'API key required — enter your key below',
+  'API key required — get your free Gemini key below':
+      'API key required — get your free Gemini key below',
+  'models available': 'models available',
+  'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1':
+      'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
+  'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)':
+      'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)',
+  'Capable model for final answers (e.g. gemini-2.0-flash, gemini-2.5-flash)':
+      'Capable model for final answers (e.g. gemini-2.0-flash, '
+      'gemini-2.5-flash)',
+  'Max characters per tool result sent to the model. Set to 0 for no truncation (full content). Large values may increase API usage.':
+      'Max characters per tool result sent to the model. Set to 0 for no '
+      'truncation (full content). Large values may increase API usage.',
+  'Max output tokens for the answer model. Higher values allow longer answers. (Default: 64000)':
+      'Max output tokens for the answer model. Higher values allow longer '
+      'answers. (Default: 64000)',
+  'Max user queries (messages) allowed per chat thread before starting a new one. (Default: 8, min: 1)':
+      'Max user queries (messages) allowed per chat thread before starting a '
+      'new one. (Default: 8, min: 1)',
+  'Leave empty to use the default system prompt.\n\nCustomize how the AI behaves, what tools to use,\nand how to format answers.':
+      'Leave empty to use the default system prompt.\n\n'
+      'Customize how the AI behaves, what tools to use,\n'
+      'and how to format answers.',
+  'Reset the @ mention suggestion index to pick up any new or updated books/headings.':
+      'Reset the @ mention suggestion index to pick up any new or updated '
+      'books/headings.',
+  'Attached headings': 'Attached headings',
+  'Clear all': 'Clear all',
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'Ask about the Tipitaka…',

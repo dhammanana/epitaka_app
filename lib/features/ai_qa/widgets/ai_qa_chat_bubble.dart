@@ -1,5 +1,6 @@
 library;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -667,6 +668,20 @@ class AiQaMessageBubble extends ConsumerWidget {
     int paraId,
     int lineId,
   ) {
+    // Release the chat input's focus before opening the reference. On a
+    // touch device the input keeps focus (and the keyboard stays up) across
+    // the modal quickview, so when the user closes the sheet / goes back the
+    // keyboard pops up again over the chat — release it here so the user can
+    // read the passage comfortably. On desktop there is no touch keyboard, so
+    // keep focus so the user can resume typing right away after going back.
+    final isTouch =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.fuchsia;
+    if (isTouch) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+
     // Open a quickview preview of the cited passage instead of jumping
     // straight to the reader; the user can open the book from there.
     showCitationQuickview(

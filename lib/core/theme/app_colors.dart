@@ -28,8 +28,11 @@ class AppColors {
   static const Color lightSurfaceCard = Color(0xfffff8f5);
   static const Color lightSurfaceContainerHighest = Color(0xfff0dfd6);
   static const Color lightOnSurfaceVariant = Color(0xff544338);
-  static const Color lightOutline = Color(0xff877366);
-  static const Color lightOutlineVariant = Color(0xffdac2b3);
+  // Outline colors are tuned darker than the Material spec default so
+  // borders read clearly on the paper surface (the spec's outlineVariant
+  // washes out to nearly invisible at the low alphas widgets apply).
+  static const Color lightOutline = Color(0xff796656);
+  static const Color lightOutlineVariant = Color(0xffc8ad99);
   static const Color lightSurfaceDim = Color(0xffe7d7ce);
   static const Color lightSurfaceBright = Color(0xfffff8f5);
   static const Color lightSurfaceContainerLowest = Color(0xffffffff);
@@ -61,8 +64,9 @@ class AppColors {
   static const Color darkOnSurface = Color(0xfff0dfd6);
   static const Color darkSurfaceContainerHighest = Color(0xff514338);
   static const Color darkOnSurfaceVariant = Color(0xffdac2b3);
-  static const Color darkOutline = Color(0xffa38d7e);
-  static const Color darkOutlineVariant = Color(0xff514338);
+  // Lighter than the spec default so borders are visible on the dark ground.
+  static const Color darkOutline = Color(0xffb59d8c);
+  static const Color darkOutlineVariant = Color(0xff5f5043);
   static const Color darkSurfaceDim = Color(0xff1a120c);
   static const Color darkSurfaceBright = Color(0xff423830);
   static const Color darkSurfaceContainerLowest = Color(0xff150e08);
@@ -136,6 +140,10 @@ class AppColors {
       onErrorContainer: lightOnErrorContainer,
       surface: lightSurface,
       onSurface: lightOnSurface,
+      surfaceContainerLowest: lightSurfaceContainerLowest,
+      surfaceContainerLow: lightSurfaceContainerLow,
+      surfaceContainer: lightSurfaceContainer,
+      surfaceContainerHigh: lightSurfaceContainerHigh,
       surfaceContainerHighest: lightSurfaceContainerHighest,
       onSurfaceVariant: lightOnSurfaceVariant,
       outline: lightOutline,
@@ -166,6 +174,10 @@ class AppColors {
       onErrorContainer: darkOnErrorContainer,
       surface: darkSurface,
       onSurface: darkOnSurface,
+      surfaceContainerLowest: darkSurfaceContainerLowest,
+      surfaceContainerLow: darkSurfaceContainerLow,
+      surfaceContainer: darkSurfaceContainer,
+      surfaceContainerHigh: darkSurfaceContainerHigh,
       surfaceContainerHighest: darkSurfaceContainerHighest,
       onSurfaceVariant: darkOnSurfaceVariant,
       outline: darkOutline,
@@ -205,8 +217,8 @@ class AppColors {
       surfaceContainerHigh: const Color(0xffE5D7BA),
       surfaceContainerHighest: const Color(0xffDFD1B1),
       onSurfaceVariant: const Color(0xff6C5D47),
-      outline: const Color(0xff95836B),
-      outlineVariant: const Color(0xffD6C3A5),
+      outline: const Color(0xff7f6d50),
+      outlineVariant: const Color(0xffbfa983),
       inverseSurface: const Color(0xff2F291A),
       inversePrimary: const Color(0xffffb87f),
     );
@@ -240,8 +252,8 @@ class AppColors {
       surfaceContainerHigh: const Color(0xffE3E9F1),
       surfaceContainerHighest: const Color(0xffDDE4EC),
       onSurfaceVariant: const Color(0xff42474E),
-      outline: const Color(0xff72787F),
-      outlineVariant: const Color(0xffC2C8CF),
+      outline: const Color(0xff5f6871),
+      outlineVariant: const Color(0xffaab4bd),
       inverseSurface: const Color(0xff2C3138),
       inversePrimary: const Color(0xff8FD0FF),
     );
@@ -275,8 +287,8 @@ class AppColors {
       surfaceContainerHigh: const Color(0xff242C36),
       surfaceContainerHighest: const Color(0xff2F3742),
       onSurfaceVariant: const Color(0xffBDC6D2),
-      outline: const Color(0xff88919D),
-      outlineVariant: const Color(0xff3F4853),
+      outline: const Color(0xff9aa4b2),
+      outlineVariant: const Color(0xff4d5764),
       inverseSurface: const Color(0xffDCE4EC),
       inversePrimary: const Color(0xff00618E),
     );
@@ -310,8 +322,8 @@ class AppColors {
       surfaceContainerHigh: const Color(0xff262C22),
       surfaceContainerHighest: const Color(0xff30362D),
       onSurfaceVariant: const Color(0xffBFC5B7),
-      outline: const Color(0xff8A9183),
-      outlineVariant: const Color(0xff41483C),
+      outline: const Color(0xff9da596),
+      outlineVariant: const Color(0xff505a49),
       inverseSurface: const Color(0xffE0E5DA),
       inversePrimary: const Color(0xff2F6B36),
     );

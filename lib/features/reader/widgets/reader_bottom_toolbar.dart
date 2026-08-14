@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/utils/app_shortcuts.dart';
 import '../../settings/providers/tts_provider.dart';
 
 /// Reader toolbar with actions like contents, search, dictionary, display
@@ -87,6 +88,10 @@ class ReaderBottomToolbar extends StatelessWidget {
     final isPlaying = ttsPlayback == TtsPlaybackState.playing;
     final isLoading = ttsPlayback == TtsPlaybackState.loading;
 
+    // The display-layout popup offers three modes, each with its own
+    // shortcut — hint at the trio so users can learn them from the button.
+    final displayHint = AppShortcuts.isMacOS ? '⌥⌘1/2/3' : 'Ctrl+Alt+1/2/3';
+
     final buttons = <Widget>[
       // Contents, search and dictionary already live in the desktop sidebar
       // / activity bar, so the flat status-bar strip doesn't repeat them.
@@ -94,6 +99,7 @@ class ReaderBottomToolbar extends StatelessWidget {
         ToolbarButton(
           icon: Icons.format_list_bulleted,
           label: loc.contents,
+          tooltip: AppShortcuts.tooltip(loc.contents, 'contents'),
           compact: compact,
           enabled: enabled,
           onTap: onContentsTap,
@@ -103,6 +109,7 @@ class ReaderBottomToolbar extends StatelessWidget {
         ToolbarButton(
           icon: Icons.search,
           label: loc.search,
+          tooltip: AppShortcuts.tooltip(loc.search, 'find-in-book'),
           compact: compact,
           enabled: enabled,
           onTap: onSearchTap,
@@ -111,6 +118,7 @@ class ReaderBottomToolbar extends StatelessWidget {
         ToolbarButton(
           icon: Icons.menu_book,
           label: loc.dictionary,
+          tooltip: AppShortcuts.tooltip(loc.dictionary, 'dictionary'),
           compact: compact,
           enabled: enabled,
           onTap: onDictionaryTap,
@@ -120,6 +128,7 @@ class ReaderBottomToolbar extends StatelessWidget {
       ToolbarButton(
         icon: Icons.open_in_new,
         label: loc.jumpLabel,
+        tooltip: AppShortcuts.tooltip(loc.jumpLabel, 'jump'),
         compact: compact,
         enabled: enabled,
         onTap: onJumpTap,
@@ -128,6 +137,7 @@ class ReaderBottomToolbar extends StatelessWidget {
       ToolbarButton(
         icon: displayIcon,
         label: displayLabel,
+        tooltip: '$displayLabel $displayHint',
         compact: compact,
         enabled: enabled,
         onTap: onDisplayLayoutTap,
@@ -210,10 +220,15 @@ class ToolbarButton extends StatelessWidget {
   final bool enabled;
   final VoidCallback? onTap;
 
+  /// Tooltip text; defaults to [label]. Passed when the tooltip should also
+  /// show the action's keyboard shortcut (see [AppShortcuts.tooltip]).
+  final String? tooltip;
+
   const ToolbarButton({
     super.key,
     required this.icon,
     required this.label,
+    this.tooltip,
     this.compact = false,
     this.enabled = true,
     this.onTap,
@@ -223,7 +238,7 @@ class ToolbarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Tooltip(
-      message: label,
+      message: tooltip ?? label,
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(9999),

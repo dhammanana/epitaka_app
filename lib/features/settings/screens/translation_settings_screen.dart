@@ -16,16 +16,32 @@ import '../widgets/settings_section.dart';
 
 /// Translation & Downloads screen: version management, download, delete, and
 /// typography settings for each translation language.
-class TranslationSettingsScreen extends ConsumerStatefulWidget {
+class TranslationSettingsScreen extends StatelessWidget {
   const TranslationSettingsScreen({super.key});
 
   @override
-  ConsumerState<TranslationSettingsScreen> createState() =>
-      _TranslationSettingsScreenState();
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: colors.surface,
+      appBar: SettingsAppBar(colors: colors),
+      body: const TranslationSettingsBody(),
+    );
+  }
 }
 
-class _TranslationSettingsScreenState
-    extends ConsumerState<TranslationSettingsScreen> {
+/// Scrollable body of the translation settings — shared between the mobile
+/// screen and the desktop settings window.
+class TranslationSettingsBody extends ConsumerStatefulWidget {
+  const TranslationSettingsBody({super.key});
+
+  @override
+  ConsumerState<TranslationSettingsBody> createState() =>
+      _TranslationSettingsBodyState();
+}
+
+class _TranslationSettingsBodyState
+    extends ConsumerState<TranslationSettingsBody> {
   bool _manifestLoading = false;
 
   @override
@@ -48,17 +64,14 @@ class _TranslationSettingsScreenState
         .where((code) => downloadedCodes.contains(code))
         .toList();
 
-    return Scaffold(
-      backgroundColor: colors.surface,
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
+      ),
+      children: [
           Text(
             loc.translationsDownloads,
             style: AppTypography.headlineLarge.copyWith(
@@ -419,7 +432,6 @@ class _TranslationSettingsScreenState
             ],
           ),
         ],
-      ),
     );
   }
 

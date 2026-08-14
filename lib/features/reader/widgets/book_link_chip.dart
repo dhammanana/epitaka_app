@@ -19,12 +19,17 @@ class BookLinkChip extends StatelessWidget {
   /// The target Pāli script to convert the word to.
   final Script? script;
 
+  /// When true (keyboard navigation selected this chip), draw a stronger
+  /// border and a filled tint so the focused chip is unmistakable.
+  final bool selected;
+
   const BookLinkChip({
     super.key,
     required this.word,
     required this.color,
     required this.onTap,
     this.script,
+    this.selected = false,
   });
 
   @override
@@ -40,11 +45,13 @@ class BookLinkChip extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: effectiveColor.withValues(alpha: 0.12),
+              color: selected
+                  ? effectiveColor.withValues(alpha: 0.28)
+                  : effectiveColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: effectiveColor.withValues(alpha: 0.35),
-                width: 0.8,
+                color: selected ? effectiveColor : effectiveColor.withValues(alpha: 0.35),
+                width: selected ? 1.6 : 0.8,
               ),
             ),
             child: PaliTextStatic(
@@ -52,7 +59,7 @@ class BookLinkChip extends StatelessWidget {
               script,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 fontStyle: FontStyle.italic,
                 color: effectiveColor,
                 height: 1.3,

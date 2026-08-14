@@ -108,28 +108,34 @@ Future<void> showCitationQuickview(
     if (!context.mounted) return;
 
     // Position the quickview at the exact cited line so the user sees the
-    // passage they tapped (mirrors the reader's line-jump behaviour).
-    final targetLineKey = GlobalKey();
+    // passage they tapped (mirrors the reader's line-jump behaviour), and
+    // highlight only that line. When the cited line isn't in the loaded
+    // range (e.g. a hallucinated number), fall back to the paragraph-wide
+    // highlight instead of highlighting nothing.
+    final hasExactCitedLine = lineId != null &&
+        previewLines.any((l) => l.paraId == paraId && l.lineId == lineId);
     await showParagraphPreviewSheet(
       context,
       title: headingTitle.isNotEmpty ? headingTitle : bookName,
       subtitle: headingTitle.isNotEmpty ? bookName : null,
       lines: previewLines,
       highlightParaId: paraId,
+      highlightLineId: hasExactCitedLine ? lineId : null,
       firstSnippetIndex: previewLines.indexWhere((l) => l.paraId == paraId),
       scrollToParaId: paraId,
       scrollToLineId: lineId,
-      targetLineKey: targetLineKey,
       actionLabel: AppLocalizations.of(context).openInReader,
-      onAction: () {
+      // Open at the position the user stopped reading in the sheet, not the
+      // original citation line.
+      onAction: (currentParaId, currentLineId) {
         ref
             .read(readerTabsProvider.notifier)
             .openTab(
               ReaderTabInfo(
                 bookId: bookId,
                 bookName: bookName,
-                initialParaId: paraId,
-                initialLineId: lineId,
+                initialParaId: currentParaId,
+                initialLineId: currentLineId,
               ),
             );
         Navigator.of(context).pop(); // close the quickview

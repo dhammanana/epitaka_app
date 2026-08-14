@@ -5,41 +5,54 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/utils/app_shortcuts.dart';
 import '../widgets/settings_app_bar.dart';
 
 /// Help screen documenting keyboard shortcuts and other tips.
-class HelpScreen extends ConsumerWidget {
+class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const HelpScreenBody(),
+    );
+  }
+}
+
+/// Scrollable body of the help screen — shared between the mobile screen and
+/// the desktop settings window.
+class HelpScreenBody extends ConsumerWidget {
+  const HelpScreenBody({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
-          Text(
-            loc.help,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.onSurface,
-            ),
-          ),
-          const SizedBox(height: AppDimensions.lg),
-          _ShortcutsSection(colors: colors, loc: loc),
-          const SizedBox(height: AppDimensions.lg),
-
-          // ── Send Feedback ────────────────────────────────────────
-          _FeedbackTile(colors: colors, loc: loc),
-        ],
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        AppDimensions.md,
+        AppDimensions.marginMobile,
+        120,
       ),
+      children: [
+        Text(
+          loc.help,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.onSurface,
+          ),
+        ),
+        const SizedBox(height: AppDimensions.lg),
+        _ShortcutsSection(colors: colors, loc: loc),
+        const SizedBox(height: AppDimensions.lg),
+
+        // ── Send Feedback ────────────────────────────────────────
+        _FeedbackTile(colors: colors, loc: loc),
+      ],
     );
   }
 }
@@ -136,19 +149,36 @@ class _ShortcutsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Each row resolves its key hint from the global shortcut catalog
+    // (AppShortcuts.hintFor) instead of a hardcoded string, so this list
+    // can never drift from the real bindings. Hints render platform-
+    // appropriately (⌘⇧C on macOS, Ctrl+Shift+C elsewhere).
     final items = [
-      _Shortcut(loc.searchInBook, 'Ctrl/⌘ + F'),
-      _Shortcut(loc.globalSearch, 'Ctrl/⌘ + Shift + F'),
-      _Shortcut(loc.closeFocusTab, 'Ctrl/⌘ + W'),
-      _Shortcut(loc.closeAllTabs, 'Ctrl/⌘ + Shift + W'),
-      _Shortcut(loc.openDictionary, 'Ctrl/⌘ + D'),
-      _Shortcut(loc.openLibrary, 'Ctrl/⌘ + N'),
-      _Shortcut(loc.openSettings, 'Ctrl/⌘ + ,'),
-      _Shortcut(loc.increaseFontSize, 'Ctrl/⌘ + +'),
-      _Shortcut(loc.decreaseFontSize, 'Ctrl/⌘ + -'),
-      _Shortcut('Switch to Tab 1-9', 'Ctrl/⌘ + 1-9'),
-      _Shortcut('Next Tab', 'Ctrl + Tab'),
-      _Shortcut('Previous Tab', 'Ctrl + Shift + Tab'),
+      _Shortcut(loc.searchInBook, 'find-in-book'),
+      _Shortcut(loc.globalSearch, 'find-everywhere'),
+      _Shortcut(loc.openDictionary, 'dictionary'),
+      _Shortcut(loc.libraryLabel, 'library-sidebar'),
+      _Shortcut(loc.openLibrary, 'library-open'),
+      _Shortcut(loc.annotations, 'annotations'),
+      _Shortcut(loc.history, 'history'),
+      _Shortcut(loc.contents, 'contents'),
+      _Shortcut(loc.vimamsa, 'vimamsa'),
+      _Shortcut(loc.jumpToPage, 'jump'),
+      _Shortcut(loc.openSettings, 'settings'),
+      _Shortcut(loc.increaseFontSize, 'font-increase'),
+      _Shortcut(loc.decreaseFontSize, 'font-decrease'),
+      _Shortcut(loc.hideTranslationMode, 'display-hide'),
+      _Shortcut(loc.lineByLine, 'display-line'),
+      _Shortcut(loc.sideBySideMode, 'display-side'),
+      _Shortcut(loc.closeFocusTab, 'close-tab'),
+      _Shortcut(loc.closeAllTabs, 'close-all-tabs'),
+      _Shortcut(
+        'Switch to Tab 1-9',
+        'tab-1',
+        keysOverride: _tabRangeHint(),
+      ),
+      _Shortcut('Next Tab', 'tab-next'),
+      _Shortcut('Previous Tab', 'tab-prev'),
     ];
 
     return Container(
@@ -210,11 +240,28 @@ class _ShortcutsSection extends StatelessWidget {
   }
 }
 
+/// "⌘1" → "⌘1–9", "Ctrl+1" → "Ctrl+1–9" — derived from the catalog's
+/// tab-1 binding so the modifier style stays in sync on every platform.
+String _tabRangeHint() {
+  final base = AppShortcuts.hintFor('tab-1') ?? '';
+  if (base.isEmpty) return '1–9';
+  return base.endsWith('1') ? '${base.substring(0, base.length - 1)}1–9' : '$base 1–9';
+}
+
 class _Shortcut {
   final String label;
-  final String keys;
 
-  const _Shortcut(this.label, this.keys);
+  /// The catalog id whose binding is shown on the right (see
+  /// [AppShortcuts.shortcutCatalog]).
+  final String id;
+
+  /// Optional replacement for the catalog hint (used for ranges like
+  /// "Switch to Tab 1-9").
+  final String? keysOverride;
+
+  const _Shortcut(this.label, this.id, {this.keysOverride});
+
+  String get keys => keysOverride ?? AppShortcuts.hintFor(id) ?? '';
 }
 
 class _Kbd extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/utils/app_shortcuts.dart';
 
 /// In-book search bar shown as an overlay at the top of the reader.
 ///
@@ -160,7 +161,10 @@ class ReaderInBookSearchBar extends StatelessWidget {
             icon: const Icon(Icons.open_in_full, size: 18),
             color: colors.primary,
             onPressed: onSearchEntire,
-            tooltip: loc.searchTipitakaFull,
+            tooltip: AppShortcuts.tooltip(
+              loc.searchTipitakaFull,
+              'find-everywhere',
+            ),
             visualDensity: VisualDensity.compact,
           ),
         ],

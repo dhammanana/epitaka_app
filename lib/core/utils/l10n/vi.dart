@@ -31,6 +31,7 @@ const Map<String, String> vi = {
   'Apply': 'Áp dụng',
   'Check': 'Kiểm tra',
   'Rebuild': 'Xây dựng lại',
+  "What's New": "Có gì mới",
   'Required': 'Bắt buộc',
   'Installed': 'Đã cài',
   'Not installed': 'Chưa cài',
@@ -167,6 +168,7 @@ const Map<String, String> vi = {
   'Help': 'Trợ giúp',
   'Keyboard Shortcuts': 'Phím tắt',
   'Search within the book': 'Tìm trong sách',
+  'Search books…': 'Tìm sách…',
   'Open global search': 'Mở tìm kiếm toàn cục',
   'Close the focus tab': 'Đóng thẻ đang chọn',
   'Close all tabs': 'Đóng tất cả thẻ',
@@ -545,12 +547,56 @@ const Map<String, String> vi = {
       'Dán vào trường Khóa API ở trên — khóa sẽ được kiểm tra tự động.',
   'No credit card needed. The free tier includes generous daily limits for Gemini Flash models.':
       'Không cần thẻ tín dụng. Gói miễn phí bao gồm giới hạn hàng ngày hào phóng cho mô hình Gemini Flash.',
+  'Get a free OpenRouter API key': 'Lấy khóa API OpenRouter miễn phí',
+  'OpenRouter is free to join — just 4 easy steps:':
+      'OpenRouter miễn phí để tham gia — chỉ 4 bước đơn giản:',
+  'Tap "Get free OpenRouter API key" below.':
+      'Chạm "Lấy khóa API OpenRouter miễn phí" bên dưới.',
+  'Sign in with Google or GitHub (free, no credit card).':
+      'Đăng nhập bằng Google hoặc GitHub (miễn phí, không cần thẻ tín dụng).',
+  'Tap "Create API key" and copy it (it starts with sk-or-).':
+      'Chạm "Tạo khóa API" và sao chép nó (bắt đầu bằng sk-or-).',
+  'No credit card needed. Free models (marked :free) are selected automatically.':
+      'Không cần thẻ tín dụng. Các mô hình miễn phí (có nhãn :free) sẽ được tự động chọn.',
+  'API key required — get your free OpenRouter key below':
+      'Cần khóa API — lấy khóa OpenRouter miễn phí bên dưới',
   'API key rejected — see the error below':
       'Khóa API bị từ chối — xem lỗi bên dưới',
   'Key entered — press Enter or "Check key" to verify':
       'Đã nhập khóa — nhấn Enter hoặc "Kiểm tra khóa" để xác minh',
   'Checking API key...': 'Đang kiểm tra khóa API...',
   'API key valid': 'Khóa API hợp lệ',
+  'API key required — enter your key below':
+      'Cần khóa API — nhập khóa của bạn bên dưới',
+  'API key required — get your free Gemini key below':
+      'Cần khóa API — lấy khóa Gemini miễn phí bên dưới',
+  'models available': 'mô hình khả dụng',
+  'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1':
+      'Ví dụ: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
+  'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)':
+      'Mô hình nhanh/rẻ để điều phối công cụ (vd: gemini-flash-lite-latest)',
+  'Capable model for final answers (e.g. gemini-2.0-flash, gemini-2.5-flash)':
+      'Mô hình mạnh cho câu trả lời cuối (vd: gemini-2.0-flash, '
+      'gemini-2.5-flash)',
+  'Max characters per tool result sent to the model. Set to 0 for no truncation (full content). Large values may increase API usage.':
+      'Số ký tự tối đa của mỗi kết quả công cụ gửi cho mô hình. Đặt 0 để '
+      'không cắt bớt (nội dung đầy đủ). Giá trị lớn có thể tăng mức sử '
+      'dụng API.',
+  'Max output tokens for the answer model. Higher values allow longer answers. (Default: 64000)':
+      'Số token tối đa cho mô hình trả lời. Giá trị cao hơn cho phép câu '
+      'trả lời dài hơn. (Mặc định: 64000)',
+  'Max user queries (messages) allowed per chat thread before starting a new one. (Default: 8, min: 1)':
+      'Số lượt hỏi (tin nhắn) tối đa cho mỗi cuộc trò chuyện trước khi phải '
+      'bắt đầu cuộc mới. (Mặc định: 8, tối thiểu: 1)',
+  'Leave empty to use the default system prompt.\n\nCustomize how the AI behaves, what tools to use,\nand how to format answers.':
+      'Để trống để dùng lời nhắc hệ thống mặc định.\n\n'
+      'Tùy chỉnh cách AI hành xử, dùng công cụ nào,\n'
+      'và cách định dạng câu trả lời.',
+  'Reset the @ mention suggestion index to pick up any new or updated books/headings.':
+      'Đặt lại chỉ mục gợi ý @ để cập nhật các sách/tiêu đề mới hoặc đã '
+      'thay đổi.',
+  'Attached headings': 'Tiêu đề đã đính kèm',
+  'Clear all': 'Xóa tất cả',
 
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'Hỏi về Tipitaka…',

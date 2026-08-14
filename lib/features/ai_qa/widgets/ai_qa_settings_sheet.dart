@@ -44,6 +44,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   // Model fetching
   bool _loadingModels = false;
   List<String> _availableModels = [];
+
+  /// Models the provider reports as completely free (OpenRouter only).
+  List<String> _freeModels = [];
   String? _modelsError;
 
   /// Last API key that was successfully validated against the provider.
@@ -81,6 +84,13 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       text: settings.maxQueriesPerChat.toString(),
     );
     _selectedProvider = settings.provider;
+    // Prefill the base URL for OpenAI-compatible providers so the field is
+    // never empty when opened (and the fetch works out of the box).
+    // Gemini's endpoint is hardcoded, so it is left untouched.
+    if (settings.provider != AiProvider.gemini &&
+        _baseUrlController.text.trim().isEmpty) {
+      _baseUrlController.text = settings.provider.defaultBaseUrl;
+    }
     _apiKeyFocusNode = FocusNode()..addListener(_onApiKeyFocusChanged);
   }
 
@@ -127,6 +137,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       _lastValidatedKey = key;
       if (result.isSuccess) {
         _availableModels = result.models;
+        _freeModels = result.freeModels;
         _keyIsValid = true;
         _keyCheckFailed = false;
         _autoFillModelFieldsIfEmpty();
@@ -160,8 +171,13 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   void _autoFillModelFieldsIfEmpty() {
     if (_availableModels.isEmpty) return;
 
-    // The fetched list is sorted descending, so `.first` is the newest
-    // (preferred) model, e.g. gemini-flash-lite-latest / gemini-flash-latest.
+    if (_selectedProvider == AiProvider.openrouter) {
+      _autoFillOpenRouterModels();
+      return;
+    }
+
+    // Gemini / OpenAI: the fetched list is sorted descending, so `.first`
+    // is the newest (preferred) model, e.g. gemini-flash-lite-latest.
     final tool = _toolModelController.text.trim();
     if (tool.isEmpty || !_availableModels.contains(tool)) {
       final flashLite = _availableModels
@@ -184,6 +200,61 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
           .toList();
       final fallback = flash.isNotEmpty ? flash.first : _availableModels.first;
       _answerModelController.text = fallback;
+    }
+  }
+
+  /// Auto-pick free OpenRouter models (never hardcoded — free detection comes
+  /// from the API's pricing data). Prefers a fast/cheap model for tool
+  /// orchestration and a more capable one for the final answer.
+  void _autoFillOpenRouterModels() {
+    // Prefer free models when the provider reports any; otherwise fall back
+    // to the full list (e.g. a key with only paid models).
+    final pool = _freeModels.isNotEmpty ? _freeModels : _availableModels;
+
+    bool looksFast(String id) {
+      final lower = id.toLowerCase();
+      return lower.contains('flash') ||
+          lower.contains('lite') ||
+          lower.contains('mini') ||
+          lower.contains('small') ||
+          lower.contains('haiku') ||
+          lower.contains('nano');
+    }
+
+    bool looksCapable(String id) {
+      final lower = id.toLowerCase();
+      return lower.contains('pro') ||
+          lower.contains('maverick') ||
+          lower.contains('thinking') ||
+          lower.contains('sonnet') ||
+          lower.contains('opus') ||
+          lower.contains('r1') ||
+          lower.contains('flash') ||
+          lower.contains('3.5') ||
+          lower.contains('4.0') ||
+          lower.contains('v3');
+    }
+
+    final tool = _toolModelController.text.trim();
+    if (tool.isEmpty || !_availableModels.contains(tool)) {
+      final fast = pool.where(looksFast).toList();
+      _toolModelController.text =
+          fast.isNotEmpty ? fast.first : pool.first;
+    }
+
+    final answer = _answerModelController.text.trim();
+    if (answer.isEmpty || !_availableModels.contains(answer)) {
+      final capable = pool.where(looksCapable).toList();
+      final fallback =
+          capable.isNotEmpty ? capable.first : pool.first;
+      // Don't use the same model for both roles if we can help it.
+      _answerModelController.text = fallback == _toolModelController.text &&
+              pool.length > 1
+          ? pool.firstWhere(
+              (m) => m != _toolModelController.text,
+              orElse: () => fallback,
+            )
+          : fallback;
     }
   }
 
@@ -296,7 +367,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'AI Q&A Settings',
+                    loc.aiQaSettings,
                     style: AppTypography.headlineSmall.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.bold,
@@ -312,7 +383,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Provider ─────────────────────────────────────────
-              _sectionLabel(colors, 'AI Provider'),
+              _sectionLabel(colors, loc.aiProvider),
               const SizedBox(height: 6),
               DropdownButtonFormField<AiProvider>(
                 initialValue: _selectedProvider,
@@ -329,7 +400,15 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     setState(() {
                       _selectedProvider = value;
                       _availableModels = [];
+                      _freeModels = [];
                       _modelsError = null;
+                      // Provider default base URL is the sensible start
+                      // unless the user already customised one. Gemini's
+                      // endpoint is hardcoded, so skip it.
+                      if (value != AiProvider.gemini &&
+                          _baseUrlController.text.trim().isEmpty) {
+                        _baseUrlController.text = value.defaultBaseUrl;
+                      }
                     });
                   }
                 },
@@ -340,7 +419,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── API Key ─────────────────────────────────────────
-              _sectionLabel(colors, 'API Key'),
+              _sectionLabel(colors, loc.apiKey),
               const SizedBox(height: 6),
               TextField(
                 controller: _apiKeyController,
@@ -354,13 +433,16 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     _keyCheckFailed = false;
                     _modelsError = null;
                     _availableModels = [];
+                    _freeModels = [];
                   });
                 },
                 onSubmitted: (_) => _validateApiKey(),
                 decoration: InputDecoration(
-                  hintText: _selectedProvider == AiProvider.gemini
-                      ? 'AIza...'
-                      : 'sk-...',
+                  hintText: switch (_selectedProvider) {
+                    AiProvider.gemini => 'AIza...',
+                    AiProvider.openrouter => 'sk-or-...',
+                    AiProvider.openai => 'sk-...',
+                  },
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
@@ -397,6 +479,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                             _keyCheckFailed = false;
                             _modelsError = null;
                             _availableModels = [];
+                            _freeModels = [];
                             ref
                                 .read(aiQaSettingsProvider.notifier)
                                 .clearApiKey();
@@ -409,25 +492,27 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 6),
 
-              // ── Beginner guide: get a free Gemini key ───────────
-              if (_selectedProvider == AiProvider.gemini)
-                _buildGeminiGuide(colors),
+              // ── Beginner guide: get a free API key ──────────────
+              if (_selectedProvider == AiProvider.gemini ||
+                  _selectedProvider == AiProvider.openrouter)
+                _buildProviderGuide(colors),
               const SizedBox(height: 20),
 
               // ── Help links ───────────────────────────────────────
               _HelpLinks(provider: _selectedProvider),
               const SizedBox(height: 20),
 
-              // ── Base URL (OpenAI only) ───────────────────────────
-              if (_selectedProvider == AiProvider.openai) ...[
-                _sectionLabel(colors, 'Base URL'),
+              // ── Base URL (OpenAI-compatible providers) ─────────
+              if (_selectedProvider == AiProvider.openai ||
+                  _selectedProvider == AiProvider.openrouter) ...[
+                _sectionLabel(colors, loc.baseUrl),
                 const SizedBox(height: 6),
                 TextField(
                   controller: _baseUrlController,
                   maxLines: 1,
                   style: TextStyle(color: colors.onSurface, fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'https://api.openai.com/v1',
+                    hintText: _selectedProvider.defaultBaseUrl,
                     hintStyle: TextStyle(
                       color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                     ),
@@ -449,7 +534,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
+                  loc.baseUrlExamples,
                   style: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                     fontSize: 10,
@@ -474,8 +559,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       : const Icon(Icons.cloud_download_outlined, size: 18),
                   label: Text(
                     _loadingModels
-                        ? 'Checking key & loading models...'
-                        : 'Check key & load models',
+                        ? loc.checkingKeyLoadingModels
+                        : loc.checkKeyLoadModels,
                   ),
                 ),
               ),
@@ -507,7 +592,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               if (_availableModels.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '${_availableModels.length} models found',
+                  loc.modelsFound(_availableModels.length),
                   style: AppTypography.labelSmall.copyWith(
                     color: Colors.green[600],
                     fontSize: 11,
@@ -517,19 +602,18 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Tool Model ──────────────────────────────────────
-              _sectionLabel(
-                colors,
-                'Tool Model (for search & function calling)',
-              ),
+              _sectionLabel(colors, loc.toolModelLabel),
               const SizedBox(height: 6),
               _buildModelField(
                 controller: _toolModelController,
                 colors: colors,
-                hintText: 'gemini-flash-latest-latest',
+                hintText: _selectedProvider == AiProvider.openrouter
+                    ? 'google/gemini-2.5-flash-lite:free'
+                    : 'gemini-flash-latest-latest',
               ),
               const SizedBox(height: 4),
               Text(
-                'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)',
+                loc.toolModelHint,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -538,19 +622,18 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(height: 20),
 
               // ── Answer Model ────────────────────────────────────
-              _sectionLabel(
-                colors,
-                'Answer Model (for final answer generation)',
-              ),
+              _sectionLabel(colors, loc.answerModelLabel),
               const SizedBox(height: 6),
               _buildModelField(
                 controller: _answerModelController,
                 colors: colors,
-                hintText: 'gemini-flash-latest',
+                hintText: _selectedProvider == AiProvider.openrouter
+                    ? 'meta-llama/llama-4-maverick:free'
+                    : 'gemini-flash-latest',
               ),
               const SizedBox(height: 4),
               Text(
-                'Capable model for final answers (e.g. gemini-2.0-flash, gemini-2.5-flash)',
+                loc.answerModelHint,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -564,7 +647,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   Icon(Icons.text_snippet, size: 16, color: colors.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Max chars per tool result',
+                    loc.maxCharsPerToolResult,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -579,7 +662,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 keyboardType: TextInputType.number,
                 style: TextStyle(color: colors.onSurface, fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: '0 = no truncation',
+                  hintText: loc.zeroNoTruncation,
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
@@ -599,9 +682,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Max characters per tool result sent to the model. '
-                'Set to 0 for no truncation (full content). '
-                'Large values may increase API usage.',
+                loc.maxCharsPerToolResultDesc,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -615,7 +696,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   Icon(Icons.token, size: 16, color: colors.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Answer max output tokens',
+                    loc.answerMaxOutputTokens,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -650,9 +731,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Max output tokens for the answer model. '
-                'Higher values allow longer answers. '
-                '(Default: 64000)',
+                loc.answerMaxOutputTokensDesc,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -666,7 +745,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   Icon(Icons.forum, size: 16, color: colors.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Max queries per chat',
+                    loc.maxQueriesPerChat,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -701,8 +780,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Max user queries (messages) allowed per chat thread before starting a new one. '
-                '(Default: 8, min: 1)',
+                loc.maxQueriesPerChatDesc,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -716,7 +794,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   Icon(Icons.psychology, size: 16, color: colors.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Custom System Prompt (optional)',
+                    loc.customSystemPrompt,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -734,10 +812,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   fontFamily: 'monospace',
                 ),
                 decoration: InputDecoration(
-                  hintText:
-                      'Leave empty to use the default system prompt.\n\n'
-                      'Customize how the AI behaves, what tools to use,\n'
-                      'and how to format answers.',
+                  hintText: loc.customSystemPromptHint,
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.4),
                     fontSize: 12,
@@ -770,7 +845,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                           ),
                         )
                       : const Icon(Icons.check, size: 20),
-                  label: Text(_saving ? 'Saving...' : 'Save Settings'),
+                  label: Text(_saving ? loc.saving : loc.saveSettings),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -786,7 +861,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   Icon(Icons.refresh, size: 16, color: colors.primary),
                   const SizedBox(width: 6),
                   Text(
-                    'Suggestion Index',
+                    loc.suggestionIndex,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -796,8 +871,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Reset the @ mention suggestion index to pick up any '
-                'new or updated books/headings.',
+                loc.suggestionIndexDesc,
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.6),
                   fontSize: 10,
@@ -829,6 +903,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   /// Status banner that reflects the live validation state of the API key
   /// field (empty / typed / checking / valid / failed).
   Widget _buildStatusCard(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
     final hasKey = _apiKeyController.text.trim().isNotEmpty;
 
     final IconData icon;
@@ -838,27 +913,29 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     if (!hasKey) {
       icon = Icons.warning_amber;
       color = Colors.orange[700]!;
-      text = _selectedProvider == AiProvider.gemini
-          ? 'API key required — get your free Gemini key below'
-          : 'API key required — enter your key below';
+      text = switch (_selectedProvider) {
+        AiProvider.gemini => loc.apiKeyRequiredGemini,
+        AiProvider.openrouter => loc.apiKeyRequiredOpenRouter,
+        AiProvider.openai => loc.apiKeyRequired,
+      };
     } else if (_loadingModels) {
       icon = Icons.sync;
       color = Colors.blue[700]!;
-      text = 'Checking API key...';
+      text = loc.checkingApiKey;
     } else if (_keyCheckFailed) {
       icon = Icons.error_outline;
       color = Colors.red[700]!;
-      text = 'API key rejected — see the error below';
+      text = loc.apiKeyRejected;
     } else if (_keyIsValid) {
       icon = Icons.check_circle;
       color = Colors.green[700]!;
       text = _availableModels.isNotEmpty
-          ? 'API key valid — ${_availableModels.length} models available'
-          : 'API key valid';
+          ? loc.apiKeyValidModels(_availableModels.length)
+          : loc.apiKeyValid;
     } else {
       icon = Icons.info_outline;
       color = Colors.blue[700]!;
-      text = 'Key entered — press Enter or "Check key" to verify';
+      text = loc.keyEnteredVerify;
     }
 
     return Container(
@@ -886,9 +963,22 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
   }
 
   /// Step-by-step card that walks a non-technical user through getting a
-  /// free Gemini API key and pasting it back here.
-  Widget _buildGeminiGuide(ColorScheme colors) {
+  /// free API key for the selected provider and pasting it back here.
+  Widget _buildProviderGuide(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
+    final isGemini = _selectedProvider == AiProvider.gemini;
+    final title = isGemini ? loc.getFreeGeminiKey : loc.getFreeOpenRouterKey;
+    final intro =
+        isGemini ? loc.geminiFree4Steps : loc.openRouterFree4Steps;
+    final steps = isGemini
+        ? [loc.guideStep1, loc.guideStep2, loc.guideStep3, loc.guideStep4]
+        : [
+            loc.openRouterStep1,
+            loc.openRouterStep2,
+            loc.openRouterStep3,
+            loc.openRouterStep4,
+          ];
+    final footer = isGemini ? loc.noCreditCard : loc.openRouterFreeNote;
     return Container(
       padding: const EdgeInsets.all(AppDimensions.md),
       decoration: BoxDecoration(
@@ -920,7 +1010,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Get a free Gemini API key',
+                  title,
                   style: AppTypography.labelMedium.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w700,
@@ -931,28 +1021,14 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Gemini is free for everyone — just 4 easy steps:',
+            intro,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
-          _guideStep(colors, '1', 'Tap "Get free Gemini API key" below.'),
-          _guideStep(
-            colors,
-            '2',
-            'Sign in with your Google account (free, no credit card).',
-          ),
-          _guideStep(
-            colors,
-            '3',
-            'Tap "Create API key" and copy it (it starts with AIza).',
-          ),
-          _guideStep(
-            colors,
-            '4',
-            'Paste it in the API Key field above — it is checked automatically.',
-          ),
+          for (var i = 0; i < steps.length; i++)
+            _guideStep(colors, '${i + 1}', steps[i]),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -960,13 +1036,12 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               onPressed: () =>
                   _openUrl(context, _selectedProvider.apiKeyCreationUrl),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: Text(loc.getFreeGeminiKey),
+              label: Text(title),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'No credit card needed. The free tier includes generous daily '
-            'limits for Gemini Flash models.',
+            footer,
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.8),
               fontSize: 10,
