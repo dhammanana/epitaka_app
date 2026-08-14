@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
+
+import 'drift_database_executor.dart';
 
 part 'epitaka_database.g.dart';
 
@@ -128,13 +129,12 @@ class EpitakaDatabase extends _$EpitakaDatabase {
       throw Exception('Database not found at $dbPath');
     }
 
-    final database = NativeDatabase(
+    final database = openDriftExecutor(
       file,
       setup: (db) {
         db.execute('PRAGMA journal_mode=WAL');
         db.execute('PRAGMA foreign_keys=ON');
       },
-      logStatements: false,
     );
 
     return EpitakaDatabase(database);

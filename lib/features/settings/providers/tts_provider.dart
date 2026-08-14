@@ -8,6 +8,7 @@ import 'package:supertonic_flutter/supertonic_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../services/tts_audio_handler.dart';
 
 /// TTS playback state.
@@ -59,7 +60,40 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   double _cachedRate = -1.0;  // sentinel — never a valid rate
   double _cachedPitch = -1.0;
   String _cachedLanguage = '';
-  String _cachedVoice = '';
+
+  /// Cached `getVoices()` result. In Translation+Pāli mode the language
+  /// alternates every line, which used to re-fetch voices per line pair;
+  /// `getVoices()` is a slow channel call (and the first one after a
+  /// second engine instance is known to balloon to 500ms+). Refreshed per
+  /// session in [stop] so a newly-installed voice shows up.
+  List<Map<String, String>>? _voicesCache;
+
+  /// Key of the last voice configuration applied, "<lang>|<voiceName>".
+  /// Guards [setVoice]/[clearVoice] calls so they only happen when the
+  /// language or chosen voice actually changed.
+  String _cachedVoiceKey = '';
+
+  /// Language of the text currently being spoken (null = derive from
+  /// settings). Used to re-apply the right engine language on resume.
+  String? _currentLanguage;
+
+  /// Roman source of the Pāli line currently being spoken (see
+  /// `TtsLineItem.paliRoman`). Used on resume to re-apply the fallback
+  /// script decision.
+  String? _currentPaliRoman;
+
+  /// Pāli speech plan chosen for the current session: which script
+  /// ('si' | 'hi' | 'th' | 'my' | 'roman') and which language to speak it
+  /// in. Resolved on the first Pāli line by probing what the engine can
+  /// actually speak, then reused. Reset in [stop] so a newly-installed
+  /// voice is picked up next session.
+  ({String script, String language})? _paliPlan;
+
+  /// Set when the engine had to fall back because Sinhala isn't
+  /// speakable on this device/engine (supertonic has no Sinhala; most
+  /// system engines have no Sinhala voice installed). Read by the TTS UI
+  /// to tell the user once per session instead of silently skipping.
+  String? paliFallbackNotice;
 
   TtsNotifier(this._ref) : super(TtsPlaybackState.stopped);
 
@@ -269,23 +303,42 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Speak the given [text] using the configured TTS engine and await completion.
-  Future<void> speak(String text) async {
+  ///
+  /// [language] optionally overrides the TTS language (e.g. 'si' for
+  /// Sinhala-converted Pāli). When null, the language is derived from the
+  /// first enabled translation.
+  Future<void> speak(
+    String text, {
+    String? language,
+    String? paliRoman,
+  }) async {
     if (text.trim().isEmpty) return;
     _currentText = text;
+    _currentLanguage = language;
+    _currentPaliRoman = paliRoman;
     developer.log('[TTS] speak() called: text.length=${text.length} text="${text.length > 40 ? '${text.substring(0, 40)}...' : text}"', name: 'epitaka.tts');
 
     // Increment speech ID BEFORE stop() so the completion handler
     // that fires from stop() won't match the new speech (Bug 2 fix).
     _currentSpeechId++;
-    await stop();
+    // Skip the redundant stop() when the engine is already idle. The
+    // reading flow awaits each line's completion before speaking the
+    // next, so the engine is stopped here; calling stop() anyway costs a
+    // platform-channel round trip AND resets _audioSessionConfigured,
+    // forcing the next line to reconfigure the audio session and
+    // re-register the becoming-noisy listener — a large chunk of the
+    // audible gap between sentences.
+    if (state != TtsPlaybackState.stopped) {
+      await stop();
+    }
 
     final start = DateTime.now();
     try {
       switch (_engineType) {
         case TtsEngineType.system:
-          await _speakSystem(text);
+          await _speakSystem(text, language, paliRoman);
         case TtsEngineType.supertonic:
-          await _speakSupertonic(text);
+          await _speakSupertonic(text, language, paliRoman);
       }
       await _waitForCompletion(text);
       final elapsed = DateTime.now().difference(start).inMilliseconds;
@@ -309,15 +362,41 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// captured in a closure. When [_currentSpeechId] advances (next line,
   /// stop, pause), stale handler invocations are detected and ignored
   /// (Bug 2 fix).
-  Future<void> _speakSystem(String text) async {
+  Future<void> _speakSystem(
+    String text,
+    String? language,
+    String? paliRoman,
+  ) async {
     final tts = await _getFlutterTts();
     final settings = _ref.read(settingsProvider);
     final speechId = _currentSpeechId; // captured for handler guard
 
     final start = DateTime.now();
 
-    // Rate — only call platform if changed
-    final rate = _mapSpeedToSystemRate(settings.ttsSpeed);
+    // Resolve the language to actually speak BEFORE the rate/pitch/language
+    // setup. Pāli is always spoken in Devanagari with a Hindi voice (it
+    // reads Pāli best). If no Hindi voice is installed the engine falls
+    // back to Sinhala, then ASCII Roman with an English voice — otherwise
+    // the engine speaks Devanagari glyphs with the wrong voice (mangled
+    // audio) or completes instantly (a silent skip).
+    final ttsLangCode = language ?? _ttsLanguageFromSettings(settings);
+    final isPaliLine =
+        language == 'si' && paliRoman != null && paliRoman.isNotEmpty;
+    String speakText = text;
+    String effectiveLang = ttsLangCode;
+    if (isPaliLine) {
+      final plan = await _paliSpeechForSystem(tts, text, paliRoman);
+      speakText = plan.text;
+      effectiveLang = plan.language;
+      // Notice only when Hindi wasn't available and the engine fell back.
+      if (plan.script != 'hi') _notePaliFallback(plan.script);
+    }
+
+    // Rate — only call platform if changed. Pāli lines have their own
+    // speed (ttsPaliSpeed) so Pāli can be read at a different pace than
+    // the translation.
+    final speed = isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed;
+    final rate = _mapSpeedToSystemRate(speed);
     if (rate != _cachedRate) {
       await tts.setSpeechRate(rate);
       _cachedRate = rate;
@@ -329,33 +408,58 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       _cachedPitch = settings.ttsPitch;
     }
 
-    // TTS language — derive from the first enabled translation.
-    // Follows the user's translation order in settings.
-    final ttsLangCode = _ttsLanguageFromSettings(settings);
-    final ttsLocale = _ttsLocaleForLanguage(ttsLangCode);
+    // TTS language — either the line's own language (e.g. 'si' for
+    // Sinhala-converted Pāli) or, by default, the first enabled
+    // translation following the user's translation order in settings.
+    // Only cache the locale when it was actually applied: a failed
+    // setLanguage (voice not installed) must not be cached, or the
+    // engine keeps the wrong voice for the rest of the session.
+    final ttsLocale = _ttsLocaleForLanguage(effectiveLang);
     if (ttsLocale != _cachedLanguage) {
-      developer.log('[TTS] Setting language to $ttsLocale (from $ttsLangCode)',
-          name: 'epitaka.tts');
-      await tts.setLanguage(ttsLocale);
-      _cachedLanguage = ttsLocale;
+      developer.log(
+        '[TTS] Setting language to $ttsLocale (from $effectiveLang)',
+        name: 'epitaka.tts',
+      );
+      if (await _applyLanguage(tts, ttsLocale)) {
+        _cachedLanguage = ttsLocale;
+      }
     }
 
     // TTS voice — apply the user's chosen voice from the system voice
-    // list, if one is set. Voices come from [getVoices] (name + locale).
-    // Only re-apply when the voice name actually changed to avoid
-    // redundant platform calls per line.
+    // list, if one is set AND it belongs to the language being spoken.
+    // Voices come from [getVoices] (name + locale). Skipping the
+    // explicit voice for other languages (e.g. an English voice would
+    // garble Sinhala-converted Pāli) prevents the saved voice from
+    // overriding the language setting. Only re-apply when the
+    // (language, voice) pair actually changed to avoid redundant
+    // platform calls per line.
     final voiceName = settings.ttsVoice;
+    final voiceKey = '$effectiveLang|$voiceName';
     if (voiceName.isNotEmpty &&
         voiceName != 'default' &&
-        voiceName != _cachedVoice) {
+        voiceKey != _cachedVoiceKey) {
       try {
         final voices = await getVoices();
-        final match = voices.where((v) => v['name'] == voiceName);
-        if (match.isNotEmpty) {
-          await tts.setVoice(match.first);
-          _cachedVoice = voiceName;
-          developer.log('[TTS] Applied system voice "$voiceName"',
-              name: 'epitaka.tts');
+        final matches = voices.where((v) => v['name'] == voiceName).toList();
+        if (matches.isNotEmpty) {
+          final voiceLang =
+              (matches.first['locale'] ?? '').split(RegExp(r'[-_]')).first;
+          if (voiceLang.toLowerCase() == effectiveLang.toLowerCase()) {
+            await tts.setVoice(matches.first);
+            developer.log(
+              '[TTS] Applied system voice "$voiceName" for $effectiveLang',
+              name: 'epitaka.tts',
+            );
+          } else {
+            // Voice belongs to a different language — clear it so the
+            // language setting drives (critical for Sinhala Pāli).
+            await tts.clearVoice();
+            developer.log(
+              '[TTS] Voice "$voiceName" ($voiceLang) skipped for '
+              '$effectiveLang — cleared to default',
+              name: 'epitaka.tts',
+            );
+          }
         } else {
           developer.log(
             '[TTS] Voice "$voiceName" not found in system voices — '
@@ -366,6 +470,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       } catch (e) {
         developer.log('[TTS] setVoice failed: $e', name: 'epitaka.tts');
       }
+      _cachedVoiceKey = voiceKey;
     }
 
     // Set completion handler with speech-ID guard to prevent stale
@@ -409,11 +514,185 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     await _configureAudioSession();
     state = TtsPlaybackState.playing;
-    _broadcastToAudioService();
-    await tts.speak(text);
+    _broadcastToAudioService();    await tts.speak(speakText);
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     developer.log('[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId', name: 'epitaka.tts');
-  }  /// Whether the current engine supports look-ahead synthesis.
+  }
+
+  /// Decide how to speak a Pāli line with the system engine. Resolves
+  /// once per session ([_paliPlan]) which script to use — Hindi
+  /// (Devanagari) first, then Sinhala, then ASCII Roman with an English
+  /// voice — by probing which voices are actually installed. The probe
+  /// applies the chosen language as a side effect, so [_cachedLanguage]
+  /// is kept in sync.
+  Future<({String text, String language, String script})>
+      _paliSpeechForSystem(
+    FlutterTts tts,
+    String sinhalaText,
+    String romanText,
+  ) async {
+    _paliPlan ??= await _resolvePaliScript(tts);
+    final plan = _paliPlan!;
+    final speech = paliSpeechText(
+      sinhalaText,
+      romanText,
+      script: plan.script,
+      language: plan.language,
+    );
+    return (
+      text: speech.text,
+      language: speech.language,
+      script: plan.script,
+    );
+  }
+
+  /// Probe which Pāli script the system engine can actually speak:
+  /// Hindi (preferred), then Sinhala, then Roman. 'roman' always succeeds
+  /// — with an English voice, or the reading language as a last resort —
+  /// so this never returns null.
+  Future<({String script, String language})> _resolvePaliScript(
+    FlutterTts tts,
+  ) async {
+    final settings = _ref.read(settingsProvider);
+    const candidates = ['hi', 'si', 'roman'];
+    for (final script in candidates) {
+      if (script == 'roman') {
+        // Latin reads best with an English voice.
+        if (await _applyLanguage(tts, 'en-US')) {
+          _cachedLanguage = 'en-US';
+          return (script: 'roman', language: 'en');
+        }
+        final fallback = _ttsLanguageFromSettings(settings);
+        final fallbackLocale = _ttsLocaleForLanguage(fallback);
+        if (await _applyLanguage(tts, fallbackLocale)) {
+          _cachedLanguage = fallbackLocale;
+        }
+        return (script: 'roman', language: fallback);
+      }
+      final locale = _ttsLocaleForLanguage(script);
+      if (await _applyLanguage(tts, locale)) {
+        _cachedLanguage = locale;
+        return (script: script, language: script);
+      }
+    }
+    // Unreachable — 'roman' always returns. Defensive fallback.
+    return (
+      script: 'roman',
+      language: _ttsLanguageFromSettings(settings),
+    );
+  }
+
+  /// Prepare a Pāli line for the Supertonic engine. Its 31 languages have
+  /// no Sinhala, so Pāli is always spoken in Devanagari with a Hindi
+  /// voice.
+  ({String text, String language}) _paliForSupertonic(
+    String sinhalaText,
+    String romanText,
+  ) {
+    return paliSpeechText(
+      sinhalaText,
+      romanText,
+      script: 'hi',
+      language: 'hi',
+    );
+  }
+
+  /// Write [romanText]'s Pāli in [script] for the TTS voice, paired with
+  /// the [language] the engine should speak it in. 'roman' strips the
+  /// IAST diacritics so any (English) voice can read it. Pure + static.
+  static ({String text, String language}) paliSpeechText(
+    String sinhalaText,
+    String romanText, {
+    required String script,
+    required String language,
+  }) {
+    switch (script) {
+      case 'si':
+        return (text: sinhalaText, language: language);
+      case 'hi':
+        return (
+          text: TextProcessor.convert(sinhalaText, Script.devanagari),
+          language: language,
+        );
+      default:
+        return (text: asciiRomanPali(romanText), language: language);
+    }
+  }
+
+  /// Strip IAST diacritics from Roman Pāli so any TTS voice can read it
+  /// ("evaṃ me sutaṃ" → "evam me sutam"); English voices mangle ā/ṭ/ṃ.
+  static String asciiRomanPali(String text) {
+    const map = <String, String>{
+      'ā': 'a',
+      'ī': 'i',
+      'ū': 'u',
+      'ṅ': 'n',
+      'ñ': 'n',
+      'ṭ': 't',
+      'ḍ': 'd',
+      'ṇ': 'n',
+      'ḷ': 'l',
+      'ṃ': 'm',
+      'ṁ': 'm',
+      'Ā': 'A',
+      'Ī': 'I',
+      'Ū': 'U',
+      'Ṅ': 'N',
+      'Ñ': 'N',
+      'Ṭ': 'T',
+      'Ḍ': 'D',
+      'Ṇ': 'N',
+      'Ḷ': 'L',
+      'Ṃ': 'M',
+      'Ṁ': 'M',
+    };
+    final sb = StringBuffer();
+    for (final ch in text.split('')) {
+      sb.write(map[ch] ?? ch);
+    }
+    return sb.toString();
+  }
+
+  /// Set the system engine's language; returns whether it was applied
+  /// (flutter_tts returns 1 on success, 0 when the locale/voice isn't
+  /// available on this device). Used both as the normal language setter
+  /// and as the availability probe for the Pāli fallback chain.
+  Future<bool> _applyLanguage(FlutterTts tts, String locale) async {
+    try {
+      final res = await tts.setLanguage(locale);
+      final ok = res == true || res == 1;
+      developer.log(
+        '[TTS] setLanguage($locale) → ${ok ? 'ok' : 'unavailable'}',
+        name: 'epitaka.tts',
+      );
+      return ok;
+    } catch (e) {
+      developer.log(
+        '[TTS] setLanguage($locale) failed: $e',
+        name: 'epitaka.tts',
+      );
+      return false;
+    }
+  }
+
+  /// Record (once per session) that the engine fell back from Hindi to
+  /// [script] (no Hindi voice installed), so the UI can tell the user
+  /// instead of silently skipping Pāli lines.
+  void _notePaliFallback(String script) {
+    if (paliFallbackNotice != null) return;
+    paliFallbackNotice =
+        'Reading Pāli in ${_paliScriptLabel(script)} '
+        '(Devanagari (Hindi) voice not available).';
+    developer.log('[TTS] Pāli fallback: $paliFallbackNotice', name: 'epitaka.tts');
+  }
+
+  /// Display name of a Pāli TTS script key.
+  static String _paliScriptLabel(String script) => switch (script) {
+    'si' => 'Sinhala',
+    _ => 'Roman (English)',
+  };
+
+  /// Whether the current engine supports look-ahead synthesis.
   bool get supportsPrefetch => _engineType == TtsEngineType.supertonic;
 
   /// Map the quality preset to Supertonic denoising steps.
@@ -431,21 +710,41 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Synthesize [text] via Supertonic WITHOUT playing it.
-  Future<dynamic> synthesizePrepared(String text) async {
+  ///
+  /// [language] optionally overrides the TTS language (e.g. 'si' for
+  /// Sinhala-converted Pāli). When null, follows the reading language.
+  /// Pāli lines are re-encoded for a script Supertonic can speak (it has
+  /// no Sinhala voice).
+  Future<dynamic> synthesizePrepared(
+    String text, {
+    String? language,
+    String? paliRoman,
+  }) async {
     await _ensureSupertonicInitialized();
     if (_supertonicTts == null) {
       throw Exception('Supertonic TTS not initialized');
     }
     final settings = _ref.read(settingsProvider);
+    var speakText = text;
+    var effectiveLanguage = language ?? _ttsLanguageFromSettings(settings);
+    var isPaliLine = false;
+    if (language == 'si' && paliRoman != null && paliRoman.isNotEmpty) {
+      final plan = _paliForSupertonic(text, paliRoman);
+      speakText = plan.text;
+      effectiveLanguage = plan.language;
+      isPaliLine = true;
+    }
     return _supertonicTts!.synthesize(
-      text,
-      // Follow the reading language (first enabled translation).
-      language: _ttsLanguageFromSettings(settings),
+      speakText,
+      // Follow the reading language (first enabled translation) unless
+      // the line carries its own language (e.g. Pāli).
+      language: effectiveLanguage,
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
         denoisingSteps:
             _denoisingStepsForQuality(settings.ttsSupertonicQuality),
-        speechSpeed: settings.ttsSpeed,
+        speechSpeed:
+            isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
       ),
     );
   }
@@ -464,7 +763,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Speak using Supertonic TTS.
-  Future<void> _speakSupertonic(String text) async {
+  Future<void> _speakSupertonic(
+    String text,
+    String? language,
+    String? paliRoman,
+  ) async {
     await _ensureSupertonicInitialized();
     if (_supertonicTts == null || _player == null) {
       throw Exception('Supertonic TTS not initialized');
@@ -473,17 +776,29 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     final settings = _ref.read(settingsProvider);
     final speechId = _currentSpeechId;
 
+    var speakText = text;
+    var effectiveLanguage = language ?? _ttsLanguageFromSettings(settings);
+    var isPaliLine = false;
+    if (language == 'si' && paliRoman != null && paliRoman.isNotEmpty) {
+      final plan = _paliForSupertonic(text, paliRoman);
+      speakText = plan.text;
+      effectiveLanguage = plan.language;
+      isPaliLine = true;
+    }
+
     state = TtsPlaybackState.loading;
 
     final result = await _supertonicTts!.synthesize(
-      text,
-      // Follow the reading language (first enabled translation).
-      language: _ttsLanguageFromSettings(settings),
+      speakText,
+      // Follow the reading language (first enabled translation) unless
+      // the line carries its own language (e.g. Pāli).
+      language: effectiveLanguage,
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
         denoisingSteps:
             _denoisingStepsForQuality(settings.ttsSupertonicQuality),
-        speechSpeed: settings.ttsSpeed,
+        speechSpeed:
+            isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
       ),
     );
 
@@ -502,12 +817,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// call (setLanguage, setSpeechRate, setPitch) balloons from 1-4ms to
   /// 500+ms, introducing multi-second gaps between spoken lines.
   Future<List<Map<String, String>>> getVoices() async {
+    if (_voicesCache != null) return _voicesCache!;
     final tts = await _getFlutterTts();
     final result = await tts.getVoices;
     if (result is List) {
-      return result
+      _voicesCache = result
           .map((v) => Map<String, String>.from(v as Map))
           .toList();
+      return _voicesCache!;
     }
     return [];
   }
@@ -515,6 +832,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Stop current TTS playback.
   Future<void> stop() async {
     _currentSpeechId++; // Invalidate stale completion handlers
+    // Forget the Pāli script decision + fallback notice + voice cache so
+    // the next session re-probes (picks up a newly-installed voice).
+    _paliPlan = null;
+    paliFallbackNotice = null;
+    _voicesCache = null;
     try {
       if (_flutterTts != null) {
         await _flutterTts!.stop();
@@ -565,7 +887,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       switch (_engineType) {
         case TtsEngineType.system:
           if (_currentText != null) {
-            await _speakSystem(_currentText!);
+            await _speakSystem(
+              _currentText!,
+              _currentLanguage,
+              _currentPaliRoman,
+            );
           } else {
             state = TtsPlaybackState.stopped;
             return;

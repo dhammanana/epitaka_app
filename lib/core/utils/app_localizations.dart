@@ -410,6 +410,7 @@ class AppLocalizations {
   String get ttsEngine => _t('TTS Engine');
   String get ttsVoiceLabel => _t('Voice');
   String get ttsSpeed => _t('Speed');
+  String get ttsPaliSpeed => _t('Pāli speed');
   String get ttPitch => _t('Pitch');
   String get ttsLanguageLabel => _t('Language');
   String get engine => _t('Engine');
@@ -446,6 +447,24 @@ class AppLocalizations {
   String get medium => _t('Medium');
   String get ttsLanguageAutoNote =>
       _t('Follows the reading language (first enabled translation)');
+  String get ttsSpeakMode => _t('Speak');
+  String get ttsSpeakTranslation => _t('Translation');
+  String get ttsSpeakTranslationDesc =>
+      _t('Reads the translation aloud');
+  String get ttsSpeakPali => _t('Pāli');
+  String get ttsSpeakPaliDesc => _t(
+      'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation');
+  String get ttsSpeakBoth => _t('Translation + Pāli');
+  String get ttsSpeakBothShort => _t('Both');
+  String get ttsSpeakBothDesc => _t(
+      'Reads the Pāli first, then its translation');
+  String get ttsInstallVoice => _t('Install voice');
+  String get ttsInstallVoiceHint => _t(
+      'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)');
+  String get ttsVoiceMissingHint => _t(
+      'This voice is not installed on your device. Tap "Install voice" to add it.');
+  String get ttsPreview => _t('Preview');
+  String get translationNote => _t('Translation note');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN

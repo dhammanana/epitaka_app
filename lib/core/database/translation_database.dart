@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
+
+import 'drift_database_executor.dart';
 
 part 'translation_database.g.dart';
 
@@ -40,13 +41,12 @@ class TranslationDatabase extends _$TranslationDatabase {
       throw Exception('Translation database not found at $dbPath');
     }
 
-    final database = NativeDatabase(
+    final database = openDriftExecutor(
       file,
       setup: (db) {
         db.execute('PRAGMA journal_mode=WAL');
         db.execute('PRAGMA foreign_keys=ON');
       },
-      logStatements: false,
     );
 
     return TranslationDatabase(database);

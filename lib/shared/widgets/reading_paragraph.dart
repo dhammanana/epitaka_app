@@ -452,6 +452,7 @@ class ReadingParagraph extends StatelessWidget {
                   colors,
                   isHighlighted,
                   lineId: lineId,
+                  remarks: line.remarks,
                 ),
             if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
               Padding(
@@ -531,13 +532,16 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  /// Translation lines with optional TTS highlight.
+  /// Translation lines with optional TTS highlight. When [remarks]
+  /// (translation notes keyed by language code) contains a note for a
+  /// rendered language, a small note is appended below that line.
   Widget _buildTranslationBlock(
     BuildContext context,
     Map<String, String> translations,
     ColorScheme colors,
     bool isHighlighted, {
     required int lineId,
+    Map<String, String> remarks = const {},
   }) {
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
     if (langs == null || langs.isEmpty) return const SizedBox.shrink();
@@ -551,6 +555,10 @@ class ReadingParagraph extends StatelessWidget {
         _buildTranslationLine(context, langCode, text, typo, colors,
             lineId: lineId),
       );
+      final remark = remarks[langCode];
+      if (remark != null && remark.trim().isNotEmpty) {
+        children.add(_buildRemarkNote(context, remark, colors));
+      }
     }
     if (children.isEmpty) return const SizedBox.shrink();
 
@@ -647,6 +655,91 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
+  /// Small tappable mark shown under a translation line when the
+  /// translation database carries a remark (note) for that line.
+  ///
+  /// The note text itself is intentionally NOT rendered inline — it would
+  /// read like a second translation and clutter the page. Instead a tiny
+  /// "note" chip marks the line; tapping it opens the full remark.
+  Widget _buildRemarkNote(
+    BuildContext context,
+    String note,
+    ColorScheme colors,
+  ) {
+    final label = AppLocalizations.of(context).translationNote;
+    return Padding(
+      padding: const EdgeInsets.only(top: 3, left: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(9999),
+            onTap: () => _showRemarkDialog(context, note, colors),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: colors.tertiary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(9999),
+                border: Border.all(
+                  color: colors.tertiary.withValues(alpha: 0.3),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.info_outline, size: 11, color: colors.tertiary),
+                  const SizedBox(width: 3),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: colors.tertiary,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Open the full remark text in a dialog when the note mark is tapped.
+  void _showRemarkDialog(
+    BuildContext context,
+    String note,
+    ColorScheme colors,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.info_outline, color: colors.tertiary),
+        title: Text(AppLocalizations.of(dialogContext).translationNote),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            note,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(AppLocalizations.of(dialogContext).close),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildJoinedPali(BuildContext context, ColorScheme colors) {
     if (!showPali) return const SizedBox.shrink();
 
@@ -691,6 +784,16 @@ class ReadingParagraph extends StatelessWidget {
         _buildTranslationLine(context, langCode, texts, typo, colors,
             lineId: -1),
       );
+
+      // Translation remarks for this paragraph + language (notes are
+      // sparse, so this is almost always empty).
+      final paraRemarks = paragraph.lines
+          .map((l) => l.remarks[langCode])
+          .where((r) => r != null && r.trim().isNotEmpty)
+          .toList();
+      for (final remark in paraRemarks) {
+        widgets.add(_buildRemarkNote(context, remark!, colors));
+      }
     }
     if (widgets.isEmpty) return const SizedBox.shrink();
 

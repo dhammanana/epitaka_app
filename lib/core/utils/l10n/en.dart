@@ -49,6 +49,26 @@ const Map<String, String> en = {
       'Manage translation databases: download, update, and delete.',
   'Pāli': 'Pāli',
   'Pali (Roman script)': 'Pali (Roman script)',
+  'Pāli script': 'Pāli script',
+  'Script used to write Pāli for the TTS voice. Each script needs its language voice installed. Hindi is the default — it reads Pāli best.':
+      'Script used to write Pāli for the TTS voice. Each script needs its language voice installed. Hindi is the default — it reads Pāli best.',
+  'Auto': 'Auto',
+  'Sinhala': 'Sinhala',
+  'Devanagari (Hindi)': 'Devanagari (Hindi)',
+  'Roman (English)': 'Roman (English)',
+  'Best available voice — Devanagari, Sinhala or Roman':
+      'Best available voice — Devanagari, Sinhala or Roman',
+  'Needs a Sinhala voice installed (si-LK)': 'Needs a Sinhala voice installed (si-LK)',
+  'Needs a Hindi voice installed (hi-IN)': 'Needs a Hindi voice installed (hi-IN)',
+  'Needs a Thai voice installed (th-TH)': 'Needs a Thai voice installed (th-TH)',
+  'Needs a Myanmar voice installed (my-MM)': 'Needs a Myanmar voice installed (my-MM)',
+  'Reads with an English voice — works on every device':
+      'Reads with an English voice — works on every device',
+  'Install voice': 'Install voice',
+  'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)':
+      'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)',
+  'This voice is not installed on your device. Tap "Install voice" to add it.':
+      'This voice is not installed on your device. Tap "Install voice" to add it.',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'Drag to reorder enabled translations. The first one is shown when multiple are enabled.',
   'No translations downloaded yet. Download a translation above to reorder it.':
@@ -354,6 +374,15 @@ const Map<String, String> en = {
   'Medium': 'Medium',
   'Follows the reading language (first enabled translation)':
       'Follows the reading language (first enabled translation)',
+  'Speak': 'Speak',
+  'Reads the translation aloud': 'Reads the translation aloud',
+  'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation':
+      'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation',
+  'Translation + Pāli': 'Translation + Pāli',
+  'Reads the Pāli first, then its translation':
+      'Reads the Pāli first, then its translation',
+  'Translation note': 'Translation note',
+  'Pāli speed': 'Pāli speed',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

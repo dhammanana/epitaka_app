@@ -58,6 +58,16 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   final _filterFocusNode = FocusNode();
   String _filterQuery = '';
 
+  /// On phones the search field is hidden by default so the browser stays
+  /// clean; pulling the book list down past a small threshold reveals it
+  /// (see [_handleScrollNotification]). Once revealed it stays until the
+  /// user scrolls down through the content again (with no active query).
+  bool _searchVisible = false;
+
+  /// Accumulated downward overscroll (px) while at the top of the list.
+  double _pullAccum = 0;
+  static const double _kPullRevealThreshold = 40;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +76,43 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
         if (mounted) _filterFocusNode.requestFocus();
       });
     }
+  }
+
+  /// Reveal/hide the search field from scroll gestures:
+  ///
+  /// * Pulling down while the list is at the top accumulates negative
+  ///   overscroll; past [_kPullRevealThreshold] the search field slides in.
+  /// * Scrolling down through the content (with no active query) hides it
+  ///   again, restoring the clean layout.
+  ///
+  /// Desktop keeps the field permanently visible, so this is a no-op there.
+  bool _handleScrollNotification(ScrollNotification notification, bool isDesktop) {
+    if (!mounted || isDesktop) return false;
+
+    if (notification is OverscrollNotification &&
+        notification.overscroll < 0 &&
+        notification.metrics.pixels <= 0) {
+      // Pulling down at the very top — accumulate the overscroll amount.
+      _pullAccum += notification.overscroll;
+      if (_pullAccum <= -_kPullRevealThreshold) {
+        _pullAccum = 0;
+        if (!_searchVisible) setState(() => _searchVisible = true);
+      }
+    } else {
+      // Any other scroll resets the accumulator.
+      _pullAccum = 0;
+    }
+
+    // Scrolling down through the list hides the field again — but never
+    // while a filter query is active (the field must stay visible so the
+    // user can see/clear what they searched).
+    if (notification is ScrollUpdateNotification &&
+        notification.metrics.pixels > 0 &&
+        _filterQuery.isEmpty &&
+        _searchVisible) {
+      setState(() => _searchVisible = false);
+    }
+    return false;
   }
 
   @override
@@ -108,6 +155,10 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
     final treeAsync = ref.watch(booksTreeProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final isDesktop = ResponsiveBreakpoint.isDesktop(context);
+    // Phones hide the field until the user pulls the list down; desktop (and
+    // any active query) keeps it permanently visible.
+    final showSearch = isDesktop || _searchVisible || _filterQuery.isNotEmpty;
 
     return Center(
       child: ConstrainedBox(
@@ -115,54 +166,68 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
         child: Column(
           children: [
             // ── Type-to-filter field ────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimensions.marginMobile,
-                0,
-                AppDimensions.marginMobile,
-                AppDimensions.sm,
-              ),
-              child: TextField(
-                controller: _filterController,
-                focusNode: _filterFocusNode,
-                style: AppTypography.labelMedium.copyWith(
-                  fontSize: 13,
-                  color: colors.onSurface,
-                ),
-                decoration: InputDecoration(
-                  hintText: loc.searchBooks,
-                  isDense: true,
-                  prefixIcon: Icon(
-                    Icons.search,
-                    size: 16,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  suffixIcon: _filterQuery.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: Icon(Icons.clear, size: 16),
-                          onPressed: () {
-                            _filterController.clear();
-                            setState(() => _filterQuery = '');
-                          },
+            // On phones this collapses away until pulled down (see
+            // [_handleScrollNotification]); AnimatedSize makes the
+            // reveal/collapse smooth instead of a hard pop.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: showSearch
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimensions.marginMobile,
+                        0,
+                        AppDimensions.marginMobile,
+                        AppDimensions.sm,
+                      ),
+                      child: TextField(
+                        controller: _filterController,
+                        focusNode: _filterFocusNode,
+                        style: AppTypography.labelMedium.copyWith(
+                          fontSize: 13,
+                          color: colors.onSurface,
                         ),
-                  filled: true,
-                  fillColor: colors.surfaceContainerHighest,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.sm,
-                    vertical: 6,
-                  ),
-                ),
-                onChanged: (v) => setState(() => _filterQuery = v),
-              ),
+                        decoration: InputDecoration(
+                          hintText: loc.searchBooks,
+                          isDense: true,
+                          prefixIcon: Icon(
+                            Icons.search,
+                            size: 16,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          suffixIcon: _filterQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _filterController.clear();
+                                    setState(() => _filterQuery = '');
+                                  },
+                                ),
+                          filled: true,
+                          fillColor: colors.surfaceContainerHighest,
+                          border: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(AppDimensions.radiusMd),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: AppDimensions.sm,
+                            vertical: 6,
+                          ),
+                        ),
+                        onChanged: (v) => setState(() => _filterQuery = v),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
             // ── Content: filtered flat list or the tabbed tree ─────
             Expanded(
-              child: treeAsync.when(
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (n) =>
+                    _handleScrollNotification(n, isDesktop),
+                child: treeAsync.when(
                 loading: () => const Center(
                   child: CircularProgressIndicator(),
                 ),
@@ -185,6 +250,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                 data: (categories) => _query.isEmpty
                     ? _buildTabs(context, categories, colors)
                     : _buildFilteredList(context, categories, colors, loc),
+                ),
               ),
             ),
           ],
@@ -238,7 +304,11 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
               for (final (index, book) in matches.indexed)
                 Column(
                   children: [
-                    _BookRow(book: book, colors: colors, depth: 0),
+                    // Flat list: every book sits at the same (top) level, so
+                    // depth 1 (left padding = 18 + 0*24 = 18). depth 0 would
+                    // compute a NEGATIVE left padding (18 + (0-1)*24 = -6)
+                    // and crash with 'padding.isNonNegative'.
+                    _BookRow(book: book, colors: colors, depth: 1),
                     if (index != matches.length - 1)
                       Divider(height: 1, color: colors.outlineVariant),
                   ],
@@ -684,7 +754,11 @@ class _BookRowState extends ConsumerState<_BookRow> {
           },
           child: Padding(
             padding: EdgeInsets.only(
-              left: 18.0 + (widget.depth - 1) * 24,
+              // Clamp so a depth-0 caller (or any future regression) can
+              // never produce negative padding — that trips the framework's
+              // 'padding.isNonNegative' assertion and crashes the whole
+              // library screen.
+              left: (18.0 + (widget.depth - 1) * 24).clamp(0.0, double.infinity),
               right: AppDimensions.md,
               top: 10,
               bottom: 10,

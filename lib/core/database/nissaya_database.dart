@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
+
+import 'drift_database_executor.dart';
 
 part 'nissaya_database.g.dart';
 
@@ -111,13 +112,12 @@ class NissayaDatabase extends _$NissayaDatabase {
       throw Exception('Nissaya database not found at $dbPath');
     }
 
-    final database = NativeDatabase(
+    final database = openDriftExecutor(
       file,
       setup: (db) {
         db.execute('PRAGMA journal_mode=WAL');
         db.execute('PRAGMA foreign_keys=ON');
       },
-      logStatements: false,
     );
 
     return NissayaDatabase(database);

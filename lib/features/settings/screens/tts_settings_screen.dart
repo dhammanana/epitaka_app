@@ -7,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../providers/tts_provider.dart';
 import '../providers/supertonic_download_provider.dart';
+import '../services/system_tts_settings.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -98,6 +99,99 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
                 onChanged: (engine) {
                   ref.read(settingsProvider.notifier).setTtsEngine(engine);
                 },
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimensions.md),
+
+          // ── Speak mode (what to read aloud) ──────────────────────────
+          SettingsSection(
+            title: loc.ttsSpeakMode,
+            colors: colors,
+            children: [
+              _SpeakModeTile(
+                mode: TtsSpeakMode.translation,
+                label: loc.ttsSpeakTranslation,
+                description: loc.ttsSpeakTranslationDesc,
+                icon: Icons.translate,
+                isSelected: settings.ttsSpeakMode == TtsSpeakMode.translation,
+                colors: colors,
+                onTap: () {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setTtsSpeakMode(TtsSpeakMode.translation);
+                },
+              ),
+              const Divider(
+                height: 1,
+                indent: AppDimensions.md,
+                endIndent: AppDimensions.md,
+              ),
+              _SpeakModeTile(
+                mode: TtsSpeakMode.pali,
+                label: loc.ttsSpeakPali,
+                description: loc.ttsSpeakPaliDesc,
+                icon: Icons.menu_book,
+                isSelected: settings.ttsSpeakMode == TtsSpeakMode.pali,
+                colors: colors,
+                onTap: () {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setTtsSpeakMode(TtsSpeakMode.pali);
+                },
+              ),
+              const Divider(
+                height: 1,
+                indent: AppDimensions.md,
+                endIndent: AppDimensions.md,
+              ),
+              _SpeakModeTile(
+                mode: TtsSpeakMode.both,
+                label: loc.ttsSpeakBoth,
+                description: loc.ttsSpeakBothDesc,
+                icon: Icons.library_books,
+                isSelected: settings.ttsSpeakMode == TtsSpeakMode.both,
+                colors: colors,
+                onTap: () {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setTtsSpeakMode(TtsSpeakMode.both);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimensions.md),
+
+          // ── Install a Pāli voice ─────────────────────────────────────
+          // Pāli is always read in Devanagari (Hindi) — the script that
+          // reads Pāli best. If the device has no Hindi voice, this tile
+          // opens the system TTS settings to install one.
+          SettingsSection(
+            title: loc.ttsInstallVoice,
+            colors: colors,
+            children: [
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.md,
+                ),
+                leading: Icon(Icons.download, color: colors.primary),
+                title: Text(
+                  loc.ttsInstallVoice,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+                subtitle: Text(
+                  loc.ttsInstallVoiceHint,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                ),
+                onTap: () => openSystemTtsSettings(context),
               ),
             ],
           ),
@@ -257,6 +351,25 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
                   ref.read(settingsProvider.notifier).setTtsSpeed(v);
                 },
               ),
+              const Divider(
+                height: 1,
+                indent: AppDimensions.md,
+                endIndent: AppDimensions.md,
+              ),
+              // Pāli is read separately (Devanagari/Hindi), so it gets its
+              // own speed — often a slower rate reads Pāli more clearly.
+              _SpeedSlider(
+                value: settings.ttsPaliSpeed,
+                min: 0.5,
+                max: 4.0,
+                divisions: 14,
+                label: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
+                colors: colors,
+                caption: loc.ttsPaliSpeed,
+                onChanged: (v) {
+                  ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
+                },
+              ),
             ],
           ),
           const SizedBox(height: AppDimensions.md),
@@ -393,6 +506,76 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
       case TtsPlaybackState.stopped:
         return loc.testHearSample;
     }
+  }
+}
+
+// ── Speak Mode Tile ─────────────────────────────────────────────────────
+
+class _SpeakModeTile extends StatelessWidget {
+  final TtsSpeakMode mode;
+  final String label;
+  final String description;
+  final IconData icon;
+  final bool isSelected;
+  final ColorScheme colors;
+  final VoidCallback onTap;
+
+  const _SpeakModeTile({
+    required this.mode,
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.isSelected,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimensions.md,
+          vertical: AppDimensions.md,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off,
+              color: isSelected ? colors.primary : colors.onSurfaceVariant,
+              size: 20,
+            ),
+            const SizedBox(width: AppDimensions.md),
+            Icon(icon, color: colors.primary, size: 20),
+            const SizedBox(width: AppDimensions.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: isSelected ? colors.primary : colors.onSurface,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -668,6 +851,10 @@ class _SpeedSlider extends StatelessWidget {
   final ColorScheme colors;
   final ValueChanged<double> onChanged;
 
+  /// Optional override for the slider's title. When null, the title is
+  /// derived from the min/max range (speed vs pitch).
+  final String? caption;
+
   const _SpeedSlider({
     required this.value,
     required this.min,
@@ -676,6 +863,7 @@ class _SpeedSlider extends StatelessWidget {
     required this.label,
     required this.colors,
     required this.onChanged,
+    this.caption,
   });
 
   @override
@@ -748,6 +936,7 @@ class _SpeedSlider extends StatelessWidget {
   }
 
   String _labelForSlider(BuildContext context) {
+    if (caption != null) return caption!;
     final loc = AppLocalizations.of(context);
     if (min == 0.5 && max == 4.0) return loc.speakingRate;
     return loc.ttPitch;

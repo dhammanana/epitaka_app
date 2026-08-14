@@ -8,10 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import 'package:drift/drift.dart' show Variable;
-
-import '../../../core/providers/app_db_provider.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -22,31 +18,30 @@ import '../../annotations/providers/annotations_provider.dart';
 import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/utils/app_shortcuts.dart';
-import '../../../shared/utils/reading_clipboard.dart';
 import '../../../shared/widgets/reader_toolbar_controller.dart';
-import '../../../features/ai_qa/providers/ai_qa_provider.dart' show aiQaInitialPromptProvider;
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 import '../../dictionary/widgets/dictionary_sheet.dart';
 import '../../library/screens/library_screen.dart';
 import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
-import '../../settings/providers/tts_replacements_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
 import '../providers/reader_dictionary_lookup_controller.dart';
 import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_search_notifier.dart';
+import '../providers/reader_scroll_controller.dart';
 import '../providers/reader_selection_notifier.dart';
 import '../providers/reader_tabs_provider.dart';
+import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
-import '../services/reader_copy_service.dart';
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
 import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
 import '../widgets/reader_content_with_selection.dart';
+import '../widgets/reader_context_menu_builder.dart';
 import '../widgets/reader_drag_thumb.dart';
 import '../widgets/reader_in_book_search_bar.dart';
 import '../widgets/reader_tts_widgets.dart';
@@ -107,20 +102,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// consumed at the top of [build] so the off-screen offset is applied
   /// before the first frame (no flash). null = no pending animation.
   bool? _pendingExternalAnim;
-
-  // One controller/listener pair per open book tab.
-  final Map<String, ItemScrollController> _itemScrollControllers = {};
-  final Map<String, ItemPositionsListener> _itemPositionsListeners = {};
-  final Map<String, VoidCallback> _positionsListenerRefs = {};
-
-  /// The bookId whose reader list was last served a controller by
-  /// [_scrollControllerFor]. When the next request is for a *different*
-  /// bookId it's a tab switch, so a fresh [ItemScrollController] is handed to
-  /// the incoming list. This avoids sharing one controller between the
-  /// outgoing list (still animating out inside [AnimatedSwitcher]) and the
-  /// incoming list, which trips scrollable_positioned_list's
-  /// "_scrollableListState == null" assertion and stalls jumps.
-  String? _lastControllerFetchBookId;
 
   /// Key for the [SelectionArea]'s [SelectableRegionState] so we can clear
   /// any selection it created after our own double-tap detector looks up a
@@ -188,94 +169,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// persistent timer on each tick. This avoids recreating the timer.
   double _autoScrollSpeed = 0;
 
-  // Track the last paraId we've jumped to per book, so we don't re-jump
-  // every time the tab rebuilds (e.g. on unrelated provider changes).
-  final Map<String, int> _lastJumpedParaId = {};
-
-  // Track the last EXPLICIT jump request id consumed per book. The tabs
-  // provider stamps every openTab-with-position call with a fresh
-  // initialJumpId, so comparing ids (instead of the para value) lets a
-  // repeat request for the paragraph the reader is already on still jump
-  // and fine-scroll to the line.
-  final Map<String, int?> _lastInitialJumpId = {};
-
-  // Guards against overlapping jump attempts for the same (bookId, paraId)
-  // request racing each other.
-  final Map<String, int> _pendingJumpParaId = {};
-
-  // Monotonic token per book so a stale fine-scroll from a superseded jump
-  // can never clear jump flags while a newer jump is in progress.
-  final Map<String, int> _jumpTokens = {};
-
   // App lifecycle state for background TTS optimization
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
-
-  /// Reader display mode before TTS started, restored when reading stops.
-  ///
-  /// TTS temporarily forces [TranslationDisplayMode.lineByLine] because it
-  /// is the only display mode that renders per-line widgets — and therefore
-  /// the only one where the per-line GlobalKeys used by the fine-scroll
-  /// ([_fineScrollToLine]) can be attached. null = TTS is not forcing a mode.
-  TranslationDisplayMode? _ttsModeBefore;
 
   // Silverbar: collapsible app bar on scroll
   // Using ValueNotifier so only the app bar/toolbar rebuild, not the full screen.
   final ValueNotifier<bool> _appBarCollapsed = ValueNotifier(false);
-
-  // Pixel-based scroll tracking (per book)
-  final Map<String, ScrollOffsetListener> _scrollOffsetListeners = {};
-  final Map<String, StreamSubscription<double>> _scrollOffsetSubs = {};
-  final Map<String, double> _scrollAccum = {};
-  static const double _kScrollThreshold = 20.0; // px
-
-  /// Maximum frames to wait for a fine-scroll target line widget to be
-  /// laid out before giving up.
-  static const int _kMaxLineScrollRetries = 15;
-
-  /// Precise (fractional) scroll offset per book, updated on every position
-  /// callback. Used by tab restoration to reproduce the exact position,
-  /// including any within-paragraph scroll. Kept out of the provider so it
-  /// doesn't trigger a reader rebuild on every scroll frame.
-  final Map<String, double> _preciseScrollOffset = {};
-
-  /// Whether an initial paragraph jump is in progress (from opening a
-  /// book via history, search result, etc.). While true, the scroll
-  /// collapse logic is suppressed to prevent the app bar/toolbar from
-  /// getting stuck in a collapsed state during position restoration.
-  bool _isInitialJumpPending = false;
-
-  /// Suppresses app bar collapse/expand during programmatic scrolls
-  /// (TTS jumps, TOC jumps, search result jumps, tab restore, etc.).
-  /// Set to true before any controlled scroll, cleared when the scroll
-  /// animation is expected to be complete. This prevents programmatic
-  /// jumps from accidentally hiding or showing the app bar — only real
-  /// human finger scrolling should trigger the collapse/expand.
-  bool _suppressAppBarScroll = false;
-
-  /// Tracks which bookId we already restored position for (prevents
-  /// re-snapping on rebuild).
-  String? _lastRestoredBookId;
-
-  /// Last saved paraId per book (to avoid duplicate saves).
-  final Map<String, int> _lastSavedParaIdPerBook = {};
-
-  /// Debounce timer for scroll-based history saves.
-  Timer? _saveHistoryTimer;
-
-  /// Throttle: only update scroll state once per distinct paraId per book.
-  final Map<String, int> _lastScrollParaId = {};
-
-  /// Last known viewInsets.bottom — used to detect keyboard-triggered
-  /// layout changes (which fire _onPositionsChanged but are not real
-  /// user scrolls). When the keyboard shows/hides while a modal bottom
-  /// sheet is open, the viewport shrinks/grows and the scrollable list
-  /// reports new positions — we skip those to avoid unwanted scroll saves
-  /// and TTS-auto-scroll disabling.
-  double _lastViewInsets = 0;
-
-  /// Throttle: skip _onPositionsChanged heavy work if called too frequently.
-  DateTime? _lastPositionThrottle;
-  static const Duration _kPositionThrottleDuration = Duration(milliseconds: 50);
 
   /// Millis counter for tab-switch timing breakdown.
   /// Reset at the start of build() when a different tab becomes active.
@@ -297,7 +196,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final lineId = index < searchState.matchLineIds.length
         ? searchState.matchLineIds[index]
         : 1;
-    _jumpToParagraph(
+    _scroll.jumpToParagraph(
       activeTab.bookId,
       searchState.matchParaIds[index],
       animate: true,
@@ -345,7 +244,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // paragraph is the one ABOVE the jump target and the TOC would
     // highlight the wrong section.
     final currentParaId =
-        _getCurrentParaId(activeTab.bookId) ?? activeTab.currentParaId;
+        _scroll.currentParaId(activeTab.bookId) ?? activeTab.currentParaId;
     var url =
         '/contents/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}';
     if (currentParaId != null) {
@@ -395,78 +294,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final activeTab = _toolbarActiveTab();
     if (activeTab == null) return;
     final readerState = _toolbarReaderState(activeTab);
-
-    final positions =
-        _itemPositionsListeners[activeTab.bookId]?.itemPositions.value;
-    int startParaIndex = 0;
-    if (positions != null && positions.isNotEmpty) {
-      final visible =
-          positions
-              .where((p) => p.itemTrailingEdge > 0)
-              .toList()
-            ..sort(
-              (a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge),
-            );
-      if (visible.isNotEmpty) {
-        startParaIndex = visible.first.index.clamp(
-          0,
-          readerState.paragraphs.isEmpty
-              ? 0
-              : readerState.paragraphs.length - 1,
-        );
-      }
-    }
-
-    final lines = <TtsLineItem>[];
-    final enabledLangs =
-        ref.read(settingsProvider).visibleTranslationLangs;
-    final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
-    if (lang == null) return;
-
-    // Load TTS replacements
-    final replaceAsyncState = ref.read(ttsReplacementsNotifierProvider);
-    if (replaceAsyncState is AsyncLoading ||
-        replaceAsyncState is AsyncError) {
-      await ref.read(ttsReplacementsNotifierProvider.notifier).load();
-    }
-    final activeReplacements = ref.read(activeTtsReplacementsProvider);
-
-    for (int i = startParaIndex; i < readerState.paragraphs.length; i++) {
-      final para = readerState.paragraphs[i];
-      for (final line in para.lines) {
-        final rawText = line.translations[lang] ?? '';
-        final stripped = stripHtmlForTts(rawText);
-        var text = stripped;
-        for (final rule in activeReplacements) {
-          try {
-            if (rule.isRegex) {
-              text = text.replaceAll(RegExp(rule.pattern), rule.replacement);
-            } else {
-              text = text.replaceAll(rule.pattern, rule.replacement);
-            }
-          } catch (_) {}
-        }
-        lines.add(
-          TtsLineItem(paraId: para.paraId, lineId: line.lineId, text: text),
-        );
-      }
-    }
-
-    if (lines.isNotEmpty) {
-      // Cache the book name so the Android notification shows a
-      // human-readable title instead of the raw bookId.
-      TtsReadingNotifier.cacheBookName(
-        activeTab.bookId,
-        readerState.bookName ?? activeTab.bookId,
-      );
-      ref
-          .read(ttsReadingProvider.notifier)
-          .startReading(activeTab.bookId, lines);
-    }
+    await _tts.startListening(activeTab, readerState);
   }
 
   void _handleToolbarStop() {
-    ref.read(ttsReadingProvider.notifier).stopReading();
+    _tts.stopListening();
   }
 
   void _handleToolbarBookmark() {
@@ -545,10 +377,68 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
+  /// Owns the reader's scroll controllers, position tracking, jumping, and
+  /// reading-history persistence. All scroll logic lives in
+  /// [ReaderScrollController]; the screen only supplies context/rebuild
+  /// hooks. Created before [_tts], whose callbacks target this controller.
+  late final ReaderScrollController _scroll;
+
+  /// Coordinates TTS playback with the reader UI. All TTS logic lives in
+  /// [ReaderTtsController]; the screen only supplies scroll/rebuild hooks.
+  late final ReaderTtsController _tts;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _scroll = ReaderScrollController(
+      ref: ref,
+      isMounted: () => mounted,
+      isPhone: () => Mobile.isPhone(context),
+      viewInsetsBottom: () => MediaQuery.of(context).viewInsets.bottom,
+      appBarCollapsed: _appBarCollapsed,
+      onTtsManualScroll: (bookId, visible, paragraphs) =>
+          _tts.handleManualScroll(bookId, visible, paragraphs),
+      onFirstVisiblePosition: (bookId, topIndex, paraId) {
+        if (_tabSwitchStartMs != null) {
+          final posElapsed =
+              DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
+          developer.log(
+            '[TAB_SW] book=$bookId FIRST visible position in ${posElapsed}ms '
+            'topIndex=$topIndex paraId=$paraId',
+            name: 'epitaka.reader.ui',
+          );
+          _tabSwitchStartMs = null; // one-shot
+        }
+        developer.log(
+          '[UI_POS] book=$bookId topIndex=$topIndex paraId=$paraId',
+          name: 'epitaka.reader.ui',
+        );
+      },
+    );
+
+    _tts = ReaderTtsController(
+      ref: ref,
+      isMounted: () => mounted,
+      isAppResumed: () => _appLifecycleState == AppLifecycleState.resumed,
+      positionsFor: _scroll.positionsFor,
+      jumpToParagraph: (bookId, paraId,
+              {bool animate = true, double alignment = 0.0, int? lineId}) =>
+          _scroll.jumpToParagraph(
+            bookId,
+            paraId,
+            animate: animate,
+            alignment: alignment,
+            lineId: lineId,
+          ),
+      fineScrollToLine: _scroll.fineScrollToLine,
+      nextJumpToken: _scroll.nextJumpToken,
+      saveHistory: _scroll.saveReadingHistory,
+      requestRebuild: () {
+        if (mounted) setState(() {});
+      },
+    );
 
     _settleController =
         AnimationController(
@@ -564,614 +454,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     setState(() => _appLifecycleState = state);
   }
 
-  // ── Scroll-position restoration helpers ─────────────────────────────
+  // ── Scroll machinery ─────────────────────────────────────────────────
+  // Per-book scroll controllers/listeners, position tracking (app-bar
+  // collapse, tab scroll-offset updates, history, TTS auto-scroll
+  // detection), unified jumping + per-line fine-scroll, and reading-history
+  // persistence live in [ReaderScrollController].
   //
-  // [_onPositionsChanged] stores a *fractional* scroll offset per tab:
-  //   offset = topmostVisibleIndex + itemLeadingEdge
-  // where itemLeadingEdge is in [-1, 0] (negative when scrolled down within
-  // the topmost paragraph). Tab restoration (see the isTabRestore branch in
-  // build) converts that offset into a precise `alignment` for
-  // [_jumpToParagraph], so a tab restores to the exact position — including
-  // the within-paragraph offset — instead of always snapping the paragraph
-  // to the top of the viewport.
-  ItemScrollController _scrollControllerFor(String bookId) {
-    final existing = _itemScrollControllers[bookId];
-    // A request for the same bookId as the last fetch means the list element
-    // is being reused (same tab, e.g. a settings/scroll rebuild): keep the
-    // controller that is still attached to it. Creating a new one here would
-    // detach the live list and break jumps.
-    if (existing != null && _lastControllerFetchBookId == bookId) {
-      return existing;
-    }
-    // Different bookId (tab switch) or first time: hand the incoming list a
-    // fresh controller. The outgoing list keeps the controller it captured at
-    // its own build and detaches on its own dispose, so the two never share
-    // one controller.
-    final fresh = ItemScrollController();
-    _itemScrollControllers[bookId] = fresh;
-    _lastControllerFetchBookId = bookId;
-    return fresh;
-  }
-
-  ItemPositionsListener _positionsListenerFor(String bookId) {
-    return _itemPositionsListeners.putIfAbsent(bookId, () {
-      final listener = ItemPositionsListener.create();
-      void onPositionsChanged() => _onPositionsChanged(bookId);
-      _positionsListenerRefs[bookId] = onPositionsChanged;
-      listener.itemPositions.addListener(onPositionsChanged);
-      return listener;
-    });
-  }
-
-  ScrollOffsetListener _scrollOffsetListenerFor(String bookId) {
-    return _scrollOffsetListeners.putIfAbsent(bookId, () {
-      final listener = ScrollOffsetListener.create();
-      _scrollOffsetSubs[bookId] = listener.changes.listen((delta) {
-        _onScrollOffsetChanged(bookId, delta);
-      });
-      return listener;
-    });
-  }
-
-  // ── Scroll offset tracking (collapsible app bar) ───────────────────
-  //
-  // Pixel-accurate scroll direction tracking. Accumulates movement in one
-  // direction; flips/resets the accumulator if direction reverses. Once the
-  // accumulator crosses _kScrollThreshold px, flips the appbar state once
-  // and resets.
-  //
-  // Fix (Issue 2): Don't collapse the appbar when at the top of the
-  // document (topIndex == 0). Check the positions listener before
-  // collapsing to avoid flicker.
-  void _onScrollOffsetChanged(String bookId, double delta) {
-    if (!mounted || delta == 0) return;
-    if (ref.read(readerTabsProvider).activeTab?.bookId != bookId) return;
-    if (!Mobile.isPhone(context)) return;
-
-    // Suppress app bar collapse/expand for ALL programmatic scrolls,
-    // not just the initial position restoration. This prevents TTS
-    // auto-scroll, TOC jumps, search-result jumps, and Follow-TTS
-    // button taps from accidentally hiding/showing the app bar.
-    // Only real human finger scrolling should trigger this.
-    if (_isInitialJumpPending || _suppressAppBarScroll) {
-      developer.log(
-        '[UI_SCROLL] book=$bookId delta=$delta SUPPRESSED by '
-        '_isInitialJumpPending=$_isInitialJumpPending '
-        '_suppressAppBarScroll=$_suppressAppBarScroll',
-        name: 'epitaka.reader.ui',
-      );
-      return;
-    }
-
-    // Issue 2: Check if at top of document before collapsing
-    final positions = _itemPositionsListeners[bookId]?.itemPositions.value;
-    if (positions != null && positions.isNotEmpty) {
-      final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
-        ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-      if (visible.isNotEmpty && visible.first.index == 0) {
-        // At the very top — never collapse
-        developer.log(
-          '[UI_SCROLL] book=$bookId delta=$delta at TOP → force-expand',
-          name: 'epitaka.reader.ui',
-        );
-        if (_appBarCollapsed.value) _appBarCollapsed.value = false;
-        _scrollAccum[bookId] = 0;
-        return;
-      }
-    }
-
-    final acc = _scrollAccum[bookId] ?? 0;
-    final sameDirection = acc == 0 || (delta > 0) == (acc > 0);
-    final newAcc = sameDirection ? acc + delta : delta;
-
-    if (newAcc > _kScrollThreshold) {
-      developer.log(
-        '[UI_SCROLL] book=$bookId delta=$delta acc=$acc→$newAcc '
-        'COLLAPSE (wasCollapsed=$_appBarCollapsed)',
-        name: 'epitaka.reader.ui',
-      );
-      _scrollAccum[bookId] = 0;
-      if (!_appBarCollapsed.value) _appBarCollapsed.value = true;
-    } else if (newAcc < -_kScrollThreshold) {
-      developer.log(
-        '[UI_SCROLL] book=$bookId delta=$delta acc=$acc→$newAcc '
-        'EXPAND (wasCollapsed=$_appBarCollapsed)',
-        name: 'epitaka.reader.ui',
-      );
-      _scrollAccum[bookId] = 0;
-      if (_appBarCollapsed.value) _appBarCollapsed.value = false;
-    } else {
-      developer.log(
-        '[UI_SCROLL] book=$bookId delta=$delta dir=${delta > 0 ? "down" : "up"} '
-        'acc=$acc→$newAcc sameDir=$sameDirection',
-        name: 'epitaka.reader.ui',
-      );
-      _scrollAccum[bookId] = newAcc;
-    }
-  }
-
-  // ── Position tracking, silverbar, pagination ─────────────────────────
-  //
-  // Driven by ItemPositionsListener, which reports the *actual* visible
-  // item indices from the layout.
-  void _onPositionsChanged(String bookId) {
-    // ── Sheet-open guard: skip provider writes when a modal bottom sheet
-    // is open. The dictionary and book-link sheets increment
-    // dictionarySheetOpenProvider while open.
-    final dictSheetOpen = ref.read(dictionarySheetOpenProvider);
-    if (dictSheetOpen > 0) {
-      return;
-    }
-
-    // ── ViewInsets guard: keyboard show/hide changes the viewport size,
-    // which can trigger position callbacks that look like user scrolls.
-    // Track the last known value and skip when it changes.
-    final insetsBottom = MediaQuery.of(context).viewInsets.bottom;
-    if (insetsBottom != _lastViewInsets) {
-      _lastViewInsets = insetsBottom;
-      // Also force-expand app bar when keyboard dismisses (sheet closed)
-      if (insetsBottom == 0 && _appBarCollapsed.value) {
-        _appBarCollapsed.value = false;
-        _scrollAccum[bookId] = 0;
-      }
-      return;
-    }
-
-    // Throttle: skip heavy work if called too frequently (e.g. every scroll frame)
-    final now = DateTime.now();
-    final shouldThrottle =
-        _lastPositionThrottle != null &&
-        now.difference(_lastPositionThrottle!) < _kPositionThrottleDuration;
-
-    // Only process positions for the active tab
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab?.bookId != bookId) return;
-
-    final listener = _itemPositionsListeners[bookId];
-    final positions = listener?.itemPositions.value;
-    if (positions == null || positions.isEmpty) return;
-
-    // The item with the smallest (most negative/zero) leading edge that's
-    // still at least partially visible (trailingEdge > 0) is the topmost
-    // visible item.
-    final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
-      ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-    if (visible.isEmpty) return;
-    final topIndex = visible.first.index;
-    // Fractional scroll offset: the topmost item's index plus its leading
-    // edge (negative when scrolled *down* within the item). This captures
-    // the within-paragraph offset so restoration can be exact instead of
-    // always snapping the paragraph to the top of the viewport.
-    final scrollOffset = topIndex + visible.first.itemLeadingEdge;
-
-    // Always track precise offset (local map, no rebuild cost)
-    _preciseScrollOffset[bookId] = scrollOffset;
-
-    // When throttled, skip all provider writes but keep _preciseScrollOffset
-    if (shouldThrottle && _lastScrollParaId[bookId] != null) {
-      // Still update visible range for selection auto-scroll
-      if (visible.isNotEmpty) {
-        ref
-            .read(readerSelectionProvider.notifier)
-            .updateVisibleRange(visible.first.index, visible.last.index);
-      }
-      if (topIndex == 0 && _appBarCollapsed.value) {
-        _appBarCollapsed.value = false;
-        _scrollAccum[bookId] = 0;
-      }
-      return;
-    }
-    _lastPositionThrottle = now;
-
-    final tabsState = ref.read(readerTabsProvider);
-    final tabIndex = tabsState.tabs.indexWhere((t) => t.bookId == bookId);
-    if (tabIndex >= 0) {
-      final readerState = ref.read(readerDataProvider(bookId));
-      if (topIndex >= 0 && topIndex < readerState.paragraphs.length) {
-        final para = readerState.paragraphs[topIndex];
-        final visibleParaId = para.paraId;
-        final visibleLineId = para.lines.isNotEmpty
-            ? para.lines.first.lineId
-            : null;
-
-        if (_lastScrollParaId[bookId] != visibleParaId) {
-          final posSw = Stopwatch()..start();
-          if (_tabSwitchStartMs != null) {
-            final posElapsed =
-                DateTime.now().millisecondsSinceEpoch - _tabSwitchStartMs!;
-            developer.log(
-              '[TAB_SW] book=$bookId FIRST visible position in ${posElapsed}ms '
-              'topIndex=$topIndex paraId=$visibleParaId',
-              name: 'epitaka.reader.ui',
-            );
-            _tabSwitchStartMs = null; // one-shot
-          }
-          developer.log(
-            '[UI_POS] book=$bookId topIndex=$topIndex paraId=$visibleParaId',
-            name: 'epitaka.reader.ui',
-          );
-          _lastScrollParaId[bookId] = visibleParaId;
-
-          ref
-              .read(readerTabsProvider.notifier)
-              .updateScrollOffset(
-                tabIndex,
-                scrollOffset,
-                paraId: visibleParaId,
-                lineId: visibleLineId,
-              );
-
-          _scheduleSaveHistory(bookId, readerState.bookName, visibleParaId);
-
-          // Detect manual scroll: if TTS is playing and this scroll
-          // was NOT a TTS-initiated jump, disable auto-scroll.
-          // ttsJumpInProgress is kept true by a timer after each
-          // TTS jump to cover layout changes from highlighting.
-          //
-          // Bug fix: Check if the TTS paragraph is ANYWHERE in the
-          // visible range, not just whether it's the TOP-MOST visible
-          // paragraph. The top-most paragraph can differ from the TTS
-          // paragraph after a fine-scroll (Scrollable.ensureVisible)
-          // without the user having scrolled at all.
-          final ttsSync = ref.read(ttsSyncProvider(bookId));
-          if (!ttsSync.ttsJumpInProgress) {
-            final ttsState = ref.read(ttsReadingProvider);
-            if (ttsState.isActive && ttsState.bookId == bookId) {
-              final ttsParaId = ttsState.currentParaId;
-              if (ttsParaId != null) {
-                // Check if any visible paragraph matches the TTS para
-                final ttsIndex = readerState.paragraphs.indexWhere(
-                  (p) => p.paraId == ttsParaId,
-                );
-                final isTtsInVisibleRange =
-                    ttsIndex >= 0 && visible.any((p) => p.index == ttsIndex);
-                if (!isTtsInVisibleRange) {
-                  developer.log(
-                    '[UI_POS] book=$bookId DISABLE auto-scroll: ttsPara=$ttsParaId '
-                    'ttsIndex=$ttsIndex visible=${visible.map((p) => p.index).toList()}',
-                    name: 'epitaka.reader.ui',
-                  );
-                  ref
-                      .read(ttsSyncProvider(bookId).notifier)
-                      .disableAutoScroll();
-                }
-              }
-            }
-          } else {
-            developer.log(
-              '[UI_POS] book=$bookId ttsJumpInProgress=true → skip auto-scroll check',
-              name: 'epitaka.reader.ui',
-            );
-          }
-          posSw.stop();
-          if (posSw.elapsedMilliseconds > 8) {
-            developer.log(
-              '[UI_POS] book=$bookId HEAVY position work ${posSw.elapsedMilliseconds}ms '
-              'for paraId=$visibleParaId',
-              name: 'epitaka.reader.ui',
-            );
-          }
-        }
-      }
-    }
-
-    // Track visible range for copy operations
-    if (visible.isNotEmpty) {
-      ref
-          .read(readerSelectionProvider.notifier)
-          .updateVisibleRange(visible.first.index, visible.last.index);
-    }
-
-    // Always force-expand at the very top of the document.
-    if (topIndex == 0 && _appBarCollapsed.value) {
-      _appBarCollapsed.value = false;
-      _scrollAccum[bookId] = 0;
-    }
-  }
-
-  // ── Unified precise jump-by-paraId (and optional lineId) ─────────────
-  //
-  // Issue 4 fix: When a lineId is provided, create a GlobalKey for that
-  // line, pass it to ReadingParagraph via lineKeys, and after the
-  // paragraph becomes visible, use Scrollable.ensureVisible() to
-  // precisely scroll the specific line into view (instead of guessing
-  // alignment from line index ratio).
-  Future<void> _jumpToParagraph(
-    String bookId,
-    int paraId, {
-    bool animate = true,
-    double alignment = 0.0,
-    int? lineId,
-    int retryCount = 0,
-  }) async {
-    // Suppress app bar during this programmatic scroll
-    _suppressAppBarScroll = true;
-
-    _pendingJumpParaId[bookId] = paraId;
-    final int jumpToken = (_jumpTokens[bookId] ?? 0) + 1;
-    _jumpTokens[bookId] = jumpToken;
-
-    var state = ref.read(readerDataProvider(bookId));
-    var index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
-
-    if (index < 0) {
-      if (!state.isLoaded) {
-        developer.log(
-          '[JUMP] book=$bookId paraId=$paraId data still loading, waiting…',
-          name: 'epitaka.reader',
-        );
-        await ref.read(readerDataProvider(bookId).notifier).waitUntilLoaded();
-        if (!mounted) return;
-        if (_pendingJumpParaId[bookId] != paraId) return;
-
-        state = ref.read(readerDataProvider(bookId));
-        index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
-      }
-      if (index < 0) {
-        developer.log(
-          '[JUMP] book=$bookId paraId=$paraId not found (total=${state.paragraphs.length})',
-          name: 'epitaka.reader',
-        );
-        return;
-      }
-    }
-
-    final controller = _itemScrollControllers[bookId];
-    if (controller == null || !controller.isAttached) {
-      // Bounded retry: if the controller never attaches (e.g. the list is
-      // still mounting), give up after a short grace period instead of
-      // spinning every frame for seconds. The list will attach on its own
-      // initState, and any later jump will succeed.
-      const maxRetries = 30; // ~0.5s at 60fps
-      if (retryCount >= maxRetries) {
-        developer.log(
-          '[JUMP] book=$bookId paraId=$paraId controller still not attached '
-          'after $maxRetries retries — giving up',
-          name: 'epitaka.reader.ui',
-        );
-        return;
-      }
-      developer.log(
-        '[JUMP] book=$bookId paraId=$paraId controller not attached, retrying after frame '
-        '(attempt ${retryCount + 1}/$maxRetries)',
-        name: 'epitaka.reader.ui',
-      );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _jumpToParagraph(
-          bookId,
-          paraId,
-          animate: animate,
-          alignment: alignment,
-          lineId: lineId,
-          retryCount: retryCount + 1,
-        ).then((_) {
-          if (mounted) _isInitialJumpPending = false;
-        });
-      });
-      return;
-    }
-
-    final jumpStart = DateTime.now().millisecondsSinceEpoch;
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId index=$index '
-      'lineId=$lineId animate=$animate isInitialJumpPending=$_isInitialJumpPending',
-      name: 'epitaka.reader.ui',
-    );
-
-    // Always update the last-jumped paraId so that the next
-    // _jumpToParagraph call has fresh state.
-    _lastJumpedParaId[bookId] = paraId;
-
-    // Resolve the target line. AI-generated citations can reference a line
-    // that doesn't exist in this paragraph (search chunks span multiple
-    // paragraphs) or a hallucinated number — this used to fall back to
-    // alignment 0.0 and land the jump at the paragraph start. Snap to the
-    // nearest real line so the fine-scroll still lands on actual text.
-    final effectiveLineId = lineId != null && index >= 0
-        ? _nearestLineId(state.paragraphs[index], lineId)
-        : lineId;
-
-    // Issue 4: Create a GlobalKey for the target line so
-    // Scrollable.ensureVisible can precisely scroll it into view.
-    // Must call setState so the widget rebuilds with the new lineKeys.
-    // Uses ttsSyncProvider as single source of truth for TTS scroll state.
-    //
-    // Fix: Clear any stale target line keys FIRST so that a subsequent jump
-    // from rapid TTS advancement doesn't leave orphaned keys from the
-    // previous jump. Then set the new key for the current line.
-    if (effectiveLineId != null) {
-      final ttsSyncNotifier = ref.read(ttsSyncProvider(bookId).notifier);
-      ttsSyncNotifier.clearTargetLineKeys();
-      ttsSyncNotifier.setTargetParaId(paraId);
-      ttsSyncNotifier.setTargetLineKey(effectiveLineId, GlobalKey());
-      if (mounted) setState(() {});
-    }
-
-    // ── Paragraph-level scroll ────────────────────────────────────
-    // When a lineId is provided, compute alignment from the line's
-    // position within the paragraph so the target line appears at or
-    // near the center of the viewport — not just the paragraph start.
-    final useAlignment = () {
-      if (effectiveLineId != null &&
-          index >= 0 &&
-          index < state.paragraphs.length) {
-        final para = state.paragraphs[index];
-        final lineIndex = para.lines.indexWhere(
-          (l) => l.lineId == effectiveLineId,
-        );
-        if (lineIndex >= 0 && para.lines.length > 1) {
-          // Place the target line near the top ~third of the viewport so
-          // the spoken line is always built & visible, then the per-line
-          // fine-scroll (Scrollable.ensureVisible alignment 0.3) corrects
-          // to exactly 30%. For a paragraph roughly one screen tall the
-          // line at fraction f sits at a*H_v + f*H_p, so choosing
-          // a = 0.3 - f lands it at ~30% regardless of f (clamped so the
-          // paragraph top never drops below the viewport top).
-          //   first line → 0.30 (line at ~30% from top)
-          //   middle     → ~0.15
-          //   last line  → 0.0  (paragraph top at viewport top)
-          final lineFraction = lineIndex / (para.lines.length - 1);
-          return (0.3 - lineFraction).clamp(0.0, 0.3);
-        }
-      }
-      return alignment;
-    }();
-    if (animate) {
-      await controller.scrollTo(
-        index: index,
-        alignment: useAlignment,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    } else {
-      controller.jumpTo(index: index, alignment: useAlignment);
-    }
-
-    // Clear initialParaId / initialLineId
-    final tabsNotifier = ref.read(readerTabsProvider.notifier);
-    final tabsState = ref.read(readerTabsProvider);
-    final tabIndex = tabsState.tabs.indexWhere((t) => t.bookId == bookId);
-    if (tabIndex >= 0) {
-      tabsNotifier.clearInitialParaId(tabIndex);
-    }
-    _pendingJumpParaId.remove(bookId);
-
-    final jumpElapsed = DateTime.now().millisecondsSinceEpoch - jumpStart;
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId COMPLETE in ${jumpElapsed}ms '
-      'wasInitialJump=$_isInitialJumpPending',
-      name: 'epitaka.reader.ui',
-    );
-
-    // ── Precise line fine-scroll ──────────────────────────────────
-    // The paragraph scroll above only positions the whole paragraph.
-    // ScrollablePositionedList addresses whole items (paragraphs), not
-    // individual lines, so citations previously landed at the paragraph
-    // start. Use the line's GlobalKey to precisely bring the cited line
-    // to ~30% of the viewport. Jump flags stay suppressed until this
-    // fine-scroll finishes.
-    if (effectiveLineId != null) {
-      _fineScrollToLine(bookId, effectiveLineId, jumpToken: jumpToken);
-    } else if (mounted) {
-      // Programmatic scroll done — clear flags.
-      // Use addPostFrameCallback so any in-flight scroll offset
-      // notifications from this jump's paragraph scroll are still
-      // suppressed.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          developer.log(
-            '[JUMP] book=$bookId clearing _isInitialJumpPending',
-            name: 'epitaka.reader.ui',
-          );
-          _isInitialJumpPending = false;
-          _suppressAppBarScroll = false;
-        }
-      });
-    }
-  }
-
-  /// Snap an AI-cited [lineId] to the nearest real line of [para].
-  ///
-  /// Citation line numbers come from the model and may reference a line
-  /// outside this paragraph (search chunks span multiple paragraphs) or a
-  /// hallucinated number. Falling back to the raw id previously made the
-  /// alignment computation fail and land the jump at the paragraph start.
-  int _nearestLineId(ParagraphData para, int lineId) {
-    if (para.lines.isEmpty) return lineId;
-    if (para.lines.any((l) => l.lineId == lineId)) return lineId;
-    var best = para.lines.first;
-    var bestDist = (best.lineId - lineId).abs();
-    for (final l in para.lines.skip(1)) {
-      final dist = (l.lineId - lineId).abs();
-      if (dist < bestDist) {
-        best = l;
-        bestDist = dist;
-      }
-    }
-    developer.log(
-      '[JUMP] line=$lineId not in paragraph; snapped to line=${best.lineId}',
-      name: 'epitaka.reader.ui',
-    );
-    return best.lineId;
-  }
-
-  /// Precise scroll to a specific line inside the just-scrolled paragraph.
-  ///
-  /// [_jumpToParagraph] scrolls to the containing paragraph, but
-  /// ScrollablePositionedList can only address whole items (paragraphs),
-  /// not individual lines within them. The per-line GlobalKey registered
-  /// via [ttsSyncProvider] is used with `Scrollable.ensureVisible` so the
-  /// cited line lands at ~30% of the viewport instead of the paragraph
-  /// start. The line widget may not be laid out yet, so this retries for a
-  /// few frames until it becomes available.
-  void _fineScrollToLine(
-    String bookId,
-    int lineId, {
-    required int jumpToken,
-    int retryCount = 0,
-  }) {
-    final key = ref.read(ttsSyncProvider(bookId)).ttsTargetLineKeys[lineId];
-    if (key == null) {
-      // Key already consumed (fine-scroll done) or superseded by a newer
-      // jump — nothing to scroll; make sure flags aren't left hanging.
-      _finishJumpFlags(bookId, jumpToken);
-      return;
-    }
-    final lineContext = key.currentContext;
-    if (lineContext == null || !lineContext.mounted) {
-      // Line widget not laid out yet — retry next frame.
-      if (retryCount >= _kMaxLineScrollRetries) {
-        ref.read(ttsSyncProvider(bookId).notifier).removeTargetLineKey(lineId);
-        _finishJumpFlags(bookId, jumpToken);
-        return;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _fineScrollToLine(
-          bookId,
-          lineId,
-          jumpToken: jumpToken,
-          retryCount: retryCount + 1,
-        );
-      });
-      return;
-    }
-    developer.log(
-      '[JUMP] book=$bookId fine-scroll to line=$lineId',
-      name: 'epitaka.reader.ui',
-    );
-    Scrollable.ensureVisible(
-      lineContext,
-      alignment: 0.3,
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-    ).then((_) {
-      if (!mounted) return;
-      ref.read(ttsSyncProvider(bookId).notifier).removeTargetLineKey(lineId);
-      _finishJumpFlags(bookId, jumpToken);
-    });
-  }
-
-  /// Clears the initial-jump pending flag and app-bar scroll suppression
-  /// after a programmatic jump (and any fine-scroll) finishes. Only acts if
-  /// [jumpToken] is still the latest token for [bookId], so a stale
-  /// fine-scroll from a superseded jump can't clobber a newer jump's flags.
-  void _finishJumpFlags(String bookId, int jumpToken) {
-    if (!mounted) return;
-    if (_jumpTokens[bookId] != jumpToken) return;
-    developer.log(
-      '[JUMP] book=$bookId clearing _isInitialJumpPending (fine-scroll done)',
-      name: 'epitaka.reader.ui',
-    );
-    _isInitialJumpPending = false;
-    _suppressAppBarScroll = false;
-  }
-
-  /// TTS voices cache for the controls dialog (loaded on demand).
-  List<Map<String, String>>? _cachedSystemVoices;
-  bool _voicesLoading = false;
-
   // ── Swipe between tabs (finger-following) ─────────────────────────────
   //
   // A horizontal drag translates the active reader content in real time.
@@ -1272,55 +560,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       });
   }
 
-  /// Get the paraId of the paragraph the user is actually reading.
-  ///
-  /// This uses the item positions listener to find the first paragraph
-  /// whose leading edge is >= 0.0, i.e. whose top has fully scrolled past
-  /// the top of the viewport.
-  ///
-  /// Why not the topmost visible paragraph? After a programmatic jump the
-  /// target paragraph is placed a few percent below the top (alignment
-  /// 0.05), so the PREVIOUS paragraph still peeks in at the very top and
-  /// would be reported as "topmost". Feeding that into the table of
-  /// contents highlighted the section ABOVE the one jumped to. The first
-  /// paragraph past the viewport top is the one whose text actually fills
-  /// the screen, which is what the TOC / jump sheet / bookmark naming
-  /// should reflect.
-  int? _getCurrentParaId(String bookId) {
-    final listener = _itemPositionsListeners[bookId];
-    final positions = listener?.itemPositions.value;
-    if (positions == null || positions.isEmpty) return null;
-
-    final visible = positions.where((p) => p.itemTrailingEdge > 0).toList()
-      ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-
-    if (visible.isEmpty) return null;
-
-    // Find the first paragraph with leading edge >= 0.0
-    int? targetIndex;
-    for (final pos in visible) {
-      if (pos.itemLeadingEdge >= 0.0) {
-        targetIndex = pos.index;
-        break;
-      }
-    }
-    // Fallback to the topmost visible paragraph (e.g. a paragraph taller
-    // than the viewport, or scrolled to the very end of the book).
-    targetIndex ??= visible.first.index;
-
-    final readerState = ref.read(readerDataProvider(bookId));
-    if (targetIndex >= 0 && targetIndex < readerState.paragraphs.length) {
-      return readerState.paragraphs[targetIndex].paraId;
-    }
-    return null;
-  }
-
   // ── Jump to connected book / page ─────────────────────────────────────
   Future<void> _onJumpTap(
     ReaderTabInfo activeTab,
     ReaderDataState readerState,
   ) async {
-    final currentParaId = _getCurrentParaId(activeTab.bookId);
+    final currentParaId = _scroll.currentParaId(activeTab.bookId);
     if (currentParaId == null) return;
 
     if (!context.mounted) return;
@@ -1360,39 +605,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  // ── Reading History ──────────────────────────────────────────────────
-  Future<void> _saveReadingHistory(
-    String bookId,
-    String? bookName, {
-    int? explicitParaId,
-    int? explicitLineId,
-  }) async {
-    try {
-      final db = await ref.read(appDbProvider.future);
-      final tabsState = ref.read(readerTabsProvider);
-      final tab = tabsState.tabs.firstWhere((t) => t.bookId == bookId);
-      await db.recordReading(
-        bookId: bookId,
-        bookName: bookName,
-        paraId: explicitParaId ?? tab.currentParaId,
-        lineId: explicitLineId ?? tab.currentLineId,
-      );
-      ref.invalidate(historyProvider);
-    } catch (_) {
-      // Silently fail — history is non-critical
-    }
-  }
-
-  void _scheduleSaveHistory(String bookId, String? bookName, int paraId) {
-    if (_lastSavedParaIdPerBook[bookId] == paraId) return;
-    _lastSavedParaIdPerBook[bookId] = paraId;
-
-    _saveHistoryTimer?.cancel();
-    _saveHistoryTimer = Timer(const Duration(seconds: 3), () {
-      if (!mounted) return;
-      _saveReadingHistory(bookId, bookName);
-    });
-  }
+  // ── Reading history persistence lives in [ReaderScrollController] ─────
 
   // ── Word lookup ──────────────────────────────────────────────────────
   void _onWordLookup(String word) {
@@ -1419,7 +632,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // selection (the pin), and on the pointer-UP it shows selection handles
     // and creates its toolbar in the ROOT overlay (via the global
     // ContextMenuController). That toolbar is built while the sheet is open
-    // (suppressed by [_buildCopyContextMenu]) but it PERSISTS: the moment
+    // (suppressed by [ReaderContextMenuBuilder.build]) but it PERSISTS: the moment
     // the sheet closes it rebuilds with the real menu and pops up over the
     // text, and its leftover selection state can even swallow the next
     // double-tap. Suppress the whole thing for the next ~250ms — clear the
@@ -1748,323 +961,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _swipeSamples.clear();
   }
 
-  // ── Copy with style ──────────────────────────────────────────────────
+  // ── Context menu (copy/annotations/AI) ───────────────────────────────
+  // The selection context menu and the AI prompt actions live in
+  // [ReaderContextMenuBuilder] / [ReaderAiService]; the screen only wires
+  // them into the [SelectionArea] and the Ctrl/Cmd+C shortcut.
 
-  /// Called when user taps "Explain" in the context menu.
-  /// Sends the selected text to Vimaṃsa AI asking for explanation.
-  /// The AI uses its get_commentaries tool to fetch relevant context
-  /// (Aṭṭhakathā and Ṭīkā) from the current section.
-  void _onExplainTap() {
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final selectionState = ref.read(readerSelectionProvider);
-    final selectedText =
-        selectionState.lastSelectedContent?.plainText.trim() ?? '';
-    if (selectedText.isEmpty) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    final bookName = readerState.bookName ?? activeTab.bookId;
-    final currentParaId = activeTab.currentParaId;
-
-    _stageExplainPrompt(activeTab, selectedText, bookName, currentParaId);
-  }
-
-  /// Gather heading context and stage the explain prompt.
-  void _stageExplainPrompt(
-    ReaderTabInfo activeTab,
-    String selectedText,
-    String bookName,
-    int? currentParaId,
-  ) async {
-    // Query the level=10 heading (section title) from the database
-    String headingContext = '';
-    if (currentParaId != null) {
-      try {
-        final db = await ref.read(epitakaDbProvider.future);
-        final rows = await db.customSelect(
-          'SELECT title FROM headings '
-          'WHERE book_id = ? AND para_id <= ? AND level = 10 '
-          'ORDER BY para_id DESC LIMIT 1',
-          variables: [
-            Variable.withString(activeTab.bookId),
-            Variable.withInt(currentParaId),
-          ],
-        ).get();
-        if (rows.isNotEmpty) {
-          final title = rows.first.data['title'] as String?;
-          if (title != null && title.isNotEmpty) {
-            headingContext = 'Section heading: "$title" (para_id=$currentParaId)\n';
-          }
-        }
-      } catch (_) {
-        // Silently ignore DB errors
-      }
-    }
-
-    final paraIdStr = currentParaId != null ? ' at para_id=$currentParaId' : '';
-    final prompt =
-        'Explain this passage from $bookName (${activeTab.bookId}).\n'
-        '${headingContext}'
-        'Use the get_commentaries tool to fetch the relevant '
-        'commentaries (Aṭṭhakathā and Ṭīkā) for this section$paraIdStr.\n\n'
-        'Focus on explaining the selected text below, using the '
-        'broader section context and commentaries as reference:\n\n'
-        '$selectedText';
-
-    ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
-    if (context.mounted) context.push('/ai-qa');
-  }
-
-  /// Called when user taps "Summarize Ch." in the context menu.
-  /// Builds the current chapter/section content and sends to Vimaṃsa AI.
-  void _onSummarizeChapterTap() {
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    final paragraphs = readerState.paragraphs;
-    if (paragraphs.isEmpty) return;
-
-    final bookName = readerState.bookName ?? activeTab.bookId;
-    final currentParaId = activeTab.currentParaId;
-    if (currentParaId == null) return;
-
-    // Find the section start (nearest heading at or before currentParaId)
-    int sectionStart = 0;
-    String? headingTitle;
-    for (int i = paragraphs.length - 1; i >= 0; i--) {
-      final p = paragraphs[i];
-      if (p.paraId <= currentParaId && p.heading != null) {
-        sectionStart = i;
-        headingTitle = p.heading!.title;
-        break;
-      }
-    }
-
-    // Find the section end (next heading after sectionStart)
-    int sectionEnd = paragraphs.length;
-    for (int i = sectionStart + 1; i < paragraphs.length; i++) {
-      if (paragraphs[i].heading != null) {
-        sectionEnd = i;
-        break;
-      }
-    }
-
-    // Cap at 150 paragraphs to avoid sending too much content
-    const int maxParagraphs = 150;
-    if (sectionEnd - sectionStart > maxParagraphs) {
-      sectionEnd = sectionStart + maxParagraphs;
-    }
-
-    // Build the chapter text
-    final buf = StringBuffer();
-    buf.writeln('Book: $bookName');
-    if (headingTitle != null && headingTitle.isNotEmpty) {
-      buf.writeln('Section: $headingTitle');
-    }
-    buf.writeln('');
-
-    for (int i = sectionStart; i < sectionEnd; i++) {
-      final para = paragraphs[i];
-      for (final line in para.lines) {
-        if (line.paliText != null && line.paliText!.trim().isNotEmpty) {
-          buf.writeln(ReaderCopyService.stripTags(line.paliText!.trim()));
-        }
-        for (final entry in line.translations.entries) {
-          if (entry.value.trim().isNotEmpty) {
-            buf.writeln(ReaderCopyService.stripTags(entry.value.trim()));
-          }
-        }
-      }
-      if (i < sectionEnd - 1) buf.writeln();
-    }
-
-    final chapterText = buf.toString().trim();
-    if (chapterText.isEmpty) return;
-
-    final prompt =
-        'Please summarize this chapter from $bookName. '
-        'Include the key teachings, main points, and structure:\n\n$chapterText';
-
-    ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
-    context.push('/ai-qa');
-  }
-
-  Widget _buildCopyContextMenu(
-    BuildContext context,
-    SelectableRegionState selectableRegionState,
-  ) {
-    // While a modal dictionary/book-link sheet is open, SelectionArea builds
-    // this menu on the double-tap's pointer-up — a leftover of the tap that
-    // already pushed the sheet on the pointer-down. Never render it: it would
-    // pop up over the sheet. The leftover selection itself is cleared by the
-    // guard in [_handleSelectionChanged]. Desktop is unaffected (the sheet
-    // counter stays 0 there, and double-click menus are not shown anyway).
-    if (ref.read(dictionarySheetOpenProvider) > 0) {
-      return const SizedBox.shrink();
-    }
-
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    final selectionState = ref.read(readerSelectionProvider);
-    final colors = Theme.of(context).colorScheme;
-
-    final selectedText = selectionState.lastSelectedContent?.plainText.trim();
-
-    return ReaderCopyService.buildContextMenu(
-      context: context,
-      selectableRegionState: selectableRegionState,
-      colors: colors,
-      lastSelectedContent: selectionState.lastSelectedContent,
-      ref: ref,
-      visibleStartIndex: selectionState.visibleStartIndex,
-      visibleEndIndex: selectionState.visibleEndIndex,
-      bookId: activeTab?.bookId ?? '',
-      currentParaId: activeTab?.currentParaId,
-      currentLineId: activeTab?.currentLineId,
-      selectedText: selectedText,
-      // Let the Dictionary context-menu item hit-test the render tree at
-      // the toolbar anchor — the same word lookup the double-tap performs.
-      contentHitTestKey: _contentHitTestKey,
-      onExplainTap: selectedText != null && selectedText.isNotEmpty
-          ? _onExplainTap
-          : null,
-      onSummarizeChapterTap: _onSummarizeChapterTap,
-      // Custom AI prompts run against the selected text (see the Context
-      // Menu settings screen). {selectedText} is already substituted in
-      // by ReaderCopyService — just stage the prompt and open Vimaṃsa AI.
-      onAiPrompt: (prompt) {
-        ref.read(aiQaInitialPromptProvider.notifier).state = prompt;
-        if (context.mounted) context.push('/ai-qa');
-      },
-    );
-  }
-
-  void _onCopyShortcut() {
-    final selectionState = ref.read(readerSelectionProvider);
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab == null) return;
-
-    final readerState = ref.read(readerDataProvider(activeTab.bookId));
-    if (readerState.paragraphs.isEmpty) return;
-
-    final settings = ref.read(settingsProvider);
-    ReaderCopyService.copySelectedContent(
-      ref: ref,
-      context: context,
-      scope: CopyScope.both,
-      addQuote: false,
-      lastSelectedContent: selectionState.lastSelectedContent,
-      visibleStartIndex: selectionState.visibleStartIndex,
-      visibleEndIndex: selectionState.visibleEndIndex,
-      script: settings.paliScript,
-    );
-  }
-
-  // ── TTS Floating Controls ────────────────────────────────────────────
-
-  bool _isTtsLineVisible(String bookId, int? ttsParaId) {
-    if (ttsParaId == null) return false;
-    final listener = _itemPositionsListeners[bookId];
-    final positions = listener?.itemPositions.value;
-    if (positions == null || positions.isEmpty) return false;
-
-    final visibleIndices = positions
-        .where((p) => p.itemTrailingEdge > 0)
-        .map((p) => p.index)
-        .toSet();
-    if (visibleIndices.isEmpty) return false;
-
-    final readerState = ref.read(readerDataProvider(bookId));
-    for (final idx in visibleIndices) {
-      if (idx >= 0 && idx < readerState.paragraphs.length) {
-        if (readerState.paragraphs[idx].paraId == ttsParaId) return true;
-      }
-    }
-    return false;
-  }
-
-  Future<void> _showTtsControlsPopup(
-    BuildContext context,
-    String bookId,
-  ) async {
-    final colors = Theme.of(context).colorScheme;
-    final ttsReadingState = ref.read(ttsReadingProvider);
-    final isTtsLineVisible = _isTtsLineVisible(
-      bookId,
-      ttsReadingState.currentParaId,
-    );
-
-    if (_cachedSystemVoices == null && !_voicesLoading) {
-      _voicesLoading = true;
-      try {
-        final voices = await ref.read(ttsProvider.notifier).getVoices();
-        _cachedSystemVoices = voices;
-      } catch (_) {}
-      _voicesLoading = false;
-    }
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: Consumer(
-            builder: (ctx, watchRef, _) {
-              final s = watchRef.watch(settingsProvider);
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Spacer(),
-                  TtsControlsCard(
-                    colors: colors,
-                    settings: s,
-                    isTtsLineVisible: isTtsLineVisible,
-                    onFollowTap: () {
-                      Navigator.of(dialogContext).pop();
-                      _followTts(bookId);
-                    },
-                    onSpeedChanged: (v) {
-                      ref.read(settingsProvider.notifier).setTtsSpeed(v);
-                    },
-                    onPitchChanged: (v) {
-                      ref.read(settingsProvider.notifier).setTtsPitch(v);
-                    },
-                    onVoiceChanged: (voice) {
-                      ref.read(settingsProvider.notifier).setTtsVoice(voice);
-                    },
-                    onSystemConfigTap: () {
-                      Navigator.of(dialogContext).pop();
-                      context.push('/settings/tts');
-                    },
-                    onClose: () => Navigator.of(dialogContext).pop(),
-                    voices: _cachedSystemVoices ?? [],
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  void _followTts(String bookId) {
-    ref.read(ttsSyncProvider(bookId).notifier).enableAutoScroll();
-    // Bug fix: Must set the jump-in-progress flag so the scroll
-    // triggered by _jumpToParagraph doesn't immediately re-disable
-    // auto-scroll in _onPositionsChanged.
-    ref.read(ttsSyncProvider(bookId).notifier).setJumpInProgress();
-    final ttsState = ref.read(ttsReadingProvider);
-    if (ttsState.currentParaId != null) {
-      _jumpToParagraph(
-        bookId,
-        ttsState.currentParaId!,
-        lineId: ttsState.currentLineId,
-      );
-    }
-  }
+  // ── TTS floating controls ────────────────────────────────────────────
+  // TTS playback coordination (start/stop, controls dialog, follow, mode
+  // forcing, auto-scroll) lives in [ReaderTtsController].
 
   @override
   void dispose() {
@@ -2073,17 +977,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _settleController.dispose();
     _dragDxNotifier.dispose();
     _appBarCollapsed.dispose();
-    _saveHistoryTimer?.cancel();
+    _scroll.dispose();
     // In-book search state is managed by [inBookSearchProvider] (auto-disposed)
-    for (final entry in _itemPositionsListeners.entries) {
-      final listener = _positionsListenerRefs[entry.key];
-      if (listener != null) {
-        entry.value.itemPositions.removeListener(listener);
-      }
-    }
-    for (final sub in _scrollOffsetSubs.values) {
-      sub.cancel();
-    }
     super.dispose();
   }
 
@@ -2214,22 +1109,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // same paragraph twice still re-jumps and reaches the exact line.
     final isNewInitialParaId =
         activeTab.initialParaId != null &&
-        _lastInitialJumpId[activeTab.bookId] != activeTab.initialJumpId;
+        _scroll.lastInitialJumpId(activeTab.bookId) != activeTab.initialJumpId;
     final isTabRestore =
         !isNewInitialParaId &&
         activeTab.currentParaId != null &&
-        _lastRestoredBookId != activeTab.bookId;
+        _scroll.lastRestoredBookId != activeTab.bookId;
 
     if (isNewInitialParaId) {
-      _isInitialJumpPending = true;
+      _scroll.isInitialJumpPending = true;
       final targetParaId = activeTab.initialParaId!;
       final targetLineId = activeTab.initialLineId;
-      _lastJumpedParaId[activeTab.bookId] = targetParaId;
-      _lastInitialJumpId[activeTab.bookId] = activeTab.initialJumpId;
-      _lastRestoredBookId = activeTab.bookId;
+      _scroll.setLastInitialJumpId(activeTab.bookId, activeTab.initialJumpId);
+      _scroll.lastRestoredBookId = activeTab.bookId;
       developer.log(
         '[BUILD] ${activeTab.bookId} isNewInitialParaId → jump to $targetParaId'
-        ' line=$targetLineId (isInitialJumpPending=$_isInitialJumpPending)',
+        ' line=$targetLineId (isInitialJumpPending=${_scroll.isInitialJumpPending})',
         name: 'epitaka.reader.ui',
       );
       final frameTime = DateTime.now().millisecondsSinceEpoch;
@@ -2250,7 +1144,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         // position the line at 30% of the viewport. Without a lineId, use a
         // small alignment (5%) so the paragraph isn't flush with the top and
         // hidden behind the app bar / search bar.
-        _jumpToParagraph(
+        _scroll.jumpToParagraph(
           activeTab.bookId,
           targetParaId,
           alignment: targetLineId != null ? 0.0 : 0.05,
@@ -2258,16 +1152,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
       });
     } else if (isTabRestore) {
-      _isInitialJumpPending = true;
-      _lastRestoredBookId = activeTab.bookId;
+      _scroll.isInitialJumpPending = true;
+      _scroll.lastRestoredBookId = activeTab.bookId;
       final targetParaId = activeTab.currentParaId!;
       // Restore the exact within-paragraph offset via a precise alignment
-      // derived from the saved fractional scrollOffset. We use _jumpToParagraph
-      // (a post-layout jumpTo) rather than initialScrollIndex, because
-      // initialScrollIndex relies on item-extent *estimates* and is wildly
-      // inaccurate for variable-height Pali paragraphs (off by ~a screen).
+      // derived from the saved fractional scrollOffset. We use
+      // jumpToParagraph (a post-layout jumpTo) rather than initialScrollIndex,
+      // because initialScrollIndex relies on item-extent *estimates* and is
+      // wildly inaccurate for variable-height Pali paragraphs (off by ~a
+      // screen).
       final offset =
-          _preciseScrollOffset[activeTab.bookId] ?? activeTab.scrollOffset;
+          _scroll.preciseScrollOffsetFor(activeTab.bookId) ??
+          activeTab.scrollOffset;
       // alignment must be the *negative* fractional part of the offset, i.e.
       // the item's leading edge. Because itemLeadingEdge is in [-1, 0] when
       // scrolled down within the top paragraph, offset = topIndex + leading
@@ -2276,7 +1172,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final double alignment = offset != null ? (offset - offset.ceil()) : 0.0;
       developer.log(
         '[BUILD] ${activeTab.bookId} isTabRestore → jump to $targetParaId '
-        'alignment=$alignment (isInitialJumpPending=$_isInitialJumpPending)',
+        'alignment=$alignment (isInitialJumpPending=${_scroll.isInitialJumpPending})',
         name: 'epitaka.reader.ui',
       );
       final frameTime = DateTime.now().millisecondsSinceEpoch;
@@ -2294,7 +1190,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             name: 'epitaka.reader.ui',
           );
         }
-        _jumpToParagraph(
+        _scroll.jumpToParagraph(
           activeTab.bookId,
           targetParaId,
           animate: false,
@@ -2351,7 +1247,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         if (tab != null && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _saveReadingHistory(tab.bookId, tab.bookName);
+              _scroll.saveReadingHistory(tab.bookId, tab.bookName);
             }
           });
         }
@@ -2389,124 +1285,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     });
 
     // ── TTS auto-scroll listener ───────────────────────────────────────
-    // Issue 3: Use timer-based _ttsJumpInProgress to cover highlighting
-    //          layout changes.
-    // Issue 4: Also scroll when lineId changes within the same paragraph,
-    //          not just when paraId changes.
-    ref.listen(ttsReadingProvider, (
-      TtsReadingState? prev,
-      TtsReadingState next,
-    ) {
-      // Auto-switch the reader to line-by-line while TTS plays — it is the
-      // only display mode that renders per-line widgets (and thus per-line
-      // GlobalKeys for the fine-scroll), so the spoken line can be followed
-      // precisely. Restore the previous mode when reading stops.
-      final wasActive = prev?.isActive ?? false;
-      final isActive = next.isActive;
-      if (isActive && !wasActive && _ttsModeBefore == null) {
-        _ttsModeBefore = ref.read(settingsProvider).translationDisplayMode;
-        if (_ttsModeBefore != TranslationDisplayMode.lineByLine) {
-          // Temporary (non-persisting) override so the user's saved mode
-          // is untouched even if this is never undone.
-          ref
-              .read(settingsProvider.notifier)
-              .setTranslationDisplayModeTemporary(
-                TranslationDisplayMode.lineByLine,
-              );
-        }
-      } else if (!isActive && wasActive && _ttsModeBefore != null) {
-        final currentMode = ref.read(settingsProvider).translationDisplayMode;
-        // Respect a manual display-mode change made during playback;
-        // otherwise restore what the reader used before TTS started.
-        if (currentMode == TranslationDisplayMode.lineByLine ||
-            currentMode == _ttsModeBefore) {
-          ref.read(settingsProvider.notifier).setTranslationDisplayModeTemporary(
-            _ttsModeBefore!,
-          );
-        }
-        _ttsModeBefore = null;
-      }
+    // TTS → reader coordination (display-mode forcing, history saving, and
+    // auto-scroll to the spoken line) lives in [ReaderTtsController].
+    ref.listen(
+      ttsReadingProvider,
+      (prev, next) => _tts.handleTtsStateChanged(prev, next),
+    );
 
-      final prevParaId = prev?.currentParaId;
-      final nextParaId = next.currentParaId;
-      final prevLineId = prev?.currentLineId;
-      final nextLineId = next.currentLineId;
-      if (!mounted || nextParaId == null) return;
-      if (_appLifecycleState != AppLifecycleState.resumed) return;
-      final currentBookId = ref.read(readerTabsProvider).activeTab?.bookId;
-      if (currentBookId == null || next.bookId != currentBookId) return;
-
-      // Issue 4: Also handle intra-paragraph line changes
-      final paraChanged = prevParaId != nextParaId;
-      final lineChanged = prevLineId != nextLineId;
-      if (!paraChanged && !lineChanged) return;
-
-      // Save reading history
-      final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
-      final ttsSync = ref.read(ttsSyncProvider(currentBookId));
-      developer.log(
-        '[TTS_UI] listener: prevParaId=$prevParaId nextParaId=$nextParaId '
-        'prevLineId=$prevLineId nextLineId=$nextLineId '
-        'ttsAutoScroll=${ttsSync.ttsAutoScroll}',
-        name: 'epitaka.tts',
-      );
-      _saveReadingHistory(
-        currentBookId,
-        bookName,
-        explicitParaId: nextParaId,
-        explicitLineId: nextLineId,
-      );
-
-      if (!ttsSync.ttsAutoScroll) {
-        developer.log(
-          '[TTS_UI] auto-scroll off, skipping jump',
-          name: 'epitaka.tts',
-        );
-        if (mounted) setState(() {});
-        return;
-      }
-
-      // Same-paragraph line change: the paragraph is already on screen, so a
-      // full paragraph-level re-scroll would re-anchor it at a new alignment
-      // (causing visible jumping / the "line not following" effect). Instead
-      // fine-scroll directly to the new line via its GlobalKey.
-      if (!paraChanged && nextLineId != null) {
-        final ttsSyncNotifier =
-            ref.read(ttsSyncProvider(currentBookId).notifier);
-        ttsSyncNotifier.setJumpInProgress();
-        ttsSyncNotifier.clearTargetLineKeys();
-        ttsSyncNotifier.setTargetParaId(nextParaId);
-        ttsSyncNotifier.setTargetLineKey(nextLineId, GlobalKey());
-        if (mounted) setState(() {});
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final jumpToken = (_jumpTokens[currentBookId] ?? 0) + 1;
-          _jumpTokens[currentBookId] = jumpToken;
-          developer.log(
-            '[TTS_UI] fine-scroll same-para to line=$nextLineId '
-            'token=$jumpToken',
-            name: 'epitaka.tts',
-          );
-          _fineScrollToLine(currentBookId, nextLineId, jumpToken: jumpToken);
-        });
-        return;
-      }
-
-      ref.read(ttsSyncProvider(currentBookId).notifier).setJumpInProgress();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        developer.log(
-          '[TTS_UI] post-frame jump to $nextParaId line=$nextLineId',
-          name: 'epitaka.tts',
-        );
-        _jumpToParagraph(
-          currentBookId,
-          nextParaId,
-          animate: false,
-          lineId: nextLineId,
-        );
-      });
-    });
+    // Keep the TTS sync provider alive for the active book while the reader
+    // is mounted. It is autoDispose and every other access is ref.read, so
+    // with no watcher it gets disposed right after the jump writes its
+    // target-line GlobalKey — and `fineScrollToLine` then reads a fresh
+    // empty provider, silently killing every line-level jump (book links,
+    // dictionary, search, TTS follow). Watching it here pins its lifetime
+    // to the reader.
+    ref.watch(ttsSyncProvider(activeTab.bookId));
 
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
@@ -2589,9 +1382,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   CallbackShortcuts(
                     bindings: {
                       SingleActivator(LogicalKeyboardKey.keyC, control: true):
-                          _onCopyShortcut,
+                          () => ReaderContextMenuBuilder.copyShortcut(
+                            context: context,
+                            ref: ref,
+                          ),
                       SingleActivator(LogicalKeyboardKey.keyC, meta: true):
-                          _onCopyShortcut,
+                          () => ReaderContextMenuBuilder.copyShortcut(
+                            context: context,
+                            ref: ref,
+                          ),
                     },
                     child: Focus(
                       autofocus: true,
@@ -2623,10 +1422,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             readerState.paragraphs.isNotEmpty
                         ? ReaderDragThumb(
                             readerState: readerState,
-                            itemScrollController:
-                                _itemScrollControllers[activeTab.bookId],
-                            itemPositionsListener:
-                                _itemPositionsListeners[activeTab.bookId],
+                            itemScrollController: _scroll.itemScrollControllerFor(
+                              activeTab.bookId,
+                            ),
+                            itemPositionsListener: _scroll.itemPositionsListenerFor(
+                              activeTab.bookId,
+                            ),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -2662,13 +1463,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         isJumpPending: ref
                             .read(ttsSyncProvider(activeTab.bookId))
                             .ttsJumpInProgress,
-                        isTtsLineVisible: _isTtsLineVisible(
+                        isTtsLineVisible: _tts.isTtsLineVisible(
                           activeTab.bookId,
                           ttsReadingState.currentParaId,
                         ),
                         onTap: () =>
-                            _showTtsControlsPopup(context, activeTab.bookId),
-                        onFollowTap: () => _followTts(activeTab.bookId),
+                            _tts.showControls(context, activeTab.bookId),
+                        onFollowTap: () => _tts.follow(activeTab.bookId),
                       ),
                     ),
 
@@ -2740,8 +1541,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // idempotent per bookId and cleaned up when the tab closes.
     ref.read(readerKeyboardBridgeProvider).register(
           activeTab.bookId,
-          _scrollControllerFor(activeTab.bookId),
-          _positionsListenerFor(activeTab.bookId),
+          _scroll.scrollControllerFor(activeTab.bookId),
+          _scroll.positionsListenerFor(activeTab.bookId),
         );
 
     // The keyboard reading cursor (focus line + selected chip), threaded
@@ -2777,9 +1578,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       translationColor: translationColor,
       enabledLangs: enabledLangs,
       langTypographies: langTypographies,
-      itemScrollController: _scrollControllerFor(activeTab.bookId),
-      itemPositionsListener: _positionsListenerFor(activeTab.bookId),
-      scrollOffsetListener: _scrollOffsetListenerFor(activeTab.bookId),
+      itemScrollController: _scroll.scrollControllerFor(activeTab.bookId),
+      itemPositionsListener: _scroll.positionsListenerFor(activeTab.bookId),
+      scrollOffsetListener: _scroll.scrollOffsetListenerFor(activeTab.bookId),
       initialScrollIndex: initialScrollIndex,
       contentHitTestKey: _contentHitTestKey,
       dragDxNotifier: _dragDxNotifier,
@@ -2790,7 +1591,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onPointerCancel: _handlePointerCancelForTabSwipe,
       scrollOffsetController: _autoScrollOffsetController,
       onSelectionChanged: _handleSelectionChanged,
-      contextMenuBuilder: _buildCopyContextMenu,
+      contextMenuBuilder: (context, state) => ReaderContextMenuBuilder.build(
+        context: context,
+        ref: ref,
+        selectableRegionState: state,
+        contentHitTestKey: _contentHitTestKey,
+      ),
       annotations: ref.watch(paragraphAnnotationsProvider(activeTab.bookId)),
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,

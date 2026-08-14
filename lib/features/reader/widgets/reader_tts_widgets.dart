@@ -73,8 +73,11 @@ class TtsControlsCard extends StatelessWidget {
   final bool isTtsLineVisible;
   final VoidCallback onFollowTap;
   final ValueChanged<double> onSpeedChanged;
+  final ValueChanged<double> onPaliSpeedChanged;
   final ValueChanged<double> onPitchChanged;
   final ValueChanged<String> onVoiceChanged;
+  final ValueChanged<TtsSpeakMode> onSpeakModeChanged;
+  final VoidCallback onInstallVoiceTap;
   final VoidCallback onSystemConfigTap;
   final VoidCallback onClose;
   final List<Map<String, String>> voices;
@@ -86,8 +89,11 @@ class TtsControlsCard extends StatelessWidget {
     required this.isTtsLineVisible,
     required this.onFollowTap,
     required this.onSpeedChanged,
+    required this.onPaliSpeedChanged,
     required this.onPitchChanged,
     required this.onVoiceChanged,
+    required this.onSpeakModeChanged,
+    required this.onInstallVoiceTap,
     required this.onSystemConfigTap,
     required this.onClose,
     required this.voices,
@@ -137,8 +143,56 @@ class TtsControlsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.sm),
           _ControlSlider(
+            icon: Icons.menu_book, label: loc.ttsPaliSpeed, value: settings.ttsPaliSpeed,
+            min: 0.5, max: 4.0, displayValue: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×', colors: colors, onChanged: onPaliSpeedChanged,
+          ),
+          const SizedBox(height: AppDimensions.sm),
+          _ControlSlider(
             icon: Icons.tune, label: loc.ttPitch, value: settings.ttsPitch,
             min: 0.5, max: 2.0, displayValue: '${settings.ttsPitch.toStringAsFixed(1)}×', colors: colors, onChanged: onPitchChanged,
+          ),
+          const SizedBox(height: AppDimensions.md),
+          Row(
+            children: [
+              Icon(Icons.chat_bubble_outline, size: 16, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(loc.ttsSpeakMode, style: AppTypography.labelSmall.copyWith(color: colors.onSurface, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<TtsSpeakMode>(
+              segments: [
+                ButtonSegment(
+                  value: TtsSpeakMode.translation,
+                  label: Text(loc.ttsSpeakTranslation, style: const TextStyle(fontSize: 11)),
+                ),
+                ButtonSegment(
+                  value: TtsSpeakMode.pali,
+                  label: Text(loc.ttsSpeakPali, style: const TextStyle(fontSize: 11)),
+                ),
+                ButtonSegment(
+                  value: TtsSpeakMode.both,
+                  label: Text(loc.ttsSpeakBothShort, style: const TextStyle(fontSize: 11)),
+                ),
+              ],
+              selected: {settings.ttsSpeakMode},
+              onSelectionChanged: (sel) => onSpeakModeChanged(sel.first),
+              showSelectedIcon: false,
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                padding: WidgetStatePropertyAll(
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                ),
+                textStyle: WidgetStatePropertyAll(
+                  AppTypography.labelSmall.copyWith(fontSize: 11),
+                ),
+                side: WidgetStatePropertyAll(
+                  BorderSide(color: colors.outlineVariant),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: AppDimensions.md),
           Row(
@@ -222,4 +276,31 @@ String stripHtmlForTts(String text) {
     .replaceAll(RegExp(r'<[^>]*>'), '')
     .replaceAll(RegExp(r'\\s+'), ' ')
     .trim();
+}
+
+/// Keep only system voices whose locale matches [langCode] (e.g. 'en'
+/// → 'en-US', 'en-GB'). Falls back to all voices when none match so the
+/// picker is never empty, and always keeps the currently selected voice
+/// selectable so the menu's initial value stays valid.
+///
+/// Voices come from flutter_tts `getVoices()` with `name` + `locale` keys.
+List<Map<String, String>> filterVoicesForLanguage(
+  List<Map<String, String>> voices,
+  String langCode, {
+  required String selectedVoice,
+}) {
+  if (voices.isEmpty) return voices;
+  final lc = langCode.toLowerCase();
+  final matched = voices.where((v) {
+    final loc = (v['locale'] ?? '').toLowerCase();
+    return loc == lc || loc.startsWith('$lc-') || loc.startsWith('${lc}_');
+  }).toList();
+  if (matched.isEmpty) return voices;
+  if (selectedVoice.isNotEmpty &&
+      selectedVoice != 'default' &&
+      !matched.any((v) => v['name'] == selectedVoice)) {
+    final sel = voices.where((v) => v['name'] == selectedVoice).toList();
+    if (sel.isNotEmpty) matched.insert(0, sel.first);
+  }
+  return matched;
 }

@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
 import '../../features/ai_qa/models/ai_qa_models.dart'
     show ChatThread, ChatMessageRecord;
 import '../utils/database_initializer.dart';
+import 'drift_database_executor.dart';
 import '../utils/pali_search_utils.dart';
 import 'epitaka_database.dart';
 import 'translation_database.dart';
@@ -609,7 +609,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   static AppDatabase _create(File file) {
-    final database = NativeDatabase(
+    final database = openDriftExecutor(
       file,
       setup: (db) {
         try {
@@ -622,7 +622,6 @@ class AppDatabase extends _$AppDatabase {
           db.execute('PRAGMA mmap_size=0'); // ← add this line
         } catch (_) {}
       },
-      logStatements: false,
     );
 
     return AppDatabase(database);

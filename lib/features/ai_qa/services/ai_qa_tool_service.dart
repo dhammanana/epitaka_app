@@ -12,16 +12,12 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import '../../../core/database/dpd_dictionary_database.dart';
-import '../../../core/utils/database_initializer.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
@@ -89,49 +85,6 @@ class AiQaToolService {
 
   AiQaToolService(this._ref);
 
-  /// Cached sqlite3 connection to epitaka.db (read-only) for BM25.
-  sqlite.Database? _epiDb;
-
-  /// Lazily open epitaka.db for BM25 search using `vec_chunks_fts`.
-  ///
-  /// Returns `null` if the DB does not exist or does not have a
-  /// `vec_chunks_fts` FTS5 index (the on-device index builder was
-  /// removed; on fresh installs the search falls back to LIKE).
-  Future<sqlite.Database?> _getEpiDbForBm25() async {
-    if (_epiDb != null) return _epiDb;
-
-    try {
-      final dbDir = await getDatabaseDirectory();
-      final epiDbPath = p.join(dbDir.path, 'epitaka.db');
-      final epiDbFile = File(epiDbPath);
-
-      if (!await epiDbFile.exists()) {
-        debugPrint('[AI_QA] epitaka.db not found at: $epiDbPath');
-        return null;
-      }
-
-      final db = sqlite.sqlite3.open(epiDbPath);
-
-      // Verify vec_chunks_fts exists
-      final tables = db.select(
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name='vec_chunks_fts'",
-      );
-      if (tables.isEmpty) {
-        debugPrint('[AI_QA] vec_chunks_fts not found in epitaka.db');
-        db.dispose();
-        return null;
-      }
-
-      debugPrint('[AI_QA] ✅ epitaka.db opened with vec_chunks_fts');
-      _epiDb = db;
-      return _epiDb;
-    } catch (e) {
-      debugPrint('[AI_QA] Failed to open epitaka.db: $e');
-      return null;
-    }
-  }
-
   // ── Tool 1: search_tipitaka ──────────────────────────────────────────
 
   /// Search the Tipitaka using **BM25 (FTS5) via Gavesana vec DB** when
@@ -177,11 +130,22 @@ class AiQaToolService {
   ///
   /// Returns results with `book_id`, `para_id`, `line_id`, `text` and
   /// `book_name`, ordered by BM25 relevance (best first).
+  ///
+  /// Runs through the drift connection (background isolate), so the query
+  /// never blocks the UI thread — the previous raw `sqlite3` connection
+  /// executed synchronously on the main isolate and froze the app during
+  /// AI searches.
   Future<ToolResult> _searchBm25(String query) async {
     try {
-      final epiDb = await _getEpiDbForBm25();
-      if (epiDb == null) {
-        debugPrint('[AI_QA] _searchBm25: epitaka.db with vec_chunks_fts not available');
+      final epitakaDb = await _ref.read(epitakaDbProvider.future);
+
+      // Verify vec_chunks_fts exists (legacy databases may lack it).
+      final hasIndex = await epitakaDb.customSelect(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='vec_chunks_fts'",
+      ).get();
+      if (hasIndex.isEmpty) {
+        debugPrint('[AI_QA] _searchBm25: vec_chunks_fts not available');
         return const ToolResult(
             success: false, data: '[]',
             errorMessage: 'BM25 index not available — falling back to LIKE search.');
@@ -208,7 +172,7 @@ class AiQaToolService {
 
       // Search across ALL FTS5 columns (pali_text, english_text) via
       // table-level MATCH joined with vec_chunks for metadata.
-      final rows = epiDb.select(
+      final rows = await epitakaDb.customSelect(
         'SELECT vc.chunk_id, vc.book_id, vc.start_para, vc.end_para, '
         'vc.start_line, vc.end_line, '
         'bm25(vec_chunks_fts) AS bm25_score '
@@ -217,24 +181,22 @@ class AiQaToolService {
         'WHERE vec_chunks_fts MATCH ? '
         'ORDER BY bm25_score ASC '
         'LIMIT 50',
-        [terms],
-      );
+        variables: [Variable.withString(terms)],
+      ).get();
 
       if (rows.isEmpty) {
         return const ToolResult(
             success: false, data: '[]', errorMessage: 'No BM25 matches');
       }
 
-      // Fetch Pāli text from epitaka.db for each result
-      final epitakaDb = await _ref.read(epitakaDbProvider.future);
       final results = <Map<String, dynamic>>[];
 
       debugPrint('[AI_QA] _searchBm25: ${rows.length} chunks matched, fetching texts...');
 
       for (final row in rows) {
-        final bookId = row['book_id'] as String;
-        final startPara = row['start_para'] as int;
-        final endPara = row['end_para'] as int;
+        final bookId = row.data['book_id'] as String;
+        final startPara = row.data['start_para'] as int;
+        final endPara = row.data['end_para'] as int;
         // Fetch the first line of the chunk for display and book name
         final paliRows = await epitakaDb.customSelect(
           'SELECT s.para_id, s.line_id, s.pali, b.book_name '

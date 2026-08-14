@@ -28,12 +28,20 @@ class LineData {
   /// and with diacritics normalized (ā→a, ṭ→t, ṃ→m, etc.).
   final String normalizedText;
 
+  /// Translation remarks (notes) for this line, keyed by language code
+  /// (e.g. 'en'). Filled from the translation database's
+  /// `translation_remarks` table and rendered as a small note under the
+  /// line's translation. Empty when the language has no remark for this
+  /// line or the table doesn't exist.
+  final Map<String, String> remarks;
+
   const LineData({
     required this.lineId,
     this.paliText,
     this.translations = const {},
     this.pageNumbers = const {},
     required this.normalizedText,
+    this.remarks = const {},
   });
 }
 
@@ -508,6 +516,9 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     // ── Load all enabled translations in parallel ────────────────────
     final transSw = Stopwatch()..start();
     final transByLang = <String, Map<int, Map<int, String>>>{};
+
+    // Translation remarks (notes) per language: lang -> paraId -> lineId -> note.
+    final remarksByLang = <String, Map<int, Map<int, String>>>{};
     await Future.wait(
       enabledLangs.map((langCode) async {
         final settings = _ref.read(settingsProvider);
@@ -576,6 +587,45 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           }
           transByLang[langCode] = langMap;
 
+          // ── Translation remarks (notes) for this book ──────────────
+          // The `translation_remarks` table exists in every translation DB
+          // (may be absent in older files — tolerate that). Notes are
+          // sparse, keyed by (para_id, line_id); multiple notes on the
+          // same line are joined so each line keeps a single remark string.
+          try {
+            final rSw = Stopwatch()..start();
+            final remarkRows = await translationDb.customSelect(
+              'SELECT para_id, line_id, note FROM translation_remarks '
+              'WHERE book_id = ? AND note IS NOT NULL AND trim(note) != \'\'',
+              variables: [Variable(_bookId)],
+            ).get();
+            rSw.stop();
+            if (remarkRows.isNotEmpty) {
+              final remarksByLine = <int, Map<int, String>>{};
+              for (final r in remarkRows) {
+                final paraId = r.data['para_id'] as int;
+                final lineId = r.data['line_id'] as int;
+                final note = (r.data['note'] as String?)?.trim();
+                if (note == null || note.isEmpty) continue;
+                remarksByLine.putIfAbsent(paraId, () => {});
+                final existing = remarksByLine[paraId]![lineId];
+                remarksByLine[paraId]![lineId] =
+                    existing == null ? note : '$existing\n\n$note';
+              }
+              remarksByLang[langCode] = remarksByLine;
+            }
+            developer.log(
+              '[LOAD] Remarks ($langCode): ${rSw.elapsedMilliseconds}ms, '
+              'rows=${remarkRows.length}',
+              name: 'epitaka.reader',
+            );
+          } catch (e) {
+            developer.log(
+              '[LOAD] Remarks error ($langCode): $e',
+              name: 'epitaka.reader',
+            );
+          }
+
           developer.log(
             '[LOAD] Translation ($langCode): ${tSw.elapsedMilliseconds}ms, '
             'sentences=${transSentences.length}',
@@ -626,9 +676,14 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       final lines = <LineData>[];
       for (final rl in rawLines) {
         final lineTranslations = <String, String>{};
+        final lineRemarks = <String, String>{};
         for (final lang in transByLang.keys) {
           final text = transByLang[lang]?[paraId]?[rl.lineId];
           if (text != null) lineTranslations[lang] = text;
+          final remark = remarksByLang[lang]?[paraId]?[rl.lineId];
+          if (remark != null && remark.trim().isNotEmpty) {
+            lineRemarks[lang] = remark;
+          }
         }
         // Normalized text for in-book search is now computed on-demand
         // during search (see reader_search_notifier.dart), not eagerly during
@@ -640,6 +695,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
             translations: lineTranslations,
             normalizedText: '',
             pageNumbers: rl.pageNumbers,
+            remarks: lineRemarks,
           ),
         );
       }

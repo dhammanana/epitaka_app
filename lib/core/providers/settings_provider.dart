@@ -73,6 +73,14 @@ enum LibraryExpandLevel {
 /// Display mode for translations in the reader.
 enum TranslationDisplayMode { hideJoinLines, lineByLine, sideBySide }
 
+/// What the reader TTS should speak for each line.
+///
+/// - [translation]: only the (first enabled) translation — the default.
+/// - [pali]: only the Pāli text, converted to Sinhala script so system TTS
+///   pronounces it correctly (Roman Pāli with diacritics reads poorly).
+/// - [both]: Pāli first, then its translation.
+enum TtsSpeakMode { translation, pali, both }
+
 /// How a tap on reader text opens the dictionary.
 ///
 /// Values are appended (never reordered/removed) so the integer stored in
@@ -378,6 +386,11 @@ class AppSettings {
   final String ttsEngine;
   final String ttsVoice;
   final double ttsSpeed;
+
+  /// Speech rate for Pāli lines, separate from [ttsSpeed] so Pāli can be
+  /// read slower/faster than the translation. Pāli lines are spoken in
+  /// Devanagari (Hindi) — a slower rate often reads Pāli more clearly.
+  final double ttsPaliSpeed;
   final double ttsPitch;
   final String ttsSupertonicVoice;
   final String ttsSupertonicLanguage;
@@ -388,6 +401,11 @@ class AppSettings {
   /// better but take longer.
   final String ttsSupertonicQuality;
   final bool ttsSupertonicDownloaded;
+
+  /// What the reader TTS reads for each line: the translation, the Pāli
+  /// (converted to Devanagari/Hindi — the best voice for Pāli), or both.
+  /// Defaults to [TtsSpeakMode.translation].
+  final TtsSpeakMode ttsSpeakMode;
 
   /// Quote/citation format when copying text.
   final CopyQuoteFormat copyQuoteFormat;
@@ -489,11 +507,13 @@ class AppSettings {
     this.ttsEngine = 'system',
     this.ttsVoice = 'default',
     this.ttsSpeed = 1.0,
+    this.ttsPaliSpeed = 1.0,
     this.ttsPitch = 1.0,
     this.ttsSupertonicVoice = 'M1',
     this.ttsSupertonicLanguage = 'en',
     this.ttsSupertonicQuality = 'medium',
     this.ttsSupertonicDownloaded = false,
+    this.ttsSpeakMode = TtsSpeakMode.translation,
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
     this.paliScript = Script.roman,
@@ -535,11 +555,13 @@ class AppSettings {
     String? ttsEngine,
     String? ttsVoice,
     double? ttsSpeed,
+    double? ttsPaliSpeed,
     double? ttsPitch,
     String? ttsSupertonicVoice,
     String? ttsSupertonicLanguage,
     String? ttsSupertonicQuality,
     bool? ttsSupertonicDownloaded,
+    TtsSpeakMode? ttsSpeakMode,
     CopyQuoteFormat? copyQuoteFormat,
     CopyScope? copyDefaultScope,
     Script? paliScript,
@@ -583,6 +605,7 @@ class AppSettings {
       ttsEngine: ttsEngine ?? this.ttsEngine,
       ttsVoice: ttsVoice ?? this.ttsVoice,
       ttsSpeed: ttsSpeed ?? this.ttsSpeed,
+      ttsPaliSpeed: ttsPaliSpeed ?? this.ttsPaliSpeed,
       ttsPitch: ttsPitch ?? this.ttsPitch,
       ttsSupertonicVoice: ttsSupertonicVoice ?? this.ttsSupertonicVoice,
       ttsSupertonicLanguage:
@@ -590,6 +613,7 @@ class AppSettings {
       ttsSupertonicQuality: ttsSupertonicQuality ?? this.ttsSupertonicQuality,
       ttsSupertonicDownloaded:
           ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
+      ttsSpeakMode: ttsSpeakMode ?? this.ttsSpeakMode,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
@@ -832,6 +856,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsEngine: prefs.getString('tts_engine') ?? 'system',
       ttsVoice: prefs.getString('tts_voice') ?? 'default',
       ttsSpeed: prefs.getDouble('tts_speed') ?? 1.0,
+      ttsPaliSpeed: prefs.getDouble('tts_pali_speed') ?? 1.0,
       ttsPitch: prefs.getDouble('tts_pitch') ?? 1.0,
       ttsSupertonicVoice: prefs.getString('tts_supertonic_voice') ?? 'M1',
       ttsSupertonicLanguage: prefs.getString('tts_supertonic_language') ?? 'en',
@@ -839,6 +864,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
           prefs.getString('tts_supertonic_quality') ?? 'medium',
       ttsSupertonicDownloaded:
           prefs.getBool('tts_supertonic_downloaded') ?? false,
+      ttsSpeakMode: _parseTtsSpeakMode(prefs.getString('tts_speak_mode')),
       copyQuoteFormat: _parseCopyQuoteFormat(
         prefs.getString('copy_quote_format') ?? 'none',
       ),
@@ -1091,6 +1117,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setDouble('tts_speed', speed);
   }
 
+  Future<void> setTtsPaliSpeed(double speed) async {
+    state = state.copyWith(ttsPaliSpeed: speed);
+    await _prefs?.setDouble('tts_pali_speed', speed);
+  }
+
   Future<void> setTtsPitch(double pitch) async {
     state = state.copyWith(ttsPitch: pitch);
     await _prefs?.setDouble('tts_pitch', pitch);
@@ -1115,6 +1146,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(ttsSupertonicDownloaded: downloaded);
     await _prefs?.setBool('tts_supertonic_downloaded', downloaded);
   }
+
+  /// Set what the reader TTS speaks for each line (translation / Pāli / both).
+  Future<void> setTtsSpeakMode(TtsSpeakMode mode) async {
+    state = state.copyWith(ttsSpeakMode: mode);
+    await _prefs?.setString('tts_speak_mode', mode.name);
+  }
+
 
   Future<void> setCopyQuoteFormat(CopyQuoteFormat format) async {
     state = state.copyWith(copyQuoteFormat: format);
@@ -1294,6 +1332,14 @@ Script _parseScript(String? value) {
   return Script.values.firstWhere(
     (s) => s.name == value,
     orElse: () => Script.roman,
+  );
+}
+
+TtsSpeakMode _parseTtsSpeakMode(String? value) {
+  if (value == null || value.isEmpty) return TtsSpeakMode.translation;
+  return TtsSpeakMode.values.firstWhere(
+    (m) => m.name == value,
+    orElse: () => TtsSpeakMode.translation,
   );
 }
 

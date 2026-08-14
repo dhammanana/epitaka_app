@@ -9,16 +9,137 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/services/tts_audio_handler.dart';
 
+/// Bounded FIFO of pre-synthesized audio for upcoming TTS lines.
+///
+/// Neural synthesis (Supertonic) can be slower than real-time playback at
+/// high speeds: prefetching only the single next line leaves an audible gap
+/// whenever the current line finishes before the next one is ready. This
+/// queue keeps several upcoming lines synthesized ahead of time so playback
+/// never has to wait on synthesis.
+///
+/// Entries are tagged with the reading-session id that created them, so a
+/// stale entry can never be reused after skip/stop/start (which bump the
+/// session id). A failed prefetch resolves to [failed]; callers fall back to
+/// on-demand synthesis instead of skipping the line.
+class PreparedAudioQueue {
+  PreparedAudioQueue({this.ahead = 3});
+
+  /// How many upcoming lines to keep synthesized ahead of the current one.
+  final int ahead;
+
+  /// Sentinel result of a prefetch that failed. Compare with `identical` or
+  /// `==` against awaited audio to detect a failed prefetch.
+  static const Object failed = _PrefetchFailure();
+
+  final List<_PreparedLine> _entries = [];
+
+  /// Whether [index] (for [sessionId]) is already prepared or in flight.
+  bool contains(int sessionId, int index) => _entries.any(
+    (e) => e.sessionId == sessionId && e.index == index,
+  );
+
+  /// Take the prepared future for [index] (for [sessionId]) if present,
+  /// removing it from the queue. Returns null when not prepared.
+  Future<dynamic>? take(int sessionId, int index) {
+    final i = _entries.indexWhere(
+      (e) => e.sessionId == sessionId && e.index == index,
+    );
+    if (i == -1) return null;
+    return _entries.removeAt(i).future;
+  }
+
+  /// Drop entries that were consumed (index <= [currentIndex]) or belong to
+  /// another session, then enqueue synthesis for the next [ahead] non-empty
+  /// lines via [synthesize].
+  void ensure(
+    int sessionId,
+    int currentIndex,
+    List<TtsLineItem> lines,
+    Future<dynamic> Function(TtsLineItem line) synthesize,
+  ) {
+    _entries.removeWhere(
+      (e) => e.sessionId != sessionId || e.index <= currentIndex,
+    );
+    for (var i = 1; i <= ahead; i++) {
+      final idx = currentIndex + i;
+      if (idx >= lines.length) break;
+      if (contains(sessionId, idx)) continue;
+      final line = lines[idx];
+      if (line.text.trim().isEmpty) continue;
+      _entries.add(
+        _PreparedLine(sessionId, idx, _prepare(idx, line, synthesize)),
+      );
+    }
+  }
+
+  /// Drop every entry (session change / stop).
+  void clear() => _entries.clear();
+
+  /// Number of entries currently buffered.
+  int get length => _entries.length;
+
+  /// Synthesize [line] guarding both synchronous throws and failed
+  /// futures, resolving to [failed] on error so the caller falls back to
+  /// on-demand synthesis instead of skipping the line.
+  ///
+  /// Implemented as a real `async` function (not Future.sync + catchError)
+  /// so the returned future is always typed `Future<dynamic>` — catchError
+  /// on a passthrough `Future<Never>` rejects the [failed] sentinel at
+  /// runtime.
+  static Future<dynamic> _prepare(
+    int idx,
+    TtsLineItem line,
+    Future<dynamic> Function(TtsLineItem line) synthesize,
+  ) async {
+    try {
+      return await synthesize(line);
+    } catch (e) {
+      developer.log(
+        '[TTS_PIPE] prefetch line $idx failed: $e',
+        name: 'epitaka.tts',
+      );
+      return failed;
+    }
+  }
+}
+
+class _PreparedLine {
+  _PreparedLine(this.sessionId, this.index, this.future);
+
+  final int sessionId;
+  final int index;
+  final Future<dynamic> future;
+}
+
+class _PrefetchFailure {
+  const _PrefetchFailure();
+}
+
 /// A single line item to be spoken by TTS.
 class TtsLineItem {
   final int paraId;
   final int lineId;
   final String text;
 
+  /// TTS language code for this item — e.g. 'si' for Sinhala-converted
+  /// Pāli, or the translation's language code. When null, the engine
+  /// derives the language from the first enabled translation.
+  final String? language;
+
+  /// When non-null, this item is a Pāli line and [paliRoman] is its
+  /// cleaned Roman (IAST) source. The engine prefers to speak the
+  /// Sinhala-converted [text], but can re-encode from this source when
+  /// the active TTS engine has no Sinhala voice (falling back to
+  /// Devanagari/Hindi, then plain ASCII Roman) instead of skipping the
+  /// line.
+  final String? paliRoman;
+
   const TtsLineItem({
     required this.paraId,
     required this.lineId,
     required this.text,
+    this.language,
+    this.paliRoman,
   });
 }
 
@@ -78,8 +199,11 @@ class TtsReadingState {
 class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   final Ref _ref;
   int _currentSessionId = 0;
-  Future<dynamic>? _pendingSynth;
-  int? _pendingSynthIndex;
+
+  /// Buffer of pre-synthesized audio for upcoming lines (engines that
+  /// support look-ahead, i.e. Supertonic). Kept ahead of the current line
+  /// so high-speed playback never waits on synthesis.
+  final PreparedAudioQueue _prepared = PreparedAudioQueue();
 
   /// Subscription to Android's ACTION_AUDIO_BECOMING_NOISY broadcast
   /// (triggered when Bluetooth disconnects or the headphone jack is
@@ -103,8 +227,7 @@ Future<void> startReading(
     // Invalidate and cancel any running speak loops by incrementing the session ID
     _currentSessionId++;
     final sessionId = _currentSessionId;
-    _pendingSynth = null;
-    _pendingSynthIndex = null;
+    _prepared.clear();
 
     developer.log(
       '[TTS_LIFECYCLE] startReading() called: bookId=$bookId '
@@ -244,8 +367,7 @@ Future<void> startReading(
       name: 'epitaka.tts',
     );
     _currentSessionId++;
-    _pendingSynth = null;
-    _pendingSynthIndex = null;
+    _prepared.clear();
     // Save the final position before the state is reset below.
     _listeningSaveTimer?.cancel();
     _listeningSaveTimer = null;
@@ -346,22 +468,48 @@ Future<void> startReading(
         await ttsNotifier.resume();
       } else if (ttsNotifier.supportsPrefetch) {
         dynamic audio;
-        if (_pendingSynthIndex == index && _pendingSynth != null) {
-          audio = await _pendingSynth;
+        final prepared = _prepared.take(sessionId, index);
+        if (prepared != null) {
+          audio = await prepared;
+          if (audio == PreparedAudioQueue.failed) {
+            // The look-ahead synthesis failed earlier — synthesize now
+            // instead of skipping the line.
+            audio = await ttsNotifier.synthesizePrepared(
+              line.text,
+              language: line.language,
+              paliRoman: line.paliRoman,
+            );
+          }
         } else {
-          audio = await ttsNotifier.synthesizePrepared(line.text);
+          audio = await ttsNotifier.synthesizePrepared(
+            line.text,
+            language: line.language,
+            paliRoman: line.paliRoman,
+          );
         }
-        _pendingSynth = null;
-        _pendingSynthIndex = null;
 
         if (sessionId != _currentSessionId) return;
 
-        // Start synthesizing the NEXT line now, while this one plays.
-        _prefetchNext(sessionId, index);
+        // Keep the buffer full: synthesize the next several lines while
+        // this one plays (replaces the old single-line look-ahead).
+        _prepared.ensure(
+          sessionId,
+          index,
+          state.lines,
+          (nextLine) => ttsNotifier.synthesizePrepared(
+            nextLine.text,
+            language: nextLine.language,
+            paliRoman: nextLine.paliRoman,
+          ),
+        );
 
         await ttsNotifier.playPrepared(audio);
       } else {
-        await ttsNotifier.speak(line.text);
+        await ttsNotifier.speak(
+          line.text,
+          language: line.language,
+          paliRoman: line.paliRoman,
+        );
       }
     } catch (_) {
       // Error speaking — continue to next line
@@ -377,29 +525,12 @@ Future<void> startReading(
     }
   }
 
-  /// Kick off synthesis of the next line in the background.
-  void _prefetchNext(int sessionId, int currentIndex) {
-    final nextIndex = currentIndex + 1;
-    if (nextIndex >= state.lines.length) return;
-    final nextLine = state.lines[nextIndex];
-    if (nextLine.text.trim().isEmpty) return;
-
-    final ttsNotifier = _ref.read(ttsProvider.notifier);
-    _pendingSynthIndex = nextIndex;
-    _pendingSynth = ttsNotifier.synthesizePrepared(nextLine.text).catchError((e) {
-      if (sessionId == _currentSessionId) {
-        _pendingSynthIndex = null;
-        _pendingSynth = null;
-      }
-      throw e;
-    });
-  }
-
   /// Skip forward one line (next/forward button on lock screen).
   Future<void> skipForward() async {
     if (!state.isActive && !state.isPaused) return;
     _currentSessionId++;
     final sessionId = _currentSessionId;
+    _prepared.clear();
     await _ref.read(ttsProvider.notifier).stop();
     final nextIndex = state.currentIndex + 1;
     if (nextIndex < state.lines.length) {
@@ -423,6 +554,7 @@ Future<void> startReading(
     if (state.currentIndex <= 0) return;
     _currentSessionId++;
     final sessionId = _currentSessionId;
+    _prepared.clear();
     await _ref.read(ttsProvider.notifier).stop();
     state = state.copyWith(currentIndex: state.currentIndex - 1);
     _scheduleListeningHistorySave();
@@ -548,13 +680,12 @@ Future<void> startReading(
       '[TTS_LIFECYCLE] TtsReadingNotifier.dispose() called '
       'isActive=${state.isActive} isPaused=${state.isPaused} '
       'hasNoisySubscription=${_noisySubscription != null} '
-      'hasPendingSynth=${_pendingSynth != null} '
+      'preparedLines=${_prepared.length} '
       'hasBookNameCache=${_bookNameCache.isNotEmpty}',
       name: 'epitaka.tts',
     );
     _currentSessionId++;
-    _pendingSynth = null;
-    _pendingSynthIndex = null;
+    _prepared.clear();
     _noisySubscription?.cancel();
     _noisySubscription = null;
     // Save the final listening position (best-effort, not awaited in dispose).

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
@@ -65,6 +66,23 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
                         }.start()
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_SETTINGS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "openTtsSettings" -> {
+                        // Official Android TTS settings screen (voice
+                        // install/manage). url_launcher can't launch this —
+                        // it only does ACTION_VIEW — so expose it natively.
+                        try {
+                            startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("LAUNCH_FAILED", e.message, null)
+                        }
                     }
                     else -> result.notImplemented()
                 }
@@ -178,6 +196,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "epitaka/asset_pack"
         private const val PROCESS_TEXT_CHANNEL = "epitaka/process_text"
+        private const val TTS_SETTINGS_CHANNEL = "epitaka/tts_settings"
         private val CORE_DB_FILES = listOf("epitaka.db", "dpd-dictionary.db")
     }
 }

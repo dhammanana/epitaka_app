@@ -205,9 +205,14 @@ class ReaderBottomToolbar extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: buttons,
+      // Horizontally scrollable so narrow screens (or many actions)
+      // never overflow the pill — content stays centered and reachable.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: buttons,
+        ),
       ),
     );
   }
