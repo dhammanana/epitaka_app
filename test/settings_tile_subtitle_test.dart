@@ -51,7 +51,7 @@ void main() {
   testWidgets('long subtitle is stripped on a narrow screen', (tester) async {
     // Tall window so every section's tiles are inflated (the System section
     // with the longest subtitle is near the bottom of the list).
-    await pumpApp(tester, const Size(260, 1600));
+    await pumpApp(tester, const Size(260, 1800));
 
     final texts = tester
         .widgetList<Text>(find.byType(Text))
@@ -68,7 +68,7 @@ void main() {
   });
 
   testWidgets('subtitle is shown when there is room', (tester) async {
-    await pumpApp(tester, const Size(900, 1600));
+    await pumpApp(tester, const Size(900, 1800));
 
     expect(find.text('Context Menu'), findsOneWidget);
     expect(find.text('Customize the selection toolbar'), findsOneWidget,
@@ -82,7 +82,7 @@ void main() {
     // TextPainter uses the same scaler as the rendered text.
     tester.platformDispatcher.textScaleFactorTestValue = 2.0;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await pumpApp(tester, const Size(900, 1600));
+    await pumpApp(tester, const Size(900, 1800));
 
     expect(find.text('Context Menu'), findsOneWidget);
     expect(find.text('Customize the selection toolbar'), findsNothing,

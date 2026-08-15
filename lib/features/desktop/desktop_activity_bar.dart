@@ -96,6 +96,12 @@ class DesktopActivityBar extends StatelessWidget {
         loc.gavesana,
       ),
       _ActivityItem(
+        SidePanelType.translator,
+        Icons.translate,
+        Icons.translate,
+        loc.t('Translation Builder'),
+      ),
+      _ActivityItem(
         null, // dictionary is not a plain sidebar toggle
         Icons.menu_book_outlined,
         Icons.menu_book,

@@ -24,6 +24,10 @@ const String kGeminiBaseUrl =
 /// Number of retries for non-streaming API calls.
 const int kAiMaxRetries = 2;
 
+/// Max output tokens requested for the Translation Builder's text call
+/// (matches the server's book_translator.py 65k output budget).
+const int kTranslatorMaxOutputTokens = 65000;
+
 /// Shared function declarations (tools) for AI tool calling.
 ///
 /// Used by both Vimaṃsa and Gavesana so the model can decide how to search
@@ -507,6 +511,169 @@ class AiApiClient {
         );
         return jsonDecode(response) as Map<String, dynamic>;
     }
+  }
+
+  /// Plain text-generation call (no tools) used by the on-device Translation
+  /// Builder. Mirrors the server's `call_gemini` in book_translator.py: send
+  /// a system prompt + one user prompt, get back the raw text content.
+  ///
+  /// Returns the model's text reply (may contain JSON — callers use
+  /// [parseTranslatorJsonResponse] on it). Throws on unrecoverable errors
+  /// after retrying transient failures (429 / 5xx / connection drops), the
+  /// same policy as the tool-model calls.
+  static Future<String> callTextModel({
+    required AiProvider provider,
+    String baseUrl = '',
+    required String systemPrompt,
+    required String userPrompt,
+    required String apiKey,
+    required String model,
+    int maxOutputTokens = kTranslatorMaxOutputTokens,
+    String logTag = 'TRANSLATOR',
+  }) async {
+    switch (provider) {
+      case AiProvider.gemini:
+        final payload = {
+          'system_instruction': {
+            'parts': [
+              {'text': systemPrompt},
+            ],
+          },
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [
+                {'text': userPrompt},
+              ],
+            },
+          ],
+          'generationConfig': {
+            'maxOutputTokens': maxOutputTokens,
+            'temperature': 0.3,
+          },
+        };
+        final response = await _callGeminiApi(
+          model: model,
+          apiKey: apiKey,
+          payload: payload,
+          logTag: logTag,
+        );
+        final data = jsonDecode(response) as Map<String, dynamic>;
+        return _extractGeminiText(data);
+      case AiProvider.openai:
+      case AiProvider.openrouter:
+        final effectiveBase =
+            baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl;
+        final payload = {
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': userPrompt},
+          ],
+          'max_tokens': maxOutputTokens,
+          'temperature': 0.3,
+        };
+        final response = await _callOpenAiApiRaw(
+          model: model,
+          apiKey: apiKey,
+          baseUrl: effectiveBase,
+          payload: payload,
+          logTag: logTag,
+        );
+        // _callOpenAiApiRaw adapts the OpenAI response into the Gemini
+        // shape (candidates[].content.parts[].text) for the tool pipeline;
+        // for a plain text call we just read the text back out of that.
+        final data = jsonDecode(response) as Map<String, dynamic>;
+        return _extractGeminiText(data);
+    }
+  }
+
+  /// Extract the concatenated text from a Gemini `generateContent` response.
+  static String _extractGeminiText(Map<String, dynamic> data) {
+    final candidates = data['candidates'] as List<dynamic>? ?? [];
+    if (candidates.isEmpty) return '';
+    final content = candidates[0]['content'] as Map<String, dynamic>?;
+    if (content == null) return '';
+    final parts = content['parts'] as List<dynamic>? ?? [];
+    final buf = StringBuffer();
+    for (final p in parts) {
+      if (p is Map && p['text'] is String) {
+        buf.write(p['text'] as String);
+      }
+    }
+    return buf.toString();
+  }
+
+  /// Defensive parse of the AI's JSON reply into a dict whose values are
+  /// lists, defaulting missing keys to []. Port of the server's
+  /// `ai_client.parse_ai_json_response`:
+  ///   1. strip ``` markdown fences;
+  ///   2. try a straight jsonDecode of the outermost {...} span;
+  ///   3. on failure (truncated output), scan for each `"key": [` marker
+  ///      and re-parse individual `{...}` objects inside the array — this
+  ///      salvages every complete item even when the array is cut off.
+  static Map<String, dynamic> parseTranslatorJsonResponse(
+    String raw,
+    List<String> keys,
+  ) {
+    var cleaned = raw.trim();
+    cleaned = cleaned.replaceFirst(
+      RegExp(r'^\s*```[a-zA-Z]*\s*\n?', multiLine: true),
+      '',
+    );
+    cleaned = cleaned.replaceFirst(
+      RegExp(r'\n?\s*```\s*$', multiLine: true),
+      '',
+    );
+    cleaned = cleaned.trim();
+
+    final start = cleaned.indexOf('{');
+    final end = cleaned.lastIndexOf('}');
+    if (start != -1 && end > start) {
+      try {
+        final obj =
+            jsonDecode(cleaned.substring(start, end + 1)) as Map<String, dynamic>;
+        for (final key in keys) {
+          obj.putIfAbsent(key, () => <dynamic>[]);
+        }
+        return obj;
+      } on FormatException {
+        // Fall through to the per-key scan below.
+      }
+    }
+
+    final obj = <String, dynamic>{
+      for (final key in keys) key: <dynamic>[],
+    };
+    for (final key in keys) {
+      final m = RegExp('"$key"\\s*:\\s*\\[').firstMatch(cleaned);
+      if (m == null) continue;
+      final arrayStart = m.end - 1;
+      var depth = 0;
+      int? objStart;
+      final items = <dynamic>[];
+      for (var i = arrayStart; i < cleaned.length; i++) {
+        final ch = cleaned[i];
+        if (ch == '{') {
+          if (depth == 0) objStart = i;
+          depth++;
+        } else if (ch == '}') {
+          depth--;
+          if (depth == 0 && objStart != null) {
+            try {
+              items.add(jsonDecode(cleaned.substring(objStart, i + 1)));
+            } on FormatException {
+              // Skip broken item.
+            }
+            objStart = null;
+          }
+        } else if (ch == ']' && depth == 0) {
+          break;
+        }
+      }
+      obj[key] = items;
+    }
+    return obj;
   }
 
   /// Build the request payload for the tool model, adapting to the provider.

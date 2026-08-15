@@ -25,6 +25,9 @@ enum SidePanelType {
 
   /// Pāli script converter panel (desktop sidebar).
   scriptConverter,
+
+  /// Translation Builder panel (desktop sidebar).
+  translator,
 }
 
 /// Which slot a panel occupies.
@@ -200,6 +203,7 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
       case SidePanelType.history:
       case SidePanelType.annotations:
       case SidePanelType.scriptConverter:
+      case SidePanelType.translator:
         return PanelSlot.left;
       case SidePanelType.contents:
         return PanelSlot.left;

@@ -298,6 +298,22 @@ const Map<String, String> en = {
   'Gavesana AI search needs an API key. Configure it in Settings → AI Q&A.':
       'Gavesana AI search needs an API key. Configure it in Settings → AI Q&A.',
 
+  // ── Translation Builder ────────────────────────────────────────────
+  'Translation Builder': 'Translation Builder',
+  'Translate books on-device with AI': 'Translate books on-device with AI',
+  'Start Translation': 'Start Translation',
+  'Share DB': 'Share DB',
+  'AI Configuration': 'AI Configuration',
+  'Target Language': 'Target Language',
+  'Books to Translate': 'Books to Translate',
+  'System Prompt': 'System Prompt',
+  'API Keys': 'API Keys',
+  'Manage API Keys': 'Manage API Keys',
+  'Model': 'Model',
+  'Books': 'Books',
+  'Custom prompt': 'Custom prompt',
+  'Primary': 'Primary',
+
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'Display Mode',
   'Pāli Text': 'Pāli Text',

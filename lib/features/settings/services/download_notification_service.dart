@@ -29,6 +29,7 @@ class DownloadNotificationService {
   static const int _translationNotificationId = 1001;
   static const int _gavesanaNotificationId = 1002;
   static const int _supertonicNotificationId = 1003;
+  static const int _translatorRunNotificationId = 1004;
 
   /// Must be called once at app startup (e.g. in [main] or app init).
   Future<void> init() async {
@@ -199,6 +200,79 @@ class DownloadNotificationService {
     _safeCancel(_supertonicNotificationId);
   }
 
+  // ── Translation Builder run notifications ───────────────────────────
+
+  /// Show or update the ongoing translation-run progress notification.
+  void showTranslatorRunProgress({
+    required String title,
+    String? body,
+    required double progress,
+    bool isIndeterminate = false,
+  }) {
+    final pct = (progress * 100).round().clamp(0, 100);
+    final androidDetails = _androidChannel(
+      'translator_run',
+      'Translation Builder',
+      ongoing: true,
+      showProgress: !isIndeterminate,
+      maxProgress: 100,
+      currentProgress: pct,
+      indeterminate: isIndeterminate,
+      // Default (not low) importance so the run notification actually
+      // shows in the status bar — LOW was the reason the earlier progress
+      // notifications never appeared.
+    );
+    _safeShow(
+      _translatorRunNotificationId,
+      title,
+      body ?? (isIndeterminate ? null : '$pct%'),
+      NotificationDetails(android: androidDetails),
+    );
+  }
+
+  /// Mark the translation run as finished (brief "done" then auto-dismiss).
+  void showTranslatorRunComplete(String title, String body) {
+    final androidDetails = _androidChannel(
+      'translator_run',
+      'Translation Builder',
+      ongoing: false,
+      showProgress: false,
+    );
+    _safeShow(
+      _translatorRunNotificationId,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      _safeCancel(_translatorRunNotificationId);
+    });
+  }
+
+  /// Show a translation-run error.
+  void showTranslatorRunError(String title, String body) {
+    final androidDetails = _androidChannel(
+      'translator_run',
+      'Translation Builder',
+      ongoing: false,
+      showProgress: false,
+    );
+    _safeShow(
+      _translatorRunNotificationId,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+    );
+    Future.delayed(const Duration(seconds: 8), () {
+      _safeCancel(_translatorRunNotificationId);
+    });
+  }
+
+  /// Dismiss the translation-run notification.
+  void dismissTranslatorRun() {
+    _safeCancel(_translatorRunNotificationId);
+  }
+
   // ── Low-level helpers ────────────────────────────────────────────────
 
   AndroidNotificationDetails _androidChannel(
@@ -214,7 +288,10 @@ class DownloadNotificationService {
       channelId,
       channelName,
       channelDescription: 'Download progress for $channelName',
-      importance: Importance.low,
+      // DEFAULT (not LOW): LOW-importance channels are silent and often
+      // hidden by OEMs — this was why the progress notifications never
+      // showed in the status bar.
+      importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       ongoing: ongoing,
       showProgress: showProgress,

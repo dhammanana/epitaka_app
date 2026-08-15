@@ -54,12 +54,6 @@ class TranslationDownloadNotifier
     extends StateNotifier<Map<String, TranslationDownloadState>> {
   final Map<String, CancelableCompleter> _cancelTokens = {};
 
-  /// Number of in-flight downloads currently keeping the Android
-  /// foreground service alive. The service is only stopped once the last
-  /// download finishes, so a translation and a core asset downloading at
-  /// the same time don't kill each other's keep-alive.
-  int _fgsRefCount = 0;
-
   TranslationDownloadNotifier() : super({});
 
   /// Get the download state for a specific version key.
@@ -146,25 +140,24 @@ class TranslationDownloadNotifier
   /// Start (or attach to) the download foreground service. Returns whether
   /// the ongoing status-bar notification is active (callers fall back to a
   /// plain local notification when false).
+  ///
+  /// The foreground service itself is ref-counted per owner (downloads vs
+  /// translation runs), so multiple downloads and a translation run sharing
+  /// the process keep each other alive until the last one finishes.
   Future<bool> _fgsStart({
     required String title,
     required String text,
   }) async {
-    final active = await DownloadForegroundService.instance.showDownload(
+    return DownloadForegroundService.instance.showDownload(
       title: title,
       text: text,
     );
-    if (active) _fgsRefCount++;
-    return active;
   }
 
-  /// Detach this download from the foreground service, stopping it (and
-  /// removing its notification) once no download needs it any more.
+  /// Detach this download from the foreground service. The service stops
+  /// itself once no download or translation run needs it any more.
   Future<void> _fgsStop() async {
-    if (_fgsRefCount > 0) _fgsRefCount--;
-    if (_fgsRefCount == 0) {
-      await DownloadForegroundService.instance.hideDownload();
-    }
+    await DownloadForegroundService.instance.hideDownload();
   }
 
   /// Cancel an in-progress download for a version key.

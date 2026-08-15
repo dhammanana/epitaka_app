@@ -19,6 +19,8 @@ import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
 import '../features/settings/screens/tts_settings_screen.dart';
+import '../features/translator/screens/translator_run_screen.dart';
+import '../features/translator/screens/translator_settings_screen.dart';
 import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
 import '../core/utils/platform_info.dart';
@@ -43,6 +45,8 @@ class AppRoutes {
   static const contextMenuSettings = '/settings/context-menu';
   static const dictionarySettings = '/settings/dictionary';
   static const help = '/settings/help';
+  static const translatorSettings = '/translator';
+  static const translatorRun = '/translator/run';
   static const contents = '/contents/:bookId';
   static const gavesana = '/gavesana';
   static const aiQa = '/ai-qa';
@@ -149,6 +153,18 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             path: 'help',
             name: 'help',
             builder: (context, state) => const HelpScreen(),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: AppRoutes.translatorSettings,
+        name: 'translatorSettings',
+        builder: (context, state) => const TranslatorSettingsScreen(),
+        routes: [
+          GoRoute(
+            path: 'run',
+            name: 'translatorRun',
+            builder: (context, state) => const TranslatorRunScreen(),
           ),
         ],
       ),

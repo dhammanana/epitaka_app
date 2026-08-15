@@ -216,6 +216,24 @@ class _MainDrawerState extends State<MainDrawer> {
                   onTap: () => _closeAndGo(context, '/ai-qa'),
                   selected: _isRouteActive(context, '/ai-qa'),
                 ),
+
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  indent: 20,
+                  endIndent: 20,
+                  color: colors.outlineVariant.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 4),
+
+                // ── Translation Builder ────────────────────────
+                _DrawerItem(
+                  icon: Icons.translate,
+                  title: loc.t('Translation Builder'),
+                  subtitle: loc.t('Translate books on-device with AI'),
+                  onTap: () => _closeAndGo(context, '/translator'),
+                  selected: _isRouteActive(context, '/translator'),
+                ),
               ],
             ),
           ),

@@ -13,6 +13,7 @@ import '../ai_qa/screens/ai_qa_screen.dart';
 import '../contents/widgets/contents_panel.dart';
 import '../dictionary/widgets/dictionary_panel.dart';
 import '../gavesana/widgets/gavesana_panel.dart';
+import '../translator/widgets/translator_panel.dart';
 import '../annotations/widgets/global_annotations_view.dart';
 import '../script_converter/widgets/script_converter_panel.dart';
 import '../library/widgets/history_panel.dart';
@@ -426,6 +427,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         return loc.contents;
       case SidePanelType.gavesana:
         return loc.gavesana;
+      case SidePanelType.translator:
+        return loc.t('Translation Builder');
       case SidePanelType.dictionary:
         return loc.dictionary;
     }
@@ -811,6 +814,8 @@ class DesktopSidebar extends StatelessWidget {
         return const ContentsPanel();
       case SidePanelType.gavesana:
         return const GavesanaPanel();
+      case SidePanelType.translator:
+        return const TranslatorPanel();
       case SidePanelType.dictionary:
         return const SizedBox.shrink();
     }
