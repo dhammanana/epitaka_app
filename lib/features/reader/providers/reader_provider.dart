@@ -10,6 +10,44 @@ import '../../../core/providers/settings_provider.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
 
+/// One row from a translation database's `translation_remarks` table.
+///
+/// Carries the full remark record — the AI's conflict note, its supporting
+/// Pāli / translation, and metadata — so the reader's remark dialog can
+/// display and edit everything, not just the free-text note.
+class TranslationRemark {
+  /// Row id in `translation_remarks` (null for a not-yet-saved row).
+  final int? id;
+  final int paraId;
+  final int lineId;
+  final String pali;
+  final String translation;
+  final String conflict;
+  final String note;
+  final String? sourceId;
+  final String? createdAt;
+
+  const TranslationRemark({
+    this.id,
+    required this.paraId,
+    required this.lineId,
+    this.pali = '',
+    this.translation = '',
+    this.conflict = '',
+    this.note = '',
+    this.sourceId,
+    this.createdAt,
+  });
+
+  /// Whether this remark has any editable content (so the reader only
+  /// marks lines whose remark is worth showing).
+  bool get hasContent =>
+      pali.trim().isNotEmpty ||
+      translation.trim().isNotEmpty ||
+      conflict.trim().isNotEmpty ||
+      note.trim().isNotEmpty;
+}
+
 /// A single line within a paragraph (Pāli + translations per line).
 class LineData {
   final int lineId;
@@ -28,12 +66,14 @@ class LineData {
   /// and with diacritics normalized (ā→a, ṭ→t, ṃ→m, etc.).
   final String normalizedText;
 
-  /// Translation remarks (notes) for this line, keyed by language code
-  /// (e.g. 'en'). Filled from the translation database's
-  /// `translation_remarks` table and rendered as a small note under the
-  /// line's translation. Empty when the language has no remark for this
-  /// line or the table doesn't exist.
-  final Map<String, String> remarks;
+  /// Translation remarks for this line, keyed by language code (e.g. 'en').
+  /// Each language holds a list because a line can carry several remark
+  /// rows (e.g. one per conflict the AI flagged). Filled from the
+  /// translation database's `translation_remarks` table and rendered as a
+  /// small note mark under the line's translation; tapping the mark opens
+  /// the full remark editor. Empty when the language has no remark for
+  /// this line or the table doesn't exist.
+  final Map<String, List<TranslationRemark>> remarks;
 
   const LineData({
     required this.lineId,
@@ -517,8 +557,9 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     final transSw = Stopwatch()..start();
     final transByLang = <String, Map<int, Map<int, String>>>{};
 
-    // Translation remarks (notes) per language: lang -> paraId -> lineId -> note.
-    final remarksByLang = <String, Map<int, Map<int, String>>>{};
+    // Translation remarks per language: lang -> paraId -> lineId -> rows.
+    final remarksByLang =
+        <String, Map<int, Map<int, List<TranslationRemark>>>>{};
     await Future.wait(
       enabledLangs.map((langCode) async {
         final settings = _ref.read(settingsProvider);
@@ -587,30 +628,31 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           }
           transByLang[langCode] = langMap;
 
-          // ── Translation remarks (notes) for this book ──────────────
+          // ── Translation remarks for this book ─────────────────────
           // The `translation_remarks` table exists in every translation DB
-          // (may be absent in older files — tolerate that). Notes are
-          // sparse, keyed by (para_id, line_id); multiple notes on the
-          // same line are joined so each line keeps a single remark string.
+          // (may be absent in older files — tolerate that). Remarks are
+          // sparse, keyed by (para_id, line_id); a line can carry several
+          // rows, so each line keeps a list.
           try {
             final rSw = Stopwatch()..start();
             final remarkRows = await translationDb.customSelect(
-              'SELECT para_id, line_id, note FROM translation_remarks '
-              'WHERE book_id = ? AND note IS NOT NULL AND trim(note) != \'\'',
+              'SELECT id, para_id, line_id, pali, translation, conflict, '
+              'note, source_id, created_at FROM translation_remarks '
+              'WHERE book_id = ?',
               variables: [Variable(_bookId)],
             ).get();
             rSw.stop();
             if (remarkRows.isNotEmpty) {
-              final remarksByLine = <int, Map<int, String>>{};
+              final remarksByLine = <int, Map<int, List<TranslationRemark>>>{};
               for (final r in remarkRows) {
                 final paraId = r.data['para_id'] as int;
                 final lineId = r.data['line_id'] as int;
-                final note = (r.data['note'] as String?)?.trim();
-                if (note == null || note.isEmpty) continue;
+                final remark = _remarkFromRow(r.data);
+                if (!remark.hasContent) continue;
                 remarksByLine.putIfAbsent(paraId, () => {});
-                final existing = remarksByLine[paraId]![lineId];
-                remarksByLine[paraId]![lineId] =
-                    existing == null ? note : '$existing\n\n$note';
+                remarksByLine[paraId]!
+                    .putIfAbsent(lineId, () => [])
+                    .add(remark);
               }
               remarksByLang[langCode] = remarksByLine;
             }
@@ -676,13 +718,13 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       final lines = <LineData>[];
       for (final rl in rawLines) {
         final lineTranslations = <String, String>{};
-        final lineRemarks = <String, String>{};
+        final lineRemarks = <String, List<TranslationRemark>>{};
         for (final lang in transByLang.keys) {
           final text = transByLang[lang]?[paraId]?[rl.lineId];
           if (text != null) lineTranslations[lang] = text;
-          final remark = remarksByLang[lang]?[paraId]?[rl.lineId];
-          if (remark != null && remark.trim().isNotEmpty) {
-            lineRemarks[lang] = remark;
+          final remarks = remarksByLang[lang]?[paraId]?[rl.lineId];
+          if (remarks != null && remarks.isNotEmpty) {
+            lineRemarks[lang] = remarks;
           }
         }
         // Normalized text for in-book search is now computed on-demand
@@ -740,6 +782,80 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     // ── Return data for the caller to emit (after generation check) ──
     return (paragraphs: paragraphs, bookLinks: bookLinks);
   }
+
+  /// Re-read `translation_remarks` for [langCode] and patch the loaded
+  /// paragraphs' remarks in place (no full book reload), so the remark
+  /// editor's saved edits show up as soon as the dialog closes.
+  Future<void> refreshRemarks(String langCode) async {
+    final settings = _ref.read(settingsProvider);
+    final versionSuffix = settings.translationVersionMap[langCode];
+    final isNissaya =
+        versionSuffix != null && TranslationFilenameParser.isNissaya(versionSuffix);
+    if (isNissaya) return; // Nissaya DBs have no remarks table.
+
+    final translationDb = await _ref.read(translationDbProvider(langCode).future);
+    if (translationDb == null) return;
+
+    try {
+      final remarkRows = await translationDb.customSelect(
+        'SELECT id, para_id, line_id, pali, translation, conflict, '
+        'note, source_id, created_at FROM translation_remarks '
+        'WHERE book_id = ?',
+        variables: [Variable(_bookId)],
+      ).get();
+      final remarksByLine = <int, Map<int, List<TranslationRemark>>>{};
+      for (final r in remarkRows) {
+        final paraId = r.data['para_id'] as int;
+        final lineId = r.data['line_id'] as int;
+        final remark = _remarkFromRow(r.data);
+        if (!remark.hasContent) continue;
+        remarksByLine.putIfAbsent(paraId, () => {});
+        remarksByLine[paraId]!.putIfAbsent(lineId, () => []).add(remark);
+      }
+
+      // Patch each paragraph's lines' remarks maps for this language.
+      final patched = state.paragraphs.map((p) {
+        final paraRemarks = remarksByLine[p.paraId];
+        if (paraRemarks == null) return p;
+        final lines = p.lines.map((l) {
+          final list = paraRemarks[l.lineId];
+          if (list == null || list.isEmpty) return l;
+          final updated = Map<String, List<TranslationRemark>>.from(l.remarks)
+            ..[langCode] = list;
+          return LineData(
+            lineId: l.lineId,
+            paliText: l.paliText,
+            translations: l.translations,
+            normalizedText: l.normalizedText,
+            pageNumbers: l.pageNumbers,
+            remarks: updated,
+          );
+        }).toList();
+        return p.copyWith(lines: lines);
+      }).toList();
+      state = state.copyWith(paragraphs: patched);
+    } catch (e) {
+      developer.log(
+        '[LOAD] Remarks refresh error ($langCode): $e',
+        name: 'epitaka.reader',
+      );
+    }
+  }
+}
+
+/// Build a [TranslationRemark] from one `translation_remarks` row map.
+TranslationRemark _remarkFromRow(Map<String, Object?> data) {
+  return TranslationRemark(
+    id: data['id'] as int?,
+    paraId: data['para_id'] as int,
+    lineId: data['line_id'] as int,
+    pali: (data['pali'] as String?) ?? '',
+    translation: (data['translation'] as String?) ?? '',
+    conflict: (data['conflict'] as String?) ?? '',
+    note: (data['note'] as String?) ?? '',
+    sourceId: data['source_id'] as String?,
+    createdAt: data['created_at'] as String?,
+  );
 }
 
 /// Internal raw line data before merging translations.

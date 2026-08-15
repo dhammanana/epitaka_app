@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -472,7 +473,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                 (r) => SuggestionTile(
                   word: r.lemma1,
                   meaningPreview: r.meaningHtml,
-                  onTap: () => _selectWord(r.lemma1),
+                  // Fill the search with the cleaned lemma: DPD
+                  // headwords carry a homograph suffix ("añña 1.1"),
+                  // which would otherwise be searched as-is.
+                  onTap: () => _selectWord(r.cleanLemma1),
                   colors: colors,
                 ),
               ),
@@ -556,7 +560,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
 // ── DPD Section ────────────────────────────────────────────────────────
 
-class _DpdSection extends ConsumerWidget {
+class _DpdSection extends ConsumerStatefulWidget {
   final ColorScheme colors;
   final DpdFullLookup lookup;
 
@@ -566,7 +570,35 @@ class _DpdSection extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DpdSection> createState() => _DpdSectionState();
+}
+
+class _DpdSectionState extends ConsumerState<_DpdSection> {
+  /// Which deconstructor candidate card is expanded (-1 = none).
+  int _activeDeconCardIndex = -1;
+
+  /// Which token inside the expanded candidate is selected.
+  int _activeDeconTokenIndex = 0;
+
+  /// Cached headword rows for deconstructor tokens, so tapping a token
+  /// doesn't re-hit the database every time.
+  final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
+
+  @override
+  void didUpdateWidget(_DpdSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A new search word resets the expand/collapse and cache state.
+    if (!identical(oldWidget.lookup, widget.lookup)) {
+      _activeDeconCardIndex = -1;
+      _activeDeconTokenIndex = 0;
+      _subLookupCache.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.colors;
+    final lookup = widget.lookup;
     final loc = AppLocalizations.of(context);
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
@@ -600,6 +632,14 @@ class _DpdSection extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 6),
+
+        // Deconstructor cards (word breakup) — same as the dictionary
+        // sheet. This was missing from the desktop panel: compound words
+        // like cirakālasamparicitaṃ only have a deconstructor (no direct
+        // headword with a meaning), so the panel showed nothing but the
+        // searched-word title.
+        if (lookup.hasDeconstructor) ...[_buildDeconstructorSection(colors, lookup), const SizedBox(height: 12)],
+
         ...lookup.headwords.map(
           (hw) => DpdHeadwordCard(
             lemma: hw.lemma1,
@@ -610,5 +650,225 @@ class _DpdSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Widget _buildDeconstructorSection(ColorScheme colors, DpdFullLookup lookup) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final paliFontFamily = pali.fontFamily.fontFamily;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.call_split, size: 14, color: colors.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              AppLocalizations.of(context).compoundBreakdown,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        ...lookup.deconstructionCandidates.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final candidate = entry.value;
+          final isActive = idx == _activeDeconCardIndex;
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                // Toggle: tapping the active card collapses it.
+                _activeDeconCardIndex =
+                    _activeDeconCardIndex == idx ? -1 : idx;
+                _activeDeconTokenIndex = 0;
+              });
+              _lookupDeconTokens(candidate);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? colors.primaryContainer.withValues(alpha: 0.3)
+                    : colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isActive
+                      ? colors.primary
+                      : colors.outlineVariant.withValues(alpha: 0.3),
+                  width: isActive ? 1.5 : 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Candidate header: tokens joined with " + "
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        candidate.tokens.join(' + '),
+                        style: AppTypography.bodyTranslation.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
+                          fontFamily: paliFontFamily,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Expanded detail for the active card — token chips.
+                  if (isActive && candidate.tokens.length > 1) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: List.generate(
+                            candidate.tokens.length,
+                            (i) {
+                              final isTokenActive =
+                                  i == _activeDeconTokenIndex;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(
+                                      () => _activeDeconTokenIndex = i,
+                                    );
+                                    _lookupDeconToken(candidate.tokens[i]);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isTokenActive
+                                          ? colors.primary
+                                          : colors.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Text(
+                                      candidate.tokens[i],
+                                      style: AppTypography.labelSmall.copyWith(
+                                        color: isTokenActive
+                                            ? colors.onPrimary
+                                            : colors.onSurfaceVariant,
+                                        fontWeight: isTokenActive
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                        fontSize: (pali.fontSize * 0.75).clamp(
+                                          11.0,
+                                          18.0,
+                                        ),
+                                        fontFamily: paliFontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Token content — constrained height so the panel
+                    // doesn't grow unbounded.
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(10),
+                        child: _buildTokenContent(
+                          colors,
+                          candidate.tokens[_activeDeconTokenIndex],
+                        ),
+                      ),
+                    ),
+                  ] else if (isActive) ...[
+                    const Divider(height: 1),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(10),
+                        child: _buildTokenContent(colors, candidate.tokens[0]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildTokenContent(ColorScheme colors, String token) {
+    final cached = _subLookupCache[token];
+    if (cached != null) {
+      if (cached.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: cached.map((hw) {
+          return DpdHeadwordCard(
+            lemma: hw.lemma1,
+            meaningHtml: hw.meaningHtml,
+            colors: colors,
+            compact: true,
+          );
+        }).toList(),
+      );
+    }
+
+    // Trigger async lookup.
+    _lookupDeconToken(token);
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _lookupDeconToken(String token) async {
+    if (_subLookupCache.containsKey(token)) return;
+    try {
+      final headwords =
+          await ref.read(dpdSubLookupProvider(token).future);
+      if (mounted) {
+        setState(() {
+          _subLookupCache[token] = headwords;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _lookupDeconTokens(DeconstructionCandidate candidate) async {
+    for (final token in candidate.tokens) {
+      await _lookupDeconToken(token);
+    }
   }
 }

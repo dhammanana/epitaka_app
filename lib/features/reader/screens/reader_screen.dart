@@ -256,9 +256,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _handleToolbarSearch() => _toggleInBookSearch();
 
   void _handleToolbarDictionary() {
-    if (!PlatformInfo.isDesktop) {
-      // Mobile: the dictionary is a modal bottom sheet — easy to close
-      // with the back button, by pulling it down, or by tapping outside.
+    if (!ResponsiveBreakpoint.isDesktop(context)) {
+      // Mobile (incl. a desktop window narrowed below the desktop
+      // breakpoint): the dictionary is a modal bottom sheet — easy to
+      // close with the back button, by pulling it down, or by tapping
+      // outside.
       showDictionarySheet(context, '');
       return;
     }
@@ -697,8 +699,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// resolves, so it is not subject to the race between [SelectionArea]'s
   /// double-tap recognizer and the tab-swipe [GestureDetector].
   void _handlePointerDown(PointerDownEvent event) {
-    // Record start position for potential tab-swipe (mobile/tablet only)
-    if (!PlatformInfo.isDesktop) {
+    // Record start position for potential tab-swipe (mobile/tablet only —
+    // decided by the actual layout, so a narrow desktop window that fell
+    // back to the phone UI keeps the swipe gestures)
+    if (!ResponsiveBreakpoint.isDesktop(context)) {
       _swipeStartPos = event.localPosition;
       _isSwiping = false;
       _lastSwipeDx = 0;
@@ -760,8 +764,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         .read(readerDictionaryLookupController)
         .handlePointerMove(event.pointer, event.localPosition);
 
-    // ── Tab-swipe detection (mobile/tablet only, and not while selecting text) ──
-    if (PlatformInfo.isDesktop) return;
+    // ── Tab-swipe detection (mobile/tablet only, and not while selecting
+    // text) — decided by the actual layout so a narrow desktop window that
+    // fell back to the phone UI keeps the swipe gestures ──
+    if (ResponsiveBreakpoint.isDesktop(context)) return;
     if (ref.read(readerSelectionProvider).hasSelection) return;
     if (_swipeStartPos == null) return;
 

@@ -217,6 +217,7 @@ class ReaderContentList extends StatelessWidget {
           key: ValueKey('para-$bookId-${paragraph.paraId}'),
           paragraph: paragraph,
           isFirst: index == 0,
+          bookId: bookId,
           bookName: index == 0 ? data.bookName : null,
           bookDescription: index == 0 ? data.bookDescription : null,
           showPali: settings.showPali,

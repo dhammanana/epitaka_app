@@ -274,11 +274,11 @@ class TypographySettings {
   }
 }
 
-/// Safely resolve a stored word-lookup gesture, falling back to double-tap
+/// Safely resolve a stored word-lookup gesture, falling back to single-tap
 /// when the value is missing or out of range.
 WordLookupGesture _safeWordLookupGesture(int? index) {
   if (index == null || index < 0 || index >= WordLookupGesture.values.length) {
-    return WordLookupGesture.doubleTap;
+    return WordLookupGesture.singleTap;
   }
   return WordLookupGesture.values[index];
 }
@@ -440,8 +440,8 @@ class AppSettings {
   /// the reader. Defaults to true.
   final bool showBookLinks;
 
-  /// How a tap on a word opens the dictionary from the reader: double-tap
-  /// (default) or single-tap.
+  /// How a tap on a word opens the dictionary from the reader: single-tap
+  /// (default) or double-tap.
   final WordLookupGesture wordLookupGesture;
 
   /// How deeply the library browser tree expands by default.
@@ -519,7 +519,7 @@ class AppSettings {
     this.paliScript = Script.roman,
     this.stripVariantAnnotations = true,
     this.showBookLinks = true,
-    this.wordLookupGesture = WordLookupGesture.doubleTap,
+    this.wordLookupGesture = WordLookupGesture.singleTap,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.translationVersionMap = const {},
     this.leftPanelWidth = 0,

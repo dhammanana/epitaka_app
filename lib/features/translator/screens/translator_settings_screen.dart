@@ -318,8 +318,12 @@ class _TranslatorSettingsScreenState
             ),
             _ChunkSizeTile(
               colors: colors,
+              lines: settings.chunkMaxLines,
               tokens: settings.chunkMaxTokens,
-              onChanged: (v) => ref
+              onLinesChanged: (v) => ref
+                  .read(translatorSettingsProvider.notifier)
+                  .setChunkMaxLines(v),
+              onTokensChanged: (v) => ref
                   .read(translatorSettingsProvider.notifier)
                   .setChunkMaxTokens(v),
             ),
@@ -647,21 +651,32 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
-/// Chunk token budget slider (tokens per AI call).
+/// Chunk batching tile: lines per call (primary knob) + token budget
+/// (secondary safety cap, wide range so users can go very large).
 class _ChunkSizeTile extends StatelessWidget {
   final ColorScheme colors;
+  final int lines;
   final int tokens;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<int> onLinesChanged;
+  final ValueChanged<int> onTokensChanged;
 
   const _ChunkSizeTile({
     required this.colors,
+    required this.lines,
     required this.tokens,
-    required this.onChanged,
+    required this.onLinesChanged,
+    required this.onTokensChanged,
   });
 
-  static const _min = 500;
-  static const _max = 8000;
-  static const _step = 500;
+  static const _linesMin = 25;
+  static const _linesMax = 500;
+  static const _linesStep = 25;
+
+  // Wide token range: modern models accept very large contexts (250k+), so
+  // let the user choose freely; the size-reduction cascade is the safety net.
+  static const _tokensMin = 1000;
+  static const _tokensMax = 250000;
+  static const _tokensStep = 1000;
 
   @override
   Widget build(BuildContext context) {
@@ -670,48 +685,109 @@ class _ChunkSizeTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.data_object, size: 20, color: colors.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Chunk size',
-                  style: AppTypography.labelMedium,
-                ),
-              ),
-              Text(
-                '~$tokens tokens',
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          _SliderRow(
+            icon: Icons.view_agenda_outlined,
+            label: 'Lines per call',
+            valueLabel: '$lines lines',
+            colors: colors,
+            value: lines.toDouble(),
+            min: _linesMin.toDouble(),
+            max: _linesMax.toDouble(),
+            step: _linesStep,
+            onChanged: (v) => onLinesChanged((v / _linesStep).round() * _linesStep),
+          ),
+          const SizedBox(height: 4),
+          _SliderRow(
+            icon: Icons.data_object,
+            label: 'Token budget',
+            valueLabel: '~$tokens tokens',
+            colors: colors,
+            value: tokens.toDouble(),
+            min: _tokensMin.toDouble(),
+            max: _tokensMax.toDouble(),
+            step: _tokensStep,
+            onChanged: (v) =>
+                onTokensChanged((v / _tokensStep).round() * _tokensStep),
           ),
           const SizedBox(height: 2),
           Padding(
             padding: const EdgeInsets.only(left: 32),
             child: Text(
-              'Sentences per AI call. Smaller = safer but more calls; '
-              'larger = faster but may hit context limits.',
+              'Sentences per AI call — the main knob. If the assembled '
+              'prompt gets too big, it is split in half automatically.',
               style: AppTypography.labelSmall.copyWith(
                 color: colors.onSurfaceVariant,
               ),
             ),
           ),
-          Slider(
-            value: tokens.toDouble(),
-            min: _min.toDouble(),
-            max: _max.toDouble(),
-            divisions: (_max - _min) ~/ _step,
-            label: '$tokens tokens',
-            activeColor: colors.primary,
-            inactiveColor: colors.outlineVariant,
-            onChanged: (v) => onChanged((v / _step).round() * _step),
-          ),
         ],
       ),
+    );
+  }
+}
+
+/// One labeled slider row inside [_ChunkSizeTile].
+class _SliderRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String valueLabel;
+  final ColorScheme colors;
+  final double value;
+  final double min;
+  final double max;
+  final int step;
+  final ValueChanged<double> onChanged;
+
+  const _SliderRow({
+    required this.icon,
+    required this.label,
+    required this.valueLabel,
+    required this.colors,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.step,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: colors.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(label, style: AppTypography.labelMedium),
+                  ),
+                  Text(
+                    valueLabel,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                divisions: ((max - min) ~/ step).toInt(),
+                label: valueLabel,
+                activeColor: colors.primary,
+                inactiveColor: colors.outlineVariant,
+                onChanged: onChanged,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

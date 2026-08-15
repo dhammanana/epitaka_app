@@ -107,17 +107,30 @@ class TRemark {
   });
 }
 
-/// Result of processing one chunk.
+/// Result of processing one chunk (a leaf of the size-reduction cascade —
+/// when a chunk is split in half the two results are summed).
 class TChunkResult {
   final int translationsSaved;
   final int glossarySaved;
   final int remarksSaved;
 
+  /// Number of actual AI calls made (a split chunk reports its children's
+  /// totals).
+  final int apiCalls;
+
   const TChunkResult({
     this.translationsSaved = 0,
     this.glossarySaved = 0,
     this.remarksSaved = 0,
+    this.apiCalls = 0,
   });
+
+  TChunkResult operator +(TChunkResult other) => TChunkResult(
+        translationsSaved: translationsSaved + other.translationsSaved,
+        glossarySaved: glossarySaved + other.glossarySaved,
+        remarksSaved: remarksSaved + other.remarksSaved,
+        apiCalls: apiCalls + other.apiCalls,
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -132,6 +145,8 @@ int _paraTokens(TParagraph para) {
   );
 }
 
+int _paraLines(TParagraph para) => para.pending.length;
+
 /// Estimated token count of a chunk's pending Pāli text (chars/4 ≈ tokens,
 /// same heuristic the chunker uses). Exposed for run progress stats.
 int chunkParagraphsTokens(List<TParagraph> chunk) {
@@ -142,15 +157,22 @@ int chunkParagraphsTokens(List<TParagraph> chunk) {
 }
 
 /// Split one oversized paragraph into sentence-level pieces, each within
-/// [maxTokens]. Keeps the same paraId and full sentence list on each piece.
-List<TParagraph> _splitOversizedPara(TParagraph para, int maxTokens) {
+/// [maxTokens] AND [maxLines]. Keeps the same paraId and full sentence list
+/// on each piece.
+List<TParagraph> _splitOversizedPara(
+  TParagraph para,
+  int maxTokens,
+  int maxLines,
+) {
   final pieces = <TParagraph>[];
   var pieceLines = <TLine>[];
   var pieceTokens = 0;
 
   for (final s in para.pending) {
     final sTokens = _estimateTokens(s.pali);
-    if (pieceLines.isNotEmpty && pieceTokens + sTokens > maxTokens) {
+    if (pieceLines.isNotEmpty &&
+        (pieceTokens + sTokens > maxTokens ||
+            pieceLines.length + 1 > maxLines)) {
       pieces.add(TParagraph(
         paraId: para.paraId,
         sentences: para.sentences,
@@ -172,38 +194,81 @@ List<TParagraph> _splitOversizedPara(TParagraph para, int maxTokens) {
   return pieces;
 }
 
-/// Group paragraphs into token-budgeted chunks, splitting oversized ones.
+/// Group paragraphs into chunks capped on BOTH token budget and line count
+/// (whichever is hit first), splitting oversized paragraphs.
+///
+/// [maxLines] is the primary "how many sentences per call" knob (the server
+/// scripts default to ~150 lines); [maxTokens] is the secondary safety cap.
 List<List<TParagraph>> chunkParagraphs(
   List<TParagraph> paragraphs, {
   int maxTokens = kTranslatorChunkMaxTokens,
+  int maxLines = kTranslatorChunkMaxLines,
 }) {
   final chunks = <List<TParagraph>>[];
   var current = <TParagraph>[];
   var currentTokens = 0;
+  var currentLines = 0;
 
   for (final para in paragraphs) {
     final paraTokens = _paraTokens(para);
-    if (paraTokens > maxTokens) {
+    final paraLines = _paraLines(para);
+    if (paraTokens > maxTokens || paraLines > maxLines) {
       if (current.isNotEmpty) {
         chunks.add(current);
         current = [];
         currentTokens = 0;
+        currentLines = 0;
       }
-      for (final piece in _splitOversizedPara(para, maxTokens)) {
+      for (final piece in _splitOversizedPara(para, maxTokens, maxLines)) {
         chunks.add([piece]);
       }
       continue;
     }
-    if (current.isNotEmpty && currentTokens + paraTokens > maxTokens) {
+    if (current.isNotEmpty &&
+        (currentTokens + paraTokens > maxTokens ||
+            currentLines + paraLines > maxLines)) {
       chunks.add(current);
       current = [];
       currentTokens = 0;
+      currentLines = 0;
     }
     current.add(para);
     currentTokens += paraTokens;
+    currentLines += paraLines;
   }
   if (current.isNotEmpty) chunks.add(current);
   return chunks;
+}
+
+/// Split a chunk in half for the size-reduction cascade (mirrors the
+/// server's `_split_chunk_in_half`): split between paragraphs when there
+/// are several, otherwise split a single paragraph's pending sentences.
+/// Returns null when the chunk is already one sentence (can't shrink).
+List<List<TParagraph>>? splitChunkInHalf(List<TParagraph> chunk) {
+  if (chunk.length > 1) {
+    final mid = chunk.length ~/ 2;
+    return [chunk.sublist(0, mid), chunk.sublist(mid)];
+  }
+  final para = chunk[0];
+  final sentences = para.pending;
+  if (sentences.length <= 1) return null;
+  final mid = sentences.length ~/ 2;
+  return [
+    [
+      TParagraph(
+        paraId: para.paraId,
+        sentences: para.sentences,
+        pending: sentences.sublist(0, mid),
+      ),
+    ],
+    [
+      TParagraph(
+        paraId: para.paraId,
+        sentences: para.sentences,
+        pending: sentences.sublist(mid),
+      ),
+    ],
+  ];
 }
 
 // ═══════════════════════════════════════════════════════════════════

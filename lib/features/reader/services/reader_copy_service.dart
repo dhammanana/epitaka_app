@@ -29,6 +29,7 @@ import '../../annotations/services/annotation_actions.dart';
 import '../../dictionary/widgets/dictionary_open.dart';
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../reader/widgets/translation_remark_dialog.dart';
 import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
 import '../utils/reader_word_hit_test.dart' show cleanPali, selectWordAt;
 import '../widgets/reader_context_menu.dart' show ContextMenuButton;
@@ -407,6 +408,29 @@ class ReaderCopyService {
             } finally {
               selectableRegionState.clearSelection();
             }
+          },
+          colors: colors,
+        );
+      case ContextMenuBuiltins.editLineInfo:
+        // ── Edit Translation Remark (current line) ──────────────────
+        // Opens the same remark editor the note mark under a translation
+        // opens, for the line the reader is currently on. Edits are saved
+        // into the translation DB's `translation_remarks` table.
+        return ContextMenuButton(
+          icon: Icons.edit_note,
+          label: loc.editLineInfo,
+          onTap: () {
+            final lang = ref.read(settingsProvider).primaryTranslationLang;
+            if (currentParaId != null && currentLineId != null) {
+              showTranslationRemarkDialog(
+                context,
+                bookId: bookId,
+                langCode: lang,
+                paraId: currentParaId!,
+                lineId: currentLineId!,
+              );
+            }
+            selectableRegionState.clearSelection();
           },
           colors: colors,
         );

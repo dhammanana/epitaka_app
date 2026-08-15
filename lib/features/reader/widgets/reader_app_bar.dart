@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../router/app_router.dart';
 
 /// Reader app bar that smoothly animates its height and opacity when
 /// [showCollapsed] changes.
@@ -55,13 +57,25 @@ class ReaderAppBar extends ConsumerWidget {
                       height: _toolbarHeight,
                       child: Row(
                         children: [
-                          // Back button
+                          // Back button. Pop when there is a route to go
+                          // back to (the normal mobile stack); otherwise the
+                          // reader is the ROOT route — e.g. a desktop window
+                          // narrowed below the desktop breakpoint that fell
+                          // back to the phone UI, or a deep link that
+                          // `go`-ed straight to /reader. Popping the root
+                          // route used to leave an empty/black screen, so
+                          // fall back to opening the library instead.
                           IconButton(
                             icon: const Icon(Icons.arrow_back),
                             color: colors.onSurfaceVariant,
-                            onPressed: () => context.mounted
-                                ? Navigator.of(context).pop()
-                                : null,
+                            onPressed: () {
+                              if (!context.mounted) return;
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.of(context).pop();
+                              } else {
+                                context.go(AppRoutes.library);
+                              }
+                            },
                           ),
                           const SizedBox(width: AppDimensions.sm),
                           // Title

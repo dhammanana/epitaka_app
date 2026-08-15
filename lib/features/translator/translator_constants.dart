@@ -75,8 +75,22 @@ const int kTranslatorSectionMinLines = 50;
 const int kTranslatorSectionMergeMaxBytes = 300000;
 const int kTranslatorSectionMergeMaxLines = 50;
 
-/// Token-safe chunk budget (chars/4 ≈ tokens) per AI call.
+/// How many pending sentences (lines) are brought into one AI call — the
+/// main batching knob, matching the server scripts (glossary_builder.py
+/// --chunk-size 150). The chunker caps chunks on BOTH line count and token
+/// count, whichever is hit first.
+const int kTranslatorChunkMaxLines = 150;
+
+/// Token-safe chunk budget (chars/4 ≈ tokens) per AI call. Users can raise
+/// this far beyond the default — modern models accept very large contexts
+/// (e.g. 250k tokens) — the size-reduction cascade below is the safety net
+/// that keeps the assembled prompt from overflowing.
 const int kTranslatorChunkMaxTokens = 3000;
+
+/// If the assembled prompt (system + user, UTF-8 bytes) exceeds this, the
+/// chunk is split in half recursively (mirrors book_translator.py
+/// PROMPT_SIZE_LIMIT_BYTES).
+const int kTranslatorPromptSizeLimitBytes = 1000000;
 
 /// Max output tokens requested from the AI per call.
 const int kTranslatorMaxOutputTokens = 65000;

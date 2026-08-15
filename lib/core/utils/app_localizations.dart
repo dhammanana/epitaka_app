@@ -473,6 +473,12 @@ class AppLocalizations {
       'This voice is not installed on your device. Tap "Install voice" to add it.');
   String get ttsPreview => _t('Preview');
   String get translationNote => _t('Translation note');
+  String get translationRemark => _t('Translation remark');
+  String get editLineInfo => _t('Edit translation info');
+  String get paragraph => _t('Paragraph');
+  String get line => _t('Line');
+  String get conflict => _t('Conflict');
+  String get addRemark => _t('Add remark');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN

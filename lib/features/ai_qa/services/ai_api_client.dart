@@ -6,6 +6,7 @@
 /// features reuse exactly the same logic instead of duplicating it.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -23,6 +24,16 @@ const String kGeminiBaseUrl =
 
 /// Number of retries for non-streaming API calls.
 const int kAiMaxRetries = 2;
+
+/// Thrown when an in-flight AI call is cancelled (e.g. the user pressed
+/// Stop in the Translation Builder). Callers should treat this as a clean
+/// cancellation, not an error, and stop the whole job.
+class AiCallCancelledException implements Exception {
+  const AiCallCancelledException();
+
+  @override
+  String toString() => 'AI call cancelled';
+}
 
 /// Max output tokens requested for the Translation Builder's text call
 /// (matches the server's book_translator.py 65k output budget).
@@ -521,6 +532,13 @@ class AiApiClient {
   /// [parseTranslatorJsonResponse] on it). Throws on unrecoverable errors
   /// after retrying transient failures (429 / 5xx / connection drops), the
   /// same policy as the tool-model calls.
+  ///
+  /// [cancelSignal] (optional) aborts the in-flight call the moment it
+  /// completes — the pending HTTP request races it and throws
+  /// [AiCallCancelledException] instead of waiting for the response. This is
+  /// how the Translation Builder's Stop button interrupts a long chunk.
+  /// [timeout] bounds each HTTP attempt so a hung request can't block a run
+  /// forever; transient timeouts are retried like other failures.
   static Future<String> callTextModel({
     required AiProvider provider,
     String baseUrl = '',
@@ -530,6 +548,8 @@ class AiApiClient {
     required String model,
     int maxOutputTokens = kTranslatorMaxOutputTokens,
     String logTag = 'TRANSLATOR',
+    Future<void>? cancelSignal,
+    Duration timeout = const Duration(minutes: 10),
   }) async {
     switch (provider) {
       case AiProvider.gemini:
@@ -557,6 +577,8 @@ class AiApiClient {
           apiKey: apiKey,
           payload: payload,
           logTag: logTag,
+          cancelSignal: cancelSignal,
+          timeout: timeout,
         );
         final data = jsonDecode(response) as Map<String, dynamic>;
         return _extractGeminiText(data);
@@ -579,6 +601,8 @@ class AiApiClient {
           baseUrl: effectiveBase,
           payload: payload,
           logTag: logTag,
+          cancelSignal: cancelSignal,
+          timeout: timeout,
         );
         // _callOpenAiApiRaw adapts the OpenAI response into the Gemini
         // shape (candidates[].content.parts[].text) for the tool pipeline;
@@ -586,6 +610,19 @@ class AiApiClient {
         final data = jsonDecode(response) as Map<String, dynamic>;
         return _extractGeminiText(data);
     }
+  }
+
+  /// Race [operation] against [cancelSignal]: whichever completes first
+  /// wins. A completed cancel signal throws [AiCallCancelledException].
+  static Future<T> _raceCancel<T>(
+    Future<T> operation,
+    Future<void>? cancelSignal,
+  ) {
+    if (cancelSignal == null) return operation;
+    return Future.any<T>([
+      operation,
+      cancelSignal.then((_) => throw const AiCallCancelledException()),
+    ]);
   }
 
   /// Extract the concatenated text from a Gemini `generateContent` response.
@@ -750,17 +787,22 @@ class AiApiClient {
     required String apiKey,
     required Map<String, dynamic> payload,
     String logTag = 'AI',
+    Future<void>? cancelSignal,
+    Duration timeout = const Duration(minutes: 10),
   }) async {
     final url = Uri.parse('$kGeminiBaseUrl/$model:generateContent?key=$apiKey');
 
     for (int attempt = 0; attempt <= kAiMaxRetries; attempt++) {
       try {
         final apiStopwatch = Stopwatch()..start();
-        final httpResponse = await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        );
+        final httpResponse = await _raceCancel(
+          http.post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          ),
+          cancelSignal,
+        ).timeout(timeout);
         final apiDuration = apiStopwatch.elapsedMilliseconds;
 
         if (httpResponse.statusCode == 200) {
@@ -772,25 +814,35 @@ class AiApiClient {
         } else if (httpResponse.statusCode == 429) {
           if (attempt < kAiMaxRetries) {
             final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
-            await Future.delayed(wait);
+            await _raceCancel(Future.delayed(wait), cancelSignal);
             continue;
           }
           throw Exception('Rate limit exceeded. Try again later.');
         } else {
           if (attempt < kAiMaxRetries) {
-            await Future.delayed(const Duration(seconds: 2));
+            await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
             continue;
           }
           throw Exception(
             'API error ${httpResponse.statusCode}: ${parseApiError(httpResponse.body)}',
           );
         }
+      } on AiCallCancelledException {
+        rethrow; // Never retry after a user cancel.
       } on http.ClientException {
         if (attempt < kAiMaxRetries) {
-          await Future.delayed(const Duration(seconds: 2));
+          await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
           continue;
         }
         rethrow;
+      } on TimeoutException {
+        // A slow (not hung) request shouldn't kill the run — retry, and
+        // only give up once every attempt has timed out.
+        if (attempt < kAiMaxRetries) {
+          await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
+          continue;
+        }
+        throw Exception('API request timed out after $timeout');
       }
     }
 
@@ -807,6 +859,8 @@ class AiApiClient {
     required String baseUrl,
     required Map<String, dynamic> payload,
     String logTag = 'AI',
+    Future<void>? cancelSignal,
+    Duration timeout = const Duration(minutes: 10),
   }) async {
     final effectiveBase = baseUrl.isNotEmpty ? baseUrl : 'https://api.openai.com/v1';
     final url = Uri.parse('$effectiveBase/chat/completions');
@@ -814,14 +868,17 @@ class AiApiClient {
     for (int attempt = 0; attempt <= kAiMaxRetries; attempt++) {
       try {
         final apiStopwatch = Stopwatch()..start();
-        final httpResponse = await http.post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $apiKey',
-          },
-          body: jsonEncode(payload),
-        );
+        final httpResponse = await _raceCancel(
+          http.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode(payload),
+          ),
+          cancelSignal,
+        ).timeout(timeout);
         final apiDuration = apiStopwatch.elapsedMilliseconds;
 
         if (httpResponse.statusCode == 200) {
@@ -869,25 +926,33 @@ class AiApiClient {
         } else if (httpResponse.statusCode == 429) {
           if (attempt < kAiMaxRetries) {
             final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
-            await Future.delayed(wait);
+            await _raceCancel(Future.delayed(wait), cancelSignal);
             continue;
           }
           throw Exception('Rate limit exceeded. Try again later.');
         } else {
           if (attempt < kAiMaxRetries) {
-            await Future.delayed(const Duration(seconds: 2));
+            await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
             continue;
           }
           throw Exception(
             'API error ${httpResponse.statusCode}: ${parseApiError(httpResponse.body)}',
           );
         }
+      } on AiCallCancelledException {
+        rethrow; // Never retry after a user cancel.
       } on http.ClientException {
         if (attempt < kAiMaxRetries) {
-          await Future.delayed(const Duration(seconds: 2));
+          await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
           continue;
         }
         rethrow;
+      } on TimeoutException {
+        if (attempt < kAiMaxRetries) {
+          await _raceCancel(Future.delayed(const Duration(seconds: 2)), cancelSignal);
+          continue;
+        }
+        throw Exception('API request timed out after $timeout');
       }
     }
 

@@ -46,6 +46,11 @@ class TranslatorSettings {
   /// calls (cheaper, faster) but risk hitting provider context limits.
   final int chunkMaxTokens;
 
+  /// How many pending sentences (lines) are brought into one AI call — the
+  /// main batching knob (server default ~150). Chunks are capped on BOTH
+  /// lines and tokens, whichever is hit first.
+  final int chunkMaxLines;
+
   const TranslatorSettings({
     this.provider = AiProvider.gemini,
     this.apiKeys = const [],
@@ -56,6 +61,7 @@ class TranslatorSettings {
     this.customPrompt = '',
     this.overwrite = false,
     this.chunkMaxTokens = kTranslatorChunkMaxTokens,
+    this.chunkMaxLines = kTranslatorChunkMaxLines,
   });
 
   /// First configured key, or empty.
@@ -78,6 +84,7 @@ class TranslatorSettings {
     String? customPrompt,
     bool? overwrite,
     int? chunkMaxTokens,
+    int? chunkMaxLines,
   }) {
     return TranslatorSettings(
       provider: provider ?? this.provider,
@@ -89,6 +96,7 @@ class TranslatorSettings {
       customPrompt: customPrompt ?? this.customPrompt,
       overwrite: overwrite ?? this.overwrite,
       chunkMaxTokens: chunkMaxTokens ?? this.chunkMaxTokens,
+      chunkMaxLines: chunkMaxLines ?? this.chunkMaxLines,
     );
   }
 
@@ -102,6 +110,7 @@ class TranslatorSettings {
     'customPrompt': customPrompt,
     'overwrite': overwrite,
     'chunkMaxTokens': chunkMaxTokens,
+    'chunkMaxLines': chunkMaxLines,
   };
 
   factory TranslatorSettings.fromJson(Map<String, dynamic> json) {
@@ -126,6 +135,8 @@ class TranslatorSettings {
       overwrite: json['overwrite'] as bool? ?? false,
       chunkMaxTokens: (json['chunkMaxTokens'] as num?)?.toInt() ??
           kTranslatorChunkMaxTokens,
+      chunkMaxLines: (json['chunkMaxLines'] as num?)?.toInt() ??
+          kTranslatorChunkMaxLines,
     );
   }
 }
@@ -228,6 +239,11 @@ class TranslatorSettingsNotifier extends StateNotifier<TranslatorSettings> {
 
   Future<void> setChunkMaxTokens(int tokens) async {
     state = state.copyWith(chunkMaxTokens: tokens);
+    await _persist();
+  }
+
+  Future<void> setChunkMaxLines(int lines) async {
+    state = state.copyWith(chunkMaxLines: lines);
     await _persist();
   }
 }

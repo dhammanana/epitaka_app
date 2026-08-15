@@ -400,6 +400,12 @@ const Map<String, String> en = {
   'Reads the Pāli first, then its translation':
       'Reads the Pāli first, then its translation',
   'Translation note': 'Translation note',
+  'Translation remark': 'Translation remark',
+  'Edit translation info': 'Edit translation info',
+  'Paragraph': 'Paragraph',
+  'Line': 'Line',
+  'Conflict': 'Conflict',
+  'Add remark': 'Add remark',
   'Pāli speed': 'Pāli speed',
 
   // ── TTS Replacements ────────────────────────────────────────────────

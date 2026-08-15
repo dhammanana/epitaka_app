@@ -866,7 +866,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                     return SuggestionTile(
                       word: result.lemma1,
                       meaningPreview: result.meaningHtml,
-                      onTap: () => _selectWord(result.lemma1),
+                      // Fill the search with the cleaned lemma: DPD
+                      // headwords carry a homograph suffix ("añña 1.1"),
+                      // which would otherwise be searched as-is.
+                      onTap: () => _selectWord(result.cleanLemma1),
                       colors: colors,
                     );
                   }, childCount: results.length),

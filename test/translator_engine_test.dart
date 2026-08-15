@@ -125,6 +125,101 @@ void main() {
       ];
       expect(chunkParagraphsTokens(chunk), 12); // 4 + 8
     });
+
+    test('caps chunks by line count (the main batching knob)', () {
+      // 10 paragraphs × 6 sentences each = 60 pending lines; tiny tokens.
+      final paras = [
+        for (var i = 1; i <= 10; i++)
+          TParagraph(
+            paraId: i,
+            sentences: [
+              for (var j = 1; j <= 6; j++) TLine(lineId: j, pali: 'a'),
+            ],
+            pending: [
+              for (var j = 1; j <= 6; j++) TLine(lineId: j, pali: 'a'),
+            ],
+          ),
+      ];
+      // Token budget huge so only the line cap matters.
+      final chunks = chunkParagraphs(paras, maxTokens: 250000, maxLines: 25);
+      expect(chunks.length, greaterThan(1));
+      for (final chunk in chunks) {
+        final lines = chunk.fold<int>(
+          0,
+          (sum, p) => sum + p.pending.length,
+        );
+        expect(lines, lessThanOrEqualTo(25));
+      }
+    });
+
+    test('splits a single oversized paragraph by line count too', () {
+      // One paragraph with 40 sentences; line cap 25 must split it.
+      final para = TParagraph(
+        paraId: 1,
+        sentences: [
+          for (var j = 1; j <= 40; j++) TLine(lineId: j, pali: 'aa'),
+        ],
+        pending: [
+          for (var j = 1; j <= 40; j++) TLine(lineId: j, pali: 'aa'),
+        ],
+      );
+      final chunks = chunkParagraphs([para], maxTokens: 250000, maxLines: 25);
+      expect(chunks.length, greaterThan(1));
+      for (final chunk in chunks) {
+        final lines = chunk.fold<int>(
+          0,
+          (sum, p) => sum + p.pending.length,
+        );
+        expect(lines, lessThanOrEqualTo(25));
+      }
+    });
+  });
+
+  group('splitChunkInHalf', () {
+    test('splits between paragraphs when there are several', () {
+      final chunk = [
+        for (var i = 1; i <= 4; i++)
+          TParagraph(
+            paraId: i,
+            sentences: [TLine(lineId: 1, pali: 'aa')],
+            pending: [TLine(lineId: 1, pali: 'aa')],
+          ),
+      ];
+      final halves = splitChunkInHalf(chunk)!;
+      expect(halves, hasLength(2));
+      expect(halves[0], hasLength(2));
+      expect(halves[1], hasLength(2));
+    });
+
+    test('splits a single paragraph at the sentence level', () {
+      final chunk = [
+        TParagraph(
+          paraId: 1,
+          sentences: [
+            for (var j = 1; j <= 4; j++) TLine(lineId: j, pali: 'aa'),
+          ],
+          pending: [
+            for (var j = 1; j <= 4; j++) TLine(lineId: j, pali: 'aa'),
+          ],
+        ),
+      ];
+      final halves = splitChunkInHalf(chunk)!;
+      expect(halves, hasLength(2));
+      expect(halves[0][0].pending, hasLength(2));
+      expect(halves[1][0].pending, hasLength(2));
+      expect(halves[0][0].paraId, 1);
+    });
+
+    test('returns null for a single sentence (can\'t shrink further)', () {
+      final chunk = [
+        TParagraph(
+          paraId: 1,
+          sentences: [TLine(lineId: 1, pali: 'aa')],
+          pending: [TLine(lineId: 1, pali: 'aa')],
+        ),
+      ];
+      expect(splitChunkInHalf(chunk), isNull);
+    });
   });
 
   group('mergeSmallSections', () {

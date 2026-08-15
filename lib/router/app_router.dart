@@ -1,5 +1,4 @@
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter/src/widgets/navigator.dart';
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/ai_qa/screens/ai_qa_screen.dart';
@@ -24,6 +23,7 @@ import '../features/translator/screens/translator_settings_screen.dart';
 import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
 import '../core/utils/platform_info.dart';
+import '../core/utils/responsive_breakpoint.dart';
 import '../shared/widgets/responsive_scaffold.dart';
 
 /// The route paths for the app.
@@ -53,6 +53,24 @@ class AppRoutes {
   static const featureGuide = '/guide';
 }
 
+/// Whether the library route should be replaced by the reader shell on a
+/// desktop platform — i.e. the window is wide enough for the desktop
+/// layout (or the size can't be measured yet, e.g. during startup, where
+/// we keep the old desktop behaviour). A narrowed window falls back to the
+/// phone UI, where the library is the home screen and must stay reachable
+/// (the reader's back button navigates to it).
+bool redirectLibraryToReader({
+  required bool isDesktopPlatform,
+  double? windowWidth,
+}) {
+  if (!isDesktopPlatform) return false;
+  if (windowWidth == null ||
+      windowWidth >= ResponsiveBreakpoint.desktopWidth) {
+    return true;
+  }
+  return false;
+}
+
 /// The `_buildRouter()` function is called from `app.dart`.
 /// The FTS index gate is applied via the top-level `builder` parameter,
 /// so every route is gated without redundant re-mounts.
@@ -66,11 +84,19 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
     navigatorKey: navigatorKey,
     debugLogDiagnostics: false,
     redirect: (context, state) {
+      if (state.matchedLocation != AppRoutes.library) return null;
       // Desktop: any navigation to the library root lands on the reader
       // shell instead (the library stays reachable via its docked panel
-      // and the app-bar library button).
-      if (PlatformInfo.isDesktop &&
-          state.matchedLocation == AppRoutes.library) {
+      // and the app-bar library button). Only while the window actually
+      // shows the desktop layout: once it is narrower than the desktop
+      // breakpoint the UI falls back to the phone layout, where the
+      // library is the home screen and must stay reachable (the reader's
+      // back button navigates to it).
+      final width = MediaQuery.maybeOf(context)?.size.width;
+      if (redirectLibraryToReader(
+        isDesktopPlatform: PlatformInfo.isDesktop,
+        windowWidth: width,
+      )) {
         return AppRoutes.reader;
       }
       return null;

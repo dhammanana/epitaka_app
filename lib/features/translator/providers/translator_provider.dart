@@ -7,6 +7,7 @@
 // between chunks, and a re-run resumes (already-translated lines are
 // skipped unless overwrite is on).
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -168,6 +169,11 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
 
   bool _cancelRequested = false;
 
+  /// Completed by [cancel] to interrupt an in-flight AI call immediately
+  /// (the HTTP request races it and throws [AiCallCancelledException]).
+  /// Replaced with a fresh completer at the start of every run.
+  Completer<void> _cancelSignal = Completer<void>();
+
   /// Keys available for this run (from translator settings, falling back
   /// to the AI Q&A key). Round-robined across chunks to spread rate limits.
   List<String> _keyPool = [];
@@ -182,9 +188,11 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
   }
 
   void cancel() {
-    if (state.isRunning) {
+    if (state.isRunning && !_cancelSignal.isCompleted) {
       _cancelRequested = true;
-      _log('Cancelling after the current chunk…');
+      // Interrupt any in-flight AI call instead of waiting for it.
+      _cancelSignal.complete();
+      _log('Cancelling — stopping after the current chunk…');
     }
   }
 
@@ -196,6 +204,8 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
   /// Reset to idle (clears logs and totals).
   void reset() {
     state = const TranslatorRunState();
+    _cancelRequested = false;
+    _cancelSignal = Completer<void>();
   }
 
   /// Whether an Android foreground service notification is active for this
@@ -257,6 +267,9 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
     if (state.isRunning) return;
 
     _cancelRequested = false;
+    // Fresh signal per run: a stale completed one from a previous run must
+    // never abort this one.
+    _cancelSignal = Completer<void>();
 
     final settings = _ref.read(translatorSettingsProvider);
 
@@ -394,6 +407,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
           final chunks = chunkParagraphs(
             section,
             maxTokens: settings.chunkMaxTokens,
+            maxLines: settings.chunkMaxLines,
           );
           state = state.copyWith(totalChunks: chunks.length);
 
@@ -426,7 +440,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
               glossarySaved:
                   state.glossarySaved + result.glossarySaved,
               remarksSaved: state.remarksSaved + result.remarksSaved,
-              apiCalls: state.apiCalls + 1,
+              apiCalls: state.apiCalls + result.apiCalls,
             );
             _updateNotification(state);
           }
@@ -496,6 +510,17 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
           isError: false,
         );
       }
+    } on AiCallCancelledException {
+      // User pressed Stop while a chunk's AI call was in flight — the call
+      // was interrupted immediately (not waited out).
+      state = state.copyWith(phase: TranslatorRunPhase.cancelled);
+      _log('Run cancelled.');
+      await _finishNotification(
+        langName: translatorLangName(settings.langCode),
+        title: 'Translation cancelled',
+        body: '${state.translationsSaved} translations saved.',
+        isError: false,
+      );
     } catch (e) {
       debugPrint('[TRANSLATOR] Run failed: $e');
       state = TranslatorRunState(
@@ -575,6 +600,13 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
 
   /// Build the context blocks + prompt for one chunk, call the AI, parse,
   /// and save.
+  ///
+  /// If the assembled prompt (system + user) exceeds
+  /// [kTranslatorPromptSizeLimitBytes], the chunk is split in half and each
+  /// half is handled recursively (up to [depth] 8, mirroring the server's
+  /// `_handle_chunk`). When a chunk is already a single sentence and still
+  /// oversized, the commentary / word-definition context blocks are
+  /// truncated as a last resort.
   Future<TChunkResult> _handleChunk({
     required TranslatorSettings settings,
     required EpitakaDatabase epitakaDb,
@@ -582,6 +614,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
     required TranslationDatabase? enDb,
     required String bookId,
     required List<TParagraph> chunk,
+    int depth = 0,
   }) async {
     final chunkStart = chunk.first.paraId;
     final chunkEnd = chunk.last.paraId;
@@ -594,7 +627,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
         .join('\n');
 
     // ── Build the context blocks in parallel ─────────────────────
-    final blocks = await Future.wait([
+    var blocks = await Future.wait([
       buildGlossaryBlock(
         epitakaDb: epitakaDb,
         langDb: langDb,
@@ -637,7 +670,12 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
       ),
     ]);
 
-    final prompt = buildChunkPrompt(
+    final systemPrompt = buildTranslatorSystemPrompt(
+      langCode: settings.langCode,
+      customPrompt: settings.customPrompt,
+    );
+
+    String prompt = buildChunkPrompt(
       bookId: bookId,
       paraStart: chunkStart,
       paraEnd: chunkEnd,
@@ -650,14 +688,65 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
       parallelBlock: blocks[5],
     );
 
-    final systemPrompt = buildTranslatorSystemPrompt(
-      langCode: settings.langCode,
-      customPrompt: settings.customPrompt,
-    );
+    // ── Size-reduction cascade (mirrors server _handle_chunk) ────
+    int promptBytes = utf8.encode('$systemPrompt\n\n$prompt').length;
+    if (promptBytes > kTranslatorPromptSizeLimitBytes) {
+      final halves = splitChunkInHalf(chunk);
+      if (halves != null && depth < 8) {
+        _log('    [size] p$chunkStart-$chunkEnd: '
+            '${(promptBytes / 1024).toStringAsFixed(1)}KB prompt exceeds '
+            'the ${(kTranslatorPromptSizeLimitBytes / 1024 / 1024).toStringAsFixed(1)}MB '
+            'limit — splitting into 2 smaller chunks');
+        final left = await _handleChunk(
+          settings: settings,
+          epitakaDb: epitakaDb,
+          langDb: langDb,
+          enDb: enDb,
+          bookId: bookId,
+          chunk: halves[0],
+          depth: depth + 1,
+        );
+        final right = await _handleChunk(
+          settings: settings,
+          epitakaDb: epitakaDb,
+          langDb: langDb,
+          enDb: enDb,
+          bookId: bookId,
+          chunk: halves[1],
+          depth: depth + 1,
+        );
+        return left + right;
+      }
+      // Last resort: already one sentence (or depth exhausted) — truncate
+      // the commentary + word-definition context for THIS call only.
+      _log('    [size] p$chunkStart-$chunkEnd: '
+          '${(promptBytes / 1024).toStringAsFixed(1)}KB prompt with a single '
+          'pending sentence — truncating commentary/word-def context '
+          '(translation quality may be affected here).', isError: true);
+      final cap = kTranslatorPromptSizeLimitBytes ~/ 3;
+      blocks[1] = blocks[1].length > cap
+          ? blocks[1].substring(0, cap)
+          : blocks[1];
+      blocks[2] = blocks[2].length > cap
+          ? blocks[2].substring(0, cap)
+          : blocks[2];
+      prompt = buildChunkPrompt(
+        bookId: bookId,
+        paraStart: chunkStart,
+        paraEnd: chunkEnd,
+        chunk: chunk,
+        glossaryBlock: blocks[0],
+        commentaryBlock: blocks[1],
+        paliDefsBlock: blocks[2],
+        prevParaBlock: blocks[3],
+        mulaBlock: blocks[4],
+        parallelBlock: blocks[5],
+      );
+      promptBytes = utf8.encode('$systemPrompt\n\n$prompt').length;
+    }
 
     final nSentences = chunk
         .fold<int>(0, (sum, para) => sum + para.pending.length);
-    final promptBytes = utf8.encode(prompt).length;
     state = state.copyWith(currentChunkPromptBytes: promptBytes);
     _log('    Chunk ${cIdxLabel(chunkStart, chunkEnd)}: '
         '$nSentences sentence(s), prompt '
@@ -674,6 +763,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
       userPrompt: prompt,
       apiKey: apiKey,
       model: settings.model,
+      cancelSignal: _cancelSignal.future,
     );
 
     // Keep only the LAST chunk's prompt + raw response on disk (overwritten
@@ -688,7 +778,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
     if (raw.trim().isEmpty) {
       _log('    Chunk ${cIdxLabel(chunkStart, chunkEnd)}: '
           'empty response — skipping.', isError: true);
-      return const TChunkResult();
+      return const TChunkResult(apiCalls: 1);
     }
 
     final parsed = parseAiTranslationResult(raw);
@@ -726,6 +816,7 @@ class TranslatorRunner extends StateNotifier<TranslatorRunState> {
       translationsSaved: savedTrans,
       glossarySaved: savedGloss,
       remarksSaved: savedRem,
+      apiCalls: 1,
     );
   }
 }

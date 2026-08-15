@@ -35,6 +35,7 @@ class ContextMenuBuiltins {
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
+  static const editLineInfo = 'editLineInfo'; // edit the line's translation remark
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
@@ -48,6 +49,7 @@ class ContextMenuBuiltins {
     explain,
     summarizeChapter,
     share,
+    editLineInfo,
   ];
 }
 

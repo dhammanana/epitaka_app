@@ -6,19 +6,28 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/core/providers/database_provider.dart';
+import '../lib/core/providers/settings_provider.dart';
 import '../lib/core/utils/app_localizations.dart';
 import '../lib/core/utils/pali_script_converter.dart';
 import '../lib/features/reader/providers/reader_provider.dart'
-    show LineData, ParagraphData;
+    show LineData, ParagraphData, TranslationRemark;
 import '../lib/shared/widgets/reading_paragraph.dart';
 
 void main() {
-  Widget wrap(Widget child) => MaterialApp(
-        localizationsDelegates: const [AppLocalizationsDelegate()],
-        supportedLocales: AppLocalizationsDelegate.supportedLocales,
-        home: Scaffold(body: child),
+  Widget wrap(Widget child) => ProviderScope(
+        overrides: [
+          translationDbProvider('en').overrideWith((ref) async => null),
+          settingsProvider.overrideWith((ref) => SettingsNotifier(null)),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [AppLocalizationsDelegate()],
+          supportedLocales: AppLocalizationsDelegate.supportedLocales,
+          home: Scaffold(body: child),
+        ),
       );
 
   /// Pump the widget and settle frames. Localizations load asynchronously,
@@ -32,7 +41,10 @@ void main() {
   const remark = 'In this context it acts as a linker, not a contrastive '
       '"but".';
 
-  ParagraphData paragraph({Map<String, String>? remarks, bool secondLine = false}) =>
+  ParagraphData paragraph({
+    Map<String, List<TranslationRemark>>? remarks,
+    bool secondLine = false,
+  }) =>
       ParagraphData(
         paraId: 1,
         lines: [
@@ -41,7 +53,10 @@ void main() {
             paliText: 'ca pana',
             normalizedText: '',
             translations: const {'en': 'and indeed'},
-            remarks: remarks ?? const {'en': remark},
+            remarks: remarks ??
+                const {
+                  'en': [TranslationRemark(paraId: 1, lineId: 1, note: remark)],
+                },
           ),
           if (secondLine)
             LineData(

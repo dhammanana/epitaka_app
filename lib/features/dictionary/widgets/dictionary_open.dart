@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/utils/platform_info.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import 'dictionary_sheet.dart';
 
@@ -37,8 +37,11 @@ bool openDictionaryInPanel(
     Navigator.of(context).pop();
   }
 
-  if (PlatformInfo.isDesktop) {
-    // Desktop: docked sidebar panel / right column — unchanged.
+  if (ResponsiveBreakpoint.isDesktop(context)) {
+    // Desktop: docked sidebar panel / right column. Decided by the ACTUAL
+    // layout (not just the OS): a desktop window narrowed below the
+    // desktop breakpoint falls back to the phone UI, and the docked panel
+    // isn't rendered there — so the modal bottom sheet is used instead.
     final notifier = ref.read(sidePanelProvider.notifier);
     final sidePanels = ref.read(sidePanelProvider);
     if (sidePanels.right.openPanel == SidePanelType.dictionary) {

@@ -813,7 +813,7 @@ class DesktopSidebar extends StatelessWidget {
       case SidePanelType.contents:
         return const ContentsPanel();
       case SidePanelType.gavesana:
-        return const GavesanaPanel();
+        return GavesanaPanel(autoFocus: autoFocus);
       case SidePanelType.translator:
         return const TranslatorPanel();
       case SidePanelType.dictionary:

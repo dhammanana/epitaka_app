@@ -16,6 +16,7 @@ import '../../features/annotations/services/highlight_span_painter.dart';
 import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
+import '../../features/reader/widgets/translation_remark_dialog.dart';
 import '../../shared/widgets/pali_text.dart';
 import '../../shared/widgets/nissaya_text.dart';
 
@@ -30,6 +31,9 @@ class ReadingParagraph extends StatelessWidget {
   final bool isFirst;
   final String? bookName;
   final String? bookDescription;
+
+  /// Book id of the paragraph (used by the remark editor to save edits).
+  final String? bookId;
   final bool showPali;
   final bool showTranslation;
   final ParagraphDisplayMode displayMode;
@@ -109,6 +113,7 @@ class ReadingParagraph extends StatelessWidget {
     this.isFirst = false,
     this.bookName,
     this.bookDescription,
+    this.bookId,
     this.showPali = true,
     this.showTranslation = true,
     this.displayMode = ParagraphDisplayMode.lineByLine,
@@ -541,7 +546,7 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
     bool isHighlighted, {
     required int lineId,
-    Map<String, String> remarks = const {},
+    Map<String, List<TranslationRemark>> remarks = const {},
   }) {
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
     if (langs == null || langs.isEmpty) return const SizedBox.shrink();
@@ -555,9 +560,11 @@ class ReadingParagraph extends StatelessWidget {
         _buildTranslationLine(context, langCode, text, typo, colors,
             lineId: lineId),
       );
-      final remark = remarks[langCode];
-      if (remark != null && remark.trim().isNotEmpty) {
-        children.add(_buildRemarkNote(context, remark, colors));
+      final remarkList = remarks[langCode];
+      if (remarkList != null && remarkList.any((r) => r.hasContent)) {
+        children.add(
+          _buildRemarkNote(context, langCode, lineId, remarkList, colors),
+        );
       }
     }
     if (children.isEmpty) return const SizedBox.shrink();
@@ -656,14 +663,17 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Small tappable mark shown under a translation line when the
-  /// translation database carries a remark (note) for that line.
+  /// translation database carries a remark for that line.
   ///
-  /// The note text itself is intentionally NOT rendered inline — it would
+  /// The remark text itself is intentionally NOT rendered inline — it would
   /// read like a second translation and clutter the page. Instead a tiny
-  /// "note" chip marks the line; tapping it opens the full remark.
+  /// "note" chip marks the line; tapping it opens the full remark editor
+  /// (every field of the remark, editable).
   Widget _buildRemarkNote(
     BuildContext context,
-    String note,
+    String langCode,
+    int lineId,
+    List<TranslationRemark> remarks,
     ColorScheme colors,
   ) {
     final label = AppLocalizations.of(context).translationNote;
@@ -675,7 +685,16 @@ class ReadingParagraph extends StatelessWidget {
           message: label,
           child: InkWell(
             borderRadius: BorderRadius.circular(9999),
-            onTap: () => _showRemarkDialog(context, note, colors),
+            onTap: () {
+              showTranslationRemarkDialog(
+                context,
+                bookId: bookId ?? '',
+                langCode: langCode,
+                paraId: paragraph.paraId,
+                lineId: lineId,
+                initialRemarks: remarks,
+              );
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -705,37 +724,6 @@ class ReadingParagraph extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  /// Open the full remark text in a dialog when the note mark is tapped.
-  void _showRemarkDialog(
-    BuildContext context,
-    String note,
-    ColorScheme colors,
-  ) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: Icon(Icons.info_outline, color: colors.tertiary),
-        title: Text(AppLocalizations.of(dialogContext).translationNote),
-        content: SingleChildScrollView(
-          child: SelectableText(
-            note,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(AppLocalizations.of(dialogContext).close),
-          ),
-        ],
       ),
     );
   }
@@ -786,13 +774,17 @@ class ReadingParagraph extends StatelessWidget {
       );
 
       // Translation remarks for this paragraph + language (notes are
-      // sparse, so this is almost always empty).
-      final paraRemarks = paragraph.lines
-          .map((l) => l.remarks[langCode])
-          .where((r) => r != null && r.trim().isNotEmpty)
-          .toList();
-      for (final remark in paraRemarks) {
-        widgets.add(_buildRemarkNote(context, remark!, colors));
+      // sparse, so this is almost always empty). In joined mode there is
+      // no single line anchor, so each line's remarks render their own
+      // mark; the editor is opened for the line that owns them.
+      for (final l in paragraph.lines) {
+        final remarkList = l.remarks[langCode];
+        if (remarkList == null || !remarkList.any((r) => r.hasContent)) {
+          continue;
+        }
+        widgets.add(
+          _buildRemarkNote(context, langCode, l.lineId, remarkList, colors),
+        );
       }
     }
     if (widgets.isEmpty) return const SizedBox.shrink();
