@@ -2,12 +2,11 @@ import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
 import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -139,9 +138,7 @@ Future<void> showCitationQuickview(
               ),
             );
         Navigator.of(context).pop(); // close the quickview
-        if (!ResponsiveBreakpoint.isDesktop(context)) {
-          context.push('/reader');
-        }
+        openReaderRoute(context);
       },
     );
   } catch (e) {

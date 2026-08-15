@@ -39,6 +39,29 @@ abstract final class SupabaseConfig {
   static const String googleWebClientId =
       '1054969882-ohg6akokja7i47n89btp7v154757thd9.apps.googleusercontent.com';
 
+  /// Google Sign-In registration (README for anyone debugging "works in
+  /// debug, fails on Google Play"):
+  ///
+  /// Native Android sign-in ([google_sign_in] with [googleWebClientId] as
+  /// `serverClientId`) validates the calling app by **package name + SHA-1
+  /// signing-certificate fingerprint** against the Google Cloud project that
+  /// owns [googleWebClientId]. There is no Firebase / google-services.json
+  /// in this app, so every package+SHA-1 combo must be registered manually
+  /// in Google Cloud Console (APIs & Services → Credentials → OAuth client
+  /// → Android type).
+  ///
+  /// Known combos:
+  ///   * dev flavor (`com.dn.epitaka.dev`) + debug keystore
+  ///     SHA-1 `93:CB:80:04:75:5D:67:7B:49:E2:6F:27:2A:E3:8C:0B:52:5F:8B:1F`
+  ///   * prod flavor (`com.dn.epitaka`) + **Google Play App Signing**
+  ///     certificate — NOT the debug key, and NOT the upload key. Copy it
+  ///     from Play Console → Setup → App integrity → App signing, and add
+  ///     it as an Android OAuth client for `com.dn.epitaka` (SHA-256 too,
+  ///     for the backend's signature check).
+  ///
+  /// If a build combination isn't registered, Google rejects the request
+  /// and sign-in fails (often surfaced as a canceled picker).
+
   /// Name of the remote `annotations` table.
   static const String annotationsTable = 'annotations';
 }

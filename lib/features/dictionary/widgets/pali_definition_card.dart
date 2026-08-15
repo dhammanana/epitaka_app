@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/pali_definition_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
 /// A card showing a single `pali_definition` match: the Pāli sentence that
@@ -221,9 +220,7 @@ class PaliDefinitionCard extends ConsumerWidget {
             initialLineId: entry.lineId,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 }
 

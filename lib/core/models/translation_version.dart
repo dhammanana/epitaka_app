@@ -28,13 +28,19 @@ class TranslationVersion {
   /// Download URL for this version (from manifest).
   final String? downloadUrl;
 
-  /// File size in bytes (from manifest).
+  /// File size in bytes (from manifest). This is the size of the
+  /// *zip* the server publishes (`size`), not the extracted database.
   final int? fileSize;
+
+  /// Size of the extracted .db file in bytes (from manifest `dbSize`).
+  final int? dbSize;
 
   /// Last updated date string (from manifest).
   final String? updatedAt;
 
-  /// Checksum (SHA-256 hex) for integrity verification.
+  /// Checksum (SHA-256 hex) for integrity verification. The server
+  /// computes this over the .db file inside the zip, so the app hashes
+  /// the extracted database content and compares.
   final String? checksum;
 
   /// Whether this version is required for the app to function.
@@ -49,6 +55,7 @@ class TranslationVersion {
     this.displayName = '',
     this.downloadUrl,
     this.fileSize,
+    this.dbSize,
     this.updatedAt,
     this.checksum,
     this.compulsory = false,
@@ -78,6 +85,7 @@ class TranslationVersion {
     String? displayName,
     String? downloadUrl,
     int? fileSize,
+    int? dbSize,
     String? updatedAt,
     String? checksum,
     bool? compulsory,
@@ -92,6 +100,7 @@ class TranslationVersion {
       displayName: displayName ?? this.displayName,
       downloadUrl: clearDownloadUrl ? null : (downloadUrl ?? this.downloadUrl),
       fileSize: fileSize ?? this.fileSize,
+      dbSize: dbSize ?? this.dbSize,
       updatedAt: updatedAt ?? this.updatedAt,
       checksum: checksum ?? this.checksum,
       compulsory: compulsory ?? this.compulsory,
@@ -103,6 +112,7 @@ class TranslationVersion {
     if (suffix != null && suffix!.isNotEmpty) 'suffix': suffix,
     if (downloadUrl != null) 'url': downloadUrl,
     if (fileSize != null) 'size': fileSize,
+    if (dbSize != null) 'dbSize': dbSize,
     if (updatedAt != null) 'updated': updatedAt,
     if (checksum != null) 'checksum': checksum,
     if (isNissaya) 'type': 'nissaya',
@@ -129,6 +139,7 @@ class TranslationVersion {
           (suffix.isNotEmpty ? suffix : 'Default'),
       downloadUrl: json['url'] as String?,
       fileSize: json['size'] as int?,
+      dbSize: json['dbSize'] as int?,
       updatedAt: json['updated'] as String?,
       checksum: json['checksum'] as String?,
       compulsory: json['compulsory'] as bool? ?? false,

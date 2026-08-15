@@ -378,7 +378,7 @@ packages:
     source: hosted
     version: "0.3.5+4"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf
@@ -558,6 +558,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.0"
+  flutter_foreground_task:
+    dependency: "direct main"
+    description:
+      name: flutter_foreground_task
+      sha256: "0dad7e6a4ac57aeb0e680e35ec7ae997f1a2b8579fdb85b16dd16e299b634f4f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.0.0"
   flutter_html:
     dependency: "direct main"
     description:
@@ -619,14 +627,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.12"
-  flutter_onnxruntime:
-    dependency: transitive
-    description:
-      name: flutter_onnxruntime
-      sha256: "4efb12e04c24ee653b3fbe2bbbf1955367c6c055a0967fb14c0440bf61293db6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.8.3"
   flutter_riverpod:
     dependency: "direct main"
     description:
@@ -1013,14 +1013,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
-  logger:
-    dependency: transitive
-    description:
-      name: logger
-      sha256: "25aee487596a6257655a1e091ec2ae66bc30e7af663592cc3a27e6591e05035c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.7.0"
   logging:
     dependency: transitive
     description:
@@ -1669,10 +1661,9 @@ packages:
   supertonic_flutter:
     dependency: "direct main"
     description:
-      name: supertonic_flutter
-      sha256: b81a83a472872b29250b9cd388c1c5b844c92cf546d9b04d980549bc9cb983eb
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/supertonic_stub"
+      relative: true
+    source: path
     version: "2.0.0"
   synchronized:
     dependency: transitive

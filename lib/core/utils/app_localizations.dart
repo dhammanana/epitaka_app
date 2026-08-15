@@ -415,6 +415,9 @@ class AppLocalizations {
   String get ttsEngine => _t('TTS Engine');
   String get ttsVoiceLabel => _t('Voice');
   String get ttsSpeed => _t('Speed');
+  /// Short label for the translation speed slider (full "Translation
+  /// speed" doesn't fit next to the slider).
+  String get ttsTranslationSpeed => _t('Trans. speed');
   String get ttsPaliSpeed => _t('Pāli speed');
   String get ttPitch => _t('Pitch');
   String get ttsLanguageLabel => _t('Language');
@@ -963,6 +966,7 @@ class AppLocalizations {
   String get gavesanaSearchButton => _t('Search with AI');
   String get gavesanaSearching => _t('AI is searching the Tipitaka…');
   String get gavesanaAiTools => _t('AI search steps');
+  String get gavesanaAiTerms => _t('AI searched for');
   String get gavesanaAiResults => _t('AI-found passages');
   String get gavesanaNoResults => _t(
     'The AI could not find any relevant passages. Try a different description.',

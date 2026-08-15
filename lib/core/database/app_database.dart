@@ -1803,6 +1803,11 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Translation suggestion tables whose existence has been confirmed
+  /// (see [getSearchSuggestions]). Cached so the sqlite_master probe
+  /// runs once per language per session instead of on every keystroke.
+  final Set<String> _knownTranslationSuggestionTables = {};
+
   /// Get word suggestions for autocomplete. Returns words that start with
   /// [prefix] (or whose fuzzy equivalent does), ordered by frequency.
   Future<List<SearchSuggestion>> getSearchSuggestions(
@@ -1842,37 +1847,49 @@ class AppDatabase extends _$AppDatabase {
     // search_words (Pāli), so a search for an English term like "mind"
     // never suggested anything — this was the "suggestions only show
     // Pāli terms" bug.
+    //
+    // The sqlite_master existence probe is cached (presence only, not
+    // absence — a language DB may be installed mid-session) because this
+    // method runs on every pause in typing; probing the schema each time
+    // added two extra queries per keystroke batch.
     if (translationLangCode != null) {
       final tableName = 'search_words_$translationLangCode';
-      try {
-        final exists = await customSelect(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-          variables: [Variable.withString(tableName)],
-        ).get();
-        if (exists.isNotEmpty) {
-          final tRows = await customSelect(
-            'SELECT word, count FROM $tableName '
-            'WHERE word LIKE ?1 '
-            'ORDER BY count DESC LIMIT ?2',
-            variables: [
-              Variable.withString('$trimmed%'),
-              Variable.withInt(limit),
-            ],
+      final known = _knownTranslationSuggestionTables.contains(tableName);
+      if (!known) {
+        try {
+          final exists = await customSelect(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            variables: [Variable.withString(tableName)],
           ).get();
-          suggestions.addAll(
-            tRows.map(
-              (r) => SearchSuggestion(
-                pali: r.data['word'] as String,
-                fuzzy: r.data['word'] as String,
-                count: r.data['count'] as int,
-                source: SuggestionSource.translation,
-              ),
-            ),
-          );
+          if (exists.isEmpty) {
+            // Table absent — nothing to add; don't cache the absence.
+            return suggestions;
+          }
+          _knownTranslationSuggestionTables.add(tableName);
+        } catch (_) {
+          // Translation suggestions are optional.
+          return suggestions;
         }
-      } catch (_) {
-        // Translation suggestions are optional.
       }
+      final tRows = await customSelect(
+        'SELECT word, count FROM $tableName '
+        'WHERE word LIKE ?1 '
+        'ORDER BY count DESC LIMIT ?2',
+        variables: [
+          Variable.withString('$trimmed%'),
+          Variable.withInt(limit),
+        ],
+      ).get();
+      suggestions.addAll(
+        tRows.map(
+          (r) => SearchSuggestion(
+            pali: r.data['word'] as String,
+            fuzzy: r.data['word'] as String,
+            count: r.data['count'] as int,
+            source: SuggestionSource.translation,
+          ),
+        ),
+      );
     }
 
     suggestions.sort((a, b) => b.count.compareTo(a.count));

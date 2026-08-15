@@ -290,6 +290,7 @@ const Map<String, String> en = {
   'Search with AI': 'Search with AI',
   'AI is searching the Tipitaka…': 'AI is searching the Tipitaka…',
   'AI search steps': 'AI search steps',
+  'AI searched for': 'AI searched for',
   'AI-found passages': 'AI-found passages',
   'The AI could not find any relevant passages. Try a different description.':
       'The AI could not find any relevant passages. Try a different description.',
@@ -337,6 +338,7 @@ const Map<String, String> en = {
   'TTS Engine': 'TTS Engine',
   'Voice': 'Voice',
   'Speed': 'Speed',
+  'Trans. speed': 'Trans. speed',
   'Pitch': 'Pitch',
   'Engine': 'Engine',
   'System TTS': 'System TTS',

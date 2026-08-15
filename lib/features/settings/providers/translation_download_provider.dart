@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/download_foreground_service.dart';
 import '../services/download_notification_service.dart';
 
 import '../../../core/models/app_models.dart';
@@ -51,6 +53,12 @@ class TranslationDownloadState {
 class TranslationDownloadNotifier
     extends StateNotifier<Map<String, TranslationDownloadState>> {
   final Map<String, CancelableCompleter> _cancelTokens = {};
+
+  /// Number of in-flight downloads currently keeping the Android
+  /// foreground service alive. The service is only stopped once the last
+  /// download finishes, so a translation and a core asset downloading at
+  /// the same time don't kill each other's keep-alive.
+  int _fgsRefCount = 0;
 
   TranslationDownloadNotifier() : super({});
 
@@ -135,6 +143,30 @@ class TranslationDownloadNotifier
     return installed.compareTo(version.updatedAt!) < 0;
   }
 
+  /// Start (or attach to) the download foreground service. Returns whether
+  /// the ongoing status-bar notification is active (callers fall back to a
+  /// plain local notification when false).
+  Future<bool> _fgsStart({
+    required String title,
+    required String text,
+  }) async {
+    final active = await DownloadForegroundService.instance.showDownload(
+      title: title,
+      text: text,
+    );
+    if (active) _fgsRefCount++;
+    return active;
+  }
+
+  /// Detach this download from the foreground service, stopping it (and
+  /// removing its notification) once no download needs it any more.
+  Future<void> _fgsStop() async {
+    if (_fgsRefCount > 0) _fgsRefCount--;
+    if (_fgsRefCount == 0) {
+      await DownloadForegroundService.instance.hideDownload();
+    }
+  }
+
   /// Cancel an in-progress download for a version key.
   void cancelDownload(String versionKey) {
     final token = _cancelTokens[versionKey];
@@ -184,13 +216,24 @@ class TranslationDownloadNotifier
         progress: 0.0,
       ),
     };
-    // Show notification
-    DownloadNotificationService.instance.showTranslationProgress(
-      versionKey: versionKey,
-      displayName: version.displayName,
-      progress: 0.0,
-      isIndeterminate: false,
+    // Show an ongoing status-bar notification. On Android this starts a
+    // real foreground service (dataSync type) that keeps the app process
+    // alive so the download continues while the user is in another app;
+    // when the service can't start (e.g. notification permission denied)
+    // it falls back to a plain local notification that only shows while
+    // the app is foregrounded.
+    final fgsActive = await _fgsStart(
+      title: 'Downloading ${version.displayName}',
+      text: '0%',
     );
+    if (!fgsActive) {
+      DownloadNotificationService.instance.showTranslationProgress(
+        versionKey: versionKey,
+        displayName: version.displayName,
+        progress: 0.0,
+        isIndeterminate: false,
+      );
+    }
 
     final cancelToken = CancelableCompleter();
     _cancelTokens[versionKey] = cancelToken;
@@ -202,6 +245,7 @@ class TranslationDownloadNotifier
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
+        await _fgsStop();
         DownloadNotificationService.instance.showTranslationError(
           version.displayName,
           'HTTP ${response.statusCode}',
@@ -223,6 +267,7 @@ class TranslationDownloadNotifier
       await for (final chunk in response.stream) {
         if (cancelToken.isCancelled) {
           client.close();
+          await _fgsStop();
           DownloadNotificationService.instance.dismissTranslation();
           state = {
             ...state,
@@ -245,12 +290,20 @@ class TranslationDownloadNotifier
               progress: progress,
             ),
           };
-          DownloadNotificationService.instance.showTranslationProgress(
-            versionKey: versionKey,
-            displayName: version.displayName,
-            progress: progress,
-            isIndeterminate: false,
-          );
+          final pct = (progress * 100).round();
+          if (fgsActive) {
+            DownloadForegroundService.instance.updateDownload(
+              title: 'Downloading ${version.displayName}',
+              text: '$pct%',
+            );
+          } else {
+            DownloadNotificationService.instance.showTranslationProgress(
+              versionKey: versionKey,
+              displayName: version.displayName,
+              progress: progress,
+              isIndeterminate: false,
+            );
+          }
         }
       }
 
@@ -258,6 +311,7 @@ class TranslationDownloadNotifier
       _cancelTokens.remove(versionKey);
 
       if (cancelToken.isCancelled) {
+        await _fgsStop();
         DownloadNotificationService.instance.dismissTranslation();
         state = {
           ...state,
@@ -273,12 +327,19 @@ class TranslationDownloadNotifier
         ...state,
         versionKey: const TranslationDownloadState(status: DownloadStatus.extracting),
       };
-      DownloadNotificationService.instance.showTranslationProgress(
-        versionKey: versionKey,
-        displayName: version.displayName,
-        progress: 1.0,
-        isIndeterminate: true,
-      );
+      if (fgsActive) {
+        DownloadForegroundService.instance.updateDownload(
+          title: 'Extracting ${version.displayName}',
+          text: '…',
+        );
+      } else {
+        DownloadNotificationService.instance.showTranslationProgress(
+          versionKey: versionKey,
+          displayName: version.displayName,
+          progress: 1.0,
+          isIndeterminate: true,
+        );
+      }
 
       final dbDir = await getDatabaseDirectory();
       final archive = ZipDecoder().decodeBytes(bytes);
@@ -292,6 +353,7 @@ class TranslationDownloadNotifier
       }
 
       if (dbEntry == null) {
+        await _fgsStop();
         DownloadNotificationService.instance.showTranslationError(
           version.displayName,
           'No database file found in archive',
@@ -303,6 +365,31 @@ class TranslationDownloadNotifier
             errorMessage: 'No database file found in the archive',
           ),
         };
+        return;
+      }
+
+      final dbContent = dbEntry.content as List<int>;
+
+      // ── Integrity verification against the manifest ─────────────────
+      // The server (upload_github_release.py) computes the manifest
+      // `checksum` as the SHA-256 of the .db FILE inside the zip, so the
+      // extracted database content must hash to the same value. `dbSize`
+      // is the size of that same .db file — a cheap extra check. A
+      // mismatch means the zip is corrupted, truncated, or from a
+      // different version than the manifest, and must never be installed.
+      final verifyError = verifyDownloadedDb(
+        dbContent: dbContent,
+        expectedChecksum: version.checksum,
+        expectedDbSize: version.dbSize,
+      );
+      if (verifyError != null) {
+        await _fgsStop();
+        _failDownload(
+          versionKey: versionKey,
+          displayName: version.displayName,
+          message: verifyError,
+        );
+        _cancelTokens.remove(versionKey);
         return;
       }
 
@@ -349,6 +436,7 @@ class TranslationDownloadNotifier
         ref.invalidate(translationDbProvider(version.languageCode));
       }
 
+      await _fgsStop();
       state = {
         ...state,
         versionKey: const TranslationDownloadState(
@@ -360,6 +448,7 @@ class TranslationDownloadNotifier
         version.displayName,
       );
     } catch (e) {
+      await _fgsStop();
       if (cancelToken.isCancelled) {
         DownloadNotificationService.instance.dismissTranslation();
         state = {
@@ -419,12 +508,21 @@ class TranslationDownloadNotifier
       ),
     };
 
+    // Same background keep-alive as translation downloads: these are the
+    // large core databases (epitaka.db, dpd-dictionary.db), so a dropped
+    // download while switching apps would be especially painful.
+    final fgsActive = await _fgsStart(
+      title: 'Downloading $displayName',
+      text: '0%',
+    );
+
     try {
       final client = http.Client();
       final request = http.Request('GET', Uri.parse(url));
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
+        await _fgsStop();
         state = {
           ...state,
           key: TranslationDownloadState(
@@ -450,6 +548,12 @@ class TranslationDownloadNotifier
               progress: received / contentLength,
             ),
           };
+          if (fgsActive) {
+            DownloadForegroundService.instance.updateDownload(
+              title: 'Downloading $displayName',
+              text: '${(received / contentLength * 100).round()}%',
+            );
+          }
         }
       }
       client.close();
@@ -471,6 +575,7 @@ class TranslationDownloadNotifier
       }
 
       if (dbEntry == null) {
+        await _fgsStop();
         state = {
           ...state,
           key: TranslationDownloadState(
@@ -510,6 +615,7 @@ class TranslationDownloadNotifier
         db.clearCaches();
       }
 
+      await _fgsStop();
       state = {
         ...state,
         key: const TranslationDownloadState(
@@ -525,6 +631,7 @@ class TranslationDownloadNotifier
 
       return true;
     } catch (e) {
+      await _fgsStop();
       state = {
         ...state,
         key: TranslationDownloadState(
@@ -534,6 +641,25 @@ class TranslationDownloadNotifier
       };
       return false;
     }
+  }
+
+  /// Report a download failure through state + notification and clean up.
+  void _failDownload({
+    required String versionKey,
+    required String displayName,
+    required String message,
+  }) {
+    DownloadNotificationService.instance.showTranslationError(
+      displayName,
+      message,
+    );
+    state = {
+      ...state,
+      versionKey: TranslationDownloadState(
+        status: DownloadStatus.error,
+        errorMessage: message,
+      ),
+    };
   }
 
   /// Delete a translation database file from disk.
@@ -547,6 +673,38 @@ class TranslationDownloadNotifier
     }
     return false;
   }
+}
+
+/// Case-insensitive hex comparison for SHA-256 strings (the server emits
+/// lowercase; keep the comparison forgiving).
+bool _hexEquals(String a, String b) =>
+    a.toLowerCase() == b.toLowerCase();
+
+/// Verify downloaded database content against the manifest.
+///
+/// The server's `checksum` is the SHA-256 of the .db file inside the zip
+/// (not the zip itself), so [dbContent] (the extracted bytes) must hash to
+/// it. [expectedDbSize] is the size of that same .db file. Returns null
+/// when everything matches, otherwise an error message describing the
+/// mismatch. A missing/empty expected checksum or size skips that check
+/// (older manifest entries may not publish them).
+String? verifyDownloadedDb({
+  required List<int> dbContent,
+  String? expectedChecksum,
+  int? expectedDbSize,
+}) {
+  if (expectedChecksum != null && expectedChecksum.isNotEmpty) {
+    final actual = sha256.convert(dbContent).toString();
+    if (!_hexEquals(actual, expectedChecksum)) {
+      return 'Checksum mismatch — expected $expectedChecksum, got $actual';
+    }
+  }
+  if (expectedDbSize != null && expectedDbSize > 0) {
+    if (dbContent.length != expectedDbSize) {
+      return 'Size mismatch — expected $expectedDbSize bytes, got ${dbContent.length}';
+    }
+  }
+  return null;
 }
 
 /// Simple cancel token for cooperative cancellation.

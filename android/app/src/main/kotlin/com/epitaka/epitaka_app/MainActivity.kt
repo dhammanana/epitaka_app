@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
-import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
@@ -78,7 +77,10 @@ class MainActivity : FlutterActivity() {
                         // install/manage). url_launcher can't launch this —
                         // it only does ACTION_VIEW — so expose it natively.
                         try {
-                            startActivity(Intent(Settings.ACTION_TTS_SETTINGS))
+                            // There is no public Settings.ACTION_TTS_SETTINGS
+                            // constant in the Android SDK — the Settings app
+                            // registers this action string directly.
+                            startActivity(Intent("com.android.settings.TTS_SETTINGS"))
                             result.success(true)
                         } catch (e: Exception) {
                             result.error("LAUNCH_FAILED", e.message, null)

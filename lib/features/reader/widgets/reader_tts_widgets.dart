@@ -30,11 +30,20 @@ class TtsFloatingChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: needsFollow ? 14 : 10, vertical: needsFollow ? 8 : 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: needsFollow ? 14 : 10,
+          vertical: needsFollow ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           color: colors.primary,
           borderRadius: BorderRadius.circular(9999),
-          boxShadow: [BoxShadow(color: colors.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: colors.primary.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -45,14 +54,31 @@ class TtsFloatingChip extends StatelessWidget {
               GestureDetector(
                 onTap: onFollowTap,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: colors.onPrimary.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(9999)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.onPrimary.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(9999),
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.my_location, size: 14, color: colors.onPrimary),
+                      Icon(
+                        Icons.my_location,
+                        size: 14,
+                        color: colors.onPrimary,
+                      ),
                       const SizedBox(width: 4),
-                      Text(loc.follow, style: TextStyle(color: colors.onPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(
+                        loc.follow,
+                        style: TextStyle(
+                          color: colors.onPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -104,13 +130,18 @@ class TtsControlsCard extends StatelessWidget {
     final loc = AppLocalizations.of(context);
     return Container(
       width: 280,
-      margin: const EdgeInsets.only(bottom: 80),
       padding: const EdgeInsets.all(AppDimensions.md),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
         border: Border.all(color: colors.outlineVariant),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -120,9 +151,25 @@ class TtsControlsCard extends StatelessWidget {
             children: [
               Icon(Icons.record_voice_over, size: 18, color: colors.primary),
               const SizedBox(width: 8),
-              Text(loc.ttsControls, style: AppTypography.labelMedium.copyWith(color: colors.onSurface, fontWeight: FontWeight.w600)),
+              Text(
+                loc.ttsControls,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const Spacer(),
-              IconButton(icon: Icon(Icons.close, size: 18, color: colors.onSurfaceVariant), onPressed: onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints(), visualDensity: VisualDensity.compact),
+              IconButton(
+                icon: Icon(
+                  Icons.close,
+                  size: 18,
+                  color: colors.onSurfaceVariant,
+                ),
+                onPressed: onClose,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
             ],
           ),
           const SizedBox(height: AppDimensions.md),
@@ -132,31 +179,59 @@ class TtsControlsCard extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onFollowTap,
                 icon: Icon(Icons.my_location, size: 16, color: colors.primary),
-                label: Text(loc.followTtsPosition, style: TextStyle(color: colors.primary)),
+                label: Text(
+                  loc.followTtsPosition,
+                  style: TextStyle(color: colors.primary),
+                ),
               ),
             ),
             const SizedBox(height: AppDimensions.md),
           ],
+          // Pāli comes first (the book shows Pāli above the translation).
           _ControlSlider(
-            icon: Icons.speed, label: loc.ttsSpeed, value: settings.ttsSpeed,
-            min: 0.5, max: 4.0, displayValue: '${settings.ttsSpeed.toStringAsFixed(1)}×', colors: colors, onChanged: onSpeedChanged,
+            icon: Icons.menu_book,
+            label: loc.ttsPaliSpeed,
+            value: settings.ttsPaliSpeed,
+            min: 0.1,
+            max: 4.0,
+            displayValue: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
+            colors: colors,
+            onChanged: onPaliSpeedChanged,
           ),
           const SizedBox(height: AppDimensions.sm),
           _ControlSlider(
-            icon: Icons.menu_book, label: loc.ttsPaliSpeed, value: settings.ttsPaliSpeed,
-            min: 0.5, max: 4.0, displayValue: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×', colors: colors, onChanged: onPaliSpeedChanged,
+            icon: Icons.speed,
+            label: loc.ttsTranslationSpeed,
+            value: settings.ttsSpeed,
+            min: 0.5,
+            max: 4.0,
+            displayValue: '${settings.ttsSpeed.toStringAsFixed(1)}×',
+            colors: colors,
+            onChanged: onSpeedChanged,
           ),
           const SizedBox(height: AppDimensions.sm),
           _ControlSlider(
-            icon: Icons.tune, label: loc.ttPitch, value: settings.ttsPitch,
-            min: 0.5, max: 2.0, displayValue: '${settings.ttsPitch.toStringAsFixed(1)}×', colors: colors, onChanged: onPitchChanged,
+            icon: Icons.tune,
+            label: loc.ttPitch,
+            value: settings.ttsPitch,
+            min: 0.5,
+            max: 2.0,
+            displayValue: '${settings.ttsPitch.toStringAsFixed(1)}×',
+            colors: colors,
+            onChanged: onPitchChanged,
           ),
           const SizedBox(height: AppDimensions.md),
           Row(
             children: [
               Icon(Icons.chat_bubble_outline, size: 16, color: colors.primary),
               const SizedBox(width: 8),
-              Text(loc.ttsSpeakMode, style: AppTypography.labelSmall.copyWith(color: colors.onSurface, fontSize: 12)),
+              Text(
+                loc.ttsSpeakMode,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurface,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -166,15 +241,24 @@ class TtsControlsCard extends StatelessWidget {
               segments: [
                 ButtonSegment(
                   value: TtsSpeakMode.translation,
-                  label: Text(loc.ttsSpeakTranslation, style: const TextStyle(fontSize: 11)),
+                  label: Text(
+                    loc.ttsSpeakTranslation,
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ),
                 ButtonSegment(
                   value: TtsSpeakMode.pali,
-                  label: Text(loc.ttsSpeakPali, style: const TextStyle(fontSize: 11)),
+                  label: Text(
+                    loc.ttsSpeakPali,
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ),
                 ButtonSegment(
                   value: TtsSpeakMode.both,
-                  label: Text(loc.ttsSpeakBothShort, style: const TextStyle(fontSize: 11)),
+                  label: Text(
+                    loc.ttsSpeakBothShort,
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ),
               ],
               selected: {settings.ttsSpeakMode},
@@ -203,19 +287,53 @@ class TtsControlsCard extends StatelessWidget {
                     initialValue: settings.ttsVoice,
                     onSelected: onVoiceChanged,
                     itemBuilder: (context) => voices.isEmpty
-                        ? [PopupMenuItem<String>(value: 'default', child: Text(loc.systemDefault))]
-                        : voices.map((v) => PopupMenuItem<String>(value: v['name'] ?? 'default', child: Text(v['name'] ?? loc.unknown))).toList(),
+                        ? [
+                            PopupMenuItem<String>(
+                              value: 'default',
+                              child: Text(loc.systemDefault),
+                            ),
+                          ]
+                        : voices
+                              .map(
+                                (v) => PopupMenuItem<String>(
+                                  value: v['name'] ?? 'default',
+                                  child: Text(v['name'] ?? loc.unknown),
+                                ),
+                              )
+                              .toList(),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(border: Border.all(color: colors.outlineVariant), borderRadius: BorderRadius.circular(9999)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: colors.outlineVariant),
+                        borderRadius: BorderRadius.circular(9999),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.record_voice_over, size: 14, color: colors.primary),
+                          Icon(
+                            Icons.record_voice_over,
+                            size: 14,
+                            color: colors.primary,
+                          ),
                           const SizedBox(width: 4),
-                          Flexible(child: Text(loc.ttsVoiceLabel, overflow: TextOverflow.ellipsis, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant))),
+                          Flexible(
+                            child: Text(
+                              loc.ttsVoiceLabel,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelSmall.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 4),
-                          Icon(Icons.chevron_right, size: 14, color: colors.onSurfaceVariant),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 14,
+                            color: colors.onSurfaceVariant,
+                          ),
                         ],
                       ),
                     ),
@@ -226,9 +344,26 @@ class TtsControlsCard extends StatelessWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: onSystemConfigTap,
-                  icon: Icon(Icons.settings, size: 14, color: colors.onSurfaceVariant),
-                  label: Text(loc.config, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
-                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), minimumSize: Size.zero, visualDensity: VisualDensity.compact),
+                  icon: Icon(
+                    Icons.settings,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  label: Text(
+                    loc.config,
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    minimumSize: Size.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
               ),
             ],
@@ -250,9 +385,14 @@ class _ControlSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   const _ControlSlider({
-    required this.icon, required this.label, required this.value,
-    required this.min, required this.max, required this.displayValue,
-    required this.colors, required this.onChanged,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.displayValue,
+    required this.colors,
+    required this.onChanged,
   });
 
   @override
@@ -261,9 +401,36 @@ class _ControlSlider extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: colors.primary),
         const SizedBox(width: 8),
-        Text(label, style: AppTypography.labelSmall.copyWith(color: colors.onSurface, fontSize: 12)),
-        Expanded(child: Slider(value: value, min: min, max: max, divisions: (max - min) * 4 ~/ 0.5, label: displayValue, activeColor: colors.primary, inactiveColor: colors.outlineVariant, onChanged: onChanged)),
-        SizedBox(width: 36, child: Text(displayValue, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant, fontWeight: FontWeight.w600, fontSize: 11))),
+        Text(
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.onSurface,
+            fontSize: 12,
+          ),
+        ),
+        Expanded(
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: (max - min) * 4 ~/ 0.5,
+            label: displayValue,
+            activeColor: colors.primary,
+            inactiveColor: colors.outlineVariant,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            displayValue,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -271,11 +438,11 @@ class _ControlSlider extends StatelessWidget {
 
 String stripHtmlForTts(String text) {
   return text
-    .replaceAll(RegExp(r'<i>.*?</i>', caseSensitive: false, dotAll: true), '')
-    .replaceAll(RegExp(r'\([^()]*[' + r'āīūōṅñṭḍṇḷṃṁĀĪŪŌṄÑṬḌṆḶṀ' + r'][^()]*\)'), '')
-    .replaceAll(RegExp(r'<[^>]*>'), '')
-    .replaceAll(RegExp(r'\\s+'), ' ')
-    .trim();
+      .replaceAll(RegExp(r'<i>.*?</i>', caseSensitive: false, dotAll: true), '')
+      // .replaceAll(RegExp(r'\([^()]*[' + r'āīūōṅñṭḍṇḷṃṁĀĪŪŌṄÑṬḌṆḶṀ' + r'][^()]*\)'), '')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'\\s+'), ' ')
+      .trim();
 }
 
 /// Keep only system voices whose locale matches [langCode] (e.g. 'en'

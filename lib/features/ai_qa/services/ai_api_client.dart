@@ -380,6 +380,7 @@ Before searching, analyze:
 - ALWAYS include SPECIFIC queries that target the unique aspect, not just generic keywords.
   BAD: ["dāna", "giving"] (returns 1000+ results, all generic)
   GOOD: ["dukkara dāna", "most difficult gift", "kicchena dāna", "supreme offering monk"]
+- Terms may be Pāli OR English: Pāli terms match the Pāli text; English terms match the English translation. Include both when relevant.
 - Use 3-4 queries at different specificity levels:
   1. Very specific (Pāli compound from the question's core concept)
   2. Phrase search (English description of the unique situation)
@@ -432,6 +433,7 @@ The user wants to FIND passages in the Tipitaka relevant to their request. Your 
 - When you need definitions of several Pāli terms, batch them with get_dictionary_batch(terms) in ONE call — never call get_dictionary once per term.
 - Use search_sections first for concept questions to discover which suttas discuss the topic.
 - Use search_tipitaka_batch or search_by_category with 3-4 SPECIFIC Pāli and English terms (compounds, synonyms, phrase-level descriptions). Avoid single generic keywords.
+- Terms may be Pāli OR English: Pāli terms match the Pāli text, English terms match the English translation. Include both when relevant — a concept often appears only in the translation.
 - If a search returns too few results, broaden; if too many generic ones, narrow with search_by_category.
 - Read promising passages with get_paragraph_content to confirm they are relevant.
 - You have up to 10 tool calls. Use them wisely; stop once you have gathered enough passages.

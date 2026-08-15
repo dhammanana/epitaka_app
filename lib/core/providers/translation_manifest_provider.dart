@@ -78,6 +78,7 @@ final mergedTranslationVersionsProvider =
             merged[idx] = merged[idx].copyWith(
               downloadUrl: v.downloadUrl,
               fileSize: v.fileSize,
+              dbSize: v.dbSize,
               updatedAt: v.updatedAt,
               checksum: v.checksum,
             );

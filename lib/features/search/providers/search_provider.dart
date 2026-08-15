@@ -142,7 +142,19 @@ sealed class SearchState {
 }
 
 class SearchIdle extends SearchState {
-  const SearchIdle();
+  /// Snapshot of the current filter selections, mirroring the fields on
+  /// [SearchResults]. The idle state carries them so that toggling a
+  /// filter chip before the first search still changes the state object
+  /// (and thus rebuilds the UI) — a plain field-less const state is
+  /// always identical, so the chips would never update until a search
+  /// ran.
+  final Set<String> enabledCategories;
+  final Set<String> enabledNikayas;
+
+  const SearchIdle({
+    this.enabledCategories = kAllCategories,
+    this.enabledNikayas = kAllNikayas,
+  });
 }
 
 class SearchIndexing extends SearchState {
@@ -327,6 +339,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
       await search(
         query: current.query,
         distance: current.distance,
+      );
+    } else if (current is SearchIdle) {
+      // No search active yet — still emit a fresh idle state so the
+      // filter chips (which read from this provider) rebuild with the
+      // new selection. SearchLoading/SearchIndexing/SearchError are left
+      // untouched.
+      state = SearchIdle(
+        enabledCategories: _enabledCategories,
+        enabledNikayas: _enabledNikayas,
       );
     }
   }

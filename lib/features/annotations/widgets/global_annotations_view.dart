@@ -29,6 +29,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/diacritics.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../library/widgets/history_tabs.dart' show formatTimeAgo;
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -710,9 +711,7 @@ class _AnnotationsListState extends ConsumerState<_AnnotationsList> {
             initialLineId: a.lineId,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 
   /// Confirmation dialog used by both the trash button and swipe-to-delete.

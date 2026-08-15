@@ -31,9 +31,13 @@ class AiSearchRunning extends AiSearchState {
   /// How many tool iterations have been used so far.
   final int iterationsUsed;
 
+  /// Search terms the AI has queried so far (for the live chips row).
+  final List<String> termsUsed;
+
   const AiSearchRunning({
     this.toolLogs = const [],
     this.iterationsUsed = 0,
+    this.termsUsed = const [],
   });
 }
 
@@ -51,7 +55,14 @@ class AiSearchDone extends AiSearchState {
   /// Number of distinct passages found.
   final int passageCount;
 
-  const AiSearchDone({required this.toolLogs, required this.passageCount});
+  /// Search terms the AI actually queried (for the results header chips).
+  final List<String> termsUsed;
+
+  const AiSearchDone({
+    required this.toolLogs,
+    required this.passageCount,
+    this.termsUsed = const [],
+  });
 }
 
 /// Runs the Gavesana AI search: plan → search → collect passages.
@@ -111,6 +122,7 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
           state = AiSearchRunning(
             toolLogs: [...toolLogs],
             iterationsUsed: loopIterationsFromLogs(toolLogs),
+            termsUsed: extractSearchTerms(toolLogs),
           );
         },
         maxIterations: kAiSearchMaxToolCalls,
@@ -206,7 +218,11 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
       }
 
       if (passages.isEmpty) {
-        state = AiSearchDone(toolLogs: [...toolLogs], passageCount: 0);
+        state = AiSearchDone(
+          toolLogs: [...toolLogs],
+          passageCount: 0,
+          termsUsed: extractSearchTerms(toolLogs),
+        );
         return;
       }
 
@@ -218,6 +234,7 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
       state = AiSearchDone(
         toolLogs: [...toolLogs],
         passageCount: passages.length,
+        termsUsed: extractSearchTerms(toolLogs),
       );
     } catch (e) {
       debugPrint('[GAVESANA] AI search failed: $e');
@@ -236,6 +253,47 @@ int loopIterationsFromLogs(List<ToolCallLog> logs) {
   // Each model turn usually issues several parallel tool calls; count the
   // number of distinct batches (a rough proxy: total calls, capped).
   return logs.length;
+}
+
+/// Extract the search terms the AI actually queried from the tool log.
+///
+/// Kept in call order, deduplicated (case-insensitive), capped — so the
+/// results header can render them as tappable chips; tapping one re-runs
+/// the search with that exact term.
+List<String> extractSearchTerms(List<ToolCallLog> logs) {
+  const maxTerms = 12;
+  final seen = <String>{};
+  final terms = <String>[];
+
+  void add(String? raw) {
+    final term = raw?.trim() ?? '';
+    if (term.isEmpty) return;
+    if (seen.add(term.toLowerCase())) {
+      terms.add(term);
+    }
+  }
+
+  for (final log in logs) {
+    if (terms.length >= maxTerms) break;
+    final args = log.arguments;
+    switch (log.toolName) {
+      case 'search_tipitaka':
+      case 'search_sections':
+        add(args['query'] as String?);
+      case 'search_tipitaka_batch':
+      case 'search_by_category':
+        for (final q in (args['queries'] as List<dynamic>?) ?? const []) {
+          add(q.toString());
+        }
+      case 'get_dictionary':
+        add(args['term'] as String?);
+      case 'get_dictionary_batch':
+        for (final t in (args['terms'] as List<dynamic>?) ?? const []) {
+          add(t.toString());
+        }
+    }
+  }
+  return terms;
 }
 
 /// Provider for the Gavesana AI search notifier.

@@ -4,7 +4,6 @@ import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/models/app_models.dart';
 import '../../../core/providers/database_provider.dart';
@@ -16,6 +15,7 @@ import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
@@ -282,9 +282,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
             searchQuery: query,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 
   void _onHeadingResultTap(
@@ -300,9 +298,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
             searchQuery: widget.state.query,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 
   void _onResultLongPress(
@@ -484,9 +480,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
                 ),
               );
           Navigator.of(context).pop();
-          if (!ResponsiveBreakpoint.isDesktop(context)) {
-            context.push('/reader');
-          }
+          openReaderRoute(context);
         },
       );
     } catch (e) {

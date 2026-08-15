@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/database/app_database.dart' hide SearchResultRow;
 import '../../../core/providers/settings_provider.dart';
@@ -14,6 +13,7 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../core/utils/velthuis.dart';
@@ -41,6 +41,12 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   Timer? _debounce;
+
+  /// Bumped whenever a search is executed or the field changes; a
+  /// suggestion fetch only applies its result if the sequence still
+  /// matches, so a fetch that finishes after the user pressed Enter can
+  /// never pop the suggestion panel over the results.
+  int _suggestSeq = 0;
   bool _isConverting = false;
   int _wordDistance = 0;
   bool _showSuggestions = false;
@@ -172,7 +178,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     }
 
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 200), () async {
+    final seq = ++_suggestSeq;
+    _debounce = Timer(const Duration(milliseconds: 120), () async {
       if (effectiveValue.trim().isNotEmpty) {
         final words = effectiveValue.trim().split(RegExp(r'\\s+'));
         final lastWord = words.isNotEmpty ? words.last : '';
@@ -180,19 +187,22 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           final suggestions = await ref
               .read(searchProvider.notifier)
               .getSuggestions(lastWord);
-          if (mounted) {
-            setState(() {
-              _suggestions = suggestions;
-              _showSuggestions = suggestions.isNotEmpty;
-            });
-          }
+          // Drop stale results: the user may have typed more or pressed
+          // Enter while the fetch was in flight.
+          if (!mounted || seq != _suggestSeq) return;
+          setState(() {
+            _suggestions = suggestions;
+            _showSuggestions = suggestions.isNotEmpty;
+          });
         } else {
+          if (!mounted || seq != _suggestSeq) return;
           setState(() {
             _suggestions = [];
             _showSuggestions = false;
           });
         }
       } else {
+        if (!mounted || seq != _suggestSeq) return;
         setState(() {
           _suggestions = [];
           _showSuggestions = false;
@@ -202,6 +212,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   }
 
   void _executeSearch() {
+    // Cancel any pending suggestion fetch and invalidate in-flight ones,
+    // so the panel can't pop up over the results after searching.
+    _debounce?.cancel();
+    _suggestSeq++;
     final rawQuery = _searchController.text;
     final query = velthuis(rawQuery);
     setState(() => _showSuggestions = false);
@@ -259,10 +273,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           ),
         );
     // On desktop, the reader is already visible side-by-side — just switch tabs.
-    // On mobile, navigate to reader screen.
-    if (context.mounted && !ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    // On mobile, navigate to the reader (popping back to an existing one).
+    if (context.mounted) openReaderRoute(context);
   }
 
   @override

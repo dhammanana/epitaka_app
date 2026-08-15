@@ -214,18 +214,20 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
         }
         return _buildIdleState(colors, loc);
 
-      case AiSearchRunning(:final toolLogs):
-        return _buildRunningState(colors, loc, toolLogs);
+      case AiSearchRunning(:final toolLogs, :final termsUsed):
+        return _buildRunningState(colors, loc, toolLogs, termsUsed);
 
       case AiSearchError(:final message):
         return _buildErrorState(colors, loc, message);
 
-      case AiSearchDone(:final passageCount):
+      case AiSearchDone(:final passageCount, :final termsUsed):
         if (searchState is SearchResults && searchState.totalResults > 0) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildDoneHeader(colors, loc, passageCount),
+              if (termsUsed.isNotEmpty) _buildTermsRow(colors, loc, termsUsed),
+              const SizedBox(height: AppDimensions.sm),
               Expanded(child: SearchResultsView(state: searchState)),
             ],
           );
@@ -287,6 +289,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
     ColorScheme colors,
     AppLocalizations loc,
     List toolLogs,
+    List<String> termsUsed,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,6 +321,7 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
             ],
           ),
         ),
+        if (termsUsed.isNotEmpty) _buildTermsRow(colors, loc, termsUsed),
         if (toolLogs.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -377,6 +381,67 @@ class _GavesanaScreenState extends ConsumerState<GavesanaScreen> {
         ),
       ],
     );
+  }
+
+  /// Row of tappable chips for the search terms the AI actually used.
+  /// Tapping a chip re-runs the search with that exact term — a quick way
+  /// to refine when the results aren't what you wanted.
+  Widget _buildTermsRow(
+    ColorScheme colors,
+    AppLocalizations loc,
+    List<String> terms,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.marginMobile,
+        0,
+        AppDimensions.marginMobile,
+        AppDimensions.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            loc.gavesanaAiTerms,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final term in terms)
+                ActionChip(
+                  label: Text(
+                    term,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.primary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  backgroundColor: colors.primaryContainer.withValues(
+                    alpha: 0.25,
+                  ),
+                  side: BorderSide(color: colors.outlineVariant),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _searchTerm(term),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Run a new AI search for [term] (used by the term chips).
+  void _searchTerm(String term) {
+    _queryController.text = term;
+    ref.read(aiSearchProvider.notifier).search(term);
   }
 
   Widget _buildDoneHeader(

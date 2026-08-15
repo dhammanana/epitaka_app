@@ -88,6 +88,16 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Foreground service that keeps translation downloads running
+             when the app is backgrounded and shows the ongoing status-bar
+             notification (started/stopped by DownloadForegroundService).
+             The matching FOREGROUND_SERVICE_DATA_SYNC permission is
+             declared at the top of this manifest. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <!-- AudioService for Android MediaSession & lock-screen TTS controls -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"

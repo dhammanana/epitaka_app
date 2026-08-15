@@ -57,7 +57,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Cached flutter_tts platform channel values to avoid redundant
   /// MethodChannel calls on every line. Only updated when the user
   /// changes speed/pitch/language via settings.
-  double _cachedRate = -1.0;  // sentinel — never a valid rate
+  double _cachedRate = -1.0; // sentinel — never a valid rate
   double _cachedPitch = -1.0;
   String _cachedLanguage = '';
 
@@ -258,7 +258,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     // Initial completion/error handlers are set in _speakSystem
     // with speech-ID guards. These are temporary placeholders.
     tts.setCompletionHandler(() {
-      developer.log('[TTS] Stale completion handler fired (no speech ID)', name: 'epitaka.tts');
+      developer.log(
+        '[TTS] Stale completion handler fired (no speech ID)',
+        name: 'epitaka.tts',
+      );
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
         _broadcastToAudioService();
@@ -266,7 +269,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     });
 
     tts.setErrorHandler((msg) {
-      developer.log('[TTS] Stale error handler fired: $msg', name: 'epitaka.tts');
+      developer.log(
+        '[TTS] Stale error handler fired: $msg',
+        name: 'epitaka.tts',
+      );
       if (!_disposed) {
         state = TtsPlaybackState.stopped;
         _broadcastToAudioService();
@@ -307,16 +313,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// [language] optionally overrides the TTS language (e.g. 'si' for
   /// Sinhala-converted Pāli). When null, the language is derived from the
   /// first enabled translation.
-  Future<void> speak(
-    String text, {
-    String? language,
-    String? paliRoman,
-  }) async {
+  Future<void> speak(String text, {String? language, String? paliRoman}) async {
     if (text.trim().isEmpty) return;
     _currentText = text;
     _currentLanguage = language;
     _currentPaliRoman = paliRoman;
-    developer.log('[TTS] speak() called: text.length=${text.length} text="${text.length > 40 ? '${text.substring(0, 40)}...' : text}"', name: 'epitaka.tts');
+    developer.log(
+      '[TTS] speak() called: text.length=${text.length} text="${text.length > 40 ? '${text.substring(0, 40)}...' : text}"',
+      name: 'epitaka.tts',
+    );
 
     // Increment speech ID BEFORE stop() so the completion handler
     // that fires from stop() won't match the new speech (Bug 2 fix).
@@ -342,9 +347,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       }
       await _waitForCompletion(text);
       final elapsed = DateTime.now().difference(start).inMilliseconds;
-      developer.log('[TTS] speak() completed in ${elapsed}ms speechId=$_currentSpeechId', name: 'epitaka.tts');
+      developer.log(
+        '[TTS] speak() completed in ${elapsed}ms speechId=$_currentSpeechId',
+        name: 'epitaka.tts',
+      );
     } catch (e) {
-      developer.log('[TTS] speak() error: $e speechId=$_currentSpeechId', name: 'epitaka.tts');
+      developer.log(
+        '[TTS] speak() error: $e speechId=$_currentSpeechId',
+        name: 'epitaka.tts',
+      );
       state = TtsPlaybackState.stopped;
       _completeSpeech();
     }
@@ -442,8 +453,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         final voices = await getVoices();
         final matches = voices.where((v) => v['name'] == voiceName).toList();
         if (matches.isNotEmpty) {
-          final voiceLang =
-              (matches.first['locale'] ?? '').split(RegExp(r'[-_]')).first;
+          final voiceLang = (matches.first['locale'] ?? '')
+              .split(RegExp(r'[-_]'))
+              .first;
           if (voiceLang.toLowerCase() == effectiveLang.toLowerCase()) {
             await tts.setVoice(matches.first);
             developer.log(
@@ -514,9 +526,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     await _configureAudioSession();
     state = TtsPlaybackState.playing;
-    _broadcastToAudioService();    await tts.speak(speakText);
+    _broadcastToAudioService();
+    await tts.speak(speakText);
     final elapsed = DateTime.now().difference(start).inMilliseconds;
-    developer.log('[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId', name: 'epitaka.tts');
+    developer.log(
+      '[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId',
+      name: 'epitaka.tts',
+    );
   }
 
   /// Decide how to speak a Pāli line with the system engine. Resolves
@@ -525,8 +541,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// voice — by probing which voices are actually installed. The probe
   /// applies the chosen language as a side effect, so [_cachedLanguage]
   /// is kept in sync.
-  Future<({String text, String language, String script})>
-      _paliSpeechForSystem(
+  Future<({String text, String language, String script})> _paliSpeechForSystem(
     FlutterTts tts,
     String sinhalaText,
     String romanText,
@@ -539,11 +554,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       script: plan.script,
       language: plan.language,
     );
-    return (
-      text: speech.text,
-      language: speech.language,
-      script: plan.script,
-    );
+    return (text: speech.text, language: speech.language, script: plan.script);
   }
 
   /// Probe which Pāli script the system engine can actually speak:
@@ -576,10 +587,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       }
     }
     // Unreachable — 'roman' always returns. Defensive fallback.
-    return (
-      script: 'roman',
-      language: _ttsLanguageFromSettings(settings),
-    );
+    return (script: 'roman', language: _ttsLanguageFromSettings(settings));
   }
 
   /// Prepare a Pāli line for the Supertonic engine. Its 31 languages have
@@ -589,12 +597,37 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     String sinhalaText,
     String romanText,
   ) {
-    return paliSpeechText(
-      sinhalaText,
-      romanText,
-      script: 'hi',
-      language: 'hi',
-    );
+    return paliSpeechText(sinhalaText, romanText, script: 'hi', language: 'hi');
+  }
+
+  /// Adjust Devanagari Pāli specifically for the Hindi TTS engine.
+  ///
+  /// Hindi TTS tends to pronounce short Pāli /i/ (इ) too close to
+  /// Hindi /ɪ/.  These substitutions are intended to improve the
+  /// acoustic pronunciation without modifying the actual Pāli text.
+  static String _prepareHindiPaliTts(String text) {
+    return text
+        // Short i: prevent Hindi TTS from shifting इ toward "e".
+        .replaceAll('इ', 'ि')
+        // Niggahīta.
+        .replaceAll('ं', 'ङ')
+        // ḷ
+        .replaceAll('ळ', 'ल')
+        // ñ
+        .replaceAll('ञ', 'न्य')
+        // ph = p + h, not f.
+        .replaceAll('फ', 'प्ह')
+        // Add a small separation before the second consonant
+        // of common Pāli geminates/conjuncts.
+        .replaceAllMapped(
+          RegExp(r'([क-ह])्([क-ह])'),
+          (m) => '${m.group(1)}्${m.group(2)}',
+        )
+        // Preserve final Pāli -o.
+        .replaceAllMapped(
+          RegExp(r'([^\s।,;:!?]+ो)(?=\s|$|।|,|;|:)'),
+          (m) => '${m.group(1)}ऽ',
+        );
   }
 
   /// Write [romanText]'s Pāli in [script] for the TTS voice, paired with
@@ -606,14 +639,19 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     required String script,
     required String language,
   }) {
+    sinhalaText = sinhalaText.replaceAll(
+      "’’",
+      '',
+    ); // normalize apostrophes to right single quote
     switch (script) {
       case 'si':
         return (text: sinhalaText, language: language);
       case 'hi':
-        return (
-          text: TextProcessor.convert(sinhalaText, Script.devanagari),
-          language: language,
+        final devanagari = TextProcessor.convert(
+          sinhalaText,
+          Script.devanagari,
         );
+        return (text: _prepareHindiPaliTts(devanagari), language: language);
       default:
         return (text: asciiRomanPali(romanText), language: language);
     }
@@ -683,7 +721,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     paliFallbackNotice =
         'Reading Pāli in ${_paliScriptLabel(script)} '
         '(Devanagari (Hindi) voice not available).';
-    developer.log('[TTS] Pāli fallback: $paliFallbackNotice', name: 'epitaka.tts');
+    developer.log(
+      '[TTS] Pāli fallback: $paliFallbackNotice',
+      name: 'epitaka.tts',
+    );
   }
 
   /// Display name of a Pāli TTS script key.
@@ -741,10 +782,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       language: effectiveLanguage,
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
-        denoisingSteps:
-            _denoisingStepsForQuality(settings.ttsSupertonicQuality),
-        speechSpeed:
-            isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
+        denoisingSteps: _denoisingStepsForQuality(
+          settings.ttsSupertonicQuality,
+        ),
+        speechSpeed: isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
       ),
     );
   }
@@ -795,10 +836,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       language: effectiveLanguage,
       voiceStyle: settings.ttsSupertonicVoice,
       config: TTSConfig(
-        denoisingSteps:
-            _denoisingStepsForQuality(settings.ttsSupertonicQuality),
-        speechSpeed:
-            isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
+        denoisingSteps: _denoisingStepsForQuality(
+          settings.ttsSupertonicQuality,
+        ),
+        speechSpeed: isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
       ),
     );
 
@@ -806,7 +847,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     state = TtsPlaybackState.playing;
     _broadcastToAudioService();
     await _player!.play(result);
-    developer.log('[TTS] _speakSupertonic() speechId=$speechId', name: 'epitaka.tts');
+    developer.log(
+      '[TTS] _speakSupertonic() speechId=$speechId',
+      name: 'epitaka.tts',
+    );
   }
 
   /// Get available system voices reusing the existing flutter_tts instance.
@@ -945,14 +989,22 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     super.dispose();
   }
 
-  /// Map user-facing speed (0.5–4.0) to flutter_tts speech rate (0.0–1.0).
+  /// Map user-facing speed (0.1–4.0) to flutter_tts speech rate (0.0–1.0).
   /// flutter_tts rate ~0.5 is normal speech, 1.0 is max.
   double _mapSpeedToSystemRate(double userSpeed) {
-    // Clamp to [0.5, 4.0]
-    final clamped = userSpeed.clamp(0.5, 4.0);
-    // Map: 0.5→0.25, 1.0→0.35, 2.0→0.5, 4.0→1.0
-    final ratio = (clamped - 0.5) / (4.0 - 0.5);
-    return 0.25 + ratio * 0.75;
+    // Clamp to [0.1, 4.0]
+    final clamped = userSpeed.clamp(0.1, 4.0);
+    if (clamped >= 0.5) {
+      // Keep the original 0.5–4.0 mapping untouched (0.5→0.25, 1.0→0.35,
+      // 2.0→0.5, 4.0→1.0) so existing speed settings keep their sound;
+      // only the newly-exposed 0.1–0.5 range is slower than before.
+      final ratio = (clamped - 0.5) / (4.0 - 0.5);
+      return 0.25 + ratio * 0.75;
+    }
+    // 0.1–0.5: extend the curve downward (0.1→0.15, 0.5→0.25), continuous
+    // with the range above.
+    final lowRatio = (clamped - 0.1) / (0.5 - 0.1);
+    return 0.15 + lowRatio * (0.25 - 0.15);
   }
 
   /// Map app two-letter language codes to flutter_tts locale codes.

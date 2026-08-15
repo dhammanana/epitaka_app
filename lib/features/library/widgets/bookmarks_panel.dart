@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../annotations/models/annotation.dart';
 import '../../annotations/providers/annotations_provider.dart';
@@ -87,9 +86,7 @@ class BookmarksPanel extends ConsumerWidget {
             initialLineId: lineId,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 
   void _confirmDeleteBookmark(

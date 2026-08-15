@@ -82,6 +82,12 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
+      // Bottom-anchored and content-sized: the floating offset is applied
+      // via insetPadding (outside the dialog box), so the theme's bordered
+      // shape hugs exactly the card content — no empty strip below the
+      // card, and taps anywhere outside reach the barrier and dismiss.
+      alignment: Alignment.bottomCenter,
+      insetPadding: const EdgeInsets.fromLTRB(40, 24, 40, 80),
       child: Consumer(
         builder: (ctx, watchRef, _) {
           final settings = watchRef.watch(settingsProvider);
@@ -102,17 +108,12 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
           final paliNotice = watchRef
               .read(ttsProvider.notifier)
               .paliFallbackNotice;
-          // Align keeps the dialog exactly as tall as its content; the
-          // old full-height Column (a Spacer stretching to the dialog's
-          // max height) made the whole screen the dialog's tap target, so
-          // tapping outside the card never reached the barrier.
-          return Align(
-            alignment: Alignment.bottomCenter,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (paliNotice != null) _TtsFallbackNotice(text: paliNotice),
-                TtsControlsCard(
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (paliNotice != null) _TtsFallbackNotice(text: paliNotice),
+              TtsControlsCard(
                 colors: colors,
                 settings: settings,
                 isTtsLineVisible: widget.isTtsLineVisible,
@@ -141,8 +142,7 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
                 onClose: () => Navigator.of(ctx).pop(),
                 voices: voices,
               ),
-              ],
-            ),
+            ],
           );
         },
       ),

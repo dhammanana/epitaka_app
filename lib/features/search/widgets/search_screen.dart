@@ -29,6 +29,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// Focus node for the results list (j/k navigation on desktop).
   final FocusNode _resultsFocusNode = FocusNode();
   Timer? _debounce;
+
+  /// Bumped whenever a search is executed or the field changes; a
+  /// suggestion fetch only applies its result if the sequence still
+  /// matches, so a fetch that finishes after the user pressed Enter can
+  /// never pop the suggestion panel over the results.
+  int _suggestSeq = 0;
   int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
@@ -86,7 +92,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 200), () async {
+    final seq = ++_suggestSeq;
+    _debounce = Timer(const Duration(milliseconds: 120), () async {
       if (effectiveValue.trim().isNotEmpty) {
         // Use the LAST word as the suggestion prefix, so multi-word queries
         // continue to show suggestions for the word being typed right now.
@@ -99,19 +106,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           final suggestions = await ref
               .read(searchProvider.notifier)
               .getSuggestions(lastWord);
-          if (mounted) {
-            setState(() {
-              _suggestions = suggestions;
-              _showSuggestions = suggestions.isNotEmpty;
-            });
-          }
+          // Drop stale results: the user may have typed more or pressed
+          // Enter while the fetch was in flight.
+          if (!mounted || seq != _suggestSeq) return;
+          setState(() {
+            _suggestions = suggestions;
+            _showSuggestions = suggestions.isNotEmpty;
+          });
         } else {
+          if (!mounted || seq != _suggestSeq) return;
           setState(() {
             _suggestions = [];
             _showSuggestions = false;
           });
         }
       } else {
+        if (!mounted || seq != _suggestSeq) return;
         setState(() {
           _suggestions = [];
           _showSuggestions = false;
@@ -121,6 +131,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _executeSearch() {
+    // Cancel any pending suggestion fetch and invalidate in-flight ones,
+    // so the panel can't pop up over the results after searching.
+    _debounce?.cancel();
+    _suggestSeq++;
     final rawQuery = _searchController.text;
     final query = velthuis(rawQuery);
     setState(() => _showSuggestions = false);

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/books_provider.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -10,6 +9,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
@@ -746,11 +746,7 @@ class _BookRowState extends ConsumerState<_BookRow> {
                 bookName: book.book.displayName,
               ),
             );
-            // Desktop: the reader is already visible — never push a second
-            // reader onto the history stack (pops past it → black screen).
-            if (!ResponsiveBreakpoint.isDesktop(context)) {
-              context.push('/reader');
-            }
+            openReaderRoute(context);
           },
           child: Padding(
             padding: EdgeInsets.only(
@@ -843,9 +839,7 @@ class _RelatedBookRow extends ConsumerWidget {
             bookName: ref.bookName,
           ),
         );
-        if (!ResponsiveBreakpoint.isDesktop(context)) {
-          context.push('/reader');
-        }
+        openReaderRoute(context);
       },
       child: Padding(
         padding: EdgeInsets.only(

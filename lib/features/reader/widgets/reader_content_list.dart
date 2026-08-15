@@ -4,6 +4,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_text_utils.dart' show stripVariantAnnotations;
 import '../../annotations/models/annotation.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
 import '../providers/reader_provider.dart';
@@ -148,6 +149,14 @@ class ReaderContentList extends StatelessWidget {
     if (data.paragraphs.isEmpty) {
       return Center(child: Text(loc.noContentFound));
     }
+
+    // Push the variant-stripping flag into the shared converter global.
+    // PaliText/PaliHtmlText normally do this themselves, but the reader
+    // renders through PaliTextWithVariants and direct converter calls
+    // (heading / highlight paths), which only READ the global — so without
+    // this push, toggling "Show variant readings" would have no effect in
+    // the reader until some unrelated screen rebuilt.
+    stripVariantAnnotations = settings.stripVariantAnnotations;
 
     final displayMode = _toParagraphDisplayMode(
       settings.translationDisplayMode,

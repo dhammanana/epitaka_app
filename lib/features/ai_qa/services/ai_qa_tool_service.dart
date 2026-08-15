@@ -22,6 +22,8 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/pali_definition_provider.dart';
+import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/pali_search_utils.dart' show normalizePaliFuzzy;
 import '../../reader/services/jump_service.dart';
 import 'section_index_service.dart';
 
@@ -240,6 +242,11 @@ class AiQaToolService {
 
   /// LIKE-based keyword search (fallback when BM25 is not available).
   ///
+  /// Searches the Pāli text AND the available translation text (so English
+  /// or other-language terms match translations, not just the Pāli), with
+  /// diacritic-insensitive matching (ā=a, ṃ=m …) in both the SQL pool and
+  /// the final scoring.
+  ///
   /// When [bookIds] is given (e.g. from search_by_category's resolved book
   /// filter), the search is SCOPED to those books inside SQL — a global
   /// book-ordered pool starves later books (S-*/D-*/M-*/Dhp sort after
@@ -247,119 +254,88 @@ class AiQaToolService {
   Future<ToolResult> _searchLike(String query, {Set<String>? bookIds}) async {
     try {
       final epitakaDb = await _ref.read(epitakaDbProvider.future);
-
       debugPrint('[AI_QA] _searchLike: keywords="$query" '
           'scoped=${bookIds?.length ?? 0} books');
 
-      // Tokenise the query into keywords (split on whitespace)
-      final keywords = query
-          .split(RegExp(r'\s+'))
-          .map((w) => w.trim())
-          .where((w) => w.length >= 3)
+      // 1. Pāli text (with the books join for book names).
+      final results = await _searchLikeInColumn(
+        epitakaDb,
+        column: 'pali',
+        query: query,
+        bookIds: bookIds,
+        joinBooks: true,
+      );
+
+      // 2. Translation text, so a term like "giving" that never appears in
+      //    the Pāli can still find the passages that translate it. Same
+      //    para_ids across DBs, so hits merge cleanly below.
+      for (final lang in _activeTranslationLangs()) {
+        final transDb = await _ref.read(translationDbProvider(lang).future);
+        if (transDb == null) continue;
+        final transHits = await _searchLikeInColumn(
+          transDb,
+          column: 'translation',
+          query: query,
+          bookIds: bookIds,
+          joinBooks: false,
+        );
+        results.addAll(transHits);
+      }
+
+      // Deduplicate by (book_id, para_id) — a Pāli match wins over a
+      // translation-only match of the same paragraph.
+      final seen = <String>{};
+      final merged = <Map<String, dynamic>>[];
+      for (final r in results) {
+        final bookId = r['book_id'] as String? ?? '';
+        final paraId = r['para_id'] as int? ?? 0;
+        if (bookId.isEmpty || paraId <= 0) continue;
+        if (seen.add('$bookId:$paraId')) merged.add(r);
+      }
+
+      // Backfill book names for translation-only hits (no books join).
+      final missingIds = merged
+          .where((r) => (r['book_name'] as String? ?? '').isEmpty)
+          .map((r) => r['book_id'] as String? ?? '')
+          .where((b) => b.isNotEmpty)
           .toSet()
           .toList();
-
-      if (keywords.isEmpty) {
-        return const ToolResult(
-            success: false, data: '[]', errorMessage: 'No valid keywords');
-      }
-
-      // Search Pāli text using LIKE.
-      //
-      // Pool candidates with a PER-BOOK CAP (window function) so common
-      // terms cannot starve books whose IDs sort late (A-*/Abh-* rows would
-      // otherwise fill the pool before S-*/D-*/M-*/Dhp ever enter). The
-      // WHERE conditions are PARENTHESISED so an optional book scope
-      // applies to EVERY keyword, not just the last one.
-      final conditions =
-          keywords.map((_) => 'LOWER(s.pali) LIKE ?').join(' OR ');
-      final likeParams = keywords.map((kw) => '%${kw.toLowerCase()}%').toList();
-
-      final bookClause = (bookIds != null && bookIds.isNotEmpty)
-          ? 'AND s.book_id IN (${bookIds.map((_) => '?').join(',')}) '
-          : '';
-
-      // Pool at PARAGRAPH level: group lines into whole paragraphs, then
-      // cap at 150 paragraphs per book. A paragraph whose answer spans
-      // several lines (e.g. the brahmavihāra formula at D-ii:716) is scored
-      // as a whole, and no single paragraph is starved because its book had
-      // 150+ matching LINES before it.
-      final rows = await epitakaDb.customSelect(
-        '''
-        SELECT * FROM (
-          SELECT s.book_id, s.para_id,
-                 MIN(s.line_id) AS first_line_id,
-                 group_concat(s.pali, ' ') AS para_text,
-                 b.book_name,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY s.book_id
-                   ORDER BY s.para_id
-                 ) AS rn
-          FROM sentences s
-          JOIN books b ON b.book_id = s.book_id
-          WHERE ($conditions) $bookClause
-          GROUP BY s.book_id, s.para_id
-        ) WHERE rn <= 150
-        ''',
-        variables: [
-          ...likeParams.map((p) => Variable.withString(p)),
-          ...(bookIds ?? const <String>{}).map(
-            (b) => Variable.withString(b),
-          ),
-        ],
-      ).get();
-
-      final results = <Map<String, dynamic>>[];
-      for (final row in rows) {
-        final paraText = (row.data['para_text'] as String?) ?? '';
-        final lower = paraText.toLowerCase();
-        if (lower.isEmpty) continue;
-        double score = 0;
-        final matched = <String>{};
-        for (final kw in keywords) {
-          final needle = kw.toLowerCase();
-          var idx = 0;
-          while (idx != -1) {
-            idx = lower.indexOf(needle, idx);
-            if (idx != -1) {
-              score += needle.length;
-              matched.add(kw);
-              idx += needle.length;
-            }
+      if (missingIds.isNotEmpty) {
+        final placeholders = missingIds.map((_) => '?').join(',');
+        final bookRows = await epitakaDb.customSelect(
+          'SELECT book_id, book_name FROM books '
+          'WHERE book_id IN ($placeholders)',
+          variables: missingIds.map((b) => Variable.withString(b)).toList(),
+        ).get();
+        final names = {
+          for (final br in bookRows)
+            br.data['book_id'] as String:
+                (br.data['book_name'] as String?) ?? '',
+        };
+        for (final r in merged) {
+          if ((r['book_name'] as String? ?? '').isEmpty) {
+            r['book_name'] = names[r['book_id']] ?? r['book_id'];
           }
         }
-        final density = (score / lower.length).clamp(0.0, 1.0);
-        final coverage = matched.length / keywords.length;
-        results.add({
-          'book_id': (row.data['book_id'] as String?) ?? '',
-          'book_name': (row.data['book_name'] as String?) ??
-              ((row.data['book_id'] as String?) ?? ''),
-          'para_id': (row.data['para_id'] as int?) ?? 0,
-          'line_id': (row.data['first_line_id'] as int?) ?? 1,
-          'text': paraText.length <= 300
-              ? paraText
-              : '${paraText.substring(0, 300)}…',
-          'relevance': density,
-          'coverage': coverage,
-          'search_method': 'like',
-        });
       }
-
-      debugPrint('[AI_QA] _searchLike: ✅ ${results.length} results');
 
       // Rank: full keyword coverage first (a passage naming all requested
       // terms beats one naming a single term), then density, then para id.
-      results.sort((a, b) {
-        final covCmp = (b['coverage'] as double)
-            .compareTo(a['coverage'] as double);
+      merged.sort((a, b) {
+        final covCmp = ((b['coverage'] as num?) ?? 0)
+            .compareTo((a['coverage'] as num?) ?? 0);
         if (covCmp != 0) return covCmp;
-        final relCmp =
-            (b['relevance'] as double).compareTo(a['relevance'] as double);
+        final relCmp = ((b['relevance'] as num?) ?? 0)
+            .compareTo((a['relevance'] as num?) ?? 0);
         if (relCmp != 0) return relCmp;
-        return (a['para_id'] as int).compareTo(b['para_id'] as int);
+        return ((a['para_id'] as num?) ?? 0)
+            .compareTo((b['para_id'] as num?) ?? 0);
       });
 
-      final enriched = await _enrichWithHeadingChain(results);
+      debugPrint('[AI_QA] _searchLike: ✅ ${merged.length} results');
+      final enriched = await _enrichWithHeadingChain(
+        merged.take(60).toList(),
+      );
       return ToolResult(
         success: true,
         data: _toJsonString(enriched.take(50).toList()),
@@ -368,6 +344,182 @@ class AiQaToolService {
       debugPrint('[AI_QA] _searchLike: ❌ error: $e');
       return ToolResult(success: false, data: '[]', errorMessage: e.toString());
     }
+  }
+
+  /// Diacritic letters (→ base) that a [normalizePaliFuzzy]-style match
+  /// treats as equal to their base letter.
+  static const Set<String> _diacriticChars = {
+    'ā', 'ī', 'ū', 'ō', 'ṅ', 'ñ', 'ṭ', 'ḍ', 'ṇ', 'ḷ', 'ṃ', 'ṁ',
+  };
+
+  /// The base letters that can carry a Pāli diacritic (a→ā, n→ṅ/ñ/ṇ, …).
+  static const Set<String> _diacriticBaseLetters = {
+    'a', 'i', 'u', 'o', 'n', 't', 'd', 'm', 'l',
+  };
+
+  /// Escape a string for use inside a SQLite LIKE pattern.
+  String _escapeLike(String s) => s
+      .replaceAll(r'\', r'\\')
+      .replaceAll('%', r'\%')
+      .replaceAll('_', r'\_');
+
+  /// `%keyword%` LIKE pattern from a raw keyword.
+  String _exactLikePattern(String keyword) =>
+      '%${_escapeLike(keyword.toLowerCase())}%';
+
+  /// Diacritic-loose variant of [keyword]: every diacritic letter AND every
+  /// base letter that could carry a diacritic becomes a `_` wildcard, so
+  /// "saṅkhāra" pools "sankhara" and vice versa (the exact pattern cannot
+  /// cross that gap). Returns null when the pattern would be too generic
+  /// (fewer than two literal letters) or the keyword had nothing to loosen.
+  String? _looseLikePattern(String keyword) {
+    final lower = keyword.toLowerCase();
+    final buf = StringBuffer();
+    var changed = false;
+    for (final ch in lower.split('')) {
+      if (_diacriticChars.contains(ch) ||
+          _diacriticBaseLetters.contains(ch)) {
+        buf.write('_');
+        changed = true;
+      } else {
+        buf.write(_escapeLike(ch));
+      }
+    }
+    if (!changed) return null;
+    final pattern = '%${buf.toString()}%';
+    final literalLength =
+        pattern.replaceAll('%', '').replaceAll('_', '').length;
+    if (literalLength < 2) return null;
+    return pattern;
+  }
+
+  /// Run the LIKE keyword search against ONE text source.
+  ///
+  /// [db] is the Pāli ([column]=`pali`, with the books join) or a
+  /// translation database ([column]=`translation`, no books table).
+  /// Paragraphs matching ANY keyword pattern are pooled (with a per-book
+  /// cap so common terms cannot starve books whose IDs sort late) and then
+  /// scored in Dart on diacritic-normalized text, so "sankhara" and
+  /// "saṅkhāra" rank identically.
+  Future<List<Map<String, dynamic>>> _searchLikeInColumn(
+    GeneratedDatabase db, {
+    required String column,
+    required String query,
+    Set<String>? bookIds,
+    required bool joinBooks,
+  }) async {
+    // Tokenise the query into keywords (split on whitespace).
+    final keywords = query
+        .split(RegExp(r'\s+'))
+        .map((w) => w.trim())
+        .where((w) => w.length >= 3)
+        .toSet()
+        .toList();
+    if (keywords.isEmpty) return const [];
+
+    // Per keyword: exact pattern + diacritic-loose pattern, OR-joined. The
+    // WHERE conditions are PARENTHESISED so an optional book scope applies
+    // to EVERY keyword, not just the last one.
+    final patternGroups = <List<String>>[];
+    for (final kw in keywords) {
+      final group = <String>[_exactLikePattern(kw)];
+      final loose = _looseLikePattern(kw);
+      if (loose != null && !group.contains(loose)) group.add(loose);
+      patternGroups.add(group);
+    }
+    final conditions = patternGroups
+        .map(
+          (g) =>
+              '(${g.map((_) => 'LOWER(s.$column) LIKE ?').join(' OR ')})',
+        )
+        .join(' OR ');
+    final likeParams =
+        patternGroups.expand((g) => g.map((p) => Variable.withString(p)));
+
+    final bookClause = (bookIds != null && bookIds.isNotEmpty)
+        ? 'AND s.book_id IN (${bookIds.map((_) => '?').join(',')}) '
+        : '';
+
+    // Pool at PARAGRAPH level: group lines into whole paragraphs, then cap
+    // at 150 paragraphs per book. A paragraph whose answer spans several
+    // lines is scored as a whole, and no single paragraph is starved
+    // because its book had 150+ matching LINES before it.
+    final rows = await db.customSelect(
+      '''
+      SELECT * FROM (
+        SELECT s.book_id, s.para_id,
+               MIN(s.line_id) AS first_line_id,
+               group_concat(s.$column, ' ') AS para_text
+               ${joinBooks ? ', b.book_name' : ''},
+               ROW_NUMBER() OVER (
+                 PARTITION BY s.book_id
+                 ORDER BY s.para_id
+               ) AS rn
+        FROM sentences s
+        ${joinBooks ? 'JOIN books b ON b.book_id = s.book_id' : ''}
+        WHERE ($conditions) $bookClause
+        GROUP BY s.book_id, s.para_id
+      ) WHERE rn <= 150
+      ''',
+      variables: [
+        ...likeParams,
+        ...(bookIds ?? const <String>{}).map(
+          (b) => Variable.withString(b),
+        ),
+      ],
+    ).get();
+
+    final results = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final paraText = (row.data['para_text'] as String?) ?? '';
+      if (paraText.isEmpty) continue;
+      // Diacritic-normalized scoring: "sankhara" and "saṅkhāra" match.
+      final normalizedText = normalizePaliFuzzy(paraText);
+      if (normalizedText.isEmpty) continue;
+      double score = 0;
+      final matched = <String>{};
+      for (final kw in keywords) {
+        final needle = normalizePaliFuzzy(kw);
+        if (needle.isEmpty) continue;
+        var idx = 0;
+        while (idx != -1) {
+          idx = normalizedText.indexOf(needle, idx);
+          if (idx != -1) {
+            score += needle.length;
+            matched.add(kw);
+            idx += needle.length;
+          }
+        }
+      }
+      // A loose-pattern pool hit with no normalized match isn't relevant.
+      if (score == 0) continue;
+      final density = (score / normalizedText.length).clamp(0.0, 1.0);
+      final coverage = matched.length / keywords.length;
+      results.add({
+        'book_id': (row.data['book_id'] as String?) ?? '',
+        'book_name': (row.data['book_name'] as String?) ??
+            ((row.data['book_id'] as String?) ?? ''),
+        'para_id': (row.data['para_id'] as int?) ?? 0,
+        'line_id': (row.data['first_line_id'] as int?) ?? 1,
+        'text': paraText.length <= 300
+            ? paraText
+            : '${paraText.substring(0, 300)}…',
+        'relevance': density,
+        'coverage': coverage,
+        'search_method': column == 'translation' ? 'translation' : 'like',
+      });
+    }
+    return results;
+  }
+
+  /// Translation language codes to search alongside the Pāli text: the
+  /// user's enabled translations, else the primary translation language.
+  List<String> _activeTranslationLangs() {
+    final settings = _ref.read(settingsProvider);
+    if (settings.enabledTranslations.isNotEmpty) {
+      return settings.enabledTranslations.toList();
+    }
+    return [settings.primaryTranslationLang];
   }
 
   // ── Tool 1c: search_by_category ───────────────────────────────────────

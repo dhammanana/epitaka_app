@@ -360,9 +360,10 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
               // own speed — often a slower rate reads Pāli more clearly.
               _SpeedSlider(
                 value: settings.ttsPaliSpeed,
-                min: 0.5,
+                min: 0.1,
                 max: 4.0,
-                divisions: 14,
+                // 39 divisions → clean 0.1 steps across the 0.1–4.0 range.
+                divisions: 39,
                 label: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
                 colors: colors,
                 caption: loc.ttsPaliSpeed,

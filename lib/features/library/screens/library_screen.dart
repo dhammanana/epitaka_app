@@ -14,6 +14,7 @@ import '../../../features/guide/widgets/feature_guide_welcome_sheet.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_dialog.dart';
+import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../widgets/history_tabs.dart';
@@ -361,9 +362,7 @@ class _ReadingTab extends ConsumerWidget {
                 ref
                     .read(readerTabsProvider.notifier)
                     .switchTo(tabsState.tabs.indexOf(tab));
-                if (!ResponsiveBreakpoint.isDesktop(context)) {
-                  context.push('/reader');
-                }
+                openReaderRoute(context);
               },
               onClose: () {
                 final index = tabsState.tabs.indexOf(tab);
@@ -594,9 +593,7 @@ class _BookmarksTab extends ConsumerWidget {
             initialLineId: lineId,
           ),
         );
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
-      context.push('/reader');
-    }
+    openReaderRoute(context);
   }
 
   void _confirmDeleteBookmark(

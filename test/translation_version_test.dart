@@ -151,6 +151,7 @@ void main() {
         'suffix': 'nissaya',
         'url': 'https://example.com/db.zip',
         'size': 1000,
+        'dbSize': 244117504,
         'type': 'nissaya',
         'updated': '2026-07-16',
         'checksum': 'abc',
@@ -162,7 +163,33 @@ void main() {
       expect(v.filename, 'epitaka_my_nissaya.db');
       expect(v.downloadUrl, 'https://example.com/db.zip');
       expect(v.fileSize, 1000);
+      expect(v.dbSize, 244117504);
       expect(v.updatedAt, '2026-07-16');
+    });
+
+    test('fromJson handles missing dbSize', () {
+      final v = TranslationVersion.fromJson('th', {
+        'url': 'https://example.com/db.zip',
+        'size': 500,
+        'checksum': 'def',
+      });
+      expect(v.dbSize, isNull);
+      expect(v.fileSize, 500);
+      expect(v.checksum, 'def');
+    });
+
+    test('copyWith carries dbSize', () {
+      final v = TranslationVersion(
+        languageCode: 'en',
+        filename: 'epitaka_en.db',
+        fileSize: 100,
+        dbSize: 200,
+        checksum: 'abc',
+      );
+      final copy = v.copyWith(updatedAt: '2026-08-13');
+      expect(copy.dbSize, 200);
+      expect(copy.fileSize, 100);
+      expect(copy.checksum, 'abc');
     });
 
     test('hasDownloadUrl returns correct value', () {

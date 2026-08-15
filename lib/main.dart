@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -97,6 +98,12 @@ Future<void> main() async {
       name: 'epitaka.download',
     );
   }
+
+  // Initialise the port the foreground-service task handler uses to
+  // communicate with the main isolate (Android downloads). Pure-Dart and
+  // harmless on other platforms; must run before any download can start a
+  // foreground service.
+  FlutterForegroundTask.initCommunicationPort();
 
   // Initialise Supabase (auth + cloud sync). Failures here only disable
   // cloud features; the app must still start fully offline.

@@ -46,6 +46,9 @@ dependencies:
   # Networking & file handling
   http: ^1.6.0
   archive: ^4.0.0
+  # SHA-256 for verifying downloaded translation databases against the
+  # manifest checksum (server computes the hash of the .db file)
+  crypto: ^3.0.3
 
   # TTS
   flutter_tts: ^4.2.5
@@ -85,6 +88,9 @@ dependencies:
 
   # Download progress notifications on Android
   flutter_local_notifications: ^18.0.1
+  # Android foreground service: keeps translation downloads running when
+  # the app is backgrounded and shows the ongoing status-bar notification
+  flutter_foreground_task: ^10.0.0
   google_sign_in: ^7.2.0
 
 flutter:
