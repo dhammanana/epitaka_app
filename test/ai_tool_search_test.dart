@@ -17,7 +17,7 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:epitaka/core/database/epitaka_database.dart';
 import 'package:epitaka/core/database/translation_database.dart';
-import 'package:epitaka/core/models/ai_qa_models.dart';
+import 'package:epitaka/features/ai_qa/models/ai_qa_models.dart';
 import 'package:epitaka/core/providers/database_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/features/ai_qa/services/ai_qa_tool_service.dart';
@@ -120,6 +120,7 @@ void main() {
   late EpitakaDatabase epiDb;
   late TranslationDatabase transDb;
   late ProviderContainer container;
+  late AiQaToolService service;
 
   setUp(() async {
     epiDb = await _fixtureEpitakaDb();
@@ -131,6 +132,7 @@ void main() {
         settingsProvider.overrideWith((ref) => SettingsNotifier(null)),
       ],
     );
+    service = container.read(aiQaToolServiceProvider);
     addTearDown(container.dispose);
   });
 
@@ -138,8 +140,6 @@ void main() {
     await transDb.close();
     await epiDb.close();
   });
-
-  final service = AiQaToolService(container);
 
   /// (bookId, paraId) hits parsed out of a search tool result.
   Set<(String, int)> hits(ToolResult result) {
