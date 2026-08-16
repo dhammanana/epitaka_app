@@ -26,6 +26,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_selection_notifier.dart';
@@ -573,17 +574,7 @@ class ReaderScrollController {
           (l) => l.lineId == effectiveLineId,
         );
         if (lineIndex >= 0 && para.lines.length > 1) {
-          // Place the target line near the top ~third of the viewport so
-          // the spoken line is always built & visible, then the per-line
-          // fine-scroll (Scrollable.ensureVisible alignment 0.3) corrects
-          // to exactly 30%. For a paragraph roughly one screen tall the
-          // line at fraction f sits at a*H_v + f*H_p, so choosing
-          // a = 0.3 - f lands it at ~30% regardless of f (clamped so the
-          // paragraph top never drops below the viewport top).
-          //   first line → 0.30 (line at ~30% from top)
-          //   middle     → ~0.15
-          //   last line  → 0.0  (paragraph top at viewport top)
-          final lineFraction = lineIndex / (para.lines.length - 1);
+          final lineFraction = _estimateLineFraction(para, lineIndex);
           return (0.3 - lineFraction).clamp(0.0, 0.3);
         }
       }
@@ -741,16 +732,105 @@ class ReaderScrollController {
     });
   }
 
+  /// Estimate what fraction through [para] the line at [lineIndex] begins,
+  /// accounting for varying line heights from Pali text and any enabled
+  /// translations.
+  double _estimateLineFraction(ParagraphData para, int lineIndex) {
+    if (lineIndex <= 0 || para.lines.length <= 1) return 0.0;
+    if (lineIndex >= para.lines.length) return 1.0;
+
+    final settings = ref.read(settingsProvider);
+    final showPali = settings.showPali;
+    final showTranslation = settings.showTranslation;
+    final displayMode = settings.translationDisplayMode;
+    final enabledLangs = settings.visibleTranslationLangs;
+
+    // When translations are not shown or joined into a single block (hideJoinLines):
+    if (!showTranslation ||
+        displayMode == TranslationDisplayMode.hideJoinLines) {
+      double cumWeight = 0.0;
+      double totalWeight = 0.0;
+      for (var i = 0; i < para.lines.length; i++) {
+        final line = para.lines[i];
+        final chars = (line.paliText?.length ?? 0).toDouble();
+        final w = chars.clamp(20.0, 10000.0);
+        if (i < lineIndex) cumWeight += w;
+        totalWeight += w;
+      }
+      return totalWeight > 0
+          ? (cumWeight / totalWeight).clamp(0.0, 1.0)
+          : (lineIndex / para.lines.length);
+    }
+
+    if (displayMode == TranslationDisplayMode.sideBySide) {
+      // Side-by-side: Pali column and Translation column side by side.
+      double cumPali = 0.0;
+      double totalPali = 0.0;
+      double cumTrans = 0.0;
+      double totalTrans = 0.0;
+      for (var i = 0; i < para.lines.length; i++) {
+        final line = para.lines[i];
+        final pChars =
+            (line.paliText?.length ?? 0).toDouble().clamp(20.0, 10000.0);
+        if (i < lineIndex) cumPali += pChars;
+        totalPali += pChars;
+
+        double tChars = 0.0;
+        for (final lang in enabledLangs) {
+          final t = line.translations[lang];
+          if (t != null && t.isNotEmpty) {
+            tChars += t.length.toDouble();
+          }
+        }
+        if (i < lineIndex) cumTrans += tChars;
+        totalTrans += tChars;
+      }
+      final paliFrac =
+          totalPali > 0 ? cumPali / totalPali : lineIndex / para.lines.length;
+      final transFrac =
+          totalTrans > 0 ? cumTrans / totalTrans : lineIndex / para.lines.length;
+      return ((paliFrac + transFrac) / 2.0).clamp(0.0, 1.0);
+    }
+
+    // Line-by-line mode (default stacked view):
+    // Each line contains its Pali block + translation blocks for each enabled language + spacing.
+    double cumWeight = 0.0;
+    double totalWeight = 0.0;
+    for (var i = 0; i < para.lines.length; i++) {
+      final line = para.lines[i];
+      double w = 0.0;
+      if (showPali && line.paliText != null && line.paliText!.isNotEmpty) {
+        // ~45 characters per visual line, each rendered line ~28px height
+        final lines = (line.paliText!.length / 45.0).ceil().clamp(1, 30);
+        w += lines * 28.0;
+      }
+      for (final lang in enabledLangs) {
+        final t = line.translations[lang];
+        if (t != null && t.isNotEmpty) {
+          // ~40 characters per translation visual line, each line ~26px height
+          final lines = (t.length / 40.0).ceil().clamp(1, 80);
+          w += lines * 26.0 + 8.0; // 8px block padding
+        }
+      }
+      w += 14.0; // 6px line bottom padding + margins/decorations
+
+      if (i < lineIndex) cumWeight += w;
+      totalWeight += w;
+    }
+
+    return totalWeight > 0
+        ? (cumWeight / totalWeight).clamp(0.0, 1.0)
+        : (lineIndex / para.lines.length);
+  }
+
   /// Fine-scroll to [lineId] without per-line widgets (side-by-side /
   /// hideJoinLines display modes, where [fineScrollToLine] can never attach
   /// its GlobalKey).
   ///
   /// The item positions report the target paragraph's rendered fraction of
   /// the viewport (`[itemLeadingEdge, itemTrailingEdge]`); the line's top is
-  /// estimated at `lineIndex/lineCount` through that span, and the paragraph
-  /// is re-scrolled so the estimate lands at ~30% of the viewport. This is
-  /// exact for uniform-height lines and a good approximation for wrapped
-  /// ones — far better than always landing at the paragraph start.
+  /// estimated from weighted text lengths through that span, and the paragraph
+  /// is re-scrolled so the estimate lands at ~30% of the viewport.
   void _fineScrollByGeometry(
     String bookId,
     int paraIndex,
@@ -809,8 +889,22 @@ class ReaderScrollController {
     // alignment that moves it to ~30% (scrolling the item to alignment `a`
     // shifts every point in it by `a - leading`).
     final span = pos.itemTrailingEdge - pos.itemLeadingEdge;
-    final lineFraction = lineIndex / para.lines.length;
-    final targetAlignment = (0.3 - lineFraction * span).clamp(-1.0, 1.0);
+    if (span <= 0) {
+      finish();
+      return;
+    }
+    final lineFraction = _estimateLineFraction(para, lineIndex);
+
+    // The target line is estimated at `lineFraction * span` viewports from
+    // the paragraph top. To place the line at 30% (0.3) of the viewport:
+    // targetAlignment = 0.3 - lineFraction * span.
+    // Clamped so the top never drops below 0.3 and the bottom never rises
+    // above 0.3 (allowing large negative alignments for multi-viewport
+    // paragraphs when translations are enabled).
+    final minAlignment = (0.3 - span).clamp(-100.0, 0.3);
+    const maxAlignment = 0.3;
+    final targetAlignment =
+        (0.3 - lineFraction * span).clamp(minAlignment, maxAlignment);
 
     debugPrint(
       '[JUMP-GEO] book=$bookId line=$lineId lineIndex=$lineIndex '
@@ -822,7 +916,7 @@ class ReaderScrollController {
     _itemScrollControllers[bookId]?.scrollTo(
       index: paraIndex,
       alignment: targetAlignment,
-      duration: const Duration(milliseconds: 120),
+      duration: const Duration(milliseconds: 150),
       curve: Curves.easeOut,
     ).whenComplete(finish);
   }
