@@ -6,6 +6,7 @@ import NaturalLanguage
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let speechSynthesizer = AVSpeechSynthesizer()
+  private var dummyTextView: UITextView?
 
   override func application(
     _ application: UIApplication,
@@ -51,7 +52,15 @@ import NaturalLanguage
           if self.speechSynthesizer.isSpeaking {
             self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
+          self.stopSystemAccessibilitySpeak()
 
+          // 1. Try system Accessibility Spoken Content (invokes system Siri voice like Chrome/Safari)
+          if self.trySystemAccessibilitySpeak(trimmedText) {
+            result(true)
+            return
+          }
+
+          // 2. Fallback to AVSpeechSynthesizer with prioritized Siri/Premium voice
           do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
@@ -69,6 +78,7 @@ import NaturalLanguage
         }
       case "stop":
         DispatchQueue.main.async {
+          self.stopSystemAccessibilitySpeak()
           if self.speechSynthesizer.isSpeaking {
             self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
@@ -82,9 +92,57 @@ import NaturalLanguage
     }
   }
 
+  /// Triggers the system Accessibility Spoken Content engine (the exact same engine used by
+  /// iOS native text selection "Speak" in Safari, Chrome, and Notes) to speak using the system Siri voice.
+  private func trySystemAccessibilitySpeak(_ text: String) -> Bool {
+    guard let topVC = getTopViewController() else { return false }
+
+    if dummyTextView == nil {
+      let tv = UITextView(frame: CGRect(x: -500, y: -500, width: 10, height: 10))
+      tv.isAccessibilityElement = true
+      tv.alpha = 0.01
+      topVC.view.addSubview(tv)
+      dummyTextView = tv
+    } else if let tv = dummyTextView, tv.superview == nil {
+      topVC.view.addSubview(tv)
+    }
+
+    guard let tv = dummyTextView else { return false }
+    tv.text = text
+    tv.selectedRange = NSRange(location: 0, length: (text as NSString).length)
+
+    let speakSelectors = [
+      Selector(("_accessibilitySpeak:")),
+      Selector(("_accessibilitySpeakSelection:")),
+      Selector(("accessibilitySpeakSelection:")),
+      Selector(("startSpeaking:"))
+    ]
+
+    for sel in speakSelectors {
+      if tv.responds(to: sel) {
+        tv.perform(sel, with: nil)
+        return true
+      }
+    }
+
+    return false
+  }
+
+  private func stopSystemAccessibilitySpeak() {
+    guard let tv = dummyTextView else { return }
+    let stopSelectors = [
+      Selector(("_accessibilityPauseSpeaking:")),
+      Selector(("_accessibilityStopSpeaking:")),
+      Selector(("stopSpeaking:"))
+    ]
+    for sel in stopSelectors {
+      if tv.responds(to: sel) {
+        tv.perform(sel, with: nil)
+      }
+    }
+  }
+
   /// Finds the highest quality voice (Siri / Premium / Enhanced) matching the language or text content.
-  /// Returns nil when the text matches the system language and no separate premium voice override
-  /// is needed, allowing AVFoundation to use the user's default Siri System Voice.
   private func findBestVoice(for languageCode: String?, text: String? = nil) -> AVSpeechSynthesisVoice? {
     var targetLang = languageCode
     if (targetLang == nil || targetLang!.isEmpty), let sample = text, !sample.isEmpty {
@@ -95,64 +153,77 @@ import NaturalLanguage
       }
     }
 
-    let currentSystemCode = AVSpeechSynthesisVoice.currentLanguageCode()
-    let systemPrefix = currentSystemCode.split(separator: "-").first.map(String.init)?.lowercased() ?? "en"
-
-    guard let resolvedLang = targetLang, !resolvedLang.isEmpty else {
-      return nil // Use system default Siri voice
-    }
-
-    let langPrefix = resolvedLang.split(separator: "-").first.map(String.init)?.lowercased() ?? resolvedLang.lowercased()
+    let systemCode = AVSpeechSynthesisVoice.currentLanguageCode()
+    let resolvedLang = (targetLang != nil && !targetLang!.isEmpty) ? targetLang! : systemCode
+    let targetPrefix = resolvedLang.split(separator: "-").first.map(String.init)?.lowercased() ?? resolvedLang.lowercased()
+    let systemPrefix = systemCode.split(separator: "-").first.map(String.init)?.lowercased() ?? "en"
 
     let allVoices = AVSpeechSynthesisVoice.speechVoices()
+
+    // Filter voices matching the language prefix (e.g. "en" matches "en-US", "en-GB", etc.)
     let matchingVoices = allVoices.filter { voice in
       let vLang = voice.language.lowercased()
       return vLang == resolvedLang.lowercased() ||
-             vLang.starts(with: "\(langPrefix)-") ||
-             vLang == langPrefix
+             vLang.starts(with: "\(targetPrefix)-") ||
+             vLang == targetPrefix
     }
 
-    if matchingVoices.isEmpty {
-      return langPrefix == systemPrefix ? nil : AVSpeechSynthesisVoice(language: resolvedLang)
-    }
+    func voiceScore(_ voice: AVSpeechSynthesisVoice) -> Int {
+      var score = 0
+      let idLower = voice.identifier.lowercased()
+      let nameLower = voice.name.lowercased()
 
-    // 1. Premium voices (iOS 16+ neural / Siri voices)
-    if #available(iOS 16.0, *) {
-      if let exactPremium = matchingVoices.first(where: { $0.quality == .premium && $0.language.caseInsensitiveCompare(resolvedLang) == .orderedSame }) {
-        return exactPremium
+      // 1. Premium voices (iOS 16+ neural / Siri premium voices)
+      if #available(iOS 16.0, *) {
+        if voice.quality == .premium {
+          score += 3000
+        }
       }
-      if let anyPremium = matchingVoices.first(where: { $0.quality == .premium }) {
-        return anyPremium
+      if idLower.contains("premium") {
+        score += 3000
       }
+
+      // 2. Siri voice detection
+      if idLower.contains("siri") || nameLower.contains("siri") {
+        score += 2000
+      }
+
+      // 3. Enhanced quality
+      if voice.quality == .enhanced || idLower.contains("enhanced") {
+        score += 1000
+      }
+
+      // 4. Dialect matching user system language (e.g. prefer en-US over en-ZA if system is en-US)
+      if voice.language.caseInsensitiveCompare(systemCode) == .orderedSame {
+        score += 200
+      } else if voice.language.caseInsensitiveCompare(resolvedLang) == .orderedSame {
+        score += 150
+      }
+
+      // 5. Penalize compact / novelty / eloquence
+      if idLower.contains("eloquence") || idLower.contains("synthesis.voice") {
+        score -= 1000
+      }
+      if idLower.contains("super-compact") {
+        score -= 500
+      } else if idLower.contains("compact") || voice.quality == .default {
+        score -= 200
+      }
+
+      return score
     }
 
-    // 2. Siri voice identifiers (e.g. com.apple.speech.siri... or com.apple.ttsbundle.siri...)
-    if let exactSiri = matchingVoices.first(where: { $0.identifier.lowercased().contains("siri") && $0.language.caseInsensitiveCompare(resolvedLang) == .orderedSame }) {
-      return exactSiri
-    }
-    if let anySiri = matchingVoices.first(where: { $0.identifier.lowercased().contains("siri") }) {
-      return anySiri
+    // Pick matching voice with the highest score
+    if let bestVoice = matchingVoices.max(by: { voiceScore($0) < voiceScore($1) }) {
+      return bestVoice
     }
 
-    // 3. Enhanced quality voices
-    if let exactEnhanced = matchingVoices.first(where: { $0.quality == .enhanced && $0.language.caseInsensitiveCompare(resolvedLang) == .orderedSame }) {
-      return exactEnhanced
-    }
-    if let anyEnhanced = matchingVoices.first(where: { $0.quality == .enhanced }) {
-      return anyEnhanced
+    // Fallback: system language voice or target language voice
+    if targetPrefix == systemPrefix {
+      return AVSpeechSynthesisVoice(language: systemCode) ?? AVSpeechSynthesisVoice(language: resolvedLang)
     }
 
-    // If the text is in the system language and no premium/enhanced voice was in the list,
-    // return nil so the system default Siri voice is used instead of a legacy compact/eloquence voice.
-    if langPrefix == systemPrefix {
-      return nil
-    }
-
-    // For other languages, avoid eloquence/novelty voices
-    return matchingVoices.first(where: {
-      let id = $0.identifier.lowercased()
-      return !id.contains("eloquence") && !id.contains("synthesis.voice")
-    }) ?? matchingVoices.first
+    return AVSpeechSynthesisVoice(language: resolvedLang)
   }
 
   private func registerNativeLookup(with registry: FlutterPluginRegistry) {
