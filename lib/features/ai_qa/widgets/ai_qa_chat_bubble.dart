@@ -3,91 +3,16 @@ library;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../shared/widgets/ai_markdown_view.dart';
 import '../models/ai_qa_models.dart';
 import '../providers/ai_qa_provider.dart';
 import '../services/citation_quickview.dart';
-
-/// Custom inline syntax that matches [book_id:para_id:line_id] citations.
-class _CitationSyntax extends md.InlineSyntax {
-  _CitationSyntax() : super(r'\[([a-zA-Z0-9_.-]+):(\d+):(\d+)(?:-(\d+))?\]');
-
-  @override
-  bool onMatch(md.InlineParser parser, Match match) {
-    final bookId = match.group(1)!;
-    final paraId = match.group(2)!;
-    // Use the first line_id; ignore the optional range end.
-    final lineId = match.group(3)!;
-    parser.addNode(md.Element.text('citation', '$bookId:$paraId:$lineId'));
-    return true;
-  }
-}
-
-/// Custom Markdown widget builder that renders citation elements as
-/// clickable inline links.
-class _CitationBuilder extends MarkdownElementBuilder {
-  final void Function(String bookId, int paraId, int lineId) onCitationTap;
-
-  _CitationBuilder({required this.onCitationTap});
-
-  @override
-  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
-    if (element.tag != 'citation') return null;
-    final ref = element.textContent;
-    final parts = ref.split(':');
-    if (parts.length < 3) return null;
-    final bookId = parts[0];
-    final paraId = int.tryParse(parts[1]) ?? 0;
-    final lineId = int.tryParse(parts[2]) ?? 1;
-
-    return GestureDetector(
-      onTap: () => onCitationTap(bookId, paraId, lineId),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color:
-              preferredStyle?.color?.withValues(alpha: 0.12) ??
-              Colors.blue.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(
-            color:
-                preferredStyle?.color?.withValues(alpha: 0.25) ??
-                Colors.blue.withValues(alpha: 0.25),
-            width: 0.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.format_quote,
-              size: 10,
-              color: preferredStyle?.color ?? Colors.blue,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              '$bookId §$paraId:$lineId',
-              style: TextStyle(
-                color: preferredStyle?.color ?? Colors.blue,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// Renders a single message bubble in the AI Q&A chat.
 class AiQaMessageBubble extends ConsumerWidget {
@@ -483,111 +408,10 @@ class AiQaMessageBubble extends ConsumerWidget {
     String text,
     ColorScheme colors,
   ) {
-    final inlineSyntaxes = <md.InlineSyntax>[_CitationSyntax()];
-
-    return SelectionArea(
-      child: Markdown(
-        data: text,
-        selectable: false,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        extensionSet: md.ExtensionSet(md.ExtensionSet.gitHubWeb.blockSyntaxes, [
-          ...md.ExtensionSet.gitHubWeb.inlineSyntaxes,
-          ...inlineSyntaxes,
-        ]),
-        builders: {
-          'citation': _CitationBuilder(
-            onCitationTap: (bookId, paraId, lineId) =>
-                _openCitation(context, ref, bookId, paraId, lineId),
-          ),
-        },
-        styleSheet: _markdownStyleSheet(colors),
-        onTapLink: (text, href, title) {
-          // Handle regular links if needed
-        },
-      ),
-    );
-  }
-
-  static MarkdownStyleSheet _markdownStyleSheet(ColorScheme colors) {
-    return MarkdownStyleSheet(
-      p: TextStyle(color: colors.onSurface, fontSize: 15, height: 1.6),
-      h1: TextStyle(
-        color: colors.onSurface,
-        fontSize: 20,
-        fontWeight: FontWeight.bold,
-        height: 1.4,
-      ),
-      h2: TextStyle(
-        color: colors.onSurface,
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
-        height: 1.4,
-      ),
-      h3: TextStyle(
-        color: colors.onSurface,
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        height: 1.4,
-      ),
-      strong: TextStyle(
-        color: colors.onSurface,
-        fontWeight: FontWeight.bold,
-        fontSize: 15,
-        height: 1.6,
-      ),
-      em: TextStyle(
-        color: colors.onSurface,
-        fontStyle: FontStyle.italic,
-        fontSize: 15,
-        height: 1.6,
-      ),
-      blockquoteDecoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(
-            color: colors.primary.withValues(alpha: 0.4),
-            width: 3,
-          ),
-        ),
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.15),
-      ),
-      blockquotePadding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      blockquote: TextStyle(
-        color: colors.onSurfaceVariant,
-        fontSize: 14,
-        height: 1.5,
-        fontStyle: FontStyle.italic,
-      ),
-      code: TextStyle(
-        color: colors.primary,
-        fontSize: 13,
-        fontFamily: 'monospace',
-        backgroundColor: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-      ),
-      codeblockDecoration: BoxDecoration(
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      codeblockPadding: const EdgeInsets.all(12),
-      listBullet: TextStyle(color: colors.primary, fontSize: 15),
-      a: TextStyle(color: colors.primary, decoration: TextDecoration.underline),
-      horizontalRuleDecoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
-        ),
-      ),
-      tableBorder: TableBorder.all(
-        color: colors.outlineVariant.withValues(alpha: 0.3),
-      ),
-      tableHead: TextStyle(
-        color: colors.onSurface,
-        fontWeight: FontWeight.bold,
-      ),
-      tableBody: TextStyle(color: colors.onSurfaceVariant),
-      del: TextStyle(
-        color: colors.onSurfaceVariant,
-        decoration: TextDecoration.lineThrough,
-      ),
+    return AiMarkdownView(
+      data: text,
+      onCitationTap: (bookId, paraId, lineId) =>
+          _openCitation(context, ref, bookId, paraId, lineId),
     );
   }
 

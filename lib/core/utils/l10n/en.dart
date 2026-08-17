@@ -562,6 +562,21 @@ const Map<String, String> en = {
   'No matching sections': 'No matching sections',
   'No contents available': 'No contents available',
 
+  // ── Outline ─────────────────────────────────────────────────────────
+  'Outline': 'Outline',
+  'Every section with its study guide': 'Every section with its study guide',
+  'Open a book to see its outline': 'Open a book to see its outline',
+  'No sections found for this book': 'No sections found for this book',
+  'Tap a section to preview it, or read its study guide':
+      'Tap a section to preview it, or read its study guide',
+  'section': 'section',
+  'sections': 'sections',
+  'Text': 'Text',
+  'Study guide': 'Study guide',
+  'Loading study guide…': 'Loading study guide…',
+  'No study guide available for this section':
+      'No study guide available for this section',
+
   // ── AI Assistant ────────────────────────────────────────────────────
   'Paññā': 'Paññā',
   'AI Research Assistant': 'AI Research Assistant',
@@ -922,6 +937,20 @@ const Map<String, String> en = {
   'Reset to default': 'Reset to default',
   'Reset context menu actions and order to default?':
       'Reset context menu actions and order to default?',
+
+  // ── Toolbar (reader bottom toolbar) ────────────────────────────────
+  'Toolbar': 'Toolbar',
+  'Customize the reader toolbar': 'Customize the reader toolbar',
+  'Choose which actions appear in the reader toolbar and their order. Drag to reorder, toggle to hide.':
+      'Choose which actions appear in the reader toolbar and their order. '
+      'Drag to reorder, toggle to hide.',
+  'Contents, Outline, Search, Dictionary and Annotations appear on the mobile toolbar only.':
+      'Contents, Outline, Search, Dictionary and Annotations appear on the '
+      'mobile toolbar only.',
+  'Display layout': 'Display layout',
+  'Bookmark': 'Bookmark',
+  'Reset toolbar items and order to default?':
+      'Reset toolbar items and order to default?',
 
   // ── Feature Guide ──────────────────────────────────────────────────
   'Feature Guide': 'Feature Guide',

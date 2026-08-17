@@ -21,6 +21,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/pali_script_converter.dart'
     show Script, convertToRomanPali;
+import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/process_text_service.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
@@ -32,7 +33,8 @@ import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
 import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
 import '../utils/reader_word_hit_test.dart' show cleanPali, selectWordAt;
-import '../widgets/reader_context_menu.dart' show ContextMenuButton;
+import '../widgets/reader_context_menu.dart'
+    show ContextMenuButton, FullWidthSelectionToolbar;
 
 /// One selectable unit of text (a Pāli line, or one enabled translation of
 /// a line) used for selection-range matching and trimming.
@@ -122,49 +124,58 @@ class ReaderCopyService {
           .toList();
     }
 
-    return AdaptiveTextSelectionToolbar(
-      anchors: anchors,
-      children: [
-        for (final action in actions)
-          switch (action.kind) {
-            ContextMenuActionKind.builtin => _builtinButton(
-                context: context,
-                ref: ref,
-                loc: loc,
-                colors: colors,
-                selectableRegionState: selectableRegionState,
-                lastSelectedContent: lastSelectedContent,
-                visibleStartIndex: visibleStartIndex,
-                visibleEndIndex: visibleEndIndex,
-                bookId: bookId,
-                currentParaId: currentParaId,
-                currentLineId: currentLineId,
-                selectedText: selectedText,
-                script: script,
-                builtinId: action.builtinId,
-                contentHitTestKey: contentHitTestKey,
-                anchor: anchors.primaryAnchor,
-                onExplainTap: onExplainTap,
-                onSummarizeChapterTap: onSummarizeChapterTap,
-              ),
-            ContextMenuActionKind.externalApp => _externalAppButton(
-                context: context,
-                colors: colors,
-                selectableRegionState: selectableRegionState,
-                action: action,
-                selectedText: selectedText,
-              ),
-            ContextMenuActionKind.aiPrompt => _aiPromptButton(
-                context: context,
-                colors: colors,
-                selectableRegionState: selectableRegionState,
-                action: action,
-                selectedText: selectedText,
-                onAiPrompt: onAiPrompt,
-              ),
-          },
-      ],
-    );
+    final buttons = <Widget>[
+      for (final action in actions)
+        switch (action.kind) {
+          ContextMenuActionKind.builtin => _builtinButton(
+              context: context,
+              ref: ref,
+              loc: loc,
+              colors: colors,
+              selectableRegionState: selectableRegionState,
+              lastSelectedContent: lastSelectedContent,
+              visibleStartIndex: visibleStartIndex,
+              visibleEndIndex: visibleEndIndex,
+              bookId: bookId,
+              currentParaId: currentParaId,
+              currentLineId: currentLineId,
+              selectedText: selectedText,
+              script: script,
+              builtinId: action.builtinId,
+              contentHitTestKey: contentHitTestKey,
+              anchor: anchors.primaryAnchor,
+              onExplainTap: onExplainTap,
+              onSummarizeChapterTap: onSummarizeChapterTap,
+            ),
+          ContextMenuActionKind.externalApp => _externalAppButton(
+              context: context,
+              colors: colors,
+              selectableRegionState: selectableRegionState,
+              action: action,
+              selectedText: selectedText,
+            ),
+          ContextMenuActionKind.aiPrompt => _aiPromptButton(
+              context: context,
+              colors: colors,
+              selectableRegionState: selectableRegionState,
+              action: action,
+              selectedText: selectedText,
+              onAiPrompt: onAiPrompt,
+            ),
+        },
+    ];
+
+    // Desktop: span the full width of the reader content column instead of
+    // the stock content-sized floating toolbar. Mobile keeps the stock
+    // anchored toolbar (compact, near the selection handles).
+    if (PlatformInfo.isDesktop && contentHitTestKey != null) {
+      return FullWidthSelectionToolbar(
+        anchors: anchors,
+        contentHitTestKey: contentHitTestKey,
+        children: buttons,
+      );
+    }
+    return AdaptiveTextSelectionToolbar(anchors: anchors, children: buttons);
   }
 
   /// Build the toolbar button for one of the app's built-in actions.

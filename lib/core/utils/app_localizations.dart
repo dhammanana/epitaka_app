@@ -84,7 +84,8 @@ class AppLocalizations {
   String get readingOptionsSubtitle => _t('Layout, numbering & scroll');
   String get dictionaryLookup => _t('Dictionary');
   String get wordLookupGesture => _t('Word lookup');
-  String get wordLookupGestureSubtitle => _t('How a tap on a word opens the dictionary');
+  String get wordLookupGestureSubtitle =>
+      _t('How a tap on a word opens the dictionary');
   String get doubleTap => _t('Double tap');
   String get singleTap => _t('Single tap');
   String get textToSpeech => _t('Text-to-Speech');
@@ -279,15 +280,19 @@ class AppLocalizations {
 
   // ── Annotations (highlights, notes, bookmarks, sync) ──────────────────
   String get annotations => _t('Annotations');
-  String get noAnnotations => _t('No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.');
-  String get noBookOpenForAnnotations => _t('Open a book to see your annotations.');
+  String get noAnnotations => _t(
+    'No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.',
+  );
+  String get noBookOpenForAnnotations =>
+      _t('Open a book to see your annotations.');
   String get errorLoadingAnnotations => _t('Error loading annotations:');
   String get highlight => _t('Highlight');
   String get highlightDesc => _t('Highlight the selected text');
   String get note => _t('Note');
   String get noteDesc => _t('Attach a markdown note to the selection');
   String get highlightAdded => _t('Highlight added');
-  String get annotationNoAnchor => _t('Could not anchor the selection — try again.');
+  String get annotationNoAnchor =>
+      _t('Could not anchor the selection — try again.');
   String get addNote => _t('Add Note');
   String get editNote => _t('Edit');
   String get previewNote => _t('Preview');
@@ -314,7 +319,8 @@ class AppLocalizations {
   String get clearSearch => _t('Clear search');
   String get filterByBook => _t('Filter by book');
   String get allBooks => _t('All books');
-  String get noAnnotationsInBooks => _t('No annotations in the selected books.');
+  String get noAnnotationsInBooks =>
+      _t('No annotations in the selected books.');
   String get moreColors => _t('More colors');
   String get collapseLabel => _t('Collapse');
 
@@ -329,17 +335,17 @@ class AppLocalizations {
   String get useResultAsInput => _t('Use result as input');
   String get typePaliText => _t('Type or paste Pāli text…');
   String get characters => _t('characters');
-  String get converterOutputHint => _t(
-    'Your converted text will appear here.',
-  );
+  String get converterOutputHint => _t('Your converted text will appear here.');
 
   // ── Account / Cloud Sync ──────────────────────────────────────────────
   String get signIn => _t('Sign in');
   String get signOut => _t('Sign out');
   String get signInTitle => _t('Sign in to sync');
   String get signInFailed => _t('Sign in failed. Please try again.');
-  String get syncActive => _t('Sync active — highlights, notes & bookmarks are backed up');
-  String get syncDisabled => _t('Sync off — annotations are stored on this device only');
+  String get syncActive =>
+      _t('Sync active — highlights, notes & bookmarks are backed up');
+  String get syncDisabled =>
+      _t('Sync off — annotations are stored on this device only');
 
   // ── Context Menu (reader selection toolbar) ───────────────────────────
   String get contextMenu => _t('Context Menu');
@@ -371,6 +377,21 @@ class AppLocalizations {
   String get resetToDefault => _t('Reset to default');
   String get resetToDefaultConfirm =>
       _t('Reset context menu actions and order to default?');
+
+  // ── Toolbar (reader bottom toolbar) ──────────────────────────────────
+  String get toolbar => _t('Toolbar');
+  String get toolbarSubtitle => _t('Customize the reader toolbar');
+  String get toolbarDesc => _t(
+    'Choose which actions appear in the reader toolbar and their order. '
+    'Drag to reorder, toggle to hide.',
+  );
+  String get toolbarHint => _t(
+    'Contents, Outline, Search, Dictionary and Annotations appear on the '
+    'mobile toolbar only.',
+  );
+  String get displayLayout => _t('Display layout');
+  String get bookmark => _t('Bookmark');
+  String get resetToolbarConfirm => _t('Reset toolbar items and order to default?');
   String get explain => _t('Explain');
   String get explainDesc => _t('Explain the selected text with AI');
   String get summarizeChapter => _t('Summarize Ch.');
@@ -415,6 +436,7 @@ class AppLocalizations {
   String get ttsEngine => _t('TTS Engine');
   String get ttsVoiceLabel => _t('Voice');
   String get ttsSpeed => _t('Speed');
+
   /// Short label for the translation speed slider (full "Translation
   /// speed" doesn't fit next to the slider).
   String get ttsTranslationSpeed => _t('Trans. speed');
@@ -457,20 +479,22 @@ class AppLocalizations {
       _t('Follows the reading language (first enabled translation)');
   String get ttsSpeakMode => _t('Speak');
   String get ttsSpeakTranslation => _t('Translation');
-  String get ttsSpeakTranslationDesc =>
-      _t('Reads the translation aloud');
+  String get ttsSpeakTranslationDesc => _t('Reads the translation aloud');
   String get ttsSpeakPali => _t('Pāli');
   String get ttsSpeakPaliDesc => _t(
-      'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation');
+    'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation',
+  );
   String get ttsSpeakBoth => _t('Translation + Pāli');
   String get ttsSpeakBothShort => _t('Both');
-  String get ttsSpeakBothDesc => _t(
-      'Reads the Pāli first, then its translation');
+  String get ttsSpeakBothDesc =>
+      _t('Reads the Pāli first, then its translation');
   String get ttsInstallVoice => _t('Install voice');
   String get ttsInstallVoiceHint => _t(
-      'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)');
+    'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)',
+  );
   String get ttsVoiceMissingHint => _t(
-      'This voice is not installed on your device. Tap "Install voice" to add it.');
+    'This voice is not installed on your device. Tap "Install voice" to add it.',
+  );
   String get ttsPreview => _t('Preview');
   String get translationNote => _t('Translation note');
   String get translationRemark => _t('Translation remark');
@@ -720,6 +744,27 @@ class AppLocalizations {
   String get noContentsAvailable => _t('No contents available');
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  OUTLINE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  String get outline => _t('Outline');
+  String get outlineSubtitle => _t('Every section with its study guide');
+  String get openBookFirst => _t('Open a book to see its outline');
+  String get noSectionsFound => _t('No sections found for this book');
+  String get outlineHint =>
+      _t('Tap a section to preview it, or read its study guide');
+
+  /// `N sections` (with singular/plural)
+  String sectionsCount(int n) =>
+      n == 1 ? '1 ${_t('section')}' : '$n ${_t('sections')}';
+
+  String get textTab => _t('Text');
+  String get studyGuide => _t('Study guide');
+  String get loadingStudyGuide => _t('Loading study guide…');
+  String get studyGuideUnavailable =>
+      _t('No study guide available for this section');
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  AI ASSISTANT (Paññā)
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -837,9 +882,8 @@ class AppLocalizations {
   String apiKeyValidModels(int count) =>
       '${_t('API key valid')} — $count ${_t('models available')}';
 
-  String get baseUrlExamples => _t(
-    'Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1',
-  );
+  String get baseUrlExamples =>
+      _t('Examples: https://openrouter.ai/api/v1, https://api.deepseek.com/v1');
   String get toolModelHint => _t(
     'Fast/cheap model for tool orchestration (e.g. gemini-flash-lite-latest)',
   );

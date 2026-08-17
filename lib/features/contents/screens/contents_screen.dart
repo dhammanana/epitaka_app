@@ -354,6 +354,18 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // The outline of the book — every section with its study
+            // guide — opened as a separate reading view.
+            IconButton(
+              icon: const Icon(Icons.account_tree_outlined),
+              color: colors.onSurfaceVariant,
+              tooltip: loc.outline,
+              onPressed: () {
+                context.push(
+                  '/outline/${widget.bookId}?bookName=${Uri.encodeComponent(widget.bookName)}',
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.search),
               color: colors.onSurfaceVariant,

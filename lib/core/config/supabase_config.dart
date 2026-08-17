@@ -53,11 +53,27 @@ abstract final class SupabaseConfig {
   /// Known combos:
   ///   * dev flavor (`com.dn.epitaka.dev`) + debug keystore
   ///     SHA-1 `93:CB:80:04:75:5D:67:7B:49:E2:6F:27:2A:E3:8C:0B:52:5F:8B:1F`
-  ///   * prod flavor (`com.dn.epitaka`) + **Google Play App Signing**
-  ///     certificate — NOT the debug key, and NOT the upload key. Copy it
-  ///     from Play Console → Setup → App integrity → App signing, and add
-  ///     it as an Android OAuth client for `com.dn.epitaka` (SHA-256 too,
-  ///     for the backend's signature check).
+  ///   * prod flavor (`com.dn.epitaka`) + **Google Play App Signing** keys.
+  ///     Since quantum-ready hybrid signing was enabled, the app has three
+  ///     Play signing keys. The one that signs the APK delivered to
+  ///     Android ≤16 devices is the **previous app signing key** (Play
+  ///     Console → App signing → "Previous app signing keys"):
+  ///       - previous classical key (what Android ≤16 validates):
+  ///         SHA-1 `5F:D8:12:FD:7E:13:CC:B1:DC:D5:DD:89:65:4F:8C:E7:53:D7:CA:B3`,
+  ///         SHA-256 `52:E7:51:2D:48:54:90:4A:23:3A:89:6F:3D:F7:EF:10:C7:7B:3C:
+  ///         D4:F0:19:E8:83:8F:ED:13:77:BF:33:C1:C1` — verified by pulling
+  ///         the installed APK from a device (apksigner verify --print-certs).
+  ///       - current "Classic" key (Android 17+ hybrid, APK Signature
+  ///         Scheme v3.2): SHA-1 `4A:D1:16:D1:F9:8B:CC:57:EA:98:E9:ED:5F:6E:
+  ///         F0:87:D7:05:94:49`
+  ///       - current "Post quantum" PQC key (Android 17+ hybrid, v3.2):
+  ///         SHA-1 `D1:EF:C3:2B:E7:93:D3:B8:6E:05:04:1C:5C:DB:76:33:04:1A:12:E4`
+  ///     Register ALL THREE (SHA-1, and SHA-256 too for the backend's
+  ///     signature check) on the same Android OAuth client for
+  ///     `com.dn.epitaka` so sign-in works on every Android version and
+  ///     survives the next key rotation. The upload key
+  ///     (`75:2E:B8:1C:97:34:44:BD:E2:72:A4:0F:28:0F:72:87:39:4B:97:A6`)
+  ///     is only what sideloaded APKs show — NOT needed for Play.
   ///
   /// If a build combination isn't registered, Google rejects the request
   /// and sign-in fails (often surfaced as a canceled picker).

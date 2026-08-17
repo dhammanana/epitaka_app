@@ -253,6 +253,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     context.push(url);
   }
 
+  /// Open the outline (every section with its study guide) of the current
+  /// book as a full reading view. Desktop keeps the dockable contents panel
+  /// (which hosts the outline button) instead of pushing over the shell.
+  void _handleToolbarOutline() {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    if (ResponsiveBreakpoint.isDesktop(context)) {
+      ref.read(sidePanelProvider.notifier).toggle(SidePanelType.contents);
+      return;
+    }
+    final readerState = _toolbarReaderState(activeTab);
+    context.push(
+      '/outline/${activeTab.bookId}?bookName=${Uri.encodeComponent(readerState.bookName ?? activeTab.bookId)}',
+    );
+  }
+
   void _handleToolbarSearch() => _toggleInBookSearch();
 
   void _handleToolbarDictionary() {
@@ -1324,6 +1340,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }();
 
     return Scaffold(
+      // The on-screen keyboard (in-book search field) must NOT resize the
+      // reader. The default resize re-lays-out the heavy book list on every
+      // frame of the keyboard animation and shifts the visible text (the
+      // ScrollablePositionedList viewport shrinks, so the content appears to
+      // scroll). The keyboard overlays the bottom instead; the book keeps
+      // its exact position and no per-frame relayout happens.
+      resizeToAvoidBottomInset: false,
       body: Padding(
         padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
         child: Column(
@@ -1497,9 +1520,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             displayMode: settings.translationDisplayMode,
                             showTranslation: settings.showTranslation,
                             ttsPlayback: ttsPlaybackStateForTab,
+                            items: settings.toolbarItems,
                             onJumpTap: _handleToolbarJump,
                             onDisplayLayoutTap: _handleToolbarDisplayLayout,
                             onContentsTap: _handleToolbarContents,
+                            onOutlineTap: _handleToolbarOutline,
                             onDictionaryTap: _handleToolbarDictionary,
                             onSearchTap: _handleToolbarSearch,
                             onListenTap: _handleToolbarListen,
@@ -1606,6 +1631,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       annotations: ref.watch(paragraphAnnotationsProvider(activeTab.bookId)),
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
+      appBarCollapsed: _appBarCollapsed,
       ttsTargetParaId: ref
           .read(ttsSyncProvider(activeTab.bookId))
           .ttsTargetParaId,

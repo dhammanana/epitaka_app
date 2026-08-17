@@ -112,6 +112,12 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: loc.contextMenuSubtitle,
                 onTap: () => context.push('/settings/context-menu'),
               ),
+              _SettingsTile(
+                icon: Icons.view_agenda_outlined,
+                title: loc.toolbar,
+                subtitle: loc.toolbarSubtitle,
+                onTap: () => context.push(AppRoutes.toolbarSettings),
+              ),
             ],
           ),
 

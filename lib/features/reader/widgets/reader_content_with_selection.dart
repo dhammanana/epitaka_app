@@ -46,6 +46,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.onFirstContentFrame,
     this.initialScrollIndex,
     this.annotations = const {},
+    this.appBarCollapsed,
   });
 
   final String bookId;
@@ -100,6 +101,12 @@ class ReaderContentWithSelection extends StatelessWidget {
   // User annotations (highlights/notes) grouped by paragraph id.
   final Map<int, List<Annotation>> annotations;
 
+  // App-bar collapse state, threaded to the list so it can compensate the
+  // layout change with scrollable-content padding (see
+  // ReaderContentList.appBarCollapsed). Null on desktop, where the reader
+  // has no collapsible app bar.
+  final ValueNotifier<bool>? appBarCollapsed;
+
   // Misc
   final VoidCallback? onFirstContentFrame;
 
@@ -130,6 +137,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       onFirstContentFrame: onFirstContentFrame,
       initialScrollIndex: initialScrollIndex,
       annotations: annotations,
+      appBarCollapsed: appBarCollapsed,
     );
 
     // The Listener provides a stable hit-test anchor for

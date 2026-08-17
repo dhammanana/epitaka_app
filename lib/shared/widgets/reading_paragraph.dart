@@ -231,7 +231,10 @@ class ReadingParagraph extends StatelessWidget {
 
     final Widget title;
     if (headingAnnotations.isNotEmpty) {
-      final converted = convertPaliToScriptPreservingHtml(heading.title, script);
+      final converted = convertPaliToScriptPreservingHtml(
+        heading.title,
+        script,
+      );
       title = _buildHighlightedText(
         context,
         converted,
@@ -424,8 +427,9 @@ class ReadingParagraph extends StatelessWidget {
             keyboardFocusLineId != null &&
             paragraph.paraId == keyboardFocusParaId &&
             lineId == keyboardFocusLineId;
-        final selectedChipIndex =
-            isKeyboardFocus ? keyboardFocusChipIndex : null;
+        final selectedChipIndex = isKeyboardFocus
+            ? keyboardFocusChipIndex
+            : null;
 
         final lineLinks = bookLinks[lineId];
 
@@ -443,22 +447,17 @@ class ReadingParagraph extends StatelessWidget {
             // Build the Pāli line lazily (only when it exists) so a line
             // carrying page data but no Pāli text can't crash.
             if (hasPali)
-              _buildPaliLine(
+              _buildPaliLine(context, line.paliText!, colors, lineId: lineId),
+            if (displayMode == ParagraphDisplayMode.lineByLine &&
+                showTranslation)
+              _buildTranslationBlock(
                 context,
-                line.paliText!,
+                line.translations,
                 colors,
+                isHighlighted,
                 lineId: lineId,
+                remarks: line.remarks,
               ),
-              if (displayMode == ParagraphDisplayMode.lineByLine &&
-                  showTranslation)
-                _buildTranslationBlock(
-                  context,
-                  line.translations,
-                  colors,
-                  isHighlighted,
-                  lineId: lineId,
-                  remarks: line.remarks,
-                ),
             if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 4),
@@ -510,7 +509,7 @@ class ReadingParagraph extends StatelessWidget {
     BuildContext context, {
     int? selectedIndex,
   }) {
-    if (links.length <= 6) {
+    if (links.length <= 3) {
       return Wrap(
         spacing: 4,
         runSpacing: 2,
@@ -557,8 +556,14 @@ class ReadingParagraph extends StatelessWidget {
       if (text == null || text.trim().isEmpty) continue;
       final typo = langTypographies[langCode];
       children.add(
-        _buildTranslationLine(context, langCode, text, typo, colors,
-            lineId: lineId),
+        _buildTranslationLine(
+          context,
+          langCode,
+          text,
+          typo,
+          colors,
+          lineId: lineId,
+        ),
       );
       final remarkList = remarks[langCode];
       if (remarkList != null && remarkList.any((r) => r.hasContent)) {
@@ -769,8 +774,14 @@ class ReadingParagraph extends StatelessWidget {
 
       final typo = langTypographies[langCode];
       widgets.add(
-        _buildTranslationLine(context, langCode, texts, typo, colors,
-            lineId: -1),
+        _buildTranslationLine(
+          context,
+          langCode,
+          texts,
+          typo,
+          colors,
+          lineId: -1,
+        ),
       );
 
       // Translation remarks for this paragraph + language (notes are
@@ -820,7 +831,8 @@ class ReadingParagraph extends StatelessWidget {
     );
 
     final query = searchQuery;
-    final lineAnnotations = extraAnnotations ??
+    final lineAnnotations =
+        extraAnnotations ??
         (lineId != null
             ? _annotationsForLine(lineId, 'pali', null)
             : const <Annotation>[]);
@@ -836,8 +848,9 @@ class ReadingParagraph extends StatelessWidget {
       // too — otherwise scripts with a dedicated bundled font (Lao,
       // Myanmar, Sinhala, …) fall back to the platform default and render
       // incorrectly (e.g. missing the Pali-specific Lao characters).
-      final scriptStyle =
-          baseStyle.copyWith(fontFamily: scriptFontFamily(script));
+      final scriptStyle = baseStyle.copyWith(
+        fontFamily: scriptFontFamily(script),
+      );
       return _buildHighlightedText(
         context,
         convertedText,
@@ -1232,7 +1245,7 @@ class _HighlightInterval {
 
 /// A small expandable row of book link chips.
 ///
-/// Shows at most 6 chips initially, with an expand button to reveal all.
+/// Shows at most 3 chips initially, with an expand button to reveal all.
 class _ExpandableChips extends StatefulWidget {
   final List<BookLinkData> links;
   final ColorScheme colors;
@@ -1260,11 +1273,11 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
 
   @override
   Widget build(BuildContext context) {
-    const int maxVisible = 6;
+    const int maxVisible = 3;
     final links = widget.links;
     // Auto-expand when the keyboard-selected chip would be hidden.
-    final needsExpansion = widget.selectedIndex != null &&
-        widget.selectedIndex! >= maxVisible;
+    final needsExpansion =
+        widget.selectedIndex != null && widget.selectedIndex! >= maxVisible;
     final displayLinks = _expanded || needsExpansion
         ? links
         : links.take(maxVisible).toList();

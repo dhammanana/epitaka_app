@@ -273,6 +273,20 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                             ),
                           ),
                         ),
+                        // The outline is the full outline of the book —
+                        // every section with its study guide — opened as a
+                        // separate reading view.
+                        IconButton(
+                          icon: const Icon(Icons.account_tree_outlined, size: 18),
+                          color: colors.onSurfaceVariant,
+                          tooltip: loc.outline,
+                          onPressed: () {
+                            if (_effectiveBookId.isEmpty) return;
+                            context.push(
+                              '/outline/$_effectiveBookId?bookName=${Uri.encodeComponent(_effectiveBookName)}',
+                            );
+                          },
+                        ),
                         IconButton(
                           icon: Icon(Icons.search, size: 18),
                           color: colors.onSurfaceVariant,

@@ -18,10 +18,12 @@ import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
 import '../features/settings/screens/tts_settings_screen.dart';
+import '../features/settings/screens/toolbar_settings_screen.dart';
 import '../features/translator/screens/translator_run_screen.dart';
 import '../features/translator/screens/translator_settings_screen.dart';
 import '../features/settings/screens/tts_replacements_screen.dart';
 import '../features/contents/screens/contents_screen.dart';
+import '../features/outline/screens/outline_screen.dart';
 import '../core/utils/platform_info.dart';
 import '../core/utils/responsive_breakpoint.dart';
 import '../shared/widgets/responsive_scaffold.dart';
@@ -43,11 +45,13 @@ class AppRoutes {
   static const ttsSettings = '/settings/tts';
   static const ttsReplacements = '/settings/tts/replacements';
   static const contextMenuSettings = '/settings/context-menu';
+  static const toolbarSettings = '/settings/toolbar';
   static const dictionarySettings = '/settings/dictionary';
   static const help = '/settings/help';
   static const translatorSettings = '/translator';
   static const translatorRun = '/translator/run';
   static const contents = '/contents/:bookId';
+  static const outline = '/outline/:bookId';
   static const gavesana = '/gavesana';
   static const aiQa = '/ai-qa';
   static const featureGuide = '/guide';
@@ -171,6 +175,11 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             builder: (context, state) => const ContextMenuSettingsScreen(),
           ),
           GoRoute(
+            path: 'toolbar',
+            name: 'toolbarSettings',
+            builder: (context, state) => const ToolbarSettingsScreen(),
+          ),
+          GoRoute(
             path: 'dictionary',
             name: 'dictionarySettings',
             builder: (context, state) => const DictionarySettingsScreen(),
@@ -230,6 +239,15 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             bookName: bookName,
             currentParaId: currentParaId,
           );
+        },
+      ),
+      GoRoute(
+        path: '/outline/:bookId',
+        name: 'outline',
+        builder: (context, state) {
+          final bookId = state.pathParameters['bookId']!;
+          final bookName = state.uri.queryParameters['bookName'] ?? bookId;
+          return OutlineScreen(bookId: bookId, bookName: bookName);
         },
       ),
     ],

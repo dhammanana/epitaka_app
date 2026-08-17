@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
 import '../models/context_menu_action.dart';
+import '../models/toolbar_item.dart';
 import '../theme/app_colors.dart';
 import '../theme/color_pair.dart';
 import '../utils/pali_script_converter.dart';
@@ -485,6 +486,10 @@ class AppSettings {
   /// welcome (during first-run indexing or on the Library screen).
   final bool featureGuideSeen;
 
+  /// The reader bottom toolbar: which built-in actions appear and in what
+  /// order (drag-to-reorder in Settings → Toolbar).
+  final List<ToolbarItem> toolbarItems;
+
   static const Color defaultPaliColor = Color(0xFF7A2E1D);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
@@ -530,6 +535,7 @@ class AppSettings {
     this.dictionaryDockFraction = 0,
     this.contextMenuActions = const [],
     this.featureGuideSeen = false,
+    this.toolbarItems = const [],
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
     this.useBookName = true,
     this.includeHeading = true,
@@ -578,6 +584,7 @@ class AppSettings {
     double? dictionaryDockFraction,
     List<ContextMenuAction>? contextMenuActions,
     bool? featureGuideSeen,
+    List<ToolbarItem>? toolbarItems,
     String? quoteTemplate,
     bool? useBookName,
     bool? includeHeading,
@@ -633,6 +640,7 @@ class AppSettings {
           dictionaryDockFraction ?? this.dictionaryDockFraction,
       contextMenuActions: contextMenuActions ?? this.contextMenuActions,
       featureGuideSeen: featureGuideSeen ?? this.featureGuideSeen,
+      toolbarItems: toolbarItems ?? this.toolbarItems,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
       useBookName: useBookName ?? this.useBookName,
       includeHeading: includeHeading ?? this.includeHeading,
@@ -793,6 +801,45 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     ];
   }
 
+  List<ToolbarItem> _loadToolbarItems() {
+    final prefs = _prefs;
+    if (prefs == null) return defaultToolbarItems();
+    final raw = prefs.getString('toolbar_items');
+    if (raw == null || raw.isEmpty) return defaultToolbarItems();
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final items = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(ToolbarItem.fromJson)
+          .where((i) => i.id.isNotEmpty)
+          .toList();
+      if (items.isEmpty) return defaultToolbarItems();
+      // A saved list from an older app version won't contain built-ins that
+      // were added later. Append the missing ones (enabled, in default
+      // order) so they show up in the toolbar and in Settings without
+      // wiping the user's custom order/toggles.
+      return _mergeMissingToolbarItems(items);
+    } catch (_) {
+      return defaultToolbarItems();
+    }
+  }
+
+  /// Append any built-in toolbar actions from [ToolbarBuiltins.defaults]
+  /// that are missing from [items], preserving the user's existing order
+  /// and only touching the tail of the list.
+  List<ToolbarItem> _mergeMissingToolbarItems(List<ToolbarItem> items) {
+    final present = items.map((i) => i.id).toSet();
+    final missing = [
+      for (final id in ToolbarBuiltins.defaults)
+        if (!present.contains(id)) id,
+    ];
+    if (missing.isEmpty) return items;
+    return [
+      ...items,
+      for (final id in missing) ToolbarItem(id: id),
+    ];
+  }
+
   Map<String, String> _loadTranslationVersionMap() {
     final prefs = _prefs;
     if (prefs == null) return const {};
@@ -890,6 +937,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       dictionaryDockFraction: prefs.getDouble('dict_dock_fraction') ?? 0,
       contextMenuActions: _loadContextMenuActions(),
       featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
+      toolbarItems: _loadToolbarItems(),
       quoteTemplate:
           prefs.getString('quote_template') ??
           '- {book_name} > {heading} VRI p.{vri_page}',
@@ -1302,6 +1350,28 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   /// Reset context-menu actions and their display order to defaults.
   Future<void> resetContextMenuActions() async {
     await setContextMenuActions(defaultContextMenuActions());
+  }
+
+  /// Replace the full ordered reader-toolbar item list.
+  Future<void> setToolbarItems(List<ToolbarItem> items) async {
+    state = state.copyWith(toolbarItems: items);
+    await _prefs?.setString(
+      'toolbar_items',
+      jsonEncode(items.map((i) => i.toJson()).toList()),
+    );
+  }
+
+  /// Toggle whether a reader-toolbar action is shown.
+  Future<void> setToolbarItemEnabled(String id, bool enabled) async {
+    final items = state.toolbarItems
+        .map((i) => i.id == id ? i.copyWith(enabled: enabled) : i)
+        .toList();
+    await setToolbarItems(items);
+  }
+
+  /// Reset reader-toolbar items and their display order to defaults.
+  Future<void> resetToolbarItems() async {
+    await setToolbarItems(defaultToolbarItems());
   }
 
   /// Mark the one-time Feature Guide welcome as shown (or reset it).

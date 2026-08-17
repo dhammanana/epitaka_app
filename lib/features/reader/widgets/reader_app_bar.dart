@@ -37,6 +37,14 @@ class ReaderAppBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The app bar collapses its LAYOUT height (AnimatedSize, 64+1 → 0) so
+    // the tab strip below it moves up into the app bar's space. The reader
+    // list compensates in lockstep — its scrollable content grows an equal
+    // animated top padding (see ReaderContentList.appBarCollapsePadding) —
+    // so the book text never moves while the bar hides/shows. The two
+    // animations use the same duration and curve, and since the bar shrinks
+    // exactly as much as the content grows, the visible text stays put
+    // throughout the transition.
     return AnimatedSize(
       duration: _animDuration,
       curve: Curves.easeInOut,
@@ -45,7 +53,8 @@ class ReaderAppBar extends ConsumerWidget {
         duration: _animDuration,
         opacity: showCollapsed ? 0.0 : 1.0,
         child: showCollapsed
-            ? const SizedBox.shrink()
+            // Full-width, zero height (only the height animates).
+            ? const SizedBox(width: double.infinity)
             : Container(
                 height: _toolbarHeight + 1, // +1 for the bottom divider
                 color: colors.surface,

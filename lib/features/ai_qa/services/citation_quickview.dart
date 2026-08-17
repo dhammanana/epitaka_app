@@ -1,14 +1,11 @@
-import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/database_provider.dart';
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/services/paragraph_preview_loader.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/paragraph_preview_sheet.dart';
-import '../../../shared/widgets/preview_content.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 
 /// Opens a "quickview" bottom sheet for an AI citation.
@@ -28,71 +25,15 @@ Future<void> showCitationQuickview(
   HapticFeedback.mediumImpact();
 
   try {
-    final epitakaDb = await ref.read(epitakaDbProvider.future);
-    final settings = ref.read(settingsProvider);
-    final activeLang = settings.enabledTranslations.isNotEmpty
-        ? settings.enabledTranslations.first
-        : (settings.showTranslation ? settings.primaryTranslationLang : null);
-
-    // 1. Resolve the nearest heading for a meaningful title.
-    final headingTitle = (await epitakaDb.getHeadingTitleAtPara(
-          bookId,
-          paraId,
-          includeLevel10: true,
-        )) ??
-        '';
-
-    // 2. Load the cited paragraph's lines.
-    final sentenceRows = await epitakaDb
-        .customSelect(
-          'SELECT para_id, line_id, pali FROM sentences '
-          'WHERE book_id = ? AND para_id = ? '
-          'ORDER BY line_id',
-          variables: [
-            Variable.withString(bookId),
-            Variable.withInt(paraId),
-          ],
-        )
-        .get();
-
-    // 3. Load translations for the same paragraph.
-    final translationMap = <String, Map<String, String>>{};
-    if (activeLang != null) {
-      try {
-        final transDb = await ref.read(translationDbProvider(activeLang).future);
-        if (transDb != null) {
-          final transRows = await transDb
-              .customSelect(
-                'SELECT para_id, line_id, translation FROM sentences '
-                'WHERE book_id = ? AND para_id = ? '
-                'ORDER BY line_id',
-                variables: [
-                  Variable.withString(bookId),
-                  Variable.withInt(paraId),
-                ],
-              )
-              .get();
-          for (final row in transRows) {
-            final key = '${row.data['para_id']}:${row.data['line_id']}';
-            final t = row.data['translation'] as String?;
-            if (t != null && t.isNotEmpty) {
-              translationMap.putIfAbsent(key, () => {})[activeLang] = t;
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 4. Build preview lines.
-    final previewLines = sentenceRows.map((r) {
-      final key = '${r.data['para_id']}:${r.data['line_id']}';
-      return PreviewLineData(
-        paraId: r.data['para_id'] as int,
-        lineId: r.data['line_id'] as int,
-        pali: r.data['pali'] as String? ?? '',
-        translations: translationMap[key] ?? {},
-      );
-    }).toList();
+    // 1–4. Load the cited paragraph's excerpt (heading title + Pāli +
+    // translation lines) via the shared loader used by every quickview.
+    final data = await loadParagraphPreview(
+      ref,
+      bookId: bookId,
+      paraId: paraId,
+    );
+    final headingTitle = data.headingTitle;
+    final previewLines = data.lines;
 
     if (previewLines.isEmpty) {
       if (context.mounted) {

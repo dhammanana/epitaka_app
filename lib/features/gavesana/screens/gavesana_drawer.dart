@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../router/app_router.dart' show AppRoutes;
+import '../../reader/providers/reader_tabs_provider.dart';
 
 /// The main navigation drawer.
 ///
@@ -14,14 +16,14 @@ import '../../../router/app_router.dart' show AppRoutes;
 /// - Tipitaka
 /// - Search
 /// - Gavesana
-class MainDrawer extends StatefulWidget {
+class MainDrawer extends ConsumerStatefulWidget {
   const MainDrawer({super.key});
 
   @override
-  State<MainDrawer> createState() => _MainDrawerState();
+  ConsumerState<MainDrawer> createState() => _MainDrawerState();
 }
 
-class _MainDrawerState extends State<MainDrawer> {
+class _MainDrawerState extends ConsumerState<MainDrawer> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -82,13 +84,13 @@ class _MainDrawerState extends State<MainDrawer> {
                 const SizedBox(height: 4),
                 Padding(
                   padding: const EdgeInsets.only(left: 46),
-                  child:                    Text(
-                      loc.paliTipitakaReader,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                        fontSize: 11,
-                      ),
+                  child: Text(
+                    loc.paliTipitakaReader,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+                      fontSize: 11,
                     ),
+                  ),
                 ),
               ],
             ),
@@ -157,10 +159,8 @@ class _MainDrawerState extends State<MainDrawer> {
                   icon: Icons.swap_horiz,
                   title: loc.scriptConverter,
                   subtitle: loc.scriptConverterSubtitle,
-                  onTap: () => _closeAndGo(
-                    context,
-                    '/script-converter?fromDrawer=true',
-                  ),
+                  onTap: () =>
+                      _closeAndGo(context, '/script-converter?fromDrawer=true'),
                   selected: _isRouteActive(context, '/script-converter'),
                 ),
 
@@ -179,6 +179,25 @@ class _MainDrawerState extends State<MainDrawer> {
                   title: loc.dictionary,
                   onTap: () => _closeAndGo(context, '/dictionary'),
                   selected: _isRouteActive(context, '/dictionary'),
+                ),
+
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  indent: 20,
+                  endIndent: 20,
+                  color: colors.outlineVariant.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 4),
+
+                // ── Outline ──────────────────────────────────────
+                // The outline of the book currently open in the reader —
+                // every section with its study guide.
+                _DrawerItem(
+                  icon: Icons.account_tree_outlined,
+                  title: loc.outline,
+                  subtitle: loc.outlineSubtitle,
+                  onTap: _openOutline,
                 ),
 
                 const SizedBox(height: 4),
@@ -291,10 +310,8 @@ class _MainDrawerState extends State<MainDrawer> {
                 SizedBox(
                   width: double.infinity,
                   child: TextButton.icon(
-                    onPressed: () => _closeAndGo(
-                      context,
-                      AppRoutes.featureGuide,
-                    ),
+                    onPressed: () =>
+                        _closeAndGo(context, AppRoutes.featureGuide),
                     icon: Icon(
                       Icons.explore_outlined,
                       size: 16,
@@ -337,6 +354,25 @@ class _MainDrawerState extends State<MainDrawer> {
   void _closeAndGo(BuildContext context, String route) {
     Navigator.of(context).pop(); // close drawer
     context.push(route);
+  }
+
+  /// Open the outline of the book currently open in the reader. When no
+  /// book is open, hint and fall back to the library (where opening a book
+  /// makes the outline reachable from the reader).
+  void _openOutline() {
+    final tab = ref.read(readerTabsProvider).activeTab;
+    Navigator.of(context).pop(); // close drawer
+    if (tab != null) {
+      context.push(
+        '/outline/${tab.bookId}?bookName=${Uri.encodeComponent(tab.bookName)}',
+      );
+      return;
+    }
+    final loc = AppLocalizations.of(context);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(loc.openBookFirst)));
+    context.go(AppRoutes.library);
   }
 
   bool _isRouteActive(BuildContext context, String route) {

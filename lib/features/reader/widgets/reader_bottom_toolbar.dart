@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/models/toolbar_item.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../shared/utils/app_shortcuts.dart';
@@ -7,6 +8,11 @@ import '../../settings/providers/tts_provider.dart';
 
 /// Reader toolbar with actions like contents, search, dictionary, display
 /// mode toggle, TTS, and bookmark.
+///
+/// Which actions appear — and in what order — is driven by [items]
+/// (Settings → Toolbar). Actions the current surface doesn't wire up (e.g.
+/// the flat status bar omits contents/search/dictionary) are skipped even
+/// when enabled.
 ///
 /// Two visual modes:
 /// * **Floating pill** (default) — used on mobile as the reader's floating
@@ -34,6 +40,7 @@ class ReaderBottomToolbar extends StatelessWidget {
 
   final VoidCallback? onDisplayLayoutTap;
   final VoidCallback? onContentsTap;
+  final VoidCallback? onOutlineTap;
   final VoidCallback? onDictionaryTap;
   final VoidCallback? onListenTap;
   final VoidCallback? onStopTap;
@@ -41,6 +48,11 @@ class ReaderBottomToolbar extends StatelessWidget {
   final VoidCallback? onSearchTap;
   final VoidCallback? onJumpTap;
   final VoidCallback? onAnnotationsTap;
+
+  /// The ordered toolbar configuration (Settings → Toolbar). Disabled items
+  /// are skipped, and items with no wired handler for this surface are
+  /// skipped too. Defaults to every action, enabled, in its natural order.
+  final List<ToolbarItem> items;
 
   const ReaderBottomToolbar({
     super.key,
@@ -51,8 +63,10 @@ class ReaderBottomToolbar extends StatelessWidget {
     this.flat = false,
     this.compact = false,
     this.enabled = true,
+    this.items = const [],
     this.onDisplayLayoutTap,
     this.onContentsTap,
+    this.onOutlineTap,
     this.onDictionaryTap,
     this.onListenTap,
     this.onStopTap,
@@ -92,99 +106,166 @@ class ReaderBottomToolbar extends StatelessWidget {
     // shortcut — hint at the trio so users can learn them from the button.
     final displayHint = AppShortcuts.isMacOS ? '⌥⌘1/2/3' : 'Ctrl+Alt+1/2/3';
 
-    final buttons = <Widget>[
-      // Contents, search and dictionary already live in the desktop sidebar
-      // / activity bar, so the flat status-bar strip doesn't repeat them.
-      if (!flat) ...[
-        ToolbarButton(
-          icon: Icons.format_list_bulleted,
-          label: loc.contents,
-          tooltip: AppShortcuts.tooltip(loc.contents, 'contents'),
-          compact: compact,
-          enabled: enabled,
-          onTap: onContentsTap,
-        ),
-        if (!compact) const SizedBox(width: 8),
-        // Search within current book
-        ToolbarButton(
-          icon: Icons.search,
-          label: loc.search,
-          tooltip: AppShortcuts.tooltip(loc.search, 'find-in-book'),
-          compact: compact,
-          enabled: enabled,
-          onTap: onSearchTap,
-        ),
-        if (!compact) const SizedBox(width: 8),
-        ToolbarButton(
-          icon: Icons.menu_book,
-          label: loc.dictionary,
-          tooltip: AppShortcuts.tooltip(loc.dictionary, 'dictionary'),
-          compact: compact,
-          enabled: enabled,
-          onTap: onDictionaryTap,
-        ),
-        if (!compact) const SizedBox(width: 8),
-      ],
-      ToolbarButton(
-        icon: Icons.open_in_new,
-        label: loc.jumpLabel,
-        tooltip: AppShortcuts.tooltip(loc.jumpLabel, 'jump'),
-        compact: compact,
-        enabled: enabled,
-        onTap: onJumpTap,
-      ),
-      if (!compact) const SizedBox(width: 8),
-      ToolbarButton(
-        icon: displayIcon,
-        label: displayLabel,
-        tooltip: '$displayLabel $displayHint',
-        compact: compact,
-        enabled: enabled,
-        onTap: onDisplayLayoutTap,
-      ),
-      if (!compact) const SizedBox(width: 8),
-      ToolbarButton(
-        icon: isPlaying
-            ? Icons.stop
-            : (isLoading ? Icons.hourglass_top : Icons.volume_up),
-        label: isPlaying
-            ? loc.stopLabel
-            : (isLoading ? loc.loadingDots : loc.toolbarListen),
-        compact: compact,
-        enabled: enabled,
-        onTap: isPlaying ? onStopTap : onListenTap,
-      ),
-      if (!compact) const SizedBox(width: 2),
-      ToolbarButton(
-        icon: Icons.bookmark,
-        label: loc.toolbarSave,
-        compact: compact,
-        enabled: enabled,
-        onTap: onBookmarkTap,
-      ),
-      // Highlights / notes / bookmarks manager. Only rendered when a
-      // handler is provided (mobile pill); the desktop status bar omits it
-      // because the activity bar already hosts the annotations panel — and
-      // adding an extra button here would break the toolbar centering.
-      if (onAnnotationsTap != null) ...[if (!flat) const SizedBox(width: 2)],
-      if (onAnnotationsTap != null)
-        ToolbarButton(
-          icon: Icons.edit_note,
-          label: loc.annotations,
-          compact: compact,
-          enabled: enabled,
-          onTap: onAnnotationsTap,
-        ),
-    ];
+    // The configured item list (Settings → Toolbar). An empty list means no
+    // configuration was supplied, so fall back to every action enabled in
+    // its natural order.
+    final toolbarItems = items.isEmpty ? defaultToolbarItems() : items;
+
+    final buttons = <Widget>[];
+
+    void add(Widget? button) {
+      if (button == null) return;
+      if (buttons.isNotEmpty && !compact) {
+        buttons.add(const SizedBox(width: 8));
+      }
+      buttons.add(button);
+    }
+
+    for (final item in toolbarItems) {
+      if (!item.enabled) continue;
+      switch (item.id) {
+        case ToolbarBuiltins.contents:
+          // Contents already lives in the desktop sidebar / activity bar,
+          // so the flat status-bar strip doesn't repeat it.
+          add(
+            !flat && onContentsTap != null
+                ? ToolbarButton(
+                    icon: Icons.format_list_bulleted,
+                    label: loc.contents,
+                    tooltip: AppShortcuts.tooltip(loc.contents, 'contents'),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onContentsTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.outline:
+          // Book outline — every section with its study guide. Pill only;
+          // the desktop status bar omits it because the sidebar's contents
+          // panel already hosts the outline button.
+          add(
+            !flat && onOutlineTap != null
+                ? ToolbarButton(
+                    icon: Icons.account_tree_outlined,
+                    label: loc.outline,
+                    tooltip: AppShortcuts.tooltip(loc.outline, 'outline'),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onOutlineTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.search:
+          // Search within current book (pill only, see contents above).
+          add(
+            !flat && onSearchTap != null
+                ? ToolbarButton(
+                    icon: Icons.search,
+                    label: loc.search,
+                    tooltip: AppShortcuts.tooltip(loc.search, 'find-in-book'),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onSearchTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.dictionary:
+          add(
+            !flat && onDictionaryTap != null
+                ? ToolbarButton(
+                    icon: Icons.menu_book,
+                    label: loc.dictionary,
+                    tooltip: AppShortcuts.tooltip(
+                      loc.dictionary,
+                      'dictionary',
+                    ),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onDictionaryTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.jump:
+          add(
+            onJumpTap != null
+                ? ToolbarButton(
+                    icon: Icons.open_in_new,
+                    label: loc.jumpLabel,
+                    tooltip: AppShortcuts.tooltip(loc.jumpLabel, 'jump'),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onJumpTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.displayLayout:
+          add(
+            onDisplayLayoutTap != null
+                ? ToolbarButton(
+                    icon: displayIcon,
+                    label: displayLabel,
+                    tooltip: '$displayLabel $displayHint',
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onDisplayLayoutTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.listen:
+          add(
+            (onListenTap != null || onStopTap != null)
+                ? ToolbarButton(
+                    icon: isPlaying
+                        ? Icons.stop
+                        : (isLoading ? Icons.hourglass_top : Icons.volume_up),
+                    label: isPlaying
+                        ? loc.stopLabel
+                        : (isLoading ? loc.loadingDots : loc.toolbarListen),
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: isPlaying ? onStopTap : onListenTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.bookmark:
+          add(
+            onBookmarkTap != null
+                ? ToolbarButton(
+                    icon: Icons.bookmark,
+                    label: loc.toolbarSave,
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onBookmarkTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.annotations:
+          // Highlights / notes / bookmarks manager. Only rendered when a
+          // handler is provided (mobile pill); the desktop status bar omits
+          // it because the activity bar already hosts the annotations panel.
+          add(
+            onAnnotationsTap != null
+                ? ToolbarButton(
+                    icon: Icons.edit_note,
+                    label: loc.annotations,
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onAnnotationsTap,
+                  )
+                : null,
+          );
+      }
+    }
+
+    // Every action was disabled (or none wired up) — render nothing rather
+    // than an empty pill / spacer.
+    if (buttons.isEmpty) return const SizedBox.shrink();
 
     if (flat) {
       // Full-width, attached status-bar strip (no pill chrome).
       return SizedBox(
         height: 40,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: buttons,
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
       );
     }
 
@@ -209,10 +290,7 @@ class ReaderBottomToolbar extends StatelessWidget {
       // never overflow the pill — content stays centered and reachable.
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: buttons,
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
       ),
     );
   }

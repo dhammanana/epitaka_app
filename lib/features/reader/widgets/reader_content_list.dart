@@ -46,6 +46,7 @@ class ReaderContentList extends StatelessWidget {
     this.onFirstContentFrame,
     this.initialScrollIndex,
     this.annotations = const {},
+    this.appBarCollapsed,
   });
 
   /// Book ID for keying the list instance.
@@ -119,6 +120,21 @@ class ReaderContentList extends StatelessWidget {
   /// reader's highlight painting.
   final Map<int, List<Annotation>> annotations;
 
+  /// App-bar collapse state (phone reader only). When the app bar
+  /// collapses, its layout height shrinks and the tab strip below moves up
+  /// into its space — the list viewport grows taller at the top. This list
+  /// compensates by growing an equal top padding on the scrollable CONTENT,
+  /// which keeps the visible text at exactly the same screen position: the
+  /// viewport top moves up by the collapse amount while the content is
+  /// pushed down by the same amount.
+  ///
+  /// The padding animates with the same duration/curve as the app bar
+  /// collapse (250ms / easeInOut), so the text never moves during the
+  /// transition either — and because it is a layout change (not a scroll),
+  /// it never interrupts an in-progress finger drag. Null on desktop, where
+  /// the reader has no collapsible app bar.
+  final ValueNotifier<bool>? appBarCollapsed;
+
   /// Convert translation display mode settings into [ParagraphDisplayMode].
   static ParagraphDisplayMode _toParagraphDisplayMode(
     TranslationDisplayMode mode,
@@ -169,93 +185,110 @@ class ReaderContentList extends StatelessWidget {
     // Use initialScrollIndex when available (tab restore) to start at the
     // saved position instead of index 0, avoiding a flash-to-top before
     // the post-frame [_jumpToParagraph] correction.
-    final scrollIndex =
-        initialScrollIndex != null
-            ? initialScrollIndex!.clamp(0, data.paragraphs.length - 1)
-            : 0;
+    final scrollIndex = initialScrollIndex != null
+        ? initialScrollIndex!.clamp(0, data.paragraphs.length - 1)
+        : 0;
 
-    return ScrollablePositionedList.builder(
-      key: ValueKey('reader-$bookId'),
-      initialScrollIndex: scrollIndex,
-      itemScrollController: itemScrollController,
-      itemPositionsListener: itemPositionsListener,
-      scrollOffsetListener: scrollOffsetListener,
-      scrollOffsetController: scrollOffsetController ?? ScrollOffsetController(),
-      padding: const EdgeInsets.fromLTRB(
-        0,
-        AppDimensions.lg,
-        AppDimensions.marginMobile,
-        120,
-      ),
-      itemCount: data.paragraphs.length,
-      itemBuilder: (context, index) {
-        final paragraph = data.paragraphs[index];
-
-        // Seed the per-line page tracking with the previous paragraph's last
-        // page (selected system) so a page break on this paragraph's first
-        // line is still detected. ParagraphData.pageNumbers holds the merged
-        // (last-line) page values, which is exactly the carry-forward value.
-        final previousLinePage = index > 0
-            ? data.paragraphs[index - 1]
-                  .pageNumbers[settings.pageNumberingSystem]
-            : null;
-
-        // Pass line keys for the TTS target paragraph so
-        // Scrollable.ensureVisible can precisely scroll to the line.
-        Map<int, GlobalKey>? lineKeys;
-        if (ttsTargetParaId != null &&
-            paragraph.paraId == ttsTargetParaId &&
-            ttsTargetLineKeys.isNotEmpty) {
-          lineKeys = Map.from(ttsTargetLineKeys);
-        }
-
-        return RepaintBoundary(
-          child: ReadingParagraph(
-          // Stable key for every paragraph — never a shared GlobalKey.
-          // Re-keying a list item at runtime forces a semantics re-parent
-          // that crashes (see reader_screen.dart).
-          key: ValueKey('para-$bookId-${paragraph.paraId}'),
-          paragraph: paragraph,
-          isFirst: index == 0,
-          bookId: bookId,
-          bookName: index == 0 ? data.bookName : null,
-          bookDescription: index == 0 ? data.bookDescription : null,
-          showPali: settings.showPali,
-          showTranslation: settings.showTranslation,
-          displayMode: displayMode,
-          paliColor: paliColor,
-          translationColor: translationColor,
-          paliTypography: settings.typography.pali,
-          langTypographies: langTypographies,
-          enabledLangCodes: enabledLangs,
-          bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
-          showBookLinks: showBookLinks,
-          searchQuery: searchQuery,
-          ttsHighlightLineId: ttsHighlightLineId,
-          ttsHighlightParaId: ttsHighlightParaId,
-          lineKeys: lineKeys,
-          keyboardFocusParaId: keyboardFocusParaId,
-          keyboardFocusLineId: keyboardFocusLineId,
-          keyboardFocusChipIndex: keyboardFocusChipIndex,
-          annotations: annotations[paragraph.paraId] ?? const [],
-          // Pass script and pageNumberingSystem from parent instead of
-          // forcing ReadingParagraph to watch settingsProvider directly.
-          // This avoids rebuilding ALL visible paragraphs on every
-          // unrelated settings change.
-          script: settings.paliScript,
-          pageNumberingSystem: settings.pageNumberingSystem,
-          previousLinePageNumber: previousLinePage,
-          paliFontSize: settings.typography.pali.fontSize,
-          paliLineHeight: settings.typography.pali.lineHeight,
-          translationFontSize: settings.typography.fontSizeFor(
-            settings.primaryTranslationLang,
-          ),
-          translationLineHeight: settings.typography.lineHeightFor(
-            settings.primaryTranslationLang,
-          ),
+    // Animate the collapse padding in lockstep with the app bar's
+    // AnimatedSize (same 250ms / easeInOut) so the book text stays fixed
+    // throughout the collapse/expand transition.
+    Widget buildList(double pad) => TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: pad),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      builder: (context, pad, _) => ScrollablePositionedList.builder(
+        key: ValueKey('reader-$bookId'),
+        initialScrollIndex: scrollIndex,
+        itemScrollController: itemScrollController,
+        itemPositionsListener: itemPositionsListener,
+        scrollOffsetListener: scrollOffsetListener,
+        scrollOffsetController:
+            scrollOffsetController ?? ScrollOffsetController(),
+        padding: EdgeInsets.fromLTRB(
+          0,
+          AppDimensions.lg + pad,
+          AppDimensions.marginMobile,
+          120,
         ),
-        );
-      },
+        itemCount: data.paragraphs.length,
+        itemBuilder: (context, index) {
+          final paragraph = data.paragraphs[index];
+
+          // Seed the per-line page tracking with the previous paragraph's last
+          // page (selected system) so a page break on this paragraph's first
+          // line is still detected. ParagraphData.pageNumbers holds the merged
+          // (last-line) page values, which is exactly the carry-forward value.
+          final previousLinePage = index > 0
+              ? data.paragraphs[index - 1].pageNumbers[settings
+                    .pageNumberingSystem]
+              : null;
+
+          // Pass line keys for the TTS target paragraph so
+          // Scrollable.ensureVisible can precisely scroll to the line.
+          Map<int, GlobalKey>? lineKeys;
+          if (ttsTargetParaId != null &&
+              paragraph.paraId == ttsTargetParaId &&
+              ttsTargetLineKeys.isNotEmpty) {
+            lineKeys = Map.from(ttsTargetLineKeys);
+          }
+
+          return RepaintBoundary(
+            child: ReadingParagraph(
+              // Stable key for every paragraph — never a shared GlobalKey.
+              // Re-keying a list item at runtime forces a semantics re-parent
+              // that crashes (see reader_screen.dart).
+              key: ValueKey('para-$bookId-${paragraph.paraId}'),
+              paragraph: paragraph,
+              isFirst: index == 0,
+              bookId: bookId,
+              bookName: index == 0 ? data.bookName : null,
+              bookDescription: index == 0 ? data.bookDescription : null,
+              showPali: settings.showPali,
+              showTranslation: settings.showTranslation,
+              displayMode: displayMode,
+              paliColor: paliColor,
+              translationColor: translationColor,
+              paliTypography: settings.typography.pali,
+              langTypographies: langTypographies,
+              enabledLangCodes: enabledLangs,
+              bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
+              showBookLinks: showBookLinks,
+              searchQuery: searchQuery,
+              ttsHighlightLineId: ttsHighlightLineId,
+              ttsHighlightParaId: ttsHighlightParaId,
+              lineKeys: lineKeys,
+              keyboardFocusParaId: keyboardFocusParaId,
+              keyboardFocusLineId: keyboardFocusLineId,
+              keyboardFocusChipIndex: keyboardFocusChipIndex,
+              annotations: annotations[paragraph.paraId] ?? const [],
+              // Pass script and pageNumberingSystem from parent instead of
+              // forcing ReadingParagraph to watch settingsProvider directly.
+              // This avoids rebuilding ALL visible paragraphs on every
+              // unrelated settings change.
+              script: settings.paliScript,
+              pageNumberingSystem: settings.pageNumberingSystem,
+              previousLinePageNumber: previousLinePage,
+              paliFontSize: settings.typography.pali.fontSize,
+              paliLineHeight: settings.typography.pali.lineHeight,
+              translationFontSize: settings.typography.fontSizeFor(
+                settings.primaryTranslationLang,
+              ),
+              translationLineHeight: settings.typography.lineHeightFor(
+                settings.primaryTranslationLang,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    // Only phones collapse the app bar; elsewhere there is no compensation.
+    final collapseNotifier = appBarCollapsed;
+    if (collapseNotifier == null) return buildList(0);
+    return ValueListenableBuilder<bool>(
+      valueListenable: collapseNotifier,
+      builder: (context, collapsed, _) =>
+          buildList(collapsed ? AppDimensions.appBarHeight + 1 : 0),
     );
   }
 }

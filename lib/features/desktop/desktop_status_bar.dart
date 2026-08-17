@@ -76,6 +76,7 @@ class DesktopStatusBar extends ConsumerWidget {
                       flat: true,
                       compact: compact,
                       enabled: controller.enabled,
+                      items: settings.toolbarItems,
                       onJumpTap: controller.onJump,
                       onDisplayLayoutTap: controller.onDisplayLayout,
                       onListenTap: controller.onListen,

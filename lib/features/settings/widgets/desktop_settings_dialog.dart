@@ -12,6 +12,7 @@ import '../screens/settings_screen.dart';
 import '../screens/translation_settings_screen.dart';
 import '../screens/tts_replacements_screen.dart';
 import '../screens/tts_settings_screen.dart';
+import '../screens/toolbar_settings_screen.dart';
 
 /// One entry in the macOS-style settings sidebar.
 class _SettingsCategory {
@@ -65,6 +66,11 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
       icon: Icons.touch_app_outlined,
       title: loc.contextMenu,
       body: const ContextMenuSettingsBody(),
+    ),
+    _SettingsCategory(
+      icon: Icons.view_agenda_outlined,
+      title: loc.toolbar,
+      body: const ToolbarSettingsBody(),
     ),
     _SettingsCategory(
       icon: Icons.search,
