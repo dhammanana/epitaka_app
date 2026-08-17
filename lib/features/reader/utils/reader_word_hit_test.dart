@@ -51,19 +51,61 @@ TextRange wordRangeAt(String text, int tapOffset) {
   return TextRange(start: start, end: end);
 }
 
+/// Metadata attached to a line or paragraph render box for hit testing.
+class ReaderLineMetadata {
+  final int paraId;
+  final int? lineId;
+  final String segment; // 'pali' or 'translation'
+  final String? langCode;
+
+  const ReaderLineMetadata({
+    required this.paraId,
+    this.lineId,
+    this.segment = 'pali',
+    this.langCode,
+  });
+}
+
+/// Result of a word hit-test in the reader view.
+class ReaderWordHitResult {
+  /// Cleaned Roman word for dictionary lookup.
+  final String word;
+
+  /// Raw word in the display script as extracted from the render paragraph.
+  final String rawWord;
+
+  /// Paragraph ID containing the hit word, if available from metadata.
+  final int? paraId;
+
+  /// Line ID containing the hit word, if available from metadata (-1 for heading, null for joined).
+  final int? lineId;
+
+  /// Segment type ('pali' or 'translation').
+  final String segment;
+
+  /// Language code for translation segments.
+  final String? langCode;
+
+  /// Character range of the word within the RenderParagraph text.
+  final TextRange range;
+
+  const ReaderWordHitResult({
+    required this.word,
+    required this.rawWord,
+    this.paraId,
+    this.lineId,
+    this.segment = 'pali',
+    this.langCode,
+    required this.range,
+  });
+}
+
 /// Hit-tests the render tree under [contentHitTestKey] at [globalPosition]
-/// and returns the word at that position, or `null` if no word is found.
-///
-/// This walks the hit-test path to find the [RenderParagraph] under the tap,
-/// then uses [getWordBoundary] to extract the word. The function is fully
-/// self-contained and does not depend on any widget state or provider.
-///
-/// [contentHitTestKey] should be a [GlobalKey] attached to a [Listener] or
-/// other widget whose render object is a [RenderBox] that contains the text
-/// paragraphs (e.g. the reader content subtree). We deliberately do NOT
-/// hit-test from [SelectionArea]'s render object, whose `hitTest` is
-/// overridden to only consider selection handles/toolbar.
-String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
+/// and returns the detailed hit result at that position, or `null` if no word is found.
+ReaderWordHitResult? hitTestWordAt(
+  GlobalKey contentHitTestKey,
+  Offset globalPosition,
+) {
   final context = contentHitTestKey.currentContext;
   if (context == null) return null;
 
@@ -74,13 +116,17 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
   final result = BoxHitTestResult();
   renderObject.hitTest(result, position: local);
 
-  // Walk the hit-test path to find the first RenderParagraph.
+  // Walk the hit-test path to find the RenderParagraph and any ReaderLineMetadata.
   RenderParagraph? paragraph;
+  ReaderLineMetadata? lineMetadata;
+
   for (final entry in result.path) {
     final target = entry.target;
-    if (target is RenderParagraph) {
+    if (target is RenderMetaData && target.metaData is ReaderLineMetadata) {
+      lineMetadata ??= target.metaData as ReaderLineMetadata;
+    }
+    if (target is RenderParagraph && paragraph == null) {
       paragraph = target;
-      break;
     }
   }
 
@@ -88,9 +134,13 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
   if (paragraph == null && result.path.isNotEmpty) {
     RenderObject? node = result.path.first.target as RenderObject?;
     while (node != null) {
-      if (node is RenderParagraph) {
+      if (node is RenderMetaData &&
+          node.metaData is ReaderLineMetadata &&
+          lineMetadata == null) {
+        lineMetadata = node.metaData as ReaderLineMetadata;
+      }
+      if (node is RenderParagraph && paragraph == null) {
         paragraph = node;
-        break;
       }
       node = node.parent;
     }
@@ -123,5 +173,32 @@ String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
   final rawWord = fullText.substring(range.start, range.end);
   // Convert from any Pali script to Roman for dictionary lookup.
   final romanWord = convertToRomanPali(rawWord);
-  return cleanPali(romanWord);
+  final cleaned = cleanPali(romanWord);
+  if (cleaned.isEmpty) return null;
+
+  return ReaderWordHitResult(
+    word: cleaned,
+    rawWord: rawWord,
+    paraId: lineMetadata?.paraId,
+    lineId: lineMetadata?.lineId,
+    segment: lineMetadata?.segment ?? 'pali',
+    langCode: lineMetadata?.langCode,
+    range: range,
+  );
+}
+
+/// Hit-tests the render tree under [contentHitTestKey] at [globalPosition]
+/// and returns the word at that position, or `null` if no word is found.
+///
+/// This walks the hit-test path to find the [RenderParagraph] under the tap,
+/// then uses [getWordBoundary] to extract the word. The function is fully
+/// self-contained and does not depend on any widget state or provider.
+///
+/// [contentHitTestKey] should be a [GlobalKey] attached to a [Listener] or
+/// other widget whose render object is a [RenderBox] that contains the text
+/// paragraphs (e.g. the reader content subtree). We deliberately do NOT
+/// hit-test from [SelectionArea]'s render object, whose `hitTest` is
+/// overridden to only consider selection handles/toolbar.
+String? selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
+  return hitTestWordAt(contentHitTestKey, globalPosition)?.word;
 }

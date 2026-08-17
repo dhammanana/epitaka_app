@@ -3,7 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:epitaka/core/providers/settings_provider.dart'
     show WordLookupGesture;
+import 'package:epitaka/core/utils/pali_script_converter.dart' show Script;
 import 'package:epitaka/features/reader/providers/reader_dictionary_lookup_controller.dart';
+import 'package:epitaka/features/reader/providers/reader_lookup_highlight_provider.dart';
+import 'package:epitaka/features/reader/providers/reader_provider.dart'
+    show LineData, ParagraphData;
+import 'package:epitaka/features/reader/utils/reader_word_hit_test.dart';
+import 'package:epitaka/shared/widgets/reading_paragraph.dart';
 
 /// Unit tests for [ReaderDictionaryLookupController] — the tap-gesture +
 /// word-lookup logic that previously lived inside `_ReaderScreenState`.
@@ -321,6 +327,157 @@ void main() {
       final c = makeController(word: 'x'); // single char → invalid
       final result = singleTap(c);
       expect(result.shouldLookup, isFalse);
+    });
+
+    test('hitFinder propagates full ReaderWordHitResult on single tap', () {
+      const hit = ReaderWordHitResult(
+        word: 'dhammo',
+        rawWord: 'ဓမ္မော',
+        paraId: 42,
+        lineId: 3,
+        segment: 'pali',
+        range: TextRange(start: 0, end: 6),
+      );
+      final c = ReaderDictionaryLookupController(
+        hitFinder: (_, _) => hit,
+      )..gesture = WordLookupGesture.singleTap;
+
+      final singleResult = singleTap(c);
+      expect(singleResult.shouldLookup, isTrue);
+      expect(singleResult.word, 'dhammo');
+      expect(singleResult.hit?.rawWord, 'ဓမ္မော');
+      expect(singleResult.hit?.paraId, 42);
+      expect(singleResult.hit?.lineId, 3);
+    });
+
+    test('hitFinder propagates full ReaderWordHitResult on double tap', () {
+      const hit = ReaderWordHitResult(
+        word: 'dhammo',
+        rawWord: 'ဓမ္မော',
+        paraId: 42,
+        lineId: 3,
+        segment: 'pali',
+        range: TextRange(start: 0, end: 6),
+      );
+      final c = ReaderDictionaryLookupController(
+        hitFinder: (_, _) => hit,
+      )..gesture = WordLookupGesture.doubleTap;
+
+      final firstTap = c.handlePointerDown(
+        pointer: 1,
+        localPosition: p,
+        globalPosition: p,
+        timestampMs: 0,
+        contentHitTestKey: key,
+      );
+      expect(firstTap.shouldLookup, isFalse);
+
+      final doubleResult = c.handlePointerDown(
+        pointer: 1,
+        localPosition: p,
+        globalPosition: p,
+        timestampMs: 150,
+        contentHitTestKey: key,
+      );
+      expect(doubleResult.shouldLookup, isTrue);
+      expect(doubleResult.word, 'dhammo');
+      expect(doubleResult.hit?.rawWord, 'ဓမ္မော');
+      expect(doubleResult.hit?.paraId, 42);
+      expect(doubleResult.hit?.lineId, 3);
+    });
+
+    test('ReaderLookupHighlight matching logic', () {
+      const highlight = ReaderLookupHighlight(
+        bookId: 'dn1',
+        paraId: 10,
+        lineId: 2,
+        segment: 'pali',
+        word: 'dhammo',
+        rawWord: 'ဓမ္မော',
+        range: TextRange(start: 5, end: 11),
+      );
+
+      // Exact match
+      expect(
+        highlight.matches(paraId: 10, lineId: 2, segment: 'pali'),
+        isTrue,
+      );
+
+      // Different para
+      expect(
+        highlight.matches(paraId: 11, lineId: 2, segment: 'pali'),
+        isFalse,
+      );
+
+      // Different line
+      expect(
+        highlight.matches(paraId: 10, lineId: 3, segment: 'pali'),
+        isFalse,
+      );
+
+      // Different segment
+      expect(
+        highlight.matches(paraId: 10, lineId: 2, segment: 'translation'),
+        isFalse,
+      );
+
+      // Null lineId (e.g. joined text) matches when paraId matches
+      expect(
+        highlight.matches(paraId: 10, lineId: null, segment: 'pali'),
+        isTrue,
+      );
+    });
+
+    testWidgets('ReadingParagraph highlights tapped lookup word in Pali line', (tester) async {
+      const highlight = ReaderLookupHighlight(
+        bookId: 'dn1',
+        paraId: 10,
+        lineId: 1,
+        segment: 'pali',
+        word: 'dhammo',
+        rawWord: 'dhammo',
+      );
+
+      final paragraph = ParagraphData(
+        paraId: 10,
+        lines: const [
+          LineData(
+            lineId: 1,
+            paliText: 'yo ca dhammo sanantano',
+            normalizedText: 'yo ca dhammo sanantano',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReadingParagraph(
+              paragraph: paragraph,
+              script: Script.roman,
+              pageNumberingSystem: 'VRI',
+              lookupHighlight: highlight,
+            ),
+          ),
+        ),
+      );
+
+      final richTextFinder = find.byType(RichText);
+      expect(richTextFinder, findsWidgets);
+
+      bool foundHighlightSpan = false;
+      for (final element in richTextFinder.evaluate()) {
+        final richText = element.widget as RichText;
+        richText.text.visitChildren((span) {
+          if (span is TextSpan && span.text == 'dhammo' && span.style?.backgroundColor != null) {
+            foundHighlightSpan = true;
+            return false;
+          }
+          return true;
+        });
+      }
+
+      expect(foundHighlightSpan, isTrue, reason: 'Tapped lookup word "dhammo" must have highlight background style');
     });
   });
 }

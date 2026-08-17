@@ -6,7 +6,10 @@ import 'package:flutter/material.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/app_localizations.dart';
+import '../../features/reader/providers/reader_lookup_highlight_provider.dart';
 import '../../features/reader/providers/reader_provider.dart';
+import '../../features/reader/utils/reader_word_hit_test.dart'
+    show ReaderLineMetadata;
 import '../../core/utils/pali_search_utils.dart';
 import '../../core/utils/pali_text_utils.dart';
 import '../../core/utils/pali_script_converter.dart';
@@ -90,6 +93,9 @@ class ReadingParagraph extends StatelessWidget {
   /// the widget per line + segment before painting.
   final List<Annotation> annotations;
 
+  /// Active dictionary lookup highlight (for highlighting the tapped word).
+  final ReaderLookupHighlight? lookupHighlight;
+
   /// Page numbering system label ("VRI", "PTS", "Thai", "Myanmar").
   /// Extracted from settings by the parent so this paragraph does not
   /// need to watch [settingsProvider].
@@ -126,6 +132,7 @@ class ReadingParagraph extends StatelessWidget {
     this.showBookLinks = true,
     this.translationVersionLabels = const {},
     this.searchQuery,
+    this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.lineKeys,
@@ -228,9 +235,15 @@ class ReadingParagraph extends StatelessWidget {
 
     // Headings are anchored with lineId == -1 and segment == 'pali'.
     final headingAnnotations = _annotationsForLine(-1, 'pali', null);
+    final isLookupTarget = lookupHighlight != null &&
+        lookupHighlight!.matches(
+          paraId: paragraph.paraId,
+          lineId: -1,
+          segment: 'pali',
+        );
 
     final Widget title;
-    if (headingAnnotations.isNotEmpty) {
+    if (headingAnnotations.isNotEmpty || isLookupTarget) {
       final converted = convertPaliToScriptPreservingHtml(
         heading.title,
         script,
@@ -242,10 +255,21 @@ class ReadingParagraph extends StatelessWidget {
         fontStyle,
         colors,
         annotations: headingAnnotations,
+        lookupHighlight: isLookupTarget ? lookupHighlight : null,
       );
     } else {
       title = PaliTextStatic(heading.title, script, style: baseStyle);
     }
+
+    final wrappedTitle = MetaData(
+      metaData: ReaderLineMetadata(
+        paraId: paragraph.paraId,
+        lineId: -1,
+        segment: 'pali',
+      ),
+      behavior: HitTestBehavior.translucent,
+      child: title,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8, left: 10),
@@ -261,7 +285,7 @@ class ReadingParagraph extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          title,
+          wrappedTitle,
         ],
       ),
     );
@@ -447,7 +471,20 @@ class ReadingParagraph extends StatelessWidget {
             // Build the Pāli line lazily (only when it exists) so a line
             // carrying page data but no Pāli text can't crash.
             if (hasPali)
-              _buildPaliLine(context, line.paliText!, colors, lineId: lineId),
+              MetaData(
+                metaData: ReaderLineMetadata(
+                  paraId: paragraph.paraId,
+                  lineId: lineId,
+                  segment: 'pali',
+                ),
+                behavior: HitTestBehavior.translucent,
+                child: _buildPaliLine(
+                  context,
+                  line.paliText!,
+                  colors,
+                  lineId: lineId,
+                ),
+              ),
             if (displayMode == ParagraphDisplayMode.lineByLine &&
                 showTranslation)
               _buildTranslationBlock(
@@ -626,13 +663,22 @@ class ReadingParagraph extends StatelessWidget {
             const SizedBox(width: 6),
           ],
           Expanded(
-            child: _buildTranslationText(
-              context,
-              text,
-              style,
-              colors,
-              lineId: lineId,
-              langCode: langCode,
+            child: MetaData(
+              metaData: ReaderLineMetadata(
+                paraId: paragraph.paraId,
+                lineId: lineId,
+                segment: 'translation',
+                langCode: langCode,
+              ),
+              behavior: HitTestBehavior.translucent,
+              child: _buildTranslationText(
+                context,
+                text,
+                style,
+                colors,
+                lineId: lineId,
+                langCode: langCode,
+              ),
             ),
           ),
         ],
@@ -745,14 +791,22 @@ class ReadingParagraph extends StatelessWidget {
 
     // Joined mode has no per-line anchors — pass every Pāli annotation for
     // this paragraph; the resolver re-anchors each by its quote text.
-    return _buildPaliLine(
-      context,
-      text,
-      colors,
-      lineId: null,
-      extraAnnotations: annotations
-          .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
-          .toList(),
+    return MetaData(
+      metaData: ReaderLineMetadata(
+        paraId: paragraph.paraId,
+        lineId: null,
+        segment: 'pali',
+      ),
+      behavior: HitTestBehavior.translucent,
+      child: _buildPaliLine(
+        context,
+        text,
+        colors,
+        lineId: null,
+        extraAnnotations: annotations
+            .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
+            .toList(),
+      ),
     );
   }
 
@@ -837,7 +891,16 @@ class ReadingParagraph extends StatelessWidget {
             ? _annotationsForLine(lineId, 'pali', null)
             : const <Annotation>[]);
 
-    if (query != null && query.isNotEmpty || lineAnnotations.isNotEmpty) {
+    final isLookupTarget = lookupHighlight != null &&
+        lookupHighlight!.matches(
+          paraId: paragraph.paraId,
+          lineId: lineId,
+          segment: 'pali',
+        );
+
+    if (query != null && query.isNotEmpty ||
+        lineAnnotations.isNotEmpty ||
+        isLookupTarget) {
       final convertedText = convertPaliToScriptPreservingHtml(text, script);
       final convertedQuery = query != null && query.isNotEmpty
           ? convertSearchQueryForScript(query, script)
@@ -858,6 +921,7 @@ class ReadingParagraph extends StatelessWidget {
         scriptStyle,
         colors,
         annotations: lineAnnotations,
+        lookupHighlight: isLookupTarget ? lookupHighlight : null,
       );
     }
 
@@ -887,8 +951,17 @@ class ReadingParagraph extends StatelessWidget {
       'translation',
       langCode,
     );
+    final isLookupTarget = lookupHighlight != null &&
+        lookupHighlight!.matches(
+          paraId: paragraph.paraId,
+          lineId: lineId,
+          segment: 'translation',
+          langCode: langCode,
+        );
 
-    if (query != null && query.isNotEmpty || lineAnnotations.isNotEmpty) {
+    if (query != null && query.isNotEmpty ||
+        lineAnnotations.isNotEmpty ||
+        isLookupTarget) {
       return _buildHighlightedText(
         context,
         text,
@@ -896,6 +969,7 @@ class ReadingParagraph extends StatelessWidget {
         style,
         colors,
         annotations: lineAnnotations,
+        lookupHighlight: isLookupTarget ? lookupHighlight : null,
       );
     }
 
@@ -921,7 +995,8 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   /// Resolve + paint user highlight intervals onto [text]'s spans, combined
-  /// with search-term highlighting when [query] is non-empty.
+  /// with search-term highlighting when [query] is non-empty and dictionary
+  /// lookup word highlight when [lookupHighlight] is active.
   Widget _buildHighlightedText(
     BuildContext context,
     String text,
@@ -929,6 +1004,7 @@ class ReadingParagraph extends StatelessWidget {
     TextStyle baseStyle,
     ColorScheme colors, {
     List<Annotation> annotations = const [],
+    ReaderLookupHighlight? lookupHighlight,
   }) {
     final spans = _parseHtml(text);
 
@@ -938,13 +1014,13 @@ class ReadingParagraph extends StatelessWidget {
       result = <InlineSpan>[];
       for (final span in spans) {
         if (span is TextSpan) {
-          final text = span.text;
-          if (text == null) {
+          final spanText = span.text;
+          if (spanText == null) {
             result.add(span);
             continue;
           }
           final subSpans = _highlightInText(
-            text,
+            spanText,
             query,
             span.style ?? baseStyle,
             colors,
@@ -956,7 +1032,25 @@ class ReadingParagraph extends StatelessWidget {
       }
     }
 
-    // 2) User highlight annotations painted on top.
+    // 2) Tapped word lookup highlight (optional).
+    if (lookupHighlight != null) {
+      final stripped = _stripHtmlTags(text);
+      final interval = _resolveLookupInterval(
+        strippedText: stripped,
+        highlight: lookupHighlight,
+      );
+      if (interval != null) {
+        result = _paintLookupSpan(
+          spans: result,
+          baseStyle: baseStyle,
+          colors: colors,
+          start: interval.$1,
+          end: interval.$2,
+        );
+      }
+    }
+
+    // 3) User highlight annotations painted on top.
     if (annotations.isNotEmpty) {
       final stripped = _stripHtmlTags(text);
       final highlights = HighlightIntervalResolver.resolve(
@@ -983,6 +1077,163 @@ class ReadingParagraph extends StatelessWidget {
     }
 
     return Text.rich(TextSpan(style: baseStyle, children: result));
+  }
+
+  /// Locate the active lookup highlight interval in stripped character space.
+  (int, int)? _resolveLookupInterval({
+    required String strippedText,
+    required ReaderLookupHighlight highlight,
+  }) {
+    if (strippedText.isEmpty) return null;
+    final len = strippedText.length;
+
+    // 1) If character range was captured and matches the tapped word:
+    if (highlight.range != null && !highlight.range!.isCollapsed) {
+      final s = highlight.range!.start.clamp(0, len);
+      final e = highlight.range!.end.clamp(s, len);
+      if (e > s) {
+        final slice = strippedText.substring(s, e);
+        if (_normWord(slice) == _normWord(highlight.rawWord) ||
+            _normWord(slice) == _normWord(highlight.word)) {
+          return (s, e);
+        }
+      }
+    }
+
+    // 2) Search for rawWord in strippedText:
+    final raw = highlight.rawWord.trim();
+    if (raw.isNotEmpty) {
+      final idx = strippedText.indexOf(raw);
+      if (idx >= 0) {
+        return (idx, idx + raw.length);
+      }
+      final lowerStripped = strippedText.toLowerCase();
+      final lowerRaw = raw.toLowerCase();
+      final idx2 = lowerStripped.indexOf(lowerRaw);
+      if (idx2 >= 0) {
+        return (idx2, idx2 + raw.length);
+      }
+    }
+
+    // 3) Search for converted word in target script:
+    final converted = convertPaliToScript(highlight.word, script).trim();
+    if (converted.isNotEmpty && converted != raw) {
+      final idx = strippedText.indexOf(converted);
+      if (idx >= 0) {
+        return (idx, idx + converted.length);
+      }
+    }
+
+    // 4) Search for clean Roman word:
+    final roman = highlight.word.trim();
+    if (roman.isNotEmpty) {
+      final idx = strippedText.toLowerCase().indexOf(roman.toLowerCase());
+      if (idx >= 0) {
+        return (idx, idx + roman.length);
+      }
+    }
+
+    return null;
+  }
+
+  static String _normWord(String s) =>
+      s.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+
+  /// Paint the active word lookup highlight background onto [spans].
+  static List<InlineSpan> _paintLookupSpan({
+    required List<InlineSpan> spans,
+    required TextStyle baseStyle,
+    required ColorScheme colors,
+    required int start,
+    required int end,
+  }) {
+    if (spans.isEmpty || end <= start) return spans;
+    final painted = <InlineSpan>[];
+    int offset = 0;
+    for (final span in spans) {
+      offset = _paintSingleLookupSpan(
+        span,
+        baseStyle,
+        colors,
+        start,
+        end,
+        painted,
+        offset,
+      );
+    }
+    return painted;
+  }
+
+  static int _paintSingleLookupSpan(
+    InlineSpan span,
+    TextStyle baseStyle,
+    ColorScheme colors,
+    int start,
+    int end,
+    List<InlineSpan> out,
+    int offset,
+  ) {
+    if (span is! TextSpan) {
+      out.add(span);
+      return offset;
+    }
+
+    if (span.text == null) {
+      final children = <InlineSpan>[];
+      var childOffset = offset;
+      for (final child in span.children ?? const <InlineSpan>[]) {
+        childOffset = _paintSingleLookupSpan(
+          child,
+          baseStyle,
+          colors,
+          start,
+          end,
+          children,
+          childOffset,
+        );
+      }
+      out.add(TextSpan(style: span.style, children: children));
+      return childOffset;
+    }
+
+    final text = span.text!;
+    final len = text.length;
+    if (len == 0) {
+      out.add(span);
+      return offset;
+    }
+
+    final s = start.clamp(offset, offset + len);
+    final e = end.clamp(offset, offset + len);
+    if (e <= s) {
+      out.add(span);
+      return offset + len;
+    }
+
+    final localStart = s - offset;
+    final localEnd = e - offset;
+
+    if (localStart > 0) {
+      out.add(TextSpan(text: text.substring(0, localStart), style: span.style));
+    }
+
+    final highlightStyle = (span.style ?? baseStyle).copyWith(
+      backgroundColor: colors.primary.withValues(alpha: 0.28),
+      fontWeight: FontWeight.w600,
+    );
+
+    out.add(
+      TextSpan(
+        text: text.substring(localStart, localEnd),
+        style: highlightStyle,
+      ),
+    );
+
+    if (localEnd < len) {
+      out.add(TextSpan(text: text.substring(localEnd), style: span.style));
+    }
+
+    return offset + len;
   }
 
   /// Strip HTML tags (normalizing `<br>` to `\n` like the display parser).
