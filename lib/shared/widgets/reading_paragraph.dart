@@ -235,7 +235,8 @@ class ReadingParagraph extends StatelessWidget {
 
     // Headings are anchored with lineId == -1 and segment == 'pali'.
     final headingAnnotations = _annotationsForLine(-1, 'pali', null);
-    final isLookupTarget = lookupHighlight != null &&
+    final isLookupTarget =
+        lookupHighlight != null &&
         lookupHighlight!.matches(
           paraId: paragraph.paraId,
           lineId: -1,
@@ -891,7 +892,8 @@ class ReadingParagraph extends StatelessWidget {
             ? _annotationsForLine(lineId, 'pali', null)
             : const <Annotation>[]);
 
-    final isLookupTarget = lookupHighlight != null &&
+    final isLookupTarget =
+        lookupHighlight != null &&
         lookupHighlight!.matches(
           paraId: paragraph.paraId,
           lineId: lineId,
@@ -951,7 +953,8 @@ class ReadingParagraph extends StatelessWidget {
       'translation',
       langCode,
     );
-    final isLookupTarget = lookupHighlight != null &&
+    final isLookupTarget =
+        lookupHighlight != null &&
         lookupHighlight!.matches(
           paraId: paragraph.paraId,
           lineId: lineId,
@@ -1218,8 +1221,12 @@ class ReadingParagraph extends StatelessWidget {
     }
 
     final highlightStyle = (span.style ?? baseStyle).copyWith(
-      backgroundColor: colors.primary.withValues(alpha: 0.28),
-      fontWeight: FontWeight.w600,
+      decoration: TextDecoration.underline,
+      decorationColor: colors.primary,
+      decorationThickness: 1.0,
+      decorationStyle: TextDecorationStyle.dashed,
+      // backgroundColor: colors.primary.withValues(alpha: 0.08),
+      // fontWeight: FontWeight.w600,
     );
 
     out.add(

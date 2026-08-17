@@ -469,7 +469,10 @@ void main() {
       for (final element in richTextFinder.evaluate()) {
         final richText = element.widget as RichText;
         richText.text.visitChildren((span) {
-          if (span is TextSpan && span.text == 'dhammo' && span.style?.backgroundColor != null) {
+          if (span is TextSpan &&
+              span.text == 'dhammo' &&
+              span.style?.decoration == TextDecoration.underline &&
+              span.style?.decorationStyle == TextDecorationStyle.dashed) {
             foundHighlightSpan = true;
             return false;
           }
@@ -477,7 +480,11 @@ void main() {
         });
       }
 
-      expect(foundHighlightSpan, isTrue, reason: 'Tapped lookup word "dhammo" must have highlight background style');
+      expect(
+        foundHighlightSpan,
+        isTrue,
+        reason: 'Tapped lookup word "dhammo" must have dashed accent underline',
+      );
     });
   });
 }
