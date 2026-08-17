@@ -739,6 +739,15 @@ const Map<String, String> my = {
   'Share': 'မျှဝေပါ',
   'Share the selected text': 'ရွေးချယ်ထားသော စာသားကို မျှဝေပါ',
   'Look up the selected word': 'ရွေးချယ်ထားသော စကားလုံးကို ရှာဖွေပါ',
+  'Look Up': 'ရှာဖွေပါ',
+  'Look up in device dictionary (iOS/macOS)':
+      'စက်ပစ္စည်းအဘိဓာန်တွင် ရှာဖွေပါ (iOS/macOS)',
+  'Speak': 'အသံထွက်ဖတ်ပါ',
+  'Speak the selected text (iOS/macOS)':
+      'ရွေးချယ်ထားသော စာသားကို အသံထွက်ဖတ်ပါ (iOS/macOS)',
+  'Reset to default': 'မူလအတိုင်း ပြန်လည်သတ်မှတ်မည်',
+  'Reset context menu actions and order to default?':
+      'ဆက်စပ်မီနူး လုပ်ဆောင်ချက်များနှင့် အစီအစဉ်ကို မူလအတိုင်း ပြန်လည်သတ်မှတ်မလား?',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'နားထောင်မည်',

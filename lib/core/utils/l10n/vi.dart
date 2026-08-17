@@ -817,6 +817,9 @@ const Map<String, String> vi = {
   'Look Up': 'Tra cứu',
   'Look up in device dictionary (iOS/macOS)':
       'Tra cứu trong từ điển thiết bị (iOS/macOS)',
+  'Speak': 'Đọc',
+  'Speak the selected text (iOS/macOS)':
+      'Đọc văn bản đã chọn (iOS/macOS)',
   'Reset to default': 'Khôi phục mặc định',
   'Reset context menu actions and order to default?':
       'Khôi phục danh sách và thứ tự menu ngữ cảnh về mặc định?',

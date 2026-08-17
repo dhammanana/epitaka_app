@@ -14,6 +14,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
+import '../../../core/utils/native_speech_service.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -344,6 +345,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 searchable,
                 anchor: anchors.primaryAnchor,
               );
+            },
+          ),
+        if (searchable != null && NativeSpeechService.isSupported)
+          ContextMenuButtonItem(
+            label: '${loc.speak} “${_truncateLabel(searchable)}”',
+            onPressed: () {
+              selectableRegionState.clearSelection();
+              NativeSpeechService.speak(searchable);
             },
           ),
         ContextMenuButtonItem(

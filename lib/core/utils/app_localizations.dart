@@ -374,6 +374,8 @@ class AppLocalizations {
   String get dictionaryDesc => _t('Look up the selected word');
   String get lookUp => _t('Look Up');
   String get lookUpDesc => _t('Look up in device dictionary (iOS/macOS)');
+  String get speak => _t('Speak');
+  String get speakDesc => _t('Speak the selected text (iOS/macOS)');
   String get resetToDefault => _t('Reset to default');
   String get resetToDefaultConfirm =>
       _t('Reset context menu actions and order to default?');

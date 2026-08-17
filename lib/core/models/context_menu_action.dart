@@ -32,6 +32,7 @@ class ContextMenuBuiltins {
   static const copyLink = 'copyLink';
   static const dictionary = 'dictionary';
   static const lookUp = 'lookUp'; // device dictionary (iOS/macOS native Look Up)
+  static const speak = 'speak'; // native iOS/macOS text to speech (Speak Selection)
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
@@ -46,6 +47,7 @@ class ContextMenuBuiltins {
     copyLink,
     dictionary,
     lookUp,
+    speak,
     explain,
     summarizeChapter,
     share,

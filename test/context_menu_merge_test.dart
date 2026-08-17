@@ -5,13 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:epitaka/core/models/context_menu_action.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
+import 'package:epitaka/core/utils/native_speech_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('saved context menu from older version gets highlight/note/lookUp merged in',
+  test('saved context menu from older version gets highlight/note/lookUp/speak merged in',
       () async {
-    // A config saved before highlight/note/lookUp existed: only the legacy
+    // A config saved before highlight/note/lookUp/speak existed: only the legacy
     // built-ins are present.
     SharedPreferences.setMockInitialValues({
       'context_menu_actions': jsonEncode([
@@ -40,6 +41,7 @@ void main() {
     expect(builtinIds, contains(ContextMenuBuiltins.highlight));
     expect(builtinIds, contains(ContextMenuBuiltins.note));
     expect(builtinIds, contains(ContextMenuBuiltins.lookUp));
+    expect(builtinIds, contains(ContextMenuBuiltins.speak));
     final highlight = actions.firstWhere(
       (a) => a.builtinId == ContextMenuBuiltins.highlight,
     );
@@ -48,6 +50,10 @@ void main() {
       (a) => a.builtinId == ContextMenuBuiltins.lookUp,
     );
     expect(lookUp.enabled, isTrue);
+    final speak = actions.firstWhere(
+      (a) => a.builtinId == ContextMenuBuiltins.speak,
+    );
+    expect(speak.enabled, isTrue);
 
     // The user's original order and toggles are preserved at the front.
     expect(builtinIds.take(2), [
@@ -70,6 +76,7 @@ void main() {
         .toList();
     expect(completeIds, hasLength(ContextMenuBuiltins.defaults.length));
     expect(completeIds.toSet(), hasLength(ContextMenuBuiltins.defaults.length));
+    expect(completeIds, contains(ContextMenuBuiltins.speak));
   });
 
   test('resetContextMenuActions resets actions to defaults and default display order',
@@ -100,5 +107,12 @@ void main() {
 
     expect(resetBuiltinIds, equals(ContextMenuBuiltins.defaults));
     expect(resetActions.every((a) => a.enabled), isTrue);
+  });
+
+  test('NativeSpeechService returns false on empty text or unsupported platforms', () async {
+    final result = await NativeSpeechService.speak('');
+    expect(result, isFalse);
+    final whitespaceResult = await NativeSpeechService.speak('   ');
+    expect(whitespaceResult, isFalse);
   });
 }

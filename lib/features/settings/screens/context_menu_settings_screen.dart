@@ -499,6 +499,8 @@ class _ActionRow extends StatelessWidget {
         return (Icons.menu_book, loc.dictionary, loc.dictionaryDesc);
       case ContextMenuBuiltins.lookUp:
         return (Icons.apple, loc.lookUp, loc.lookUpDesc);
+      case ContextMenuBuiltins.speak:
+        return (Icons.apple, loc.speak, loc.speakDesc);
       case ContextMenuBuiltins.explain:
         return (Icons.auto_awesome, loc.explain, loc.explainDesc);
       case ContextMenuBuiltins.summarizeChapter:

@@ -934,6 +934,8 @@ const Map<String, String> en = {
   'Look Up': 'Look Up',
   'Look up in device dictionary (iOS/macOS)':
       'Look up in device dictionary (iOS/macOS)',
+  'Speak the selected text (iOS/macOS)':
+      'Speak the selected text (iOS/macOS)',
   'Reset to default': 'Reset to default',
   'Reset context menu actions and order to default?':
       'Reset context menu actions and order to default?',

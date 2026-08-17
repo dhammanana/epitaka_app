@@ -733,6 +733,15 @@ const Map<String, String> si = {
   'Share': 'බෙදාගන්න',
   'Share the selected text': 'තෝරාගත් පෙළ බෙදාගන්න',
   'Look up the selected word': 'තෝරාගත් වචනය සොයන්න',
+  'Look Up': 'සොයන්න',
+  'Look up in device dictionary (iOS/macOS)':
+      'උපාංග ශබ්දකෝෂයෙන් සොයන්න (iOS/macOS)',
+  'Speak': 'හඬ නඟා කියවන්න',
+  'Speak the selected text (iOS/macOS)':
+      'තෝරාගත් පෙළ හඬ නඟා කියවන්න (iOS/macOS)',
+  'Reset to default': 'පෙරනිමියට යළි පිහිටුවන්න',
+  'Reset context menu actions and order to default?':
+      'සන්දර්භ මෙනු ක්‍රියා සහ අනුපිළිවෙල පෙරනිමියට යළි පිහිටුවන්නද?',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'අසන්න',

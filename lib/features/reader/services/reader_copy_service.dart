@@ -19,6 +19,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
+import '../../../core/utils/native_speech_service.dart';
 import '../../../core/utils/pali_script_converter.dart'
     show Script, convertToRomanPali;
 import '../../../core/utils/platform_info.dart';
@@ -370,6 +371,28 @@ class ReaderCopyService {
           },
           colors: colors,
         );
+      case ContextMenuBuiltins.speak:
+        // ── Speak (iOS/macOS native Text-to-Speech) ─────────────────
+        return ContextMenuButton(
+          icon: Icons.apple,
+          label: loc.speak,
+          onTap: () async {
+            final word = _lookUpWord(
+              selectedText: selectedText,
+              lastSelectedContent: lastSelectedContent,
+              contentHitTestKey: contentHitTestKey,
+              anchor: anchor,
+            );
+            if (word != null && word.isNotEmpty) {
+              final ok = await NativeSpeechService.speak(word);
+              if (!ok && context.mounted) {
+                _showSnackBar(context, 'Speech not available.');
+              }
+            }
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
       case ContextMenuBuiltins.explain:
         // ── Explain (send to Vimaṃsa AI) ────────────────────────────
         if (onExplainTap == null) return const SizedBox.shrink();
@@ -437,8 +460,8 @@ class ReaderCopyService {
                 context,
                 bookId: bookId,
                 langCode: lang,
-                paraId: currentParaId!,
-                lineId: currentLineId!,
+                paraId: currentParaId,
+                lineId: currentLineId,
               );
             }
             selectableRegionState.clearSelection();

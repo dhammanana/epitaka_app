@@ -690,8 +690,43 @@ const Map<String, String> lo = {
   'and all its messages?': 'ແລະ ຂໍ້ຄວາມທັງໝົດໃນນັ້ນບໍ?',
   'query': 'ຄຳຖາມ',
   'queries': 'ຄຳຖາມ',
-  'remaining in this thread': 'ຄົງເຫຼືອໃນການສົນທະນານີ້',
-  'Translation': 'ການແປ',
+  // ── Context Menu ───────────────────────────────────────────────────
+  'Context Menu': 'ເມນູສະພາບແວດລ້ອມ',
+  'Choose which actions appear when text is selected in the reader. Drag to reorder.':
+      'ເລືອກການກະທຳທີ່ຈະປາກົດເມື່ອເລືອກຂໍ້ຄວາມໃນໂປຣແກຣມອ່ານ. ລາກເພື່ອຈັດລຳດັບໃໝ່.',
+  'Add Prompt': 'ເພີ່ມຄຳສັ່ງ',
+  'Add App': 'ເພີ່ມແອັບ',
+  'Prompt Name': 'ຊື່ຄຳສັ່ງ',
+  'Prompt': 'ຄຳສັ່ງ',
+  'Use {selectedText} as a placeholder for the selected text.':
+      'ໃຊ້ {selectedText} ເປັນຕົວແທນສຳລັບຂໍ້ຄວາມທີ່ເລືອກ.',
+  'Edit Prompt': 'ແກ້ໄຂຄຳສັ່ງ',
+  'Installed Apps': 'ແອັບທີ່ຕິດຕັ້ງແລ້ວ',
+  'No context menu actions yet. Add apps or prompts below.':
+      'ຍັງບໍ່ມີການກະທຳໃນເມນູສະພາບແວດລ້ອມ. ເພີ່ມແອັບ ຫຼື ຄຳສັ່ງລຸ່ມນີ້.',
+  'External app': 'ແອັບພາຍນອກ',
+  'Copy': 'ສຳເນົາ',
+  'Copy the selected text': 'ສຳເນົາຂໍ້ຄວາມທີ່ເລືອກ',
+  'Excerpt': 'ສຳເນົາພ້ອມອ້າງອີງ',
+  'Copy with citation': 'ສຳເນົາພ້ອມການອ້າງອີງ',
+  'Copy Link': 'ສຳເນົາລິ້ງ',
+  'Copy a link to this passage': 'ສຳເນົາລິ້ງໄປຍັງຂໍ້ຄວາມນີ້',
+  'Explain': 'ອະທິບາຍ',
+  'Explain the selected text with AI': 'ອະທິບາຍຂໍ້ຄວາມທີ່ເລືອກດ້ວຍ AI',
+  'Summarize Ch.': 'ສະຫຼຸບບົດ',
+  'Summarize the current chapter with AI': 'ສະຫຼຸບບົດປັດຈຸບັນດ້ວຍ AI',
+  'Share': 'ແບ່ງປັນ',
+  'Share the selected text': 'ແບ່ງປັນຂໍ້ຄວາມທີ່ເລືອກ',
+  'Look up the selected word': 'ຄົ້ນຫາຄຳທີ່ເລືอก',
+  'Look Up': 'ຄົ້ນຫາຄວາມໝາຍ',
+  'Look up in device dictionary (iOS/macOS)':
+      'ຄົ້ນຫາໃນວັດຈະນານຸກົມຂອງອຸປະກອນ (iOS/macOS)',
+  'Speak': 'ອ່ານອອກສຽງ',
+  'Speak the selected text (iOS/macOS)':
+      'ອ່ານອອກສຽງຂໍ້ຄວາມທີ່ເລືອກ (iOS/macOS)',
+  'Reset to default': 'ຣີເຊັດເປັນຄ່າເລີ່ມຕົ້ນ',
+  'Reset context menu actions and order to default?':
+      'ຣີເຊັດການກະທຳ ແລະ ລຳດັບຂອງເມນູສະພາບແວດລ້ອມເປັນຄ່າເລີ່ມຕົ້ນບໍ?',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'ຟັງ',

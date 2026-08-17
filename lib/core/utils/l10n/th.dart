@@ -688,7 +688,43 @@ const Map<String, String> th = {
   'query': 'คำถาม',
   'queries': 'คำถาม',
   'remaining in this thread': 'ที่เหลือในบทสนทนานี้',
-  'Translation': 'คำแปล',
+  // ── Context Menu ───────────────────────────────────────────────────
+  'Context Menu': 'เมนูบริบท',
+  'Choose which actions appear when text is selected in the reader. Drag to reorder.':
+      'เลือกการดำเนินการที่จะปรากฏเมื่อเลือกข้อความในโปรแกรมอ่าน ลากเพื่อจัดลำดับใหม่',
+  'Add Prompt': 'เพิ่มคำสั่ง',
+  'Add App': 'เพิ่มแอป',
+  'Prompt Name': 'ชื่อคำสั่ง',
+  'Prompt': 'คำสั่ง',
+  'Use {selectedText} as a placeholder for the selected text.':
+      'ใช้ {selectedText} เป็นตัวแทนสำหรับข้อความที่เลือก',
+  'Edit Prompt': 'แก้ไขคำสั่ง',
+  'Installed Apps': 'แอปที่ติดตั้ง',
+  'No context menu actions yet. Add apps or prompts below.':
+      'ยังไม่มีการดำเนินการในเมนูบริบท เพิ่มแอปหรือคำสั่งด้านล่าง',
+  'External app': 'แอปภายนอก',
+  'Copy': 'คัดลอก',
+  'Copy the selected text': 'คัดลอกข้อความที่เลือก',
+  'Excerpt': 'คัดลอกพร้อมอ้างอิง',
+  'Copy with citation': 'คัดลอกพร้อมการอ้างอิง',
+  'Copy Link': 'คัดลอกลิงก์',
+  'Copy a link to this passage': 'คัดลอกลิงก์ไปยังข้อความนี้',
+  'Explain': 'อธิบาย',
+  'Explain the selected text with AI': 'อธิบายข้อความที่เลือกด้วย AI',
+  'Summarize Ch.': 'สรุปบท',
+  'Summarize the current chapter with AI': 'สรุปบทปัจจุบันด้วย AI',
+  'Share': 'แชร์',
+  'Share the selected text': 'แชร์ข้อความที่เลือก',
+  'Look up the selected word': 'ค้นหาคำที่เลือก',
+  'Look Up': 'ค้นหาความหมาย',
+  'Look up in device dictionary (iOS/macOS)':
+      'ค้นหาในพจนานุกรมของอุปกรณ์ (iOS/macOS)',
+  'Speak': 'อ่านออกเสียง',
+  'Speak the selected text (iOS/macOS)':
+      'อ่านออกเสียงข้อความที่เลือก (iOS/macOS)',
+  'Reset to default': 'รีเซ็ตเป็นค่าเริ่มต้น',
+  'Reset context menu actions and order to default?':
+      'รีเซ็ตการดำเนินการและลำดับของเมนูบริบทเป็นค่าเริ่มต้นหรือไม่?',
 
   // ── App shell ───────────────────────────────────────────────────────
   'Listen': 'ฟัง',
