@@ -114,7 +114,23 @@ class ReaderTtsController {
   ) async {
     final positions = positionsFor(activeTab.bookId);
     int startParaIndex = 0;
-    if (positions != null && positions.isNotEmpty) {
+
+    // Use canonical viewport-aware paragraph resolution so the beginning
+    // paragraph of the current screen is accurately detected across platforms
+    // (accounting for app bar collapse, header insets, and safe areas).
+    final currentParaId =
+        position_utils.getCurrentParaId(positions, readerState, threshold: 0.0) ??
+        activeTab.currentParaId ??
+        activeTab.initialParaId;
+
+    if (currentParaId != null) {
+      final idx = readerState.paragraphs.indexWhere(
+        (p) => p.paraId == currentParaId,
+      );
+      if (idx >= 0) {
+        startParaIndex = idx;
+      }
+    } else if (positions != null && positions.isNotEmpty) {
       final visible =
           positions
               .where((p) => p.itemTrailingEdge > 0)
@@ -132,21 +148,9 @@ class ReaderTtsController {
       }
     }
 
-    // Fallback: ItemPositionsListener only reports positions after the
-    // list has laid out its first frame. When Listen is tapped before that
-    // (fresh tab, book just opened, very first frame), positions are empty
-    // and the old code silently started from paragraph 0 — TTS read the
-    // book from the beginning regardless of the scroll position on some
-    // machines. Fall back to the tab's tracked current paragraph (kept
-    // up-to-date by onPositionsChanged) instead.
-    if (startParaIndex == 0 && activeTab.currentParaId != null) {
-      final idx = readerState.paragraphs.indexWhere(
-        (p) => p.paraId == activeTab.currentParaId,
-      );
-      if (idx > 0) startParaIndex = idx;
-    }
     developer.log(
       '[TTS_START] startListening: startParaIndex=$startParaIndex '
+      'resolvedParaId=$currentParaId '
       'fromPositions=${positions?.isNotEmpty ?? false} '
       'tabParaId=${activeTab.currentParaId}',
       name: 'epitaka.tts',

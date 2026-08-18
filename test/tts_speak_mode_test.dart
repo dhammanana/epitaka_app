@@ -292,4 +292,27 @@ void main() {
       expect(out.map((v) => v['name']), contains('Thai'));
     });
   });
+
+  group('TTS start position resolution', () {
+    test('builds lines starting from target paragraph index', () {
+      final paragraphs = [
+        _para(101, [_line(1, pali: 'para 1', translations: {'en': 'Trans 1'})]),
+        _para(102, [_line(2, pali: 'para 2', translations: {'en': 'Trans 2'})]),
+        _para(103, [_line(3, pali: 'para 3', translations: {'en': 'Trans 3'})]),
+      ];
+
+      // Starting from paragraph 102 (index 1)
+      final lines = ReaderTtsController.buildTtsLines(
+        paragraphs.sublist(1),
+        lang: 'en',
+        mode: TtsSpeakMode.translation,
+        activeReplacements: [],
+      );
+
+      expect(lines.length, 2);
+      expect(lines.first.paraId, 102);
+      expect(lines.first.text, 'Trans 2');
+    });
+  });
 }
+

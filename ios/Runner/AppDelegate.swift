@@ -24,6 +24,7 @@ import NaturalLanguage
   private var speechChannel: FlutterMethodChannel?
   private var isUsingAccessibilitySpeak = false
   private var audioSessionConfigured = false
+  private var accessibilitySpeakTimer: Timer?
 
   /// Configures the AVAudioSession for speech playback once, lazily.
   ///
@@ -72,9 +73,6 @@ import NaturalLanguage
 
         let language = args["language"] as? String
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // When completion reporting is required (line-by-line reading), use
-        // AVSpeechSynthesizer directly — the accessibility "Speak Selection"
-        // path is fire-and-forget and cannot signal when speech finishes.
         let needsCompletion = args["needsCompletion"] as? Bool ?? false
 
         DispatchQueue.main.async {
@@ -85,8 +83,25 @@ import NaturalLanguage
           self.isUsingAccessibilitySpeak = false
 
           // 1. Try system Accessibility Spoken Content (invokes system Siri voice like Chrome/Safari)
-          if !needsCompletion, self.trySystemAccessibilitySpeak(trimmedText) {
+          if self.trySystemAccessibilitySpeak(trimmedText) {
             self.isUsingAccessibilitySpeak = true
+            if needsCompletion {
+              // Calculate estimated duration to trigger onCompletion for line-by-line reading
+              let words = trimmedText.split { $0.isWhitespace || $0.isPunctuation }.count
+              let charCount = trimmedText.count
+              // Standard iOS speech is ~150-180 wpm (~2.7 words/sec, ~14 chars/sec)
+              let wordDuration = Double(max(1, words)) / 2.7
+              let charDuration = Double(max(1, charCount)) / 14.0
+              let estimatedDuration = max(0.8, max(wordDuration, charDuration) + 0.35)
+
+              self.accessibilitySpeakTimer?.invalidate()
+              self.accessibilitySpeakTimer = Timer.scheduledTimer(withTimeInterval: estimatedDuration, repeats: false) { [weak self] _ in
+                guard let self = self, self.isUsingAccessibilitySpeak else { return }
+                self.isUsingAccessibilitySpeak = false
+                self.accessibilitySpeakTimer = nil
+                self.speechChannel?.invokeMethod("onCompletion", arguments: nil)
+              }
+            }
             result(true)
             return
           }
@@ -112,9 +127,7 @@ import NaturalLanguage
         }
       case "isSpeaking":
         if isUsingAccessibilitySpeak {
-          // For accessibility speak, we can't easily check if it's still speaking
-          // Return false to let Dart handle it via timeout
-          result(false)
+          result(self.accessibilitySpeakTimer?.isValid ?? false)
         } else {
           result(self.speechSynthesizer.isSpeaking)
         }
@@ -161,6 +174,8 @@ import NaturalLanguage
   }
 
   private func stopSystemAccessibilitySpeak() {
+    accessibilitySpeakTimer?.invalidate()
+    accessibilitySpeakTimer = nil
     guard let tv = dummyTextView else { return }
     let stopSelectors = [
       Selector(("_accessibilityPauseSpeaking:")),
