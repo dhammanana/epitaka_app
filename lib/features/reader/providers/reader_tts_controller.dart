@@ -132,6 +132,26 @@ class ReaderTtsController {
       }
     }
 
+    // Fallback: ItemPositionsListener only reports positions after the
+    // list has laid out its first frame. When Listen is tapped before that
+    // (fresh tab, book just opened, very first frame), positions are empty
+    // and the old code silently started from paragraph 0 — TTS read the
+    // book from the beginning regardless of the scroll position on some
+    // machines. Fall back to the tab's tracked current paragraph (kept
+    // up-to-date by onPositionsChanged) instead.
+    if (startParaIndex == 0 && activeTab.currentParaId != null) {
+      final idx = readerState.paragraphs.indexWhere(
+        (p) => p.paraId == activeTab.currentParaId,
+      );
+      if (idx > 0) startParaIndex = idx;
+    }
+    developer.log(
+      '[TTS_START] startListening: startParaIndex=$startParaIndex '
+      'fromPositions=${positions?.isNotEmpty ?? false} '
+      'tabParaId=${activeTab.currentParaId}',
+      name: 'epitaka.tts',
+    );
+
     final settings = ref.read(settingsProvider);
     final mode = settings.ttsSpeakMode;
     final enabledLangs = settings.visibleTranslationLangs;

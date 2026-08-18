@@ -23,6 +23,24 @@ import NaturalLanguage
 
   private var speechChannel: FlutterMethodChannel?
   private var isUsingAccessibilitySpeak = false
+  private var audioSessionConfigured = false
+
+  /// Configures the AVAudioSession for speech playback once, lazily.
+  ///
+  /// Calling setCategory/setActive on EVERY line (the old inline code) made
+  /// the audio session deactivate/reactivate between sentences, which on
+  /// iOS adds an audible multi-second gap between lines.
+  private func ensureAudioSession() {
+    guard !audioSessionConfigured else { return }
+    audioSessionConfigured = true
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+      try session.setActive(true, options: .notifyOthersOnDeactivation)
+    } catch {
+      // Audio session config error ignored
+    }
+  }
 
   private func registerNativeSpeech(with registry: FlutterPluginRegistry) {
     guard let registrar = registry.registrar(forPlugin: "NativeSpeechPlugin") else { return }
@@ -74,13 +92,7 @@ import NaturalLanguage
           }
 
           // 2. Fallback to AVSpeechSynthesizer with prioritized Siri/Premium voice
-          do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-          } catch {
-            // Audio session config error ignored
-          }
+          self.ensureAudioSession()
 
           let utterance = AVSpeechUtterance(string: trimmedText)
           if let voice = self.findBestVoice(for: language, text: trimmedText) {

@@ -167,6 +167,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       // (guard against stale completer races, Bug 2).
       if (_currentSpeechId == speechId) {
         _completeSpeech();
+        // Return the state machine to `stopped` so the next line's speak()
+        // skips the redundant stop() (which resets _audioSessionConfigured
+        // and forces the next line to re-configure the audio session and
+        // re-register the becoming-noisy listener — a large chunk of the
+        // audible gap between sentences). Without this, one missed
+        // completion handler made every following line pay that cost.
+        state = TtsPlaybackState.stopped;
+        _broadcastToAudioService();
       } else {
         developer.log(
           '[TTS] _waitForCompletion timeout SUPPRESSED: speech is stale',
@@ -819,7 +827,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   };
 
   /// Whether the current engine supports look-ahead synthesis.
-  bool get supportsPrefetch => _engineType == TtsEngineType.supertonic;
+  ///
+  /// Requires supertonic to actually be initialized: on macOS/iOS the
+  /// engine is unavailable, and reporting prefetch support there made the
+  /// reading loop take the prefetch path, whose synthesize calls throw and
+  /// silently skip every line instead of falling back to native speech.
+  bool get supportsPrefetch =>
+      _engineType == TtsEngineType.supertonic && _supertonicInitialized;
 
   /// Map the quality preset to Supertonic denoising steps.
   /// Lower steps = faster synthesis on slower devices; higher = better
@@ -981,10 +995,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     } catch (_) {
       // Ignore errors when stopping
     }
-    // Cancel the audio session listener when fully stopped
-    _noisySubscription?.cancel();
-    _noisySubscription = null;
-    _audioSessionConfigured = false;
+    // NOTE: the audio session configuration and the becoming-noisy listener
+    // are intentionally NOT torn down here. They are app-lifetime concerns:
+    // _configureAudioSession() is guarded by _audioSessionConfigured, so
+    // tearing it down on every stop() made the next line re-run the whole
+    // AudioSession setup + listener registration — a large chunk of the
+    // audible gap between spoken sentences. The listener only acts while
+    // state == playing, so keeping it registered across sessions is safe.
+    // (dispose() still tears both down.)
 
     state = TtsPlaybackState.stopped;
     _broadcastToAudioService();
