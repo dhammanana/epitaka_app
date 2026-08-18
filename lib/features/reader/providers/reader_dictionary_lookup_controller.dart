@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/settings_provider.dart'
     show WordLookupGesture;
 import '../../dictionary/widgets/dictionary_open.dart';
-import '../utils/reader_word_hit_test.dart' show selectWordAt;
+import '../utils/reader_word_hit_test.dart'
+    show ReaderWordHitResult, hitTestWordAt, selectWordAt;
 
 /// Result from [ReaderDictionaryLookupController]'s tap processing.
 ///
