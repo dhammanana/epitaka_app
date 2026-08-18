@@ -27,6 +27,7 @@ import '../../settings/providers/tts_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
 import '../providers/reader_dictionary_lookup_controller.dart';
 import '../providers/reader_keyboard_bridge.dart';
+import '../providers/reader_lookup_highlight_provider.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_search_notifier.dart';
 import '../providers/reader_scroll_controller.dart';
@@ -36,6 +37,7 @@ import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
 import '../services/reader_ai_service.dart';
+import '../utils/reader_word_hit_test.dart' show ReaderWordHitResult;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
@@ -646,9 +648,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // ── Reading history persistence lives in [ReaderScrollController] ─────
 
   // ── Word lookup ──────────────────────────────────────────────────────
-  void _onWordLookup(String word) {
+  void _onWordLookup(String word, {ReaderWordHitResult? hit}) {
     if (word.trim().isEmpty) return;
     developer.log('[DBG] _onWordLookup word="$word"', name: 'epitaka.dict');
+
+    // Update active lookup highlight for the reader view.
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab != null) {
+      if (hit != null) {
+        ref
+            .read(readerLookupHighlightProvider.notifier)
+            .setHighlight(
+              ReaderLookupHighlight.fromHit(bookId: activeTab.bookId, hit: hit),
+            );
+      } else {
+        ref
+            .read(readerLookupHighlightProvider.notifier)
+            .setHighlight(
+              ReaderLookupHighlight(
+                bookId: activeTab.bookId,
+                word: word,
+                rawWord: word,
+              ),
+            );
+      }
+    }
+
     // Route the lookup into the dictionary dock/panel FIRST — the
     // dictionary must receive the word before any selection is cleared
     // (clearing first broke lookups and triggered framework assertions).
@@ -706,6 +731,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       name: 'epitaka.dict',
     );
 
+    // When manual text selection starts (user dragged/long-pressed text), clear active word lookup highlight.
+    if (selection != null && selection.plainText.trim().isNotEmpty) {
+      ref.read(readerLookupHighlightProvider.notifier).clear();
+    }
+
     // When a modal dictionary/book-link sheet is open, any NEW selection
     // reported here is a leftover of the double-tap that opened it — clear
     // it the instant it appears so its highlight and context menu can never
@@ -755,7 +785,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       contentHitTestKey: _contentHitTestKey,
     );
     if (result.shouldLookup) {
-      _onWordLookup(result.word!);
+      _onWordLookup(result.word!, hit: result.hit);
     }
   }
 
@@ -945,7 +975,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           hasSelection: ref.read(readerSelectionProvider).hasSelection,
         );
     if (result.shouldLookup) {
-      _onWordLookup(result.word!);
+      _onWordLookup(result.word!, hit: result.hit);
     }
     _finishTabSwipe();
   }
@@ -1618,7 +1648,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // double-tap processing can land its leftover selection / toolbar after
     // the ~250ms suppression window in [_onWordLookup] (e.g. a second tap
     // held unusually long), and it would pop up over the text now that the
-    // sheet is gone.
+    // sheet is gone. (We intentionally keep [readerLookupHighlightProvider]
+    // so the reader sees which word was looked up).
     ref.listen(dictionarySheetOpenProvider, (previous, next) {
       if (previous != null && previous > 0 && next <= 0 && mounted) {
         final region = _selectableRegionKey.currentState;
@@ -1626,6 +1657,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ContextMenuController.removeAny();
       }
     });
+
+    final lookupHighlight = ref.watch(readerLookupHighlightProvider);
+    final activeLookupHighlight = lookupHighlight?.bookId == activeTab.bookId
+        ? lookupHighlight
+        : null;
 
     Widget content = ReaderContentWithSelection(
       bookId: activeTab.bookId,
@@ -1671,6 +1707,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       searchQuery:
           ref.watch(inBookSearchProvider).effectiveQuery ??
           activeTab.searchQuery,
+      lookupHighlight: activeLookupHighlight,
     );
 
     // When the dictionary sheet is open, Flutter adds bottom padding to the

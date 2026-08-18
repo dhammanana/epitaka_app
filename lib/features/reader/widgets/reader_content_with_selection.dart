@@ -5,6 +5,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../annotations/models/annotation.dart';
+import '../providers/reader_lookup_highlight_provider.dart';
 import '../providers/reader_provider.dart';
 import 'reader_content_list.dart';
 
@@ -47,6 +48,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     this.initialScrollIndex,
     this.annotations = const {},
     this.appBarCollapsed,
+    this.lookupHighlight,
   });
 
   final String bookId;
@@ -95,6 +97,9 @@ class ReaderContentWithSelection extends StatelessWidget {
   // Search
   final String? searchQuery;
 
+  // Active dictionary lookup highlight
+  final ReaderLookupHighlight? lookupHighlight;
+
   // Starting scroll index (prevents flash-to-top on tab restore)
   final int? initialScrollIndex;
 
@@ -134,6 +139,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       keyboardFocusChipIndex: keyboardFocusChipIndex,
       showBookLinks: settings.showBookLinks,
       searchQuery: searchQuery,
+      lookupHighlight: lookupHighlight,
       onFirstContentFrame: onFirstContentFrame,
       initialScrollIndex: initialScrollIndex,
       annotations: annotations,

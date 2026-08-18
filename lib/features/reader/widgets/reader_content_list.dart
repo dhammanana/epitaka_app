@@ -7,6 +7,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart' show stripVariantAnnotations;
 import '../../annotations/models/annotation.dart';
 import '../../../shared/widgets/reading_paragraph.dart';
+import '../providers/reader_lookup_highlight_provider.dart';
 import '../providers/reader_provider.dart';
 
 /// Displays a scrollable list of [ReadingParagraph] widgets powered by
@@ -43,6 +44,7 @@ class ReaderContentList extends StatelessWidget {
     this.keyboardFocusChipIndex,
     this.showBookLinks = true,
     this.searchQuery,
+    this.lookupHighlight,
     this.onFirstContentFrame,
     this.initialScrollIndex,
     this.annotations = const {},
@@ -106,6 +108,9 @@ class ReaderContentList extends StatelessWidget {
 
   /// Current search query for highlighting, or null if none.
   final String? searchQuery;
+
+  /// Active dictionary lookup highlight.
+  final ReaderLookupHighlight? lookupHighlight;
 
   /// Called the first time content is actually built for this book
   /// (for performance measurement).
@@ -254,6 +259,7 @@ class ReaderContentList extends StatelessWidget {
               bookLinks: data.bookLinks[paragraph.paraId] ?? const {},
               showBookLinks: showBookLinks,
               searchQuery: searchQuery,
+              lookupHighlight: lookupHighlight,
               ttsHighlightLineId: ttsHighlightLineId,
               ttsHighlightParaId: ttsHighlightParaId,
               lineKeys: lineKeys,

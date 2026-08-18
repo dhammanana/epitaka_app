@@ -11,10 +11,12 @@ import '../utils/reader_word_hit_test.dart' show selectWordAt;
 /// Result from [ReaderDictionaryLookupController]'s tap processing.
 ///
 /// - [word]: the word to look up, or `null` when no lookup should happen.
+/// - [hit]: detailed hit result including paragraph/line/range, if available.
 class TapLookupResult {
   final String? word;
+  final ReaderWordHitResult? hit;
 
-  const TapLookupResult({this.word});
+  const TapLookupResult({this.word, this.hit});
 
   /// Whether this result carries a word the reader should look up.
   bool get shouldLookup => word != null;
@@ -27,7 +29,7 @@ class TapLookupResult {
 ///
 ///  * double-tap detection (time/slop window, invalidated on movement),
 ///  * single-tap detection (pointer-down → up with no significant movement),
-///  * word extraction at the tap point (via [selectWordAt]),
+///  * word extraction at the tap point (via [hitTestWordAt]),
 ///  * dedup of repeated lookups,
 ///  * routing the word into the dictionary panel/sheet.
 ///
@@ -37,13 +39,28 @@ class TapLookupResult {
 /// logic is unit-testable in isolation.
 class ReaderDictionaryLookupController {
   ReaderDictionaryLookupController({
+    ReaderWordHitResult? Function(GlobalKey, Offset)? hitFinder,
     String? Function(GlobalKey, Offset)? wordFinder,
-  }) : _wordFinder = wordFinder ?? selectWordAt;
+  }) : _hitFinder = hitFinder ??
+            (wordFinder != null
+                ? ((key, pos) {
+                    final w = wordFinder(key, pos);
+                    return w != null
+                        ? ReaderWordHitResult(
+                            word: w,
+                            rawWord: w,
+                            range: TextRange.empty,
+                          )
+                        : null;
+                  })
+                : hitTestWordAt);
 
-  /// Injectable word finder — defaults to the render-tree hit-test in
+  /// Injectable hit finder — defaults to the render-tree hit-test in
   /// [reader_word_hit_test.dart]; tests substitute a stub.
-  final String? Function(GlobalKey contentHitTestKey, Offset globalPosition)
-      _wordFinder;
+  final ReaderWordHitResult? Function(
+    GlobalKey contentHitTestKey,
+    Offset globalPosition,
+  ) _hitFinder;
 
   /// The active lookup gesture, driven by the user's setting.
   WordLookupGesture gesture = WordLookupGesture.doubleTap;
@@ -142,8 +159,10 @@ class ReaderDictionaryLookupController {
         developer.log('[DBG] DOUBLE-TAP detected', name: 'epitaka.dict');
         _lastTapDownTime = null;
         _lastTapDownPosition = null;
+        final hit = _selectWordAt(contentHitTestKey, globalPosition);
         return TapLookupResult(
-          word: _selectWordAt(contentHitTestKey, globalPosition),
+          word: hit?.word,
+          hit: hit,
         );
       }
       developer.log(
@@ -219,8 +238,10 @@ class ReaderDictionaryLookupController {
     );
     _lastTapDownTime = null;
     _lastTapDownPosition = null;
+    final hit = _selectWordAt(contentHitTestKey, globalPosition);
     return TapLookupResult(
-      word: _selectWordAt(contentHitTestKey, globalPosition),
+      word: hit?.word,
+      hit: hit,
     );
   }
 
@@ -252,22 +273,25 @@ class ReaderDictionaryLookupController {
   /// Find the Pāli word rendered at the global [globalPosition] by hit-testing
   /// the render tree under [contentHitTestKey], then validate and dedup it.
   ///
-  /// Delegates the actual hit-test and word-boundary logic to [selectWordAt]
+  /// Delegates the actual hit-test and word-boundary logic to [hitTestWordAt]
   /// from [reader_word_hit_test.dart].
-  String? _selectWordAt(GlobalKey contentHitTestKey, Offset globalPosition) {
-    final word = _wordFinder(contentHitTestKey, globalPosition);
-    if (word != null &&
-        word.length >= 2 &&
-        word.length <= 50 &&
-        !word.contains(' ') &&
-        !word.contains('\n') &&
-        word != _lastLookedUpWord) {
+  ReaderWordHitResult? _selectWordAt(
+    GlobalKey contentHitTestKey,
+    Offset globalPosition,
+  ) {
+    final hit = _hitFinder(contentHitTestKey, globalPosition);
+    if (hit != null &&
+        hit.word.length >= 2 &&
+        hit.word.length <= 50 &&
+        !hit.word.contains(' ') &&
+        !hit.word.contains('\n') &&
+        hit.word != _lastLookedUpWord) {
       developer.log(
-        '[DBG] _selectWordAt: LOOKUP word="$word"',
+        '[DBG] _selectWordAt: LOOKUP word="${hit.word}" raw="${hit.rawWord}"',
         name: 'epitaka.dict',
       );
-      _lastLookedUpWord = word;
-      return word;
+      _lastLookedUpWord = hit.word;
+      return hit;
     }
     return null;
   }
