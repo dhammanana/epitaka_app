@@ -40,7 +40,10 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     _SettingsCategory(
       icon: Icons.tune,
       title: loc.general,
-      body: _SectionPane(title: loc.general, child: const SettingsGeneralSection()),
+      body: _SectionPane(
+        title: loc.general,
+        child: const SettingsGeneralSection(),
+      ),
     ),
     _SettingsCategory(
       icon: Icons.palette_outlined,
@@ -75,7 +78,10 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     _SettingsCategory(
       icon: Icons.search,
       title: loc.search,
-      body: _SectionPane(title: loc.search, child: const SettingsSearchSection()),
+      body: _SectionPane(
+        title: loc.search,
+        child: const SettingsSearchSection(),
+      ),
     ),
     _SettingsCategory(
       icon: Icons.translate,
@@ -95,12 +101,18 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     _SettingsCategory(
       icon: Icons.cloud_outlined,
       title: loc.account,
-      body: _SectionPane(title: loc.account, child: const SettingsAccountSection()),
+      body: _SectionPane(
+        title: loc.account,
+        child: const SettingsAccountSection(),
+      ),
     ),
     _SettingsCategory(
       icon: Icons.settings_suggest_outlined,
       title: loc.system,
-      body: _SectionPane(title: loc.system, child: const SettingsSystemSection()),
+      body: _SectionPane(
+        title: loc.system,
+        child: const SettingsSystemSection(),
+      ),
     ),
     _SettingsCategory(
       icon: Icons.help_outline,
@@ -110,8 +122,8 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
   ];
 
   final screenSize = MediaQuery.sizeOf(context);
-  final width = (screenSize.width * 0.92).clamp(680.0, 1120.0);
-  final height = (screenSize.height * 0.92).clamp(520.0, 880.0);
+  final width = (screenSize.width * 0.85).clamp(640.0, 960.0);
+  final height = (screenSize.height * 0.85).clamp(520.0, 760.0);
 
   await showDialog<void>(
     context: context,
@@ -164,17 +176,9 @@ class _DesktopSettingsDialogState extends State<_DesktopSettingsDialog> {
           ),
           child: Row(
             children: [
-              // macOS-style traffic-light placeholder (decorative).
-              Row(
-                children: [
-                  _TrafficLight(color: const Color(0xffff5f57)),
-                  const SizedBox(width: 6),
-                  _TrafficLight(color: const Color(0xfffebc2e)),
-                  const SizedBox(width: 6),
-                  _TrafficLight(color: const Color(0xff28c840)),
-                ],
-              ),
-              const SizedBox(width: AppDimensions.md),
+              // Balances the close button so the centered title stays
+              // centered (traffic lights removed).
+              const SizedBox(width: 48),
               Expanded(
                 child: Text(
                   loc.settings,
@@ -272,22 +276,6 @@ class _DesktopSettingsDialogState extends State<_DesktopSettingsDialog> {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Decorative macOS traffic-light dot in the title bar.
-class _TrafficLight extends StatelessWidget {
-  final Color color;
-
-  const _TrafficLight({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 12,
-      height: 12,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

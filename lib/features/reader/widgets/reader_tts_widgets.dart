@@ -5,6 +5,11 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 
+/// Fixed width of the TTS controls card. The dialog caps its content at this
+/// width too, so the card can never be stretched wider by a long fallback
+/// notice.
+const double kTtsControlsCardWidth = 280;
+
 class TtsFloatingChip extends StatelessWidget {
   final ColorScheme colors;
   final bool isAutoScroll;
@@ -129,7 +134,7 @@ class TtsControlsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     return Container(
-      width: 280,
+      width: kTtsControlsCardWidth,
       padding: const EdgeInsets.all(AppDimensions.md),
       decoration: BoxDecoration(
         color: colors.surface,

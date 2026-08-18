@@ -228,6 +228,8 @@ class _ToolbarItemRow extends StatelessWidget {
         return (Icons.bookmark, loc.bookmark);
       case ToolbarBuiltins.annotations:
         return (Icons.edit_note, loc.annotations);
+      case ToolbarBuiltins.summarize:
+        return (Icons.summarize_outlined, loc.summarizeChapter);
       default:
         return (Icons.touch_app, id);
     }

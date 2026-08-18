@@ -4,6 +4,7 @@ import AppKit
 
 class MainFlutterWindow: NSWindow {
   private let speechSynthesizer = NSSpeechSynthesizer()
+  private var speechChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -15,6 +16,9 @@ class MainFlutterWindow: NSWindow {
     registerNativeLookup(with: flutterViewController)
     registerNativeSpeech(with: flutterViewController)
 
+    // Set up NSSpeechSynthesizer delegate for completion callbacks
+    self.speechSynthesizer.delegate = self
+
     super.awakeFromNib()
   }
 
@@ -23,6 +27,7 @@ class MainFlutterWindow: NSWindow {
       name: "epitaka/native_speech",
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
+    self.speechChannel = channel
 
     channel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let self = self else {
@@ -108,4 +113,14 @@ class MainFlutterWindow: NSWindow {
       }
     }
   }
+}
+
+// MARK: - NSSpeechSynthesizerDelegate
+extension MainFlutterWindow: NSSpeechSynthesizerDelegate {
+  func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
+    DispatchQueue.main.async {
+      self.speechChannel?.invokeMethod("onCompletion", arguments: nil)
+    }
+  }
+
 }

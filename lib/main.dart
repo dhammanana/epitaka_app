@@ -74,11 +74,31 @@ Future<void> main() async {
   // (Documents or an exe-adjacent data/ folder) into the canonical per-user
   // database directory, so existing users never have to re-download and
   // bookmarks/history are preserved. Must run before any DB is opened.
-  await migrateLegacyDatabases();
+  //
+  // Both this and ensureBundledDatabases() are best-effort and must never
+  // prevent startup: path_provider's FFI (package:objective_c) can break
+  // after a macOS hot restart (dart-lang/native#3281) and throw here.
+  // getDatabaseDirectory() itself falls back to a pure-Dart directory, so
+  // the app keeps working until the next full restart.
+  try {
+    await migrateLegacyDatabases();
+  } catch (e) {
+    developer.log(
+      '[DB_MIGRATE] Legacy migration skipped: $e',
+      name: 'epitaka.database',
+    );
+  }
 
   // Copy bundled databases from assets to writable storage (needed on
   // Android/iOS where assets aren't directly file-system accessible).
-  await ensureBundledDatabases();
+  try {
+    await ensureBundledDatabases();
+  } catch (e) {
+    developer.log(
+      '[DB_INIT] Bundled database copy skipped: $e',
+      name: 'epitaka.database',
+    );
+  }
 
   // On Android, copy the core databases (epitaka.db, dpd-dictionary.db) out
   // of the install-time Play Asset Delivery pack so the app works fully

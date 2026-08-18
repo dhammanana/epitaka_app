@@ -12,10 +12,27 @@ class NativeSpeechService {
   NativeSpeechService._();
 
   static const MethodChannel _channel = MethodChannel('epitaka/native_speech');
+  static bool _channelInitialized = false;
+
+  static VoidCallback? _onCompletion;
 
   /// Native speech synthesis is supported on iOS and macOS.
   static bool get isSupported =>
       !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+
+  /// Initialize the method channel listener for callbacks.
+  static void _ensureChannelInitialized() {
+    if (_channelInitialized) return;
+    _channelInitialized = true;
+    
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onCompletion':
+          _handleCompletion();
+          break;
+      }
+    });
+  }
 
   /// Speaks [text] using the device's native system speech synthesizer.
   ///
@@ -24,13 +41,21 @@ class NativeSpeechService {
   /// to select the voice locale.
   ///
   /// Returns `true` if speech was initiated, or `false` if unsupported / failed.
-  static Future<bool> speak(String text, {String? language}) async {
+  static Future<bool> speak(String text, {String? language, VoidCallback? onCompletion}) async {
     final clean = text.trim();
     if (clean.isEmpty || !isSupported) return false;
+    
+    _ensureChannelInitialized();
+    _onCompletion = onCompletion;
+
     try {
       final ok = await _channel.invokeMethod<bool>('speak', {
         'text': clean,
         if (language != null && language.isNotEmpty) 'language': language,
+        // When a completion callback is expected, the native side must use
+        // a path that can report it (AVSpeechSynthesizer), not the
+        // fire-and-forget system accessibility "Speak Selection" engine.
+        'needsCompletion': onCompletion != null,
       });
       return ok ?? false;
     } catch (_) {
@@ -41,6 +66,7 @@ class NativeSpeechService {
   /// Stops any currently active native speech.
   static Future<bool> stop() async {
     if (!isSupported) return false;
+    _onCompletion = null;
     try {
       final ok = await _channel.invokeMethod<bool>('stop');
       return ok ?? false;
@@ -58,5 +84,12 @@ class NativeSpeechService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Called from native side when speech finishes (if supported).
+  static void _handleCompletion() {
+    final callback = _onCompletion;
+    _onCompletion = null;
+    callback?.call();
   }
 }

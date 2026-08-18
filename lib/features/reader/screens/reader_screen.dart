@@ -35,6 +35,7 @@ import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
+import '../services/reader_ai_service.dart';
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
@@ -325,6 +326,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _onBookmarkTap(activeTab, _toolbarReaderState(activeTab));
   }
 
+  /// Summarize the current chapter with AI (Vimaṃsa). Shared by the mobile
+  /// pill toolbar and the desktop status bar (via [onSummarizeTap]).
+  void _handleToolbarSummarize() {
+    final activeTab = _toolbarActiveTab();
+    if (activeTab == null) return;
+    final readerState = _toolbarReaderState(activeTab);
+    ReaderAiService.stageChapterSummaryPrompt(
+      context: context,
+      ref: ref,
+      activeTab: activeTab,
+      readerState: readerState,
+    );
+  }
+
   /// Open the annotations manager (highlights / notes / bookmarks).
   /// Desktop opens the dockable sidebar panel; mobile shows a bottom sheet.
   void _handleToolbarAnnotations() {
@@ -441,9 +456,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       isMounted: () => mounted,
       isAppResumed: () => _appLifecycleState == AppLifecycleState.resumed,
       positionsFor: _scroll.positionsFor,
-      jumpToParagraph: (bookId, paraId,
-              {bool animate = true, double alignment = 0.0, int? lineId}) =>
-          _scroll.jumpToParagraph(
+      jumpToParagraph:
+          (
+            bookId,
+            paraId, {
+            bool animate = true,
+            double alignment = 0.0,
+            int? lineId,
+          }) => _scroll.jumpToParagraph(
             bookId,
             paraId,
             animate: animate,
@@ -915,13 +935,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Single-tap word lookup (when enabled in settings) is confirmed on
     // pointer-up — by then we know the pointer didn't move (no scroll/drag)
     // and no text selection was created (e.g. by a long-press).
-    final result = ref.read(readerDictionaryLookupController).handlePointerUp(
-      pointer: event.pointer,
-      globalPosition: event.position,
-      timestampMs: event.timeStamp.inMilliseconds,
-      contentHitTestKey: _contentHitTestKey,
-      hasSelection: ref.read(readerSelectionProvider).hasSelection,
-    );
+    final result = ref
+        .read(readerDictionaryLookupController)
+        .handlePointerUp(
+          pointer: event.pointer,
+          globalPosition: event.position,
+          timestampMs: event.timeStamp.inMilliseconds,
+          contentHitTestKey: _contentHitTestKey,
+          hasSelection: ref.read(readerSelectionProvider).hasSelection,
+        );
     if (result.shouldLookup) {
       _onWordLookup(result.word!);
     }
@@ -1410,16 +1432,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   // ── Swipeable tab content with finger-following slide ──
                   CallbackShortcuts(
                     bindings: {
-                      SingleActivator(LogicalKeyboardKey.keyC, control: true):
-                          () => ReaderContextMenuBuilder.copyShortcut(
-                            context: context,
-                            ref: ref,
-                          ),
-                      SingleActivator(LogicalKeyboardKey.keyC, meta: true):
-                          () => ReaderContextMenuBuilder.copyShortcut(
-                            context: context,
-                            ref: ref,
-                          ),
+                      SingleActivator(
+                        LogicalKeyboardKey.keyC,
+                        control: true,
+                      ): () => ReaderContextMenuBuilder.copyShortcut(
+                        context: context,
+                        ref: ref,
+                      ),
+                      SingleActivator(
+                        LogicalKeyboardKey.keyC,
+                        meta: true,
+                      ): () => ReaderContextMenuBuilder.copyShortcut(
+                        context: context,
+                        ref: ref,
+                      ),
                     },
                     child: Focus(
                       autofocus: true,
@@ -1451,12 +1477,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             readerState.paragraphs.isNotEmpty
                         ? ReaderDragThumb(
                             readerState: readerState,
-                            itemScrollController: _scroll.itemScrollControllerFor(
-                              activeTab.bookId,
-                            ),
-                            itemPositionsListener: _scroll.itemPositionsListenerFor(
-                              activeTab.bookId,
-                            ),
+                            itemScrollController: _scroll
+                                .itemScrollControllerFor(activeTab.bookId),
+                            itemPositionsListener: _scroll
+                                .itemPositionsListenerFor(activeTab.bookId),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -1531,6 +1555,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             onStopTap: _handleToolbarStop,
                             onBookmarkTap: _handleToolbarBookmark,
                             onAnnotationsTap: _handleToolbarAnnotations,
+                            onSummarizeTap: _handleToolbarSummarize,
                           ),
                         ),
                       ),
@@ -1570,7 +1595,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Hand the scroll controller / positions listener to the keyboard
     // navigation layer (j/k reading cursor + Cmd/Ctrl+J). Registration is
     // idempotent per bookId and cleaned up when the tab closes.
-    ref.read(readerKeyboardBridgeProvider).register(
+    ref
+        .read(readerKeyboardBridgeProvider)
+        .register(
           activeTab.bookId,
           _scroll.scrollControllerFor(activeTab.bookId),
           _scroll.positionsListenerFor(activeTab.bookId),

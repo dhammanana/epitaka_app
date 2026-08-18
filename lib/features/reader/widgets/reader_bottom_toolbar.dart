@@ -48,6 +48,7 @@ class ReaderBottomToolbar extends StatelessWidget {
   final VoidCallback? onSearchTap;
   final VoidCallback? onJumpTap;
   final VoidCallback? onAnnotationsTap;
+  final VoidCallback? onSummarizeTap;
 
   /// The ordered toolbar configuration (Settings → Toolbar). Disabled items
   /// are skipped, and items with no wired handler for this surface are
@@ -74,6 +75,7 @@ class ReaderBottomToolbar extends StatelessWidget {
     this.onSearchTap,
     this.onJumpTap,
     this.onAnnotationsTap,
+    this.onSummarizeTap,
   });
 
   @override
@@ -175,10 +177,7 @@ class ReaderBottomToolbar extends StatelessWidget {
                 ? ToolbarButton(
                     icon: Icons.menu_book,
                     label: loc.dictionary,
-                    tooltip: AppShortcuts.tooltip(
-                      loc.dictionary,
-                      'dictionary',
-                    ),
+                    tooltip: AppShortcuts.tooltip(loc.dictionary, 'dictionary'),
                     compact: compact,
                     enabled: enabled,
                     onTap: onDictionaryTap,
@@ -251,6 +250,21 @@ class ReaderBottomToolbar extends StatelessWidget {
                     compact: compact,
                     enabled: enabled,
                     onTap: onAnnotationsTap,
+                  )
+                : null,
+          );
+        case ToolbarBuiltins.summarize:
+          // Summarize the current chapter with AI (Vimaṃsa). Rendered
+          // wherever a handler is provided — the mobile pill and the
+          // desktop status bar.
+          add(
+            onSummarizeTap != null
+                ? ToolbarButton(
+                    icon: Icons.summarize_outlined,
+                    label: loc.summarizeChapter,
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onSummarizeTap,
                   )
                 : null,
           );

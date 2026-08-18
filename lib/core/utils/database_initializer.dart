@@ -23,6 +23,13 @@ import 'package:path_provider/path_provider.dart';
 /// then failed with Access Denied and the setup wizard showed the download
 /// button again forever. The database directory is now deterministic:
 /// a per-user, always-writable folder that is never inside Program Files.
+///
+/// The last directory returned by [getDatabaseDirectory]. Hot restart keeps
+/// the Dart isolate alive, so this survives a hot restart — it's the most
+/// reliable way to keep using the exact same database directory after
+/// path_provider's FFI breaks (dart-lang/native#3281).
+Directory? _lastResolvedDbDir;
+
 Future<Directory> getDatabaseDirectory() async {
   final envDbPath = Platform.environment['EPITAKA_DB_PATH'];
   if (envDbPath != null && envDbPath.isNotEmpty) {
@@ -30,14 +37,182 @@ Future<Directory> getDatabaseDirectory() async {
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
-    return dir;
+    return _lastResolvedDbDir = dir;
   }
 
   if (Platform.isAndroid || Platform.isIOS) {
-    return getApplicationDocumentsDirectory();
+    final dir = await getApplicationDocumentsDirectory();
+    return _lastResolvedDbDir = dir;
   }
 
-  return getApplicationSupportDirectory();
+  // Desktop. path_provider's macOS implementation resolves the directory via
+  // FFI (package:objective_c), which can break after a Flutter hot restart
+  // (upstream dart-lang/native#3281 — `DOBJC_initializeApi` no longer
+  // resolves). A failure here used to crash startup; now the last
+  // successfully-resolved directory is restored instead, so the app keeps
+  // working (same databases, bookmarks, downloads) until the next full
+  // restart.
+  try {
+    final dir = await getApplicationSupportDirectory();
+    _lastResolvedDbDir = dir;
+    await _rememberDatabasePath(dir.path);
+    return dir;
+  } catch (e) {
+    developer.log(
+      '[DB_DIR] getApplicationSupportDirectory failed ($e) — using '
+      'last-known database directory',
+      name: 'epitaka.database',
+    );
+    final dir = _fallbackAppSupportDirectory();
+    _lastResolvedDbDir = dir;
+    return dir;
+  }
+}
+
+/// Marker files holding the last path_provider-resolved database directory.
+/// Lives at pure-Dart, per-user locations that need no plugin/FFI to find,
+/// so the fallback in [getDatabaseDirectory] can restore the EXACT directory
+/// the app used on its previous (working) run — a guessed path would look
+/// like a fresh install and ask to re-download/index everything.
+///
+/// On macOS the app is sandboxed: writes outside the app's container
+/// (`~/Library/Containers/<bundleId>/…`) silently fail, so the marker is
+/// written to BOTH the container (guaranteed writable) and the shared
+/// `~/Library/Application Support` location.
+List<File> _databasePathMarkers() {
+  if (Platform.isMacOS) {
+    final home = Platform.environment['HOME'] ?? '.';
+    final markers = <File>[
+      File('$home/Library/Application Support/epitaka_db_path'),
+    ];
+    final container = _macContainerAppSupportDir();
+    if (container != null) {
+      markers.add(
+        File('${container.path}/epitaka_db_path'),
+      );
+    }
+    return markers;
+  }
+  if (Platform.isWindows) {
+    final appData = Platform.environment['APPDATA'] ?? '.';
+    return [File('$appData/epitaka_db_path')];
+  }
+  final dataHome = Platform.environment['XDG_DATA_HOME'] ??
+      '${Platform.environment['HOME'] ?? '.'}/.local/share';
+  return [File('$dataHome/epitaka_db_path')];
+}
+
+/// Persist [path] as the last-known database directory. Best-effort: if the
+/// write fails, the fallback simply uses the last in-session directory or the
+/// per-platform guess instead.
+Future<void> _rememberDatabasePath(String path) async {
+  for (final marker in _databasePathMarkers()) {
+    try {
+      if (marker.existsSync() && marker.readAsStringSync().trim() == path) {
+        continue;
+      }
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString(path, flush: true);
+    } catch (_) {}
+  }
+}
+
+/// Pure-Dart directory used when path_provider's FFI is unavailable (e.g.
+/// after a macOS hot restart). Resolution order:
+/// 1. the directory resolved earlier in this session (hot restart keeps the
+///    isolate alive, so this is the exact directory the app was using),
+/// 2. the last-known directory from the marker files,
+/// 3. a best-effort per-platform guess (macOS: the sandbox container path,
+///    which is where path_provider actually points on this app).
+Directory _fallbackAppSupportDirectory() {
+  final inSession = _lastResolvedDbDir;
+  if (inSession != null && inSession.path.isNotEmpty) {
+    return inSession;
+  }
+
+  for (final marker in _databasePathMarkers()) {
+    try {
+      if (marker.existsSync()) {
+        final saved = marker.readAsStringSync().trim();
+        if (saved.isNotEmpty) return Directory(saved);
+      }
+    } catch (_) {}
+  }
+
+  if (Platform.isMacOS) {
+    final home = Platform.environment['HOME'] ?? '.';
+    // A sandboxed macOS app gets its per-user directories redirected into
+    // `~/Library/Containers/<bundleId>/Data/…` — path_provider resolves the
+    // Application Support directory to
+    // `~/Library/Containers/<bundleId>/Data/Library/Application Support/`
+    // `<bundleId>` for sandboxed apps (and `~/Library/Application Support/`
+    // `<bundleId>` for non-sandboxed ones). Prefer the container form — it's
+    // where a sandboxed app's data actually lives.
+    final container = _macContainerAppSupportDir();
+    if (container != null) {
+      // A sandboxed app's data lives in the container, so path_provider
+      // always points here — prefer it over the shared location even when
+      // the directory is still empty (fresh install).
+      return container;
+    }
+    return Directory(
+      '$home/Library/Application Support/${_macBundleIdentifier()}'
+          .replaceAll(RegExp(r'/+'), '/'),
+    );
+  }
+  if (Platform.isWindows) {
+    final appData = Platform.environment['APPDATA'] ?? '.';
+    return Directory('$appData/epitaka');
+  }
+  final dataHome = Platform.environment['XDG_DATA_HOME'] ??
+      '${Platform.environment['HOME'] ?? '.'}/.local/share';
+  return Directory('$dataHome/epitaka');
+}
+
+/// The sandbox container's Application Support directory for this app on
+/// macOS, or null when the container can't be located. Mirrors what
+/// path_provider's `getApplicationSupportDirectory()` returns for a sandboxed
+/// app (NSSearchPathForDirectoriesInDomains is redirected into the container,
+/// then the bundle identifier is appended).
+Directory? _macContainerAppSupportDir() {
+  try {
+    final home = Platform.environment['HOME'] ?? '.';
+    final bundleId = _macBundleIdentifier();
+    if (bundleId.isEmpty || bundleId.startsWith(r'$(')) return null;
+    final containerBase =
+        Directory('$home/Library/Containers/$bundleId/Data');
+    if (!containerBase.existsSync()) return null;
+    final appSupport = Directory(
+      p.join(containerBase.path, 'Library', 'Application Support', bundleId),
+    );
+    return appSupport.existsSync() ? appSupport : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The app's bundle identifier, read from the built app's Info.plist.
+/// Returns the project's known bundle id ('com.dn.epitaka') when it can't be
+/// determined — matching what path_provider sees is what matters, and this is
+/// the id the app is actually built with (macos/Runner.xcodeproj).
+String _macBundleIdentifier() {
+  try {
+    final exe = File(Platform.resolvedExecutable);
+    final infoPlist = File('${exe.parent.path}/../Info.plist');
+    if (infoPlist.existsSync()) {
+      final xml = infoPlist.readAsStringSync();
+      final match = RegExp(
+        r'<key>CFBundleIdentifier</key>\s*<string>([^<]+)</string>',
+      ).firstMatch(xml);
+      if (match != null) {
+        final id = match.group(1)!.trim();
+        // Build-config placeholders (e.g. $(PRODUCT_BUNDLE_IDENTIFIER))
+        // are unresolved in the template — use the known bundle id instead.
+        if (id.isNotEmpty && !id.startsWith(r'$(')) return id;
+      }
+    }
+  } catch (_) {}
+  return 'com.dn.epitaka';
 }
 
 /// Removes any SQLite WAL, SHM, or journal files associated with [dbPath].
@@ -199,11 +374,21 @@ Future<void> migrateLegacyDatabases() async {
   }
 
   final legacyDirs = <String>[
-    // Documents was the old fallback when no cwd-relative data/ existed.
-    (await getApplicationDocumentsDirectory()).path,
     // The exe-adjacent data/ folder the old cwd heuristic could point at.
     p.join(File(Platform.resolvedExecutable).parent.path, 'data'),
   ];
+
+  // Documents was the old fallback when no cwd-relative data/ existed.
+  // Best-effort like the rest of the migration: path_provider's FFI can
+  // fail after a hot restart (dart-lang/native#3281).
+  try {
+    legacyDirs.insert(0, (await getApplicationDocumentsDirectory()).path);
+  } catch (e) {
+    developer.log(
+      '[DB_MIGRATE] Documents dir unavailable: $e',
+      name: 'epitaka.database',
+    );
+  }
 
   final targetPath = p.normalize(target.path);
 

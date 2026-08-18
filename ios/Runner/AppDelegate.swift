@@ -21,12 +21,19 @@ import NaturalLanguage
     registerNativeSpeech(with: engineBridge.pluginRegistry)
   }
 
+  private var speechChannel: FlutterMethodChannel?
+  private var isUsingAccessibilitySpeak = false
+
   private func registerNativeSpeech(with registry: FlutterPluginRegistry) {
     guard let registrar = registry.registrar(forPlugin: "NativeSpeechPlugin") else { return }
     let channel = FlutterMethodChannel(
       name: "epitaka/native_speech",
       binaryMessenger: registrar.messenger()
     )
+    self.speechChannel = channel
+
+    // Set up AVSpeechSynthesizer delegate for completion callbacks
+    self.speechSynthesizer.delegate = self
 
     channel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let self = self else {
@@ -47,15 +54,21 @@ import NaturalLanguage
 
         let language = args["language"] as? String
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // When completion reporting is required (line-by-line reading), use
+        // AVSpeechSynthesizer directly — the accessibility "Speak Selection"
+        // path is fire-and-forget and cannot signal when speech finishes.
+        let needsCompletion = args["needsCompletion"] as? Bool ?? false
 
         DispatchQueue.main.async {
           if self.speechSynthesizer.isSpeaking {
             self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
           self.stopSystemAccessibilitySpeak()
+          self.isUsingAccessibilitySpeak = false
 
           // 1. Try system Accessibility Spoken Content (invokes system Siri voice like Chrome/Safari)
-          if self.trySystemAccessibilitySpeak(trimmedText) {
+          if !needsCompletion, self.trySystemAccessibilitySpeak(trimmedText) {
+            self.isUsingAccessibilitySpeak = true
             result(true)
             return
           }
@@ -79,13 +92,20 @@ import NaturalLanguage
       case "stop":
         DispatchQueue.main.async {
           self.stopSystemAccessibilitySpeak()
+          self.isUsingAccessibilitySpeak = false
           if self.speechSynthesizer.isSpeaking {
             self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
           result(true)
         }
       case "isSpeaking":
-        result(self.speechSynthesizer.isSpeaking)
+        if isUsingAccessibilitySpeak {
+          // For accessibility speak, we can't easily check if it's still speaking
+          // Return false to let Dart handle it via timeout
+          result(false)
+        } else {
+          result(self.speechSynthesizer.isSpeaking)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -289,5 +309,22 @@ import NaturalLanguage
       return getTopViewController(base: presented)
     }
     return root
+  }
+}
+
+// MARK: - AVSpeechSynthesizerDelegate
+extension AppDelegate: AVSpeechSynthesizerDelegate {
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async {
+      self.speechChannel?.invokeMethod("onCompletion", arguments: nil)
+      self.isUsingAccessibilitySpeak = false
+    }
+  }
+
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async {
+      self.speechChannel?.invokeMethod("onCompletion", arguments: nil)
+      self.isUsingAccessibilitySpeak = false
+    }
   }
 }

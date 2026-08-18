@@ -92,6 +92,9 @@ enum WordLookupGesture {
 
   /// A single tap opens the dictionary immediately.
   singleTap,
+
+  /// Tapping reader text does not open the dictionary.
+  disabled,
 }
 
 /// Font family choices for reading.

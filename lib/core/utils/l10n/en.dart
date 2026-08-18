@@ -277,6 +277,7 @@ const Map<String, String> en = {
   'Pāli above translation': 'Pāli above translation',
   'Side by side': 'Side by side',
   'Pāli beside translation': 'Pāli beside translation',
+  'Tap to translate': 'Tap to translate',
   'Any': 'Any',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────

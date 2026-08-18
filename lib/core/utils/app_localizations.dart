@@ -88,6 +88,19 @@ class AppLocalizations {
       _t('How a tap on a word opens the dictionary');
   String get doubleTap => _t('Double tap');
   String get singleTap => _t('Single tap');
+
+  /// Display name for a word-lookup gesture (used by the Reading Options
+  /// dropdown and the reader's display layout popup).
+  String wordLookupGestureLabel(WordLookupGesture gesture) {
+    switch (gesture) {
+      case WordLookupGesture.disabled:
+        return disabled;
+      case WordLookupGesture.doubleTap:
+        return doubleTap;
+      case WordLookupGesture.singleTap:
+        return singleTap;
+    }
+  }
   String get textToSpeech => _t('Text-to-Speech');
   String get ttsSubtitle => _t('Voice & speed');
   String get ttsReplacements => _t('TTS Replacements');
@@ -234,6 +247,7 @@ class AppLocalizations {
 
   // ── Display layout popup ──────────────────────────────────────────────
   String get displayNoTranslation => _t('No translation');
+  String get tapToTranslate => _t('Tap to translate');
   String get displayNoTranslationSubtitle => _t('Hide all translations');
   String get displayLineByLine => _t('Line by line');
   String get displayLineByLineSubtitle => _t('Pāli above translation');

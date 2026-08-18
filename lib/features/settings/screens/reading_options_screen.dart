@@ -103,14 +103,12 @@ class ReadingOptionsBody extends ConsumerWidget {
                 icon: Icons.touch_app,
                 title: loc.wordLookupGesture,
                 subtitle: loc.wordLookupGestureSubtitle,
-                value: _wordLookupGestureLabel(
+                value: loc.wordLookupGestureLabel(
                   settings.wordLookupGesture,
-                  loc,
                 ),
-                options: [loc.doubleTap, loc.singleTap],
-                selectedValue: _wordLookupGestureLabel(
+                options: [loc.disabled, loc.singleTap, loc.doubleTap],
+                selectedValue: loc.wordLookupGestureLabel(
                   settings.wordLookupGesture,
-                  loc,
                 ),
                 onSelected: (label) {
                   ref
@@ -284,22 +282,11 @@ CopyScope _copyScopeCode(String label, AppLocalizations loc) {
   return CopyScope.both;
 }
 
-String _wordLookupGestureLabel(
-  WordLookupGesture gesture,
-  AppLocalizations loc,
-) {
-  switch (gesture) {
-    case WordLookupGesture.doubleTap:
-      return loc.doubleTap;
-    case WordLookupGesture.singleTap:
-      return loc.singleTap;
-  }
-}
-
 WordLookupGesture _wordLookupGestureCode(
   String label,
   AppLocalizations loc,
 ) {
+  if (label == loc.disabled) return WordLookupGesture.disabled;
   if (label == loc.singleTap) return WordLookupGesture.singleTap;
   return WordLookupGesture.doubleTap;
 }

@@ -8,6 +8,7 @@ import 'package:supertonic_flutter/supertonic_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/native_speech_service.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../services/tts_audio_handler.dart';
 
@@ -343,7 +344,23 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         case TtsEngineType.system:
           await _speakSystem(text, language, paliRoman);
         case TtsEngineType.supertonic:
-          await _speakSupertonic(text, language, paliRoman);
+          try {
+            await _speakSupertonic(text, language, paliRoman);
+          } catch (e) {
+            if (NativeSpeechService.isSupported) {
+              // Supertonic isn't available on this platform — fall back to
+              // the native system speech synthesizer instead of skipping
+              // the line.
+              developer.log(
+                '[TTS] Supertonic failed on macOS/iOS ($e) — falling back '
+                'to native speech',
+                name: 'epitaka.tts',
+              );
+              await _speakSystem(text, language, paliRoman);
+            } else {
+              rethrow;
+            }
+          }
       }
       await _waitForCompletion(text);
       final elapsed = DateTime.now().difference(start).inMilliseconds;
@@ -361,26 +378,94 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
   }
 
-  /// Speak using system TTS (flutter_tts).
+  /// Speak using system TTS (flutter_tts) or NativeSpeechService.
   ///
+  /// On macOS/iOS, uses NativeSpeechService as a better alternative.
   /// Caches the last set rate/pitch/language and only makes platform
-  /// channel calls when the values actually change. Since MethodChannel
-  /// calls on Android/iOS have significant overhead (~5–15 ms each),
-  /// skipping them on every line after the first dramatically reduces
-  /// the gap between spoken sentences.
-  ///
-  /// Sets completion/error handlers with the current [_currentSpeechId]
-  /// captured in a closure. When [_currentSpeechId] advances (next line,
-  /// stop, pause), stale handler invocations are detected and ignored
-  /// (Bug 2 fix).
+  /// channel calls when the values actually change.
   Future<void> _speakSystem(
+    String text,
+    String? language,
+    String? paliRoman,
+  ) async {
+    final settings = _ref.read(settingsProvider);
+    final speechId = _currentSpeechId;
+    final start = DateTime.now();
+
+    // Use NativeSpeechService on macOS/iOS for better integration
+    if (NativeSpeechService.isSupported) {
+      developer.log(
+        '[TTS] Using NativeSpeechService for macOS/iOS',
+        name: 'epitaka.tts',
+      );
+
+      // For Pāli text, we still need to handle the script conversion
+      String speakText = text;
+      String? effectiveLang = language ?? _ttsLanguageFromSettings(settings);
+
+      final isPaliLine =
+          language == 'si' && paliRoman != null && paliRoman.isNotEmpty;
+      if (isPaliLine) {
+        // On macOS/iOS, use Roman Pāli with English voice for best results
+        speakText = asciiRomanPali(paliRoman);
+        effectiveLang = 'en-US';
+        developer.log(
+          '[TTS] Pāli converted to Roman for NativeSpeechService: "$speakText"',
+          name: 'epitaka.tts',
+        );
+      }
+
+      await _configureAudioSession();
+      state = TtsPlaybackState.playing;
+      _broadcastToAudioService();
+
+      final ok = await NativeSpeechService.speak(
+        speakText,
+        language: effectiveLang,
+        onCompletion: () {
+          if (!_disposed && speechId == _currentSpeechId) {
+            developer.log(
+              '[TTS] NativeSpeechService completion: speechId=$speechId (current)',
+              name: 'epitaka.tts',
+            );
+            state = TtsPlaybackState.stopped;
+            _broadcastToAudioService();
+            _completeSpeech();
+          }
+        },
+      );
+
+      if (!ok) {
+        developer.log(
+          '[TTS] NativeSpeechService.speak() returned false, falling back to flutter_tts',
+          name: 'epitaka.tts',
+        );
+        state = TtsPlaybackState.stopped;
+        // Fall back to flutter_tts
+        await _speakFlutterTts(text, language, paliRoman);
+      } else {
+        final elapsed = DateTime.now().difference(start).inMilliseconds;
+        developer.log(
+          '[TTS] NativeSpeechService.speak() initiated in ${elapsed}ms speechId=$speechId',
+          name: 'epitaka.tts',
+        );
+      }
+      return;
+    }
+
+    // Fall back to flutter_tts for other platforms
+    await _speakFlutterTts(text, language, paliRoman);
+  }
+
+  /// Actual flutter_tts implementation (extracted for fallback).
+  Future<void> _speakFlutterTts(
     String text,
     String? language,
     String? paliRoman,
   ) async {
     final tts = await _getFlutterTts();
     final settings = _ref.read(settingsProvider);
-    final speechId = _currentSpeechId; // captured for handler guard
+    final speechId = _currentSpeechId;
 
     final start = DateTime.now();
 
@@ -530,7 +615,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     await tts.speak(speakText);
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     developer.log(
-      '[TTS] _speakSystem() took ${elapsed}ms speechId=$speechId',
+      '[TTS] _speakFlutterTts() took ${elapsed}ms speechId=$speechId',
       name: 'epitaka.tts',
     );
   }
@@ -608,7 +693,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   static String _prepareHindiPaliTts(String text) {
     return text
         // Short i: prevent Hindi TTS from shifting इ toward "e".
-        .replaceAll('इ', 'ि')
         // Niggahīta.
         .replaceAll('ं', 'ङ')
         // ḷ
@@ -623,11 +707,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
           RegExp(r'([क-ह])्([क-ह])'),
           (m) => '${m.group(1)}्${m.group(2)}',
         )
-        // Preserve final Pāli -o.
-        .replaceAllMapped(
-          RegExp(r'([^\s।,;:!?]+ो)(?=\s|$|।|,|;|:)'),
-          (m) => '${m.group(1)}ऽ',
-        );
+        .replaceAll('इ', 'ि');
+    // Preserve final Pāli -o.
+    // .replaceAllMapped(
+    //   RegExp(r'([^\s।,;:!?]+ो)(?=\s|$|।|,|;|:)'),
+    //   (m) => '${m.group(1)}ऽ',
+    // );
   }
 
   /// Write [romanText]'s Pāli in [script] for the TTS voice, paired with
@@ -890,6 +975,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       if (_player != null) {
         await _player!.stop();
       }
+      if (NativeSpeechService.isSupported) {
+        await NativeSpeechService.stop();
+      }
     } catch (_) {
       // Ignore errors when stopping
     }
@@ -911,6 +999,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         case TtsEngineType.system:
           if (_flutterTts != null) {
             await _flutterTts!.pause();
+          }
+          // Native speech has no pause — stop it; resume re-speaks the
+          // current line from the start.
+          if (NativeSpeechService.isSupported) {
+            await NativeSpeechService.stop();
           }
         case TtsEngineType.supertonic:
           if (_player != null) {

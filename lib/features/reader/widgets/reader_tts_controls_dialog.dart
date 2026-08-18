@@ -108,41 +108,47 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
           final paliNotice = watchRef
               .read(ttsProvider.notifier)
               .paliFallbackNotice;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (paliNotice != null) _TtsFallbackNotice(text: paliNotice),
-              TtsControlsCard(
-                colors: colors,
-                settings: settings,
-                isTtsLineVisible: widget.isTtsLineVisible,
-                onFollowTap: () {
-                  Navigator.of(ctx).pop();
-                  widget.onFollowTts();
-                },
-                onSpeedChanged: (v) {
-                  ref.read(settingsProvider.notifier).setTtsSpeed(v);
-                },
-                onPaliSpeedChanged: (v) {
-                  ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
-                },
-                onPitchChanged: (v) {
-                  ref.read(settingsProvider.notifier).setTtsPitch(v);
-                },
-                onVoiceChanged: (voice) {
-                  ref.read(settingsProvider.notifier).setTtsVoice(voice);
-                },
-                onSpeakModeChanged: widget.onSpeakModeChanged,
-                onInstallVoiceTap: () => openSystemTtsSettings(ctx),
-                onSystemConfigTap: () {
-                  Navigator.of(ctx).pop();
-                  context.push('/settings/tts');
-                },
-                onClose: () => Navigator.of(ctx).pop(),
-                voices: voices,
-              ),
-            ],
+          // Cap the dialog at the card width: the stretched column would
+          // otherwise grow as wide as the fallback notice's intrinsic text
+          // width (very wide on desktop), dragging the card along with it.
+          return ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kTtsControlsCardWidth),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (paliNotice != null) _TtsFallbackNotice(text: paliNotice),
+                TtsControlsCard(
+                  colors: colors,
+                  settings: settings,
+                  isTtsLineVisible: widget.isTtsLineVisible,
+                  onFollowTap: () {
+                    Navigator.of(ctx).pop();
+                    widget.onFollowTts();
+                  },
+                  onSpeedChanged: (v) {
+                    ref.read(settingsProvider.notifier).setTtsSpeed(v);
+                  },
+                  onPaliSpeedChanged: (v) {
+                    ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
+                  },
+                  onPitchChanged: (v) {
+                    ref.read(settingsProvider.notifier).setTtsPitch(v);
+                  },
+                  onVoiceChanged: (voice) {
+                    ref.read(settingsProvider.notifier).setTtsVoice(voice);
+                  },
+                  onSpeakModeChanged: widget.onSpeakModeChanged,
+                  onInstallVoiceTap: () => openSystemTtsSettings(ctx),
+                  onSystemConfigTap: () {
+                    Navigator.of(ctx).pop();
+                    context.push('/settings/tts');
+                  },
+                  onClose: () => Navigator.of(ctx).pop(),
+                  voices: voices,
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -176,10 +182,7 @@ class _TtsFallbackNotice extends StatelessWidget {
           Flexible(
             child: Text(
               text,
-              style: TextStyle(
-                fontSize: 12,
-                color: colors.onErrorContainer,
-              ),
+              style: TextStyle(fontSize: 12, color: colors.onErrorContainer),
             ),
           ),
         ],

@@ -88,4 +88,52 @@ void main() {
     // …but the persisted preference is NOT written (session-only).
     expect(prefs.getBool('show_book_links'), isTrue);
   });
+
+  testWidgets(
+    'popup tap-to-translate row offers Disabled/Single/Double and persists the gesture',
+    (tester) async {
+      // Seed a persisted 'word_lookup_gesture' preference (1 = single tap).
+      SharedPreferences.setMockInitialValues({'word_lookup_gesture': 1});
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs)..init(prefs);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [settingsProvider.overrideWith((ref) => notifier)],
+          child: MaterialApp(
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: const [AppLocalizationsDelegate()],
+            theme: ThemeData(
+              useMaterial3: true,
+              splashFactory: InkSplash.splashFactory,
+            ),
+            home: const Scaffold(body: DisplayLayoutPopup()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The row shows the current gesture.
+      expect(find.text('Tap to translate'), findsOneWidget);
+      expect(notifier.state.wordLookupGesture, WordLookupGesture.singleTap);
+
+      // Tapping it opens a menu with all three options.
+      await tester.tap(find.text('Tap to translate'));
+      await tester.pumpAndSettle();
+      expect(find.text('Disabled'), findsOneWidget);
+      expect(find.text('Double tap'), findsOneWidget);
+      // Row value + menu item.
+      expect(find.text('Single tap'), findsNWidgets(2));
+
+      // Selecting "Disabled" updates the setting…
+      await tester.tap(find.text('Disabled'));
+      await tester.pumpAndSettle();
+      expect(notifier.state.wordLookupGesture, WordLookupGesture.disabled);
+      // …and persists it.
+      expect(
+        prefs.getInt('word_lookup_gesture'),
+        WordLookupGesture.disabled.index,
+      );
+    },
+  );
 }

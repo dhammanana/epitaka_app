@@ -19,6 +19,7 @@ class ToolbarBuiltins {
   static const listen = 'listen';
   static const bookmark = 'bookmark';
   static const annotations = 'annotations';
+  static const summarize = 'summarize';
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
@@ -31,6 +32,7 @@ class ToolbarBuiltins {
     listen,
     bookmark,
     annotations,
+    summarize,
   ];
 }
 

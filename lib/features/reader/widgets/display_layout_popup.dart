@@ -121,6 +121,16 @@ class DisplayLayoutPopup extends ConsumerWidget {
                   .setShowBookLinksTemporary(v),
             ),
 
+            // ── Tap to translate (word lookup gesture) ────────────────────
+            _WordLookupTile(
+              icon: Icons.touch_app,
+              title: loc.tapToTranslate,
+              gesture: settings.wordLookupGesture,
+              onSelected: (g) => ref
+                  .read(settingsProvider.notifier)
+                  .setWordLookupGesture(g),
+            ),
+
             // ── Divider ──────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -150,6 +160,78 @@ class DisplayLayoutPopup extends ConsumerWidget {
               child: FontSizeAdjuster(),
             ),
             const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A tap-to-translate row in the layout popup. Shows the current gesture
+/// (Disabled / Single tap / Double tap) and opens a popup menu to change it.
+/// Mirrors the "Word lookup" dropdown in Reading Options and persists the
+/// same setting.
+class _WordLookupTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final WordLookupGesture gesture;
+  final ValueChanged<WordLookupGesture> onSelected;
+
+  const _WordLookupTile({
+    required this.icon,
+    required this.title,
+    required this.gesture,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return PopupMenuButton<WordLookupGesture>(
+      initialValue: gesture,
+      onSelected: onSelected,
+      tooltip: title,
+      itemBuilder: (context) => [
+        for (final g in const [
+          WordLookupGesture.disabled,
+          WordLookupGesture.singleTap,
+          WordLookupGesture.doubleTap,
+        ])
+          PopupMenuItem(
+            value: g,
+            child: Text(loc.wordLookupGestureLabel(g)),
+          ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: colors.onSurfaceVariant),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: gesture == WordLookupGesture.disabled
+                      ? FontWeight.w400
+                      : FontWeight.w600,
+                  color: colors.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              loc.wordLookupGestureLabel(gesture),
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
           ],
         ),
       ),
