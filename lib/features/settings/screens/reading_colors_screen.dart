@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart' hide ColorSwatch;
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../widgets/color_picker_section.dart';
 import '../widgets/color_swatch.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
@@ -66,30 +66,14 @@ class ReadingColorsScreen extends ConsumerWidget {
   List<Color> _paliColorPresets() => [const Color(0xFF7A2E1D), const Color(0xFF994532), const Color(0xFFB5651D), const Color(0xFF8B1A1A), const Color(0xFF3D3D8F), const Color(0xFF2A6B6B), const Color(0xFF5D4037), const Color(0xFF6A1B9A)];
   List<Color> _transColorPresets() => [const Color(0xFF33312E), const Color(0xFF221A14), const Color(0xFF544338), const Color(0xFF3C6E47), const Color(0xFF4A6FA5), const Color(0xFF6B635A), const Color(0xFF2E7D32), const Color(0xFF5D4037)];
 
-  /// Show a color picker dialog using the flutter_colorpicker package.
-  static Future<void> _showColorPicker(BuildContext context, WidgetRef ref, Color current, ValueChanged<Color> onPicked) async {
-    Color picked = current;
+  /// Show the full color picker screen.
+  static Future<void> _showColorPicker(BuildContext context, WidgetRef ref, Color current, ValueChanged<Color> onPicked) {
     final loc = AppLocalizations.of(context);
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text(loc.pickAColor),
-          content: SingleChildScrollView(
-            child: ColorPicker(
-              pickerColor: picked,
-              onColorChanged: (c) => picked = c,
-              enableAlpha: false,
-              displayThumbColor: true,
-              labelTypes: const [],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(loc.cancel)),
-            FilledButton(onPressed: () { onPicked(picked); Navigator.of(ctx).pop(); }, child: Text(loc.apply)),
-          ],
-        );
-      },
+    return showColorPickerScreen(
+      context,
+      title: loc.pickAColor,
+      initialColor: current,
+      onApply: onPicked,
     );
   }
 }
