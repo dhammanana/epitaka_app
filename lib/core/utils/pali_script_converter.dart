@@ -2080,7 +2080,7 @@ bool isNonLatinScript(String text) {
         (code >= 0x0020 && code <= 0x007E) || // Basic Latin
         (code >= 0x00A0 && code <= 0x00FF) || // Latin-1 Supplement
         (code >= 0x0100 && code <= 0x017F) || // Latin Extended-A
-        (code >= 0x1E00 && code <= 0x1EFF);   // Latin Extended Additional
+        (code >= 0x1E00 && code <= 0x1EFF); // Latin Extended Additional
     if (!isLatin) return true;
   }
   return false;

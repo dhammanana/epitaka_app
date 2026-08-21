@@ -68,6 +68,12 @@ const Map<String, String> my = {
       'နိဿယဘာသာပြန်များသည် ပါဠိစကားလုံးအလိုက် အနက်ဖွင့်ဆိုချက်ကို pali: meaning | pali: meaning ပုံစံဖြင့် ပြသသည်။',
   'Customize the citation format. Use the variables shown below.':
       'ကိုးကားပုံစံကို စိတ်ကြိုက်ပြင်ဆင်ပါ။ အောက်ပါ variable များကို အသုံးပြုပါ။',
+  'Quick formats': 'အမြန်ပုံစံများ',
+  'Long': 'ရှည်',
+  'VRI Short': 'VRI တို',
+  'PTS Short': 'PTS တို',
+  'Myanmar Short': 'မြန်မာ တို',
+  'Thai Short': 'ထိုင်း တို',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'အသုံးပြုနိုင်သော variable များ - {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'အမှား - ',
@@ -185,6 +191,9 @@ const Map<String, String> my = {
   'Pāli above translation': 'ပါဠိကို ဘာသာပြန်အထက်တွင်',
   'Side by side': 'ဘေးချင်းယှဉ်',
   'Pāli beside translation': 'ပါဠိကို ဘာသာပြန်ဘေးတွင်',
+  'Only translation': 'ဘာသာပြန်သာ',
+  'Show only the translation': 'ဘာသာပြန်ကိုသာ ပြသပါ',
+  'Translations': 'ဘာသာပြန်များ',
   'Any': 'မည်သည့်',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────

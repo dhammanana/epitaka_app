@@ -34,8 +34,7 @@ class GavesanaSearchView extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<GavesanaSearchView> createState() =>
-      _GavesanaSearchViewState();
+  ConsumerState<GavesanaSearchView> createState() => _GavesanaSearchViewState();
 }
 
 class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
@@ -126,8 +125,12 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
               // model). Lives here (not an AppBar) so the sidebar panel
               // gets it too.
               IconButton(
-                icon: Icon(Icons.tune, size: 20, color: colors.onSurfaceVariant),
-                tooltip: loc.aiQaSettings,
+                icon: Icon(
+                  Icons.tune,
+                  size: 20,
+                  color: colors.onSurfaceVariant,
+                ),
+                tooltip: loc.vimamsaSettings,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => showAiQaSettingsSheet(context),
               ),
@@ -246,11 +249,7 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
                 color: colors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.psychology,
-                size: 34,
-                color: colors.primary,
-              ),
+              child: Icon(Icons.psychology, size: 34, color: colors.primary),
             ),
             const SizedBox(height: 16),
             Text(

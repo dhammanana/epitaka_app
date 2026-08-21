@@ -95,8 +95,8 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     ),
     _SettingsCategory(
       icon: Icons.question_answer_outlined,
-      title: loc.aiQa,
-      body: _SectionPane(title: loc.aiQa, child: const SettingsAiSection()),
+      title: loc.vimamsa,
+      body: _SectionPane(title: loc.vimamsa, child: const SettingsAiSection()),
     ),
     _SettingsCategory(
       icon: Icons.cloud_outlined,

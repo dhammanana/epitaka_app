@@ -792,7 +792,7 @@ class ReadingParagraph extends StatelessWidget {
 
     // Joined mode has no per-line anchors — pass every Pāli annotation for
     // this paragraph; the resolver re-anchors each by its quote text.
-    return MetaData(
+    final paliBlock = MetaData(
       metaData: ReaderLineMetadata(
         paraId: paragraph.paraId,
         lineId: null,
@@ -808,6 +808,26 @@ class ReadingParagraph extends StatelessWidget {
             .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
             .toList(),
       ),
+    );
+
+    // Joined mode renders every line as one continuous block, so there is no
+    // per-line anchor to hang book-link chips on. Collect the paragraph's
+    // links and show them at the end of the paragraph instead.
+    final links = [
+      for (final line in paragraph.lines)
+        ...(bookLinks[line.lineId] ?? const <BookLinkData>[]),
+    ];
+    if (!showBookLinks || links.isEmpty) return paliBlock;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        paliBlock,
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: _buildChips(links, colors, context),
+        ),
+      ],
     );
   }
 
@@ -1527,11 +1547,11 @@ class _ExpandableChips extends StatefulWidget {
 }
 
 class _ExpandableChipsState extends State<_ExpandableChips> {
+  static const int maxVisible = 3;
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    const int maxVisible = 3;
     final links = widget.links;
     // Auto-expand when the keyboard-selected chip would be hidden.
     final needsExpansion =
@@ -1565,7 +1585,7 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
   }
 
   Widget _buildExpandButton() {
-    final remaining = widget.links.length - 6;
+    final remaining = widget.links.length - maxVisible;
     return _buildToggleChip(
       icon: Icons.expand_more,
       label: '+$remaining',

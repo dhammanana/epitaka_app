@@ -58,10 +58,14 @@ const Map<String, String> en = {
   'Roman (English)': 'Roman (English)',
   'Best available voice — Devanagari, Sinhala or Roman':
       'Best available voice — Devanagari, Sinhala or Roman',
-  'Needs a Sinhala voice installed (si-LK)': 'Needs a Sinhala voice installed (si-LK)',
-  'Needs a Hindi voice installed (hi-IN)': 'Needs a Hindi voice installed (hi-IN)',
-  'Needs a Thai voice installed (th-TH)': 'Needs a Thai voice installed (th-TH)',
-  'Needs a Myanmar voice installed (my-MM)': 'Needs a Myanmar voice installed (my-MM)',
+  'Needs a Sinhala voice installed (si-LK)':
+      'Needs a Sinhala voice installed (si-LK)',
+  'Needs a Hindi voice installed (hi-IN)':
+      'Needs a Hindi voice installed (hi-IN)',
+  'Needs a Thai voice installed (th-TH)':
+      'Needs a Thai voice installed (th-TH)',
+  'Needs a Myanmar voice installed (my-MM)':
+      'Needs a Myanmar voice installed (my-MM)',
   'Reads with an English voice — works on every device':
       'Reads with an English voice — works on every device',
   'Install voice': 'Install voice',
@@ -94,6 +98,12 @@ const Map<String, String> en = {
       'Nissaya translations show word-by-word Pāli breakdown with meanings, displayed as pali: meaning | pali: meaning.',
   'Customize the citation format. Use the variables shown below.':
       'Customize the citation format. Use the variables shown below.',
+  'Quick formats': 'Quick formats',
+  'Long': 'Long',
+  'VRI Short': 'VRI Short',
+  'PTS Short': 'PTS Short',
+  'Myanmar Short': 'Myanmar Short',
+  'Thai Short': 'Thai Short',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'Error: ',
@@ -105,7 +115,8 @@ const Map<String, String> en = {
   'Annotations': 'Annotations',
   'No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.':
       'No annotations yet.\nSelect text and tap Highlight or Note in the toolbar.',
-  'Open a book to see your annotations.': 'Open a book to see your annotations.',
+  'Open a book to see your annotations.':
+      'Open a book to see your annotations.',
   'Error loading annotations:': 'Error loading annotations:',
   'Highlight': 'Highlight',
   'Highlight the selected text': 'Highlight the selected text',
@@ -277,6 +288,9 @@ const Map<String, String> en = {
   'Pāli above translation': 'Pāli above translation',
   'Side by side': 'Side by side',
   'Pāli beside translation': 'Pāli beside translation',
+  'Only translation': 'Only translation',
+  'Show only the translation': 'Show only the translation',
+  'Translations': 'Translations',
   'Tap to translate': 'Tap to translate',
   'Any': 'Any',
 
@@ -935,8 +949,7 @@ const Map<String, String> en = {
   'Look Up': 'Look Up',
   'Look up in device dictionary (iOS/macOS)':
       'Look up in device dictionary (iOS/macOS)',
-  'Speak the selected text (iOS/macOS)':
-      'Speak the selected text (iOS/macOS)',
+  'Speak the selected text (iOS/macOS)': 'Speak the selected text (iOS/macOS)',
   'Reset to default': 'Reset to default',
   'Reset context menu actions and order to default?':
       'Reset context menu actions and order to default?',

@@ -521,10 +521,16 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       pageNumbers.removeWhere((_, v) => v.isEmpty);
 
       // The primary page number from the user's preferred system
-      final preferredPage = pageNumbers[pageColumn == 'vripage' ? 'vri' :
-          pageColumn == 'ptspage' ? 'pts' :
-          pageColumn == 'thaipage' ? 'thai' :
-          pageColumn == 'mypage' ? 'my' : 'vri'];
+      final preferredPage =
+          pageNumbers[pageColumn == 'vripage'
+              ? 'vri'
+              : pageColumn == 'ptspage'
+              ? 'pts'
+              : pageColumn == 'thaipage'
+              ? 'thai'
+              : pageColumn == 'mypage'
+              ? 'my'
+              : 'vri'];
 
       paraLines.putIfAbsent(s.paraId, () => []);
       if (s.pali != null && s.pali!.trim().isNotEmpty) {
@@ -635,12 +641,14 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           // rows, so each line keeps a list.
           try {
             final rSw = Stopwatch()..start();
-            final remarkRows = await translationDb.customSelect(
-              'SELECT id, para_id, line_id, pali, translation, conflict, '
-              'note, source_id, created_at FROM translation_remarks '
-              'WHERE book_id = ?',
-              variables: [Variable(_bookId)],
-            ).get();
+            final remarkRows = await translationDb
+                .customSelect(
+                  'SELECT id, para_id, line_id, pali, translation, conflict, '
+                  'note, source_id, created_at FROM translation_remarks '
+                  'WHERE book_id = ?',
+                  variables: [Variable(_bookId)],
+                )
+                .get();
             rSw.stop();
             if (remarkRows.isNotEmpty) {
               final remarksByLine = <int, Map<int, List<TranslationRemark>>>{};
@@ -687,23 +695,35 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     final buildSw = Stopwatch()..start();
     final paragraphs = <ParagraphData>[];
     String? previousPageNumber;
+    // Page numbers (all systems) in effect from the previous paragraph. The
+    // DB stores page numbers only on the sentence that opens a page, so
+    // without carry-forward most paragraphs would have no page numbers at all.
+    Map<String, String> previousPageNumbers = const {};
 
     for (final entry in paraLines.entries) {
       final paraId = entry.key;
       final rawLines = entry.value;
 
-      // Merge page numbers from all raw lines in this paragraph
-      final mergedPageNumbers = <String, String>{};
+      // Seed with the carry-forward so paragraphs without a page-break line
+      // still know which page they are on.
+      final mergedPageNumbers = <String, String>{...previousPageNumbers};
       String? pageNumber;
       for (final rl in rawLines) {
         mergedPageNumbers.addAll(rl.pageNumbers);
-        // Primary page number from the user's preferred system
-        if (pageNumber == null) {
-          final preferredCode = pageColumn == 'vripage' ? 'vri' :
-              pageColumn == 'ptspage' ? 'pts' :
-              pageColumn == 'thaipage' ? 'thai' :
-              pageColumn == 'mypage' ? 'my' : 'vri';
-          pageNumber = mergedPageNumbers[preferredCode];
+        // Primary page number from the user's preferred system. Read from
+        // THIS paragraph's own page-break lines only (not the seed) so
+        // isPageStart detection below stays correct.
+        if (pageNumber == null && rl.pageNumbers.isNotEmpty) {
+          final preferredCode = pageColumn == 'vripage'
+              ? 'vri'
+              : pageColumn == 'ptspage'
+              ? 'pts'
+              : pageColumn == 'thaipage'
+              ? 'thai'
+              : pageColumn == 'mypage'
+              ? 'my'
+              : 'vri';
+          pageNumber = rl.pageNumbers[preferredCode];
         }
       }
 
@@ -756,6 +776,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       if (pageNumber != null) {
         previousPageNumber = pageNumber;
       }
+      previousPageNumbers = mergedPageNumbers;
     }
     buildSw.stop();
     developer.log(
@@ -790,19 +811,24 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     final settings = _ref.read(settingsProvider);
     final versionSuffix = settings.translationVersionMap[langCode];
     final isNissaya =
-        versionSuffix != null && TranslationFilenameParser.isNissaya(versionSuffix);
+        versionSuffix != null &&
+        TranslationFilenameParser.isNissaya(versionSuffix);
     if (isNissaya) return; // Nissaya DBs have no remarks table.
 
-    final translationDb = await _ref.read(translationDbProvider(langCode).future);
+    final translationDb = await _ref.read(
+      translationDbProvider(langCode).future,
+    );
     if (translationDb == null) return;
 
     try {
-      final remarkRows = await translationDb.customSelect(
-        'SELECT id, para_id, line_id, pali, translation, conflict, '
-        'note, source_id, created_at FROM translation_remarks '
-        'WHERE book_id = ?',
-        variables: [Variable(_bookId)],
-      ).get();
+      final remarkRows = await translationDb
+          .customSelect(
+            'SELECT id, para_id, line_id, pali, translation, conflict, '
+            'note, source_id, created_at FROM translation_remarks '
+            'WHERE book_id = ?',
+            variables: [Variable(_bookId)],
+          )
+          .get();
       final remarksByLine = <int, Map<int, List<TranslationRemark>>>{};
       for (final r in remarkRows) {
         final paraId = r.data['para_id'] as int;
@@ -866,7 +892,11 @@ class _RawLine {
   /// All page numbers for this line, keyed by system code.
   final Map<String, String> pageNumbers;
 
-  const _RawLine({required this.lineId, this.paliText, this.pageNumbers = const {}});
+  const _RawLine({
+    required this.lineId,
+    this.paliText,
+    this.pageNumbers = const {},
+  });
 }
 
 /// Provider that loads reader data for a given book (all paragraphs at once).
@@ -894,5 +924,3 @@ String _pageColumnName(String system) {
       return 'vripage';
   }
 }
-
-

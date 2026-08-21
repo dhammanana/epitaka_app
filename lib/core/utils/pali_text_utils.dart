@@ -114,7 +114,8 @@ List<PaliSegment> convertPaliToScriptSegments(
 
   // stripVariantAnnotations is a mutable global pushed by the display
   // widgets; it changes the output, so it must be part of the cache key.
-  final key = '$stripVariantAnnotations\u0000'
+  final key =
+      '$stripVariantAnnotations\u0000'
       '${targetScript?.index ?? -1}\u0000$text';
   final cached = _segmentsCache[key];
   if (cached != null) return cached;
@@ -268,15 +269,13 @@ String convertPaliToScript(String text, Script? targetScript) {
 String convertPaliToScriptPreservingHtml(String text, Script? targetScript) {
   if (text.isEmpty) return text;
 
-  final key = '$stripVariantAnnotations\u0000'
+  final key =
+      '$stripVariantAnnotations\u0000'
       '${targetScript?.index ?? -1}\u0000$text';
   final cached = _preserveCache[key];
   if (cached != null) return cached;
 
-  final result = _convertPaliToScriptPreservingHtmlUncached(
-    text,
-    targetScript,
-  );
+  final result = _convertPaliToScriptPreservingHtmlUncached(text, targetScript);
   if (_preserveCache.length >= _kPreserveCacheCap) {
     final removeCount = _kPreserveCacheCap ~/ 4;
     final keys = _preserveCache.keys.toList();

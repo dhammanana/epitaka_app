@@ -21,7 +21,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 
 import '../lib/core/database/epitaka_database.dart';
 import '../lib/core/providers/database_provider.dart';
@@ -60,7 +59,9 @@ Future<EpitakaDatabase> _seedDatabase() async {
     'pali TEXT, PRIMARY KEY (book_id, para_id, line_id))',
   );
 
-  await db.into(db.books).insert(
+  await db
+      .into(db.books)
+      .insert(
         BooksCompanion.insert(
           bookId: 'dn1',
           bookName: const Value('Dīgha Nikāya 1'),
@@ -68,7 +69,9 @@ Future<EpitakaDatabase> _seedDatabase() async {
       );
 
   for (var i = 1; i <= _paraCount; i++) {
-    await db.into(db.sentences).insert(
+    await db
+        .into(db.sentences)
+        .insert(
           SentencesCompanion.insert(
             bookId: 'dn1',
             paraId: i,
@@ -141,67 +144,83 @@ void main() {
   }
 
   testWidgets(
-      'Jump to page closes the sheet and moves in place without stacking '
-      'a second reader', (tester) async {
-    final container = await pumpReader(tester);
+    'Jump to page closes the sheet and moves in place without stacking '
+    'a second reader',
+    (tester) async {
+      final container = await pumpReader(tester);
 
-    // Exactly one reader on the stack before jumping.
-    expect(find.byType(ReaderScreen), findsOneWidget);
+      // Exactly one reader on the stack before jumping.
+      expect(find.byType(ReaderScreen), findsOneWidget);
 
-    // Open the jump sheet from the reader's floating bottom toolbar.
-    await tester.tap(find.byIcon(Icons.open_in_new));
-    await tester.pumpAndSettle();
+      // Open the jump sheet from the reader's floating bottom toolbar.
+      await tester.tap(find.byIcon(Icons.open_in_new));
+      await tester.pumpAndSettle();
 
-    // Switch to the "Jump to page" tab.
-    final jumpToPageTab = find.text(AppLocalizations.of(
-      tester.element(find.byType(ReaderScreen)),
-    ).jumpToPage);
-    expect(jumpToPageTab, findsOneWidget,
-        reason: 'the jump sheet must expose the Jump to page tab');
-    await tester.tap(jumpToPageTab);
-    await tester.pumpAndSettle();
+      // Switch to the "Jump to page" tab.
+      final jumpToPageTab = find.text(
+        AppLocalizations.of(
+          tester.element(find.byType(ReaderScreen)),
+        ).jumpToPage,
+      );
+      expect(
+        jumpToPageTab,
+        findsOneWidget,
+        reason: 'the jump sheet must expose the Jump to page tab',
+      );
+      await tester.tap(jumpToPageTab);
+      await tester.pumpAndSettle();
 
-    // Enter the page and submit. Find the page-input field precisely (by its
-    // hint) so we never hit some other TextField in the tree.
-    final pageInput = find.byWidgetPredicate(
-      (w) =>
-          w is TextField &&
-          w.decoration?.hintText ==
-              AppLocalizations.of(tester.element(find.byType(ReaderScreen)))
-                  .pageInputHint,
-    );
-    expect(pageInput, findsOneWidget);
-    await tester.enterText(pageInput, _jumpPageLabel);
-    await tester.testTextInput.receiveAction(TextInputAction.go);
-    await tester.pumpAndSettle();
+      // Enter the page and submit. Find the page-input field precisely (by its
+      // hint) so we never hit some other TextField in the tree.
+      final pageInput = find.byWidgetPredicate(
+        (w) =>
+            w is TextField &&
+            w.decoration?.hintText ==
+                AppLocalizations.of(
+                  tester.element(find.byType(ReaderScreen)),
+                ).pageInputHint,
+      );
+      expect(pageInput, findsOneWidget);
+      await tester.enterText(pageInput, _jumpPageLabel);
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pumpAndSettle();
 
-    // The sheet closed (only the reader is left).
-    expect(find.text(AppLocalizations.of(
-      tester.element(find.byType(ReaderScreen)),
-    ).jumpToPage), findsNothing,
-        reason: 'the jump sheet must close after a successful jump');
+      // The sheet closed (only the reader is left).
+      expect(
+        find.text(
+          AppLocalizations.of(
+            tester.element(find.byType(ReaderScreen)),
+          ).jumpToPage,
+        ),
+        findsNothing,
+        reason: 'the jump sheet must close after a successful jump',
+      );
 
-    // The book really moved to the target page (the shared tab state is
-    // enough — the already-open reader picked it up without a new route).
-    final tab = container.read(readerTabsProvider).activeTab;
-    expect(tab != null, isTrue);
-    expect(
-      tab!.currentParaId,
-      inInclusiveRange(_jumpTargetParaId - 2, _jumpTargetParaId),
-      reason:
-          'after jumping to page $_jumpPageLabel the reader must be at '
-          'para ~$_jumpTargetParaId (topmost-visible can be one paragraph '
-          'above the target)',
-    );
+      // The book really moved to the target page (the shared tab state is
+      // enough — the already-open reader picked it up without a new route).
+      final tab = container.read(readerTabsProvider).activeTab;
+      expect(tab != null, isTrue);
+      expect(
+        tab!.currentParaId,
+        inInclusiveRange(_jumpTargetParaId - 2, _jumpTargetParaId),
+        reason:
+            'after jumping to page $_jumpPageLabel the reader must be at '
+            'para ~$_jumpTargetParaId (topmost-visible can be one paragraph '
+            'above the target)',
+      );
 
-    // THE regression: no duplicate reader route was pushed, so Back once
-    // returns to the book list instead of showing the same book again.
-    expect(find.byType(ReaderScreen), findsOneWidget,
+      // THE regression: no duplicate reader route was pushed, so Back once
+      // returns to the book list instead of showing the same book again.
+      expect(
+        find.byType(ReaderScreen),
+        findsOneWidget,
         reason:
             'jumping to a page must NOT push a second /reader route; if '
-            'this finds 2 readers, a context.push("/reader") was re-added');
+            'this finds 2 readers, a context.push("/reader") was re-added',
+      );
 
-    // Flush the reader's debounced reading-history save timer.
-    await tester.pump(const Duration(seconds: 4));
-  });
+      // Flush the reader's debounced reading-history save timer.
+      await tester.pump(const Duration(seconds: 4));
+    },
+  );
 }

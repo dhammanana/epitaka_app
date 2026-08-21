@@ -837,10 +837,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         if (!present.contains(id)) id,
     ];
     if (missing.isEmpty) return items;
-    return [
-      ...items,
-      for (final id in missing) ToolbarItem(id: id),
-    ];
+    return [...items, for (final id in missing) ToolbarItem(id: id)];
+  }
+
+  /// Quote templates saved by older versions didn't start with "- ", but the
+  /// excerpt/citation is now always rendered as a dash-prefixed line. Prepend
+  /// the dash prefix once so existing templates keep working unchanged.
+  String _migrateQuoteTemplate(String template) {
+    final t = template.trim();
+    if (t.isEmpty || t.startsWith('-') || t.startsWith('—')) {
+      return template;
+    }
+    return '- $template';
   }
 
   Map<String, String> _loadTranslationVersionMap() {
@@ -941,9 +949,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       contextMenuActions: _loadContextMenuActions(),
       featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
       toolbarItems: _loadToolbarItems(),
-      quoteTemplate:
-          prefs.getString('quote_template') ??
-          '- {book_name} > {heading} VRI p.{vri_page}',
+      quoteTemplate: _migrateQuoteTemplate(
+        prefs.getString('quote_template') ??
+            '- {book_name} > {heading} VRI p.{vri_page}',
+      ),
       useBookName: prefs.getBool('use_book_name') ?? true,
       includeHeading: prefs.getBool('include_heading') ?? true,
       quotePageNumberSystem: prefs.getString('quote_page_system') ?? 'vri',
@@ -1203,7 +1212,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(ttsSpeakMode: mode);
     await _prefs?.setString('tts_speak_mode', mode.name);
   }
-
 
   Future<void> setCopyQuoteFormat(CopyQuoteFormat format) async {
     state = state.copyWith(copyQuoteFormat: format);

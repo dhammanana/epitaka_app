@@ -107,9 +107,7 @@ class ReaderCopyService {
       // on internal state that can be null when selecting very long content on
       // Android. Fall back to a zero anchor so the toolbar still shows up
       // instead of crashing the app.
-      anchors = const TextSelectionToolbarAnchors(
-        primaryAnchor: Offset.zero,
-      );
+      anchors = const TextSelectionToolbarAnchors(primaryAnchor: Offset.zero);
     }
     final settings = ref.read(settingsProvider);
     final script = settings.paliScript;
@@ -129,40 +127,40 @@ class ReaderCopyService {
       for (final action in actions)
         switch (action.kind) {
           ContextMenuActionKind.builtin => _builtinButton(
-              context: context,
-              ref: ref,
-              loc: loc,
-              colors: colors,
-              selectableRegionState: selectableRegionState,
-              lastSelectedContent: lastSelectedContent,
-              visibleStartIndex: visibleStartIndex,
-              visibleEndIndex: visibleEndIndex,
-              bookId: bookId,
-              currentParaId: currentParaId,
-              currentLineId: currentLineId,
-              selectedText: selectedText,
-              script: script,
-              builtinId: action.builtinId,
-              contentHitTestKey: contentHitTestKey,
-              anchor: anchors.primaryAnchor,
-              onExplainTap: onExplainTap,
-              onSummarizeChapterTap: onSummarizeChapterTap,
-            ),
+            context: context,
+            ref: ref,
+            loc: loc,
+            colors: colors,
+            selectableRegionState: selectableRegionState,
+            lastSelectedContent: lastSelectedContent,
+            visibleStartIndex: visibleStartIndex,
+            visibleEndIndex: visibleEndIndex,
+            bookId: bookId,
+            currentParaId: currentParaId,
+            currentLineId: currentLineId,
+            selectedText: selectedText,
+            script: script,
+            builtinId: action.builtinId,
+            contentHitTestKey: contentHitTestKey,
+            anchor: anchors.primaryAnchor,
+            onExplainTap: onExplainTap,
+            onSummarizeChapterTap: onSummarizeChapterTap,
+          ),
           ContextMenuActionKind.externalApp => _externalAppButton(
-              context: context,
-              colors: colors,
-              selectableRegionState: selectableRegionState,
-              action: action,
-              selectedText: selectedText,
-            ),
+            context: context,
+            colors: colors,
+            selectableRegionState: selectableRegionState,
+            action: action,
+            selectedText: selectedText,
+          ),
           ContextMenuActionKind.aiPrompt => _aiPromptButton(
-              context: context,
-              colors: colors,
-              selectableRegionState: selectableRegionState,
-              action: action,
-              selectedText: selectedText,
-              onAiPrompt: onAiPrompt,
-            ),
+            context: context,
+            colors: colors,
+            selectableRegionState: selectableRegionState,
+            action: action,
+            selectedText: selectedText,
+            onAiPrompt: onAiPrompt,
+          ),
         },
     ];
 
@@ -207,8 +205,14 @@ class ReaderCopyService {
           icon: Icons.border_color,
           label: loc.highlight,
           onTap: () {
-            _createHighlight(context, ref, lastSelectedContent,
-                visibleStartIndex, visibleEndIndex, anchor);
+            _createHighlight(
+              context,
+              ref,
+              lastSelectedContent,
+              visibleStartIndex,
+              visibleEndIndex,
+              anchor,
+            );
             selectableRegionState.clearSelection();
           },
           colors: colors,
@@ -219,8 +223,13 @@ class ReaderCopyService {
           icon: Icons.sticky_note_2_outlined,
           label: loc.note,
           onTap: () {
-            _createNote(context, ref, lastSelectedContent,
-                visibleStartIndex, visibleEndIndex);
+            _createNote(
+              context,
+              ref,
+              lastSelectedContent,
+              visibleStartIndex,
+              visibleEndIndex,
+            );
             selectableRegionState.clearSelection();
           },
           colors: colors,
@@ -604,9 +613,7 @@ class ReaderCopyService {
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     } catch (_) {
@@ -663,9 +670,7 @@ class ReaderCopyService {
     // [buildContextMenu] falls back to a zero anchor when Flutter's
     // contextMenuAnchors throws (a known SelectableRegion crash path) — a
     // zero anchor is not a real position, so skip hit-testing then.
-    if (contentHitTestKey != null &&
-        anchor != null &&
-        anchor != Offset.zero) {
+    if (contentHitTestKey != null && anchor != null && anchor != Offset.zero) {
       try {
         final hit = selectWordAt(contentHitTestKey, anchor);
         if (hit != null && hit.isNotEmpty) return hit;
@@ -688,10 +693,9 @@ class ReaderCopyService {
     final raw = lastSelectedContent.plainText.trim();
     if (raw.isEmpty) return null;
     // Take the first whitespace-delimited word
-    final word = raw.split(RegExp(r'\s+')).firstWhere(
-      (w) => w.isNotEmpty,
-      orElse: () => '',
-    );
+    final word = raw
+        .split(RegExp(r'\s+'))
+        .firstWhere((w) => w.isNotEmpty, orElse: () => '');
     if (word.isEmpty) return null;
     final cleaned = cleanPali(convertToRomanPali(word));
     if (cleaned.isEmpty || cleaned.length < 2 || cleaned.length > 50) {
@@ -754,8 +758,7 @@ class ReaderCopyService {
         visibleStartIndex,
         visibleEndIndex,
         script: script,
-        enabledLangCodes:
-            enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+        enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
       );
 
       if (paragraphs != null && paragraphs.isNotEmpty) {
@@ -801,10 +804,7 @@ class ReaderCopyService {
     }
 
     // ── No selection — build from visible paragraph range ───────────
-    final start = visibleStartIndex.clamp(
-      0,
-      readerState.paragraphs.length - 1,
-    );
+    final start = visibleStartIndex.clamp(0, readerState.paragraphs.length - 1);
     final end = visibleEndIndex.clamp(0, readerState.paragraphs.length - 1);
 
     final buf = StringBuffer();
@@ -873,10 +873,7 @@ class ReaderCopyService {
     try {
       final activeTab = ref.read(readerTabsProvider).activeTab;
       if (activeTab == null) {
-        developer.log(
-          '[COPY] ABORT activeTab is null',
-          name: 'epitaka.copy',
-        );
+        developer.log('[COPY] ABORT activeTab is null', name: 'epitaka.copy');
         throw StateError('activeTab is null');
       }
 
@@ -921,8 +918,7 @@ class ReaderCopyService {
         visibleStartIndex,
         visibleEndIndex,
         script: effectiveScript,
-        enabledLangCodes:
-            enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+        enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
       );
 
       if (paragraphs != null && paragraphs.isNotEmpty) {
@@ -934,8 +930,9 @@ class ReaderCopyService {
         );
         String citation = '';
         if (addQuote) {
-          final notifier =
-              ref.read(readerDataProvider(activeTab.bookId).notifier);
+          final notifier = ref.read(
+            readerDataProvider(activeTab.bookId).notifier,
+          );
           final firstPara = paragraphs.first;
           final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
           citation = buildCitationFromTemplate(
@@ -957,8 +954,9 @@ class ReaderCopyService {
           bookName: readerState.bookName,
           htmlColor: transColor,
           paliCssColor: paliColor,
-          enabledLangCodes:
-              enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+          enabledLangCodes: enabledLangs.isNotEmpty
+              ? enabledLangs.toSet()
+              : null,
           script: effectiveScript,
         );
 
@@ -974,10 +972,7 @@ class ReaderCopyService {
     } catch (e) {
       // Any error in the rich-copy path — log and fall through to plain
       // text below.
-      developer.log(
-        '[COPY] rich-copy exception: $e',
-        name: 'epitaka.copy',
-      );
+      developer.log('[COPY] rich-copy exception: $e', name: 'epitaka.copy');
     }
 
     // ── Guaranteed plain-text fallback ────────────────────────────────
@@ -1413,8 +1408,7 @@ class ReaderCopyService {
         visibleStartIndex,
         visibleEndIndex,
         script: settings.paliScript,
-        enabledLangCodes:
-            enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+        enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
       );
 
       if (paragraphs != null && paragraphs.isNotEmpty) {
@@ -1446,7 +1440,9 @@ class ReaderCopyService {
         // so users can share single words for dictionary lookup.
         final wordCount = textToShare.split(RegExp(r'\s+')).length;
         if (wordCount >= 3) {
-          final notifier = ref.read(readerDataProvider(activeTab.bookId).notifier);
+          final notifier = ref.read(
+            readerDataProvider(activeTab.bookId).notifier,
+          );
           final firstPara = paragraphs.first;
           final nearbyHeading = notifier.findNearbyHeading(firstPara.paraId);
           final citation = buildCitationFromTemplate(
@@ -1458,7 +1454,7 @@ class ReaderCopyService {
             paraId: firstPara.paraId,
           );
           if (citation.isNotEmpty) {
-            textToShare = '$textToShare\n\n$citation';
+            textToShare = '$textToShare\n$citation';
           }
         }
       } else {
@@ -1575,8 +1571,9 @@ class ReaderCopyService {
   }) {
     final baseUri = 'https://epitaka.org/app/$lang/$bookId';
     final path = (slug != null && slug.isNotEmpty) ? '$baseUri/$slug' : baseUri;
-    final fragment =
-        paraId != null ? '#$paraId${lineId != null ? '-$lineId' : ''}' : '';
+    final fragment = paraId != null
+        ? '#$paraId${lineId != null ? '-$lineId' : ''}'
+        : '';
     return '$path$fragment';
   }
 

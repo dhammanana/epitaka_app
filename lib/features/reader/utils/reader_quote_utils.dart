@@ -56,10 +56,11 @@ String buildCitationFromTemplate(
   // Clean up: remove double spaces, leading/trailing punctuation when
   // a placeholder was empty, and trim.
   result = result.replaceAll(RegExp(r'\s+'), ' ').trim();
-  // Remove dangling punctuation like "> " or "— " that was left when
-  // {heading} was empty. Strips leading/trailing dashes, pipes, colons,
-  // greater-than signs, and their surrounding whitespace.
-  result = result.replaceAll(RegExp(r'^[\s>\-—:|,;.]+\s*'), '').trim();
+  // Remove dangling leading punctuation like "> " or "— " that was left
+  // when {heading} was empty. A leading "- " (the excerpt dash prefix,
+  // e.g. "- {book_id} VRI p.12") is intentional, so plain hyphens are
+  // deliberately not stripped here.
+  result = result.replaceAll(RegExp(r'^[\s>\—:|,;.]+\s*'), '').trim();
   result = result.replaceAll(RegExp(r'\s*[\s>\-—:|,;.]+$'), '').trim();
 
   return result;

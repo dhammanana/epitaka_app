@@ -11,14 +11,14 @@
 /// silently skipped and the original script text was kept.
 library;
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/core/utils/pali_script_converter.dart';
 import '../lib/core/utils/pali_search_utils.dart';
 import '../lib/core/utils/pali_text_utils.dart';
 import '../lib/core/utils/velthuis.dart';
-import '../lib/features/reader/utils/reader_word_hit_test.dart'
-    show cleanPali;
+import '../lib/features/reader/utils/reader_word_hit_test.dart' show cleanPali;
 
 void main() {
   group('TextProcessor.convertFromMixed (root cause)', () {
@@ -28,14 +28,8 @@ void main() {
     });
 
     test('converts mixed-script text run by run', () {
-      expect(
-        TextProcessor.convertFromMixed('namo ဓမ္မ'),
-        'නමො ධම්ම',
-      );
-      expect(
-        TextProcessor.convertFromMixed('namo த⁴ம்ம'),
-        'නමො ධම්ම',
-      );
+      expect(TextProcessor.convertFromMixed('namo ဓမ္မ'), 'නමො ධම්ම');
+      expect(TextProcessor.convertFromMixed('namo த⁴ம்ம'), 'නමො ධම්ම');
     });
 
     test('passes through characters with no known script', () {
@@ -76,6 +70,41 @@ void main() {
       expect(velthuis('dhammaṃ'), 'dhammaṃ');
       expect(velthuis('rāga'), 'rāga');
     });
+  });
+
+  group('velthuisDiacritics / convertedTextEditingValue (textbox display)', () {
+    test('diacritics-only pass keeps the typed script unchanged', () {
+      expect(velthuisDiacritics('ဓမ္မ'), 'ဓမ္မ');
+      expect(velthuisDiacritics('နမော tassa'), 'နမော tassa');
+    });
+
+    test('diacritics-only pass still renders Velthuis notation', () {
+      expect(velthuisDiacritics('dhamma.m'), 'dhammaṃ');
+      expect(velthuisDiacritics('raaga'), 'rāga');
+    });
+
+    test('convertedTextEditingValue keeps the typed script and the cursor', () {
+      const value = TextEditingValue(
+        text: 'ဓမ္မ',
+        selection: TextSelection.collapsed(offset: 3),
+      );
+      final result = convertedTextEditingValue(value);
+      expect(result.text, 'ဓမ္မ');
+      expect(result.selection.baseOffset, 3);
+    });
+
+    test(
+      'convertedTextEditingValue renders Velthuis notation with cursor math',
+      () {
+        const value = TextEditingValue(
+          text: 'dhamma.m',
+          selection: TextSelection.collapsed(offset: 8),
+        );
+        final result = convertedTextEditingValue(value);
+        expect(result.text, 'dhammaṃ');
+        expect(result.selection.baseOffset, 7);
+      },
+    );
   });
 
   group('convertToRomanPali (double-tap dictionary lookup)', () {

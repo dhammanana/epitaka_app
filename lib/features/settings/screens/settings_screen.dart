@@ -144,7 +144,7 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: AppDimensions.md),
 
-          // ── AI Q&A + Gavesana ───────────────────────────────────────
+          // ── Vimaṃsa (AI Q&A + Gavesana) ────────────────────────────
           const SettingsAiSection(),
 
           const SizedBox(height: AppDimensions.md),
@@ -158,7 +158,6 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 /// General settings section: language, script, library expand, script
@@ -212,10 +211,11 @@ class SettingsSearchSection extends ConsumerWidget {
   }
 }
 
-/// AI Q&A + Gavesana AI-powered search settings section.
+/// Vimaṃsa (AI Q&A) + Gavesana (AI search) settings section.
 ///
-/// Gavesana runs on the cloud AI (same settings as Vimaṃsa), so both link
-/// to the shared AI settings sheet — no on-device asset downloads anymore.
+/// Gavesana runs on the cloud AI (same settings as Vimaṃsa), so both share
+/// a single configuration — one tile opens the shared AI settings sheet;
+/// no on-device asset downloads anymore.
 class SettingsAiSection extends ConsumerWidget {
   const SettingsAiSection({super.key});
 
@@ -223,32 +223,15 @@ class SettingsAiSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    return Column(
+    return SettingsSection(
+      title: loc.vimamsa,
+      colors: colors,
       children: [
-        SettingsSection(
-          title: loc.aiQa,
-          colors: colors,
-          children: [
-            _SettingsTile(
-              icon: Icons.question_answer,
-              title: loc.aiQaSettings,
-              subtitle: loc.aiQaSettingsSubtitle,
-              onTap: () => showAiQaSettingsSheet(context),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppDimensions.md),
-        SettingsSection(
-          title: loc.aiSearch,
-          colors: colors,
-          children: [
-            _SettingsTile(
-              icon: Icons.auto_awesome,
-              title: loc.gavesanaAiSearch,
-              subtitle: loc.aiQaSettingsSubtitle,
-              onTap: () => showAiQaSettingsSheet(context),
-            ),
-          ],
+        _SettingsTile(
+          icon: Icons.question_answer,
+          title: loc.vimamsaSettings,
+          subtitle: loc.aiQaSettingsSubtitle,
+          onTap: () => showAiQaSettingsSheet(context),
         ),
       ],
     );
@@ -420,7 +403,8 @@ class _SettingsTile extends StatelessWidget {
             // squeezes the title's Expanded slot to nothing, which looks
             // broken. Strip the subtitle unless the title and subtitle both
             // fit beside the icon and chevron.
-            final showSubtitle = subtitle != null &&
+            final showSubtitle =
+                subtitle != null &&
                 _titleAndSubtitleFit(
                   constraints.maxWidth,
                   title,
@@ -434,9 +418,7 @@ class _SettingsTile extends StatelessWidget {
               children: [
                 Icon(icon, color: colors.primary),
                 const SizedBox(width: AppDimensions.md),
-                Expanded(
-                  child: Text(title, style: titleStyle),
-                ),
+                Expanded(child: Text(title, style: titleStyle)),
                 if (showSubtitle)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),

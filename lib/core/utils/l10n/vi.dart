@@ -72,6 +72,12 @@ const Map<String, String> vi = {
       'Bản dịch Nissaya hiển thị phân tích từng chữ Pāli kèm nghĩa, dạng pali: nghĩa | pali: nghĩa.',
   'Customize the citation format. Use the variables shown below.':
       'Tùy chỉnh định dạng trích dẫn. Sử dụng các biến hiển thị bên dưới.',
+  'Quick formats': 'Định dạng nhanh',
+  'Long': 'Dài',
+  'VRI Short': 'VRI Ngắn',
+  'PTS Short': 'PTS Ngắn',
+  'Myanmar Short': 'Myanmar Ngắn',
+  'Thai Short': 'Thái Ngắn',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'Các biến khả dụng: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'Lỗi: ',
@@ -224,6 +230,9 @@ const Map<String, String> vi = {
   'Pāli above translation': 'Pāli trên bản dịch',
   'Side by side': 'Song song',
   'Pāli beside translation': 'Pāli cạnh bản dịch',
+  'Only translation': 'Chỉ bản dịch',
+  'Show only the translation': 'Chỉ hiển thị bản dịch',
+  'Translations': 'Bản dịch',
   'Any': 'Bất kỳ',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────
@@ -277,13 +286,12 @@ const Map<String, String> vi = {
       'TTS nền tảng gốc (nhanh, không cần tải)',
   'SuperTonic': 'SuperTonic',
   'Neural TTS with 31 languages (~400 MB model download)':
-      'TTS thần kinh với 31 ngôn ngữ (tải xuống ~400 MB)',
+      'TTS với 31 ngôn ngữ (tải xuống ~400 MB)',
   'Model Download': 'Tải mô hình',
   'Models Installed': 'Mô hình đã cài',
   'TTS Models': 'Mô hình TTS',
   'All models are ready for use': 'Tất cả mô hình đã sẵn sàng',
-  'Requires ~400 MB download for neural TTS':
-      'Cần tải ~400 MB cho TTS thần kinh',
+  'Requires ~400 MB download for neural TTS': 'Cần tải ~400 MB cho TTS',
   'Speaking Rate': 'Tốc độ nói',
   'Low': 'Thấp',
   'High': 'Cao',
@@ -818,8 +826,7 @@ const Map<String, String> vi = {
   'Look up in device dictionary (iOS/macOS)':
       'Tra cứu trong từ điển thiết bị (iOS/macOS)',
   'Speak': 'Đọc',
-  'Speak the selected text (iOS/macOS)':
-      'Đọc văn bản đã chọn (iOS/macOS)',
+  'Speak the selected text (iOS/macOS)': 'Đọc văn bản đã chọn (iOS/macOS)',
   'Reset to default': 'Khôi phục mặc định',
   'Reset context menu actions and order to default?':
       'Khôi phục danh sách và thứ tự menu ngữ cảnh về mặc định?',

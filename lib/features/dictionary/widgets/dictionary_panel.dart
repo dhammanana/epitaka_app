@@ -180,18 +180,13 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     try {
       anchors = selectableRegionState.contextMenuAnchors;
     } catch (_) {
-      anchors = const TextSelectionToolbarAnchors(
-        primaryAnchor: Offset.zero,
-      );
+      anchors = const TextSelectionToolbarAnchors(primaryAnchor: Offset.zero);
     }
 
     final raw = _lastSelectedContent?.plainText;
     final searchable = raw == null || raw.trim().isEmpty
         ? null
-        : raw
-              .replaceAll('\uFFFC', ' ')
-              .replaceAll(RegExp(r'\s+'), ' ')
-              .trim();
+        : raw.replaceAll('\uFFFC', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
     return AdaptiveTextSelectionToolbar.buttonItems(
       anchors: anchors,
@@ -389,8 +384,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             ),
           ),
           data: (lookup) {
-            final hasDpdMatch =
-                lookup.hasHeadwords || lookup.hasDeconstructor;
+            final hasDpdMatch = lookup.hasHeadwords || lookup.hasDeconstructor;
             // DPD is not the only dictionary: the enabled Bold Definition
             // and other books can match words DPD has no entry for. When DPD
             // misses, still render those sections and append DPD's
@@ -508,9 +502,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             for (final book in enabledBooks) {
               if (book.id == 11) {
                 if (lookup.hasHeadwords || lookup.hasDeconstructor) {
-                  children.add(
-                    _DpdSection(colors: colors, lookup: lookup),
-                  );
+                  children.add(_DpdSection(colors: colors, lookup: lookup));
                 }
               } else if (book.id == 100) {
                 children.add(
@@ -541,8 +533,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             // "Search" action, without the per-word linkification that was
             // dropped for performance.
             return SelectionArea(
-              onSelectionChanged: (content) =>
-                  _lastSelectedContent = content,
+              onSelectionChanged: (content) => _lastSelectedContent = content,
               contextMenuBuilder: (context, selectableRegionState) =>
                   _resultsContextMenu(context, selectableRegionState),
               child: ListView(
@@ -564,10 +555,7 @@ class _DpdSection extends ConsumerStatefulWidget {
   final ColorScheme colors;
   final DpdFullLookup lookup;
 
-  const _DpdSection({
-    required this.colors,
-    required this.lookup,
-  });
+  const _DpdSection({required this.colors, required this.lookup});
 
   @override
   ConsumerState<_DpdSection> createState() => _DpdSectionState();
@@ -638,7 +626,10 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
         // like cirakālasamparicitaṃ only have a deconstructor (no direct
         // headword with a meaning), so the panel showed nothing but the
         // searched-word title.
-        if (lookup.hasDeconstructor) ...[_buildDeconstructorSection(colors, lookup), const SizedBox(height: 12)],
+        if (lookup.hasDeconstructor) ...[
+          _buildDeconstructorSection(colors, lookup),
+          const SizedBox(height: 12),
+        ],
 
         ...lookup.headwords.map(
           (hw) => DpdHeadwordCard(
@@ -684,8 +675,7 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
             onTap: () {
               setState(() {
                 // Toggle: tapping the active card collapses it.
-                _activeDeconCardIndex =
-                    _activeDeconCardIndex == idx ? -1 : idx;
+                _activeDeconCardIndex = _activeDeconCardIndex == idx ? -1 : idx;
                 _activeDeconTokenIndex = 0;
               });
               _lookupDeconTokens(candidate);
@@ -738,56 +728,54 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
                   if (isActive && candidate.tokens.length > 1) ...[
                     const Divider(height: 1),
                     Padding(
-                      padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                      padding: const EdgeInsets.only(
+                        left: 8,
+                        top: 4,
+                        bottom: 4,
+                      ),
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
-                          children: List.generate(
-                            candidate.tokens.length,
-                            (i) {
-                              final isTokenActive =
-                                  i == _activeDeconTokenIndex;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    setState(
-                                      () => _activeDeconTokenIndex = i,
-                                    );
-                                    _lookupDeconToken(candidate.tokens[i]);
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
+                          children: List.generate(candidate.tokens.length, (i) {
+                            final isTokenActive = i == _activeDeconTokenIndex;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() => _activeDeconTokenIndex = i);
+                                  _lookupDeconToken(candidate.tokens[i]);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isTokenActive
+                                        ? colors.primary
+                                        : colors.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Text(
+                                    candidate.tokens[i],
+                                    style: AppTypography.labelSmall.copyWith(
                                       color: isTokenActive
-                                          ? colors.primary
-                                          : colors.surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Text(
-                                      candidate.tokens[i],
-                                      style: AppTypography.labelSmall.copyWith(
-                                        color: isTokenActive
-                                            ? colors.onPrimary
-                                            : colors.onSurfaceVariant,
-                                        fontWeight: isTokenActive
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                        fontSize: (pali.fontSize * 0.75).clamp(
-                                          11.0,
-                                          18.0,
-                                        ),
-                                        fontFamily: paliFontFamily,
+                                          ? colors.onPrimary
+                                          : colors.onSurfaceVariant,
+                                      fontWeight: isTokenActive
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      fontSize: (pali.fontSize * 0.75).clamp(
+                                        11.0,
+                                        18.0,
                                       ),
+                                      fontFamily: paliFontFamily,
                                     ),
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          }),
                         ),
                       ),
                     ),
@@ -856,8 +844,7 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
   Future<void> _lookupDeconToken(String token) async {
     if (_subLookupCache.containsKey(token)) return;
     try {
-      final headwords =
-          await ref.read(dpdSubLookupProvider(token).future);
+      final headwords = await ref.read(dpdSubLookupProvider(token).future);
       if (mounted) {
         setState(() {
           _subLookupCache[token] = headwords;

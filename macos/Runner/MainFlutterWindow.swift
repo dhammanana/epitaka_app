@@ -1,9 +1,10 @@
 import Cocoa
 import FlutterMacOS
 import AppKit
+import AVFoundation
 
 class MainFlutterWindow: NSWindow {
-  private let speechSynthesizer = NSSpeechSynthesizer()
+  private let speechSynthesizer = AVSpeechSynthesizer()
   private var speechChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
@@ -16,10 +17,36 @@ class MainFlutterWindow: NSWindow {
     registerNativeLookup(with: flutterViewController)
     registerNativeSpeech(with: flutterViewController)
 
-    // Set up NSSpeechSynthesizer delegate for completion callbacks
+    // Set up AVSpeechSynthesizer delegate for completion callbacks.
+    // AVSpeechSynthesizer (not the deprecated NSSpeechSynthesizer) is the
+    // API that reliably reports utterance completion inside Flutter macOS
+    // apps — NSSpeechSynthesizer's didFinishSpeaking delegate callback was
+    // never delivered in this app, so every TTS line waited for the Dart
+    // side's full timeout before advancing (a 15–30s gap between lines).
     self.speechSynthesizer.delegate = self
 
     super.awakeFromNib()
+  }
+
+  /// Pick a voice for [languageCode] (e.g. "en-US", "th", "my").
+  /// Falls back to the default voice when the language has no installed
+  /// voice (nil utterance.voice = system default).
+  private func resolveVoice(for languageCode: String?) -> AVSpeechSynthesisVoice? {
+    guard let code = languageCode, !code.isEmpty else { return nil }
+    if let voice = AVSpeechSynthesisVoice(language: code) {
+      return voice
+    }
+    // Bare language code (e.g. "th"): match any installed voice whose
+    // locale starts with that language prefix.
+    guard let prefix = code.split(separator: "-").first.map(String.init) else {
+      return nil
+    }
+    for voice in AVSpeechSynthesisVoice.speechVoices() {
+      if voice.language.lowercased().hasPrefix(prefix.lowercased() + "-") {
+        return voice
+      }
+    }
+    return nil
   }
 
   private func registerNativeSpeech(with flutterViewController: FlutterViewController) {
@@ -46,18 +73,21 @@ class MainFlutterWindow: NSWindow {
           return
         }
 
+        let language = args["language"] as? String
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         DispatchQueue.main.async {
           if self.speechSynthesizer.isSpeaking {
-            self.speechSynthesizer.stopSpeaking()
+            self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
-          self.speechSynthesizer.startSpeaking(trimmedText)
+          let utterance = AVSpeechUtterance(string: trimmedText)
+          utterance.voice = self.resolveVoice(for: language)
+          self.speechSynthesizer.speak(utterance)
           result(true)
         }
       case "stop":
         DispatchQueue.main.async {
           if self.speechSynthesizer.isSpeaking {
-            self.speechSynthesizer.stopSpeaking()
+            self.speechSynthesizer.stopSpeaking(at: .immediate)
           }
           result(true)
         }
@@ -115,12 +145,11 @@ class MainFlutterWindow: NSWindow {
   }
 }
 
-// MARK: - NSSpeechSynthesizerDelegate
-extension MainFlutterWindow: NSSpeechSynthesizerDelegate {
-  func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
+// MARK: - AVSpeechSynthesizerDelegate
+extension MainFlutterWindow: AVSpeechSynthesizerDelegate {
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
     DispatchQueue.main.async {
       self.speechChannel?.invokeMethod("onCompletion", arguments: nil)
     }
   }
-
 }

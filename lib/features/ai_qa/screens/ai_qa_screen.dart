@@ -38,7 +38,11 @@ class VimamsaScreen extends ConsumerStatefulWidget {
   /// header row + the chat body. Reuses the exact same chat state/logic.
   final bool panelMode;
 
-  const VimamsaScreen({super.key, this.initialThreadId, this.panelMode = false});
+  const VimamsaScreen({
+    super.key,
+    this.initialThreadId,
+    this.panelMode = false,
+  });
 
   @override
   ConsumerState<VimamsaScreen> createState() => _VimamsaScreenState();
@@ -119,11 +123,11 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       _isConverting = false;
     }
 
-    // Read the post-conversion text: when a conversion happened the setter
-    // above already replaced the controller with `converted`; reading it
-    // back (instead of reusing the local) keeps the mention search in sync
-    // even if the two conversion helpers ever diverge.
-    final text = _textController.text;
+    // Read the post-conversion text. The field now keeps whatever script the
+    // user typed (only the Velthuis diacritics are applied on screen), so
+    // convert to Roman here — the mention index is stored in IAST — before
+    // the mention search sees it.
+    final text = velthuis(_textController.text);
     ref.read(mentionSearchProvider.notifier).onTextChanged(text);
 
     final isActive = ref.read(mentionSearchProvider).isActive;
@@ -552,7 +556,11 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               ),
               borderRadius: BorderRadius.circular(7),
             ),
-            child: const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
+            child: const Icon(
+              Icons.auto_awesome,
+              size: 15,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -715,7 +723,9 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 Icon(Icons.info_outline, size: 12, color: Colors.orange[700]),
                 const SizedBox(width: 6),
                 Text(
-                  AppLocalizations.of(context).queriesRemainingInThread(remaining),
+                  AppLocalizations.of(
+                    context,
+                  ).queriesRemainingInThread(remaining),
                   style: AppTypography.labelSmall.copyWith(
                     color: Colors.orange[700],
                     fontSize: 10,
@@ -1051,7 +1061,9 @@ class _ThreadHistorySheet extends ConsumerWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                AppLocalizations.of(context).startNewChatToBegin,
+                                AppLocalizations.of(
+                                  context,
+                                ).startNewChatToBegin,
                                 style: AppTypography.labelSmall.copyWith(
                                   color: colors.onSurfaceVariant.withValues(
                                     alpha: 0.6,
@@ -1077,7 +1089,9 @@ class _ThreadHistorySheet extends ConsumerWidget {
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(
-                    child: Text(AppLocalizations.of(context).errorMessage(e.toString())),
+                    child: Text(
+                      AppLocalizations.of(context).errorMessage(e.toString()),
+                    ),
                   ),
                 ),
               ),
@@ -1185,9 +1199,13 @@ class _ThreadHistoryTile extends ConsumerWidget {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: Text(AppLocalizations.of(context).deleteConversation),
+                      title: Text(
+                        AppLocalizations.of(context).deleteConversation,
+                      ),
                       content: Text(
-                        AppLocalizations.of(context).deleteThreadConfirm(thread.title),
+                        AppLocalizations.of(
+                          context,
+                        ).deleteThreadConfirm(thread.title),
                       ),
                       actions: [
                         TextButton(

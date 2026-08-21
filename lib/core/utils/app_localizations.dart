@@ -101,6 +101,7 @@ class AppLocalizations {
         return singleTap;
     }
   }
+
   String get textToSpeech => _t('Text-to-Speech');
   String get ttsSubtitle => _t('Voice & speed');
   String get ttsReplacements => _t('TTS Replacements');
@@ -253,6 +254,9 @@ class AppLocalizations {
   String get displayLineByLineSubtitle => _t('Pāli above translation');
   String get displaySideBySide => _t('Side by side');
   String get displaySideBySideSubtitle => _t('Pāli beside translation');
+  String get displayOnlyTranslation => _t('Only translation');
+  String get displayOnlyTranslationSubtitle => _t('Show only the translation');
+  String get translationsLabel => _t('Translations');
   String get anyShort => _t('Any');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -407,7 +411,8 @@ class AppLocalizations {
   );
   String get displayLayout => _t('Display layout');
   String get bookmark => _t('Bookmark');
-  String get resetToolbarConfirm => _t('Reset toolbar items and order to default?');
+  String get resetToolbarConfirm =>
+      _t('Reset toolbar items and order to default?');
   String get explain => _t('Explain');
   String get explainDesc => _t('Explain the selected text with AI');
   String get summarizeChapter => _t('Summarize Ch.');
@@ -1157,6 +1162,12 @@ class AppLocalizations {
   );
   String get quoteFormatHelper =>
       _t('Customize the citation format. Use the variables shown below.');
+  String get quickFormats => _t('Quick formats');
+  String get quotePresetLong => _t('Long');
+  String get quotePresetVriShort => _t('VRI Short');
+  String get quotePresetPtsShort => _t('PTS Short');
+  String get quotePresetMyanmarShort => _t('Myanmar Short');
+  String get quotePresetThaiShort => _t('Thai Short');
   String get availableVariables => _t(
     'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   );

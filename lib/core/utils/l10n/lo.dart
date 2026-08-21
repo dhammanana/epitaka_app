@@ -68,6 +68,12 @@ const Map<String, String> lo = {
       'ການແປແບບນິດສະຍະສະແດງການແຍກຄຳບາລີເປັນຄຳໆພ້ອມຄວາມໝາຍ ໃນຮູບແບບ pali: meaning | pali: meaning.',
   'Customize the citation format. Use the variables shown below.':
       'ປັບແຕ່ງຮູບແບບການອ້າງອີງ. ໃຊ້ຕົວແປທີ່ສະແດງຢູ່ລຸ່ມນີ້.',
+  'Quick formats': 'ຮູບແບບດ່ວນ',
+  'Long': 'ຍາວ',
+  'VRI Short': 'VRI ສັ້ນ',
+  'PTS Short': 'PTS ສັ້ນ',
+  'Myanmar Short': 'ມຽນມາ ສັ້ນ',
+  'Thai Short': 'ໄທ ສັ້ນ',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'ຕົວແປທີ່ໃຊ້ໄດ້: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'ຂໍ້ຜິດພາດ: ',
@@ -181,6 +187,9 @@ const Map<String, String> lo = {
   'Pāli above translation': 'ບາລີຢູ່ເໜືອການແປ',
   'Side by side': 'ຄຽງຂ້າງກັນ',
   'Pāli beside translation': 'ບາລີຢູ່ຂ້າງການແປ',
+  'Only translation': 'ການແປເທົ່ານັ້ນ',
+  'Show only the translation': 'ສະແດງພຽງແຕ່ການແປ',
+  'Translations': 'ການແປ',
   'Any': 'ອັນໃດກໍໄດ້',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────

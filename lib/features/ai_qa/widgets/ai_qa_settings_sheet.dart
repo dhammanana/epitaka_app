@@ -238,18 +238,16 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     final tool = _toolModelController.text.trim();
     if (tool.isEmpty || !_availableModels.contains(tool)) {
       final fast = pool.where(looksFast).toList();
-      _toolModelController.text =
-          fast.isNotEmpty ? fast.first : pool.first;
+      _toolModelController.text = fast.isNotEmpty ? fast.first : pool.first;
     }
 
     final answer = _answerModelController.text.trim();
     if (answer.isEmpty || !_availableModels.contains(answer)) {
       final capable = pool.where(looksCapable).toList();
-      final fallback =
-          capable.isNotEmpty ? capable.first : pool.first;
+      final fallback = capable.isNotEmpty ? capable.first : pool.first;
       // Don't use the same model for both roles if we can help it.
-      _answerModelController.text = fallback == _toolModelController.text &&
-              pool.length > 1
+      _answerModelController.text =
+          fallback == _toolModelController.text && pool.length > 1
           ? pool.firstWhere(
               (m) => m != _toolModelController.text,
               orElse: () => fallback,
@@ -284,7 +282,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(loc.aiQaSettingsSaved),
+            content: Text(loc.aiSettingsSaved),
             behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
           ),
@@ -367,7 +365,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    loc.aiQaSettings,
+                    loc.vimamsaSettings,
                     style: AppTypography.headlineSmall.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.bold,
@@ -968,8 +966,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     final loc = AppLocalizations.of(context);
     final isGemini = _selectedProvider == AiProvider.gemini;
     final title = isGemini ? loc.getFreeGeminiKey : loc.getFreeOpenRouterKey;
-    final intro =
-        isGemini ? loc.geminiFree4Steps : loc.openRouterFree4Steps;
+    final intro = isGemini ? loc.geminiFree4Steps : loc.openRouterFree4Steps;
     final steps = isGemini
         ? [loc.guideStep1, loc.guideStep2, loc.guideStep3, loc.guideStep4]
         : [

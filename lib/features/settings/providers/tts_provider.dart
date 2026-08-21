@@ -69,7 +69,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// session in [stop] so a newly-installed voice shows up.
   List<Map<String, String>>? _voicesCache;
 
-  /// Key of the last voice configuration applied, "<lang>|<voiceName>".
+  /// Key of the last voice configuration applied, "<lang>|<voiceName>"
   /// Guards [setVoice]/[clearVoice] calls so they only happen when the
   /// language or chosen voice actually changed.
   String _cachedVoiceKey = '';
@@ -144,14 +144,19 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _speechCompleter = Completer<void>();
 
     // Dynamic timeout: at 0.5x speed (slowest) ~6 chars/sec → 167ms/char.
-    // Use 200ms/char + 15s buffer, clamped to [15s, 5min].
+    // Use 200ms/char + 4s buffer, clamped to [4s, 5min]. The buffer is a
+    // safety net for the native completion callback arriving late — it must
+    // never be the thing that gates line advancement on its own, or a missed
+    // completion handler turns into a multi-second silent gap between
+    // sentences (previously 15s+, which is what the macOS logs showed when
+    // NSSpeechSynthesizer never reported completion).
     final speechId = _currentSpeechId;
     Duration timeout;
     if (text != null && text.isNotEmpty) {
-      final ms = (text.length * 200) + 15000;
-      timeout = Duration(milliseconds: ms.clamp(15000, 300000));
+      final ms = (text.length * 200) + 4000;
+      timeout = Duration(milliseconds: ms.clamp(4000, 300000));
     } else {
-      timeout = const Duration(seconds: 30);
+      timeout = const Duration(seconds: 10);
     }
 
     try {

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 /// Represents a single version of a translation database.
 ///
 /// A language can have multiple versions:
@@ -291,8 +293,7 @@ class TranslationManifest {
       languages[languageCode] ?? [];
 
   /// Convenience getter for the embeddings core asset URL.
-  String? get embeddingsUrl =>
-      core['embeddings']?.url;
+  String? get embeddingsUrl => core['embeddings']?.url;
 
   factory TranslationManifest.fromJson(Map<String, dynamic> json) {
     final version = json['version'] as int? ?? 1;
@@ -384,7 +385,7 @@ class TranslationFilenameParser {
     final result = <TranslationVersion>[];
     try {
       final files = dir.listSync().whereType<File>().map(
-        (f) => f.path.split('/').last,
+        (f) => p.basename(f.path),
       );
       for (final filename in files) {
         if (!matches(filename)) continue;

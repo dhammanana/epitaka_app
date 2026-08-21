@@ -23,14 +23,9 @@ import '../lib/features/contents/widgets/contents_panel.dart';
 /// 20 headings with ascending paraIds — mirrors how `contentsProvider`
 /// orders rows (`ORDER BY para_id`), which `_currentHeadingIndex` relies on.
 List<HeadingInfo> _headings() => [
-      for (var i = 1; i <= 20; i++)
-        HeadingInfo(
-          bookId: 'dn1',
-          paraId: i,
-          level: 1,
-          title: 'Heading $i',
-        ),
-    ];
+  for (var i = 1; i <= 20; i++)
+    HeadingInfo(bookId: 'dn1', paraId: i, level: 1, title: 'Heading $i'),
+];
 
 /// Target paragraph deep inside the list (Heading 12 has paraId 12).
 const _targetParaId = 12;
@@ -65,19 +60,11 @@ Widget _build(Widget child) {
   );
 }
 
-/// The row's title Text widget, resolved through the Pali converter.
-Text _titleText(WidgetTester tester, String title) {
-  final finder = find.descendant(
-    of: find.byType(ContentsScreen),
-    matching: find.text(title),
-  );
-  return tester.widget<Text>(finder);
-}
-
 void main() {
   group('ContentsScreen — current heading highlight + scroll', () {
-    testWidgets('highlights and scrolls to the heading for currentParaId',
-        (tester) async {
+    testWidgets('highlights and scrolls to the heading for currentParaId', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _build(
           const ContentsScreen(bookId: 'dn1', currentParaId: _targetParaId),
@@ -116,17 +103,17 @@ void main() {
           matching: find.byType(Scrollable),
         ),
       );
-      expect(scrollable.position.pixels, greaterThan(0),
-          reason: 'list auto-scrolled down to the current heading');
+      expect(
+        scrollable.position.pixels,
+        greaterThan(0),
+        reason: 'list auto-scrolled down to the current heading',
+      );
     });
 
-    testWidgets('no currentParaId → first heading highlighted, no scroll',
-        (tester) async {
-      await tester.pumpWidget(
-        _build(
-          const ContentsScreen(bookId: 'dn1'),
-        ),
-      );
+    testWidgets('no currentParaId → first heading highlighted, no scroll', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_build(const ContentsScreen(bookId: 'dn1')));
       await tester.pumpAndSettle();
 
       // Without a current paragraph there is nothing to highlight/scroll to.
@@ -139,17 +126,22 @@ void main() {
       expect(scrollable.position.pixels, 0);
 
       final first = tester.widget<Text>(find.text('Heading 1'));
-      final scheme = Theme.of(tester.element(find.text('Heading 1')))
-          .colorScheme;
-      expect(first.style!.color, scheme.onSurface,
-          reason: 'no heading highlighted');
+      final scheme = Theme.of(
+        tester.element(find.text('Heading 1')),
+      ).colorScheme;
+      expect(
+        first.style!.color,
+        scheme.onSurface,
+        reason: 'no heading highlighted',
+      );
       expect(first.style!.fontWeight, FontWeight.w400);
     });
   });
 
   group('ContentsPanel — current heading highlight + scroll', () {
-    testWidgets('highlights and scrolls to the heading for currentParaId',
-        (tester) async {
+    testWidgets('highlights and scrolls to the heading for currentParaId', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _build(
           const Scaffold(
@@ -177,8 +169,11 @@ void main() {
           matching: find.byType(Scrollable),
         ),
       );
-      expect(scrollable.position.pixels, greaterThan(0),
-          reason: 'panel auto-scrolled to the current heading');
+      expect(
+        scrollable.position.pixels,
+        greaterThan(0),
+        reason: 'panel auto-scrolled to the current heading',
+      );
     });
   });
 }

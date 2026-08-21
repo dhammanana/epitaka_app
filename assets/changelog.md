@@ -1,11 +1,13 @@
-## What's new in version 1.0.18 (build 24)
+## What's new in version 1.0.21 (build 27)
 
-- Add build a new translation feature
-- Fix gavesana search, guard the context history pushed
-- Fix gavesana search, guard the context history pushed
-- [Fix] Desktop apps: Dart VM / FFI callback assertion crashes on application exit
-- Refactor the reader screen and separate the logic. Add pali text to speech
-- [Add] native Apple dictionary look up - setting to change context menu order
-- [fix] to prevent database corruption, truncated writes, and stale WAL file mismatches when update db
-- Fix UI, deeplink, selectable within dictionary
-- Update translation manifest
+- [Fix] iOS TTS Voice via _accessibilitySpeak  and Start Position (viewport thresholding logic)
+- [FIX] Fix TTS on ios and delay between lines of macos intel
+- [Add] Wire apple TTS to the workflow of the TTS, remove tts in selection in the dictionary, fix UI of TTS dialog, settings dialog
+- [Add] Wire apple TTS to the workflow of the TTS, remove tts in selection in the dictionary, fix UI of TTS dialog, settings dialog
+- [Add] dashed accent underline and remove bgcolor for tapped words for readability in darkmode
+- [Add] tapped word stays highlighted on desktop apps and single tap on mobile devices
+- [Add] iOS Siri voice for Speak in the context menu
+- [Add] Speak option in the context menu and using macOS Siri voice for macOS app
+- [Add] Summary of the books, manages items in the toolbar
+- [Fix]: Tapping a FTS result fails to scroll / jump to the correct postition when multiple translations are enabled or large paragraph
+- [Fix] desktop UI

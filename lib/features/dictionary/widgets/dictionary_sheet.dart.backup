@@ -1,13 +1,10 @@
 import 'dart:async';
 
-import 'package:epitaka/core/utils/responsive_breakpoint.dart'
-    show ResponsiveBreakpoint;
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
@@ -19,8 +16,6 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/velthuis.dart';
-import '../providers/dictionary_sheet_open_provider.dart'
-    show dictionarySheetOpenProvider;
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 

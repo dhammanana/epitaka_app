@@ -68,6 +68,12 @@ const Map<String, String> th = {
       'คำแปลนิสสยะแสดงการแยกคำบาลีทีละคำพร้อมความหมาย ในรูปแบบ pali: meaning | pali: meaning',
   'Customize the citation format. Use the variables shown below.':
       'ปรับแต่งรูปแบบการอ้างอิง ใช้ตัวแปรที่แสดงด้านล่าง',
+  'Quick formats': 'รูปแบบด่วน',
+  'Long': 'แบบยาว',
+  'VRI Short': 'VRI แบบสั้น',
+  'PTS Short': 'PTS แบบสั้น',
+  'Myanmar Short': 'เมียนมา แบบสั้น',
+  'Thai Short': 'ไทย แบบสั้น',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'ตัวแปรที่ใช้ได้: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'ข้อผิดพลาด: ',
@@ -182,6 +188,9 @@ const Map<String, String> th = {
   'Pāli above translation': 'บาลีอยู่เหนือคำแปล',
   'Side by side': 'เคียงข้างกัน',
   'Pāli beside translation': 'บาลีอยู่ข้างคำแปล',
+  'Only translation': 'คำแปลเท่านั้น',
+  'Show only the translation': 'แสดงเฉพาะคำแปล',
+  'Translations': 'คำแปล',
   'Any': 'ใดก็ได้',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────

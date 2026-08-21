@@ -3,11 +3,10 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/settings_provider.dart'
-    show WordLookupGesture;
+import '../../../core/providers/settings_provider.dart' show WordLookupGesture;
 import '../../dictionary/widgets/dictionary_open.dart';
 import '../utils/reader_word_hit_test.dart'
-    show ReaderWordHitResult, hitTestWordAt, selectWordAt;
+    show ReaderWordHitResult, hitTestWordAt;
 
 /// Result from [ReaderDictionaryLookupController]'s tap processing.
 ///
@@ -42,26 +41,28 @@ class ReaderDictionaryLookupController {
   ReaderDictionaryLookupController({
     ReaderWordHitResult? Function(GlobalKey, Offset)? hitFinder,
     String? Function(GlobalKey, Offset)? wordFinder,
-  }) : _hitFinder = hitFinder ??
-            (wordFinder != null
-                ? ((key, pos) {
-                    final w = wordFinder(key, pos);
-                    return w != null
-                        ? ReaderWordHitResult(
-                            word: w,
-                            rawWord: w,
-                            range: TextRange.empty,
-                          )
-                        : null;
-                  })
-                : hitTestWordAt);
+  }) : _hitFinder =
+           hitFinder ??
+           (wordFinder != null
+               ? ((key, pos) {
+                   final w = wordFinder(key, pos);
+                   return w != null
+                       ? ReaderWordHitResult(
+                           word: w,
+                           rawWord: w,
+                           range: TextRange.empty,
+                         )
+                       : null;
+                 })
+               : hitTestWordAt);
 
   /// Injectable hit finder — defaults to the render-tree hit-test in
   /// [reader_word_hit_test.dart]; tests substitute a stub.
   final ReaderWordHitResult? Function(
     GlobalKey contentHitTestKey,
     Offset globalPosition,
-  ) _hitFinder;
+  )
+  _hitFinder;
 
   /// The active lookup gesture, driven by the user's setting.
   WordLookupGesture gesture = WordLookupGesture.doubleTap;
@@ -161,10 +162,7 @@ class ReaderDictionaryLookupController {
         _lastTapDownTime = null;
         _lastTapDownPosition = null;
         final hit = _selectWordAt(contentHitTestKey, globalPosition);
-        return TapLookupResult(
-          word: hit?.word,
-          hit: hit,
-        );
+        return TapLookupResult(word: hit?.word, hit: hit);
       }
       developer.log(
         '[DBG] tap too slow/far (dt=$dt dist=$dist) — not a double-tap',
@@ -222,10 +220,7 @@ class ReaderDictionaryLookupController {
     final downMs = _lastTapDownTime;
     final moved = _movedSinceDown;
     _movedSinceDown = false;
-    if (moved ||
-        _sawAdditionalPointer ||
-        hasSelection ||
-        downMs == null) {
+    if (moved || _sawAdditionalPointer || hasSelection || downMs == null) {
       return const TapLookupResult();
     }
     final dt = timestampMs - downMs;
@@ -233,17 +228,11 @@ class ReaderDictionaryLookupController {
       return const TapLookupResult();
     }
 
-    developer.log(
-      '[DBG] SINGLE-TAP detected (dt=$dt)',
-      name: 'epitaka.dict',
-    );
+    developer.log('[DBG] SINGLE-TAP detected (dt=$dt)', name: 'epitaka.dict');
     _lastTapDownTime = null;
     _lastTapDownPosition = null;
     final hit = _selectWordAt(contentHitTestKey, globalPosition);
-    return TapLookupResult(
-      word: hit?.word,
-      hit: hit,
-    );
+    return TapLookupResult(word: hit?.word, hit: hit);
   }
 
   /// Handle a raw pointer-cancel: the gesture is aborted, so any pending

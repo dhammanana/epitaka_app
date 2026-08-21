@@ -68,6 +68,12 @@ const Map<String, String> si = {
       'නිස්සය පරිවර්තන පදයෙන් පදය පාලි විග්‍රහයක් අර්ථයන් සමඟ pali: meaning | pali: meaning ලෙස පෙන්වයි.',
   'Customize the citation format. Use the variables shown below.':
       'උපුටා දැක්වීමේ ආකෘතිය අභිරුචිකරණය කරන්න. පහත දැක්වෙන විචල්‍යයන් භාවිතා කරන්න.',
+  'Quick formats': 'ඉක්මන් ආකෘති',
+  'Long': 'දිගු',
+  'VRI Short': 'VRI කෙටි',
+  'PTS Short': 'PTS කෙටි',
+  'Myanmar Short': 'මියන්මාර කෙටි',
+  'Thai Short': 'තායි කෙටි',
   'Available variables: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}':
       'ලබාගත හැකි විචල්‍යයන්: {book_id}, {book_name}, {heading}, {para_id}, {vri_page}, {pts_page}, {thai_page}, {myanmar_page}',
   'Error: ': 'දෝෂය: ',
@@ -185,6 +191,9 @@ const Map<String, String> si = {
   'Pāli above translation': 'පරිවර්තනයට ඉහළින් පාලි',
   'Side by side': 'පැති-පැති',
   'Pāli beside translation': 'පරිවර්තනයට යාබදව පාලි',
+  'Only translation': 'පරිවර්තනය පමණි',
+  'Show only the translation': 'පරිවර්තනය පමණක් පෙන්වන්න',
+  'Translations': 'පරිවර්තන',
   'Any': 'ඕනෑම',
 
   // ── Gavesana (AI search) ────────────────────────────────────────────

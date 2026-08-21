@@ -13,7 +13,8 @@ import 'package:flutter/services.dart';
 import 'copy_types.dart';
 import '../../features/reader/providers/reader_provider.dart';
 import '../../core/utils/pali_script_converter.dart' show Script;
-import '../../core/utils/pali_text_utils.dart' show convertPaliToScriptPreservingHtml;
+import '../../core/utils/pali_text_utils.dart'
+    show convertPaliToScriptPreservingHtml;
 export 'copy_types.dart';
 
 class ReadingClipboard {
@@ -137,7 +138,10 @@ class ReadingClipboard {
           final pali = line.paliText?.trim() ?? '';
           if (pali.isNotEmpty) {
             // Convert Pāli text to the user's selected script
-            final convertedPali = convertPaliToScriptPreservingHtml(pali, script);
+            final convertedPali = convertPaliToScriptPreservingHtml(
+              pali,
+              script,
+            );
             final formatted = _htmlFromTaggedText(convertedPali);
             plain.writeln(_stripTags(convertedPali));
             html.writeln(
@@ -175,9 +179,8 @@ class ReadingClipboard {
       }
     }
 
-    // Append citation
+    // Append citation on the next line — a single \n, no blank line.
     if (citation.isNotEmpty) {
-      plain.writeln();
       plain.writeln(citation);
       html.writeln(
         '<p style="margin-top:12px;color:#888;font-style:italic;font-size:13px;">${_escape(citation)}</p>',
