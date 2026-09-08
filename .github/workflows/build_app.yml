@@ -623,6 +623,12 @@ jobs:
       - name: Build Linux Release
         run: flutter build linux --release
 
+      - name: Build Linux .deb
+        # Runs before the AppImage step on purpose: that step assembles AppDir/
+        # and downloads linuxdeploy inside build/linux/x64/release/bundle, and
+        # both would otherwise end up in the .deb payload.
+        run: install/linux/build-deb.sh "$APP_VERSION" build/linux/x64/release/bundle "$GITHUB_WORKSPACE/epitaka-linux-x64.deb"
+
       - name: Build Linux AppImage
         run: |
           set -e
@@ -670,6 +676,7 @@ jobs:
           path: |
             epitaka-linux-x64.AppImage
             epitaka-linux-x64.tar.gz
+            epitaka-linux-x64.deb
  # -------------------------------------------------------------
   # 6. PUBLISH RELEASE (ONLY RUNS ON TAGS)
   # -------------------------------------------------------------
@@ -706,6 +713,7 @@ jobs:
 
             linux-release/**/*.AppImage
             linux-release/**/*.tar.gz
+            linux-release/**/*.deb
 
           fail_on_unmatched_files: true
           generate_release_notes: true
