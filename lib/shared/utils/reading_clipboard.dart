@@ -271,8 +271,10 @@ class ReadingClipboard {
   }
 
   /// Escape HTML special characters.
-  static String _escape(String s) =>
-      s.replaceAll('&', '&').replaceAll('<', '<').replaceAll('>', '>');
+  static String _escape(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
 
   /// Strip all HTML tags from a string while preserving newlines.
   /// First replaces <br> with \n, then removes remaining tags, and

@@ -259,18 +259,17 @@ class _DpdHeadwordCardState extends ConsumerState<DpdHeadwordCard> {
         .replaceAll(RegExp(r'</summary>'), '');
   }
 
-  /// The short meaning shown in the collapsed state: the first
-  /// `summary` gloss of the DPD entry (e.g. "free from desire"), or the
-  /// whole entry stripped to plain text when there is no `summary` tag.
-  /// Rendered as plain text (cheaper than another flutter_html parse per
-  /// card) and clipped to a couple of lines by the caller.
-  String _shortMeaning(String html) {
+  /// The summary HTML shown in the collapsed state: the first `summary`
+  /// gloss of the DPD entry (e.g. "free from desire"), or the whole entry
+  /// when there is no `summary` tag. Rendered as HTML so bold/italic
+  /// styling is preserved, with no line truncation.
+  String _summaryHtml(String html) {
     final summaryMatch = RegExp(
       r'<summary[^>]*>(.*?)</summary>',
       dotAll: true,
     ).firstMatch(html);
-    final text = summaryMatch != null ? summaryMatch.group(1)! : html;
-    return stripHtmlToPlainText(text);
+    if (summaryMatch != null) return summaryMatch.group(1)!;
+    return _stripDetailsTags(html);
   }
 
   @override
@@ -338,20 +337,20 @@ class _DpdHeadwordCardState extends ConsumerState<DpdHeadwordCard> {
                   ],
                 ),
               ),
-              // Short meaning preview — shown only when collapsed.
+              // Summary preview — shown only when collapsed. Full summary
+              // HTML (no line truncation) so `<b>` / `<i>` render correctly.
               if (hasMeaning && !_expanded)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                  child: Text(
-                    _shortMeaning(widget.meaningHtml!),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                  child: DpdHtmlRichText(
+                    html: _summaryHtml(widget.meaningHtml!),
+                    baseStyle: TextStyle(
                       fontSize: meaningSize * 0.95,
                       height: pali.lineHeight * 0.95,
                       color: colors.onSurfaceVariant,
                       fontFamily: paliFontFamily,
                     ),
+                    linkColor: colors.primary,
                   ),
                 ),
               // Detail meaning — shown only when expanded.
@@ -414,12 +413,10 @@ class _DictDefinitionSectionState extends ConsumerState<DictDefinitionSection> {
   Widget build(BuildContext context) {
     final ref = this.ref;
     final settings = ref.watch(settingsProvider);
-    final typo = settings.typography.typographyFor(
-      settings.primaryTranslationLang,
-    );
-    final defFontFamily = typo.fontFamily.fontFamily;
-    final defFontSize = (typo.fontSize * 0.8).clamp(12.0, 24.0);
-    final defLineHeight = typo.lineHeight;
+    final pali = settings.typography.pali;
+    final defFontFamily = pali.fontFamily.fontFamily;
+    final defFontSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
+    final defLineHeight = pali.lineHeight;
 
     final key = DictLookupKey(widget.bookId, widget.searchWord);
     final defsAsync = ref.watch(dictionaryDefinitionProvider(key));
@@ -429,12 +426,15 @@ class _DictDefinitionSectionState extends ConsumerState<DictDefinitionSection> {
       children: [
         Icon(Icons.book, size: 12, color: colors.onSurfaceVariant),
         const SizedBox(width: 4),
-        Text(
-          widget.bookName,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: colors.onSurfaceVariant,
+        Expanded(
+          child: Text(
+            widget.bookName,
+            style: TextStyle(
+              fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+              fontWeight: FontWeight.w600,
+              color: colors.onSurfaceVariant,
+              fontFamily: defFontFamily,
+            ),
           ),
         ),
       ],
@@ -494,12 +494,11 @@ class _DictDefinitionSectionState extends ConsumerState<DictDefinitionSection> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: definitions.map((def) {
                     final definition = def['definition'] as String? ?? '';
-                    final plain = stripHtmlToPlainText(definition);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        plain,
-                        style: TextStyle(
+                      child: DictHtmlContent(
+                        html: definition,
+                        baseStyle: TextStyle(
                           fontSize: defFontSize,
                           height: defLineHeight,
                           color: colors.onSurface,
@@ -558,12 +557,9 @@ class SuggestionTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
-    final trans = settings.typography.typographyFor(
-      settings.primaryTranslationLang,
-    );
     final paliFontFamily = pali.fontFamily.fontFamily;
     final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
-    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
+    final previewSize = (pali.fontSize * 0.64).clamp(11.0, 20.0);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
@@ -601,8 +597,10 @@ class SuggestionTile extends ConsumerWidget {
                         child: Text(
                           _stripHtml(meaningPreview!),
                           style: TextStyle(
-                            fontSize: transSize * 0.8,
+                            fontSize: previewSize,
+                            height: pali.lineHeight * 0.95,
                             color: colors.onSurfaceVariant,
+                            fontFamily: paliFontFamily,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

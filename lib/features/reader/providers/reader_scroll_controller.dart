@@ -109,7 +109,7 @@ class ReaderScrollController {
 
   // Pixel-based scroll tracking (per book)
   final Map<String, ScrollOffsetListener> _scrollOffsetListeners = {};
-  final Map<String, StreamSubscription<double>> _scrollOffsetSubs = {};
+
   final Map<String, double> _scrollAccum = {};
   static const double _kScrollThreshold = 20.0; // px
 
@@ -237,13 +237,17 @@ class ReaderScrollController {
   }
 
   ScrollOffsetListener scrollOffsetListenerFor(String bookId) {
-    return _scrollOffsetListeners.putIfAbsent(bookId, () {
-      final listener = ScrollOffsetListener.create();
-      _scrollOffsetSubs[bookId] = listener.changes.listen((delta) {
-        onScrollOffsetChanged(bookId, delta);
-      });
-      return listener;
-    });
+    // NOTE: no stream subscription here on purpose. Scroll deltas are
+    // observed via a NotificationListener around the list (see
+    // ReaderContentList.onScrollDelta): after any long programmatic jump the
+    // package swaps its internal primary/secondary lists, orphaning the
+    // listener attached in initState, so its stream goes permanently silent.
+    // The listener object is still passed to the package list because the
+    // widget API requires it.
+    return _scrollOffsetListeners.putIfAbsent(
+      bookId,
+      ScrollOffsetListener.create,
+    );
   }
 
   // ── Scroll offset tracking (collapsible app bar) ───────────────────
@@ -849,7 +853,11 @@ class ReaderScrollController {
     required int jumpToken,
     int retryCount = 0,
   }) {
-    void finish() => _finishJumpFlags(bookId, jumpToken);
+    // Always balance jumpToParagraph's beginControlledScroll, even when this
+    // jump was superseded by a newer one: the counter keeps overlapping
+    // jumps balanced, while the token guard in [_finishJumpFlags] would leak
+    // one count here and lock the app bar expanded forever.
+    void finish() => endControlledScroll();
 
     final readerState = ref.read(readerDataProvider(bookId));
     if (paraIndex < 0 || paraIndex >= readerState.paragraphs.length) {
@@ -1006,9 +1014,6 @@ class ReaderScrollController {
       if (listener != null) {
         entry.value.itemPositions.removeListener(listener);
       }
-    }
-    for (final sub in _scrollOffsetSubs.values) {
-      sub.cancel();
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -235,76 +236,57 @@ class TranslationDownloadNotifier
     final cancelToken = CancelableCompleter();
     _cancelTokens[versionKey] = cancelToken;
 
+    // Temp files (declared here so the catch block can clean them up).
+    File? zipFile;
+    String? tmpDbPath;
+
     try {
-      // Download the .zip file with progress tracking.
+      final dbDir = await getDatabaseDirectory();
+      // Stream the .zip straight to disk: the databases are hundreds of MB
+      // and holding them in memory OOM-kills low-RAM devices (the main
+      // Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
+      zipFile = File(p.join(dbDir.path, '${version.filename}.zip.tmp'));
+      if (await zipFile.exists()) await zipFile.delete();
+      tmpDbPath = p.join(dbDir.path, '${version.filename}.tmp');
+
       final client = http.Client();
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await client.send(request);
-
-      if (response.statusCode != 200) {
-        await _fgsStop();
-        DownloadNotificationService.instance.showTranslationError(
-          version.displayName,
-          'HTTP ${response.statusCode}',
+      var lastShownPct = -1;
+      try {
+        await _streamDownloadToFile(
+          url: url,
+          destZip: zipFile,
+          cancelToken: cancelToken,
+          client: client,
+          expectedBytes: version.fileSize ?? 0,
+          onProgress: (progress) {
+            final pct = (progress * 100).round().clamp(0, 100);
+            state = {
+              ...state,
+              versionKey: TranslationDownloadState(
+                status: DownloadStatus.downloading,
+                progress: pct / 100,
+              ),
+            };
+            if (pct == lastShownPct) return;
+            lastShownPct = pct;
+            if (fgsActive) {
+              DownloadForegroundService.instance.updateDownload(
+                title: 'Downloading ${version.displayName}',
+                text: '$pct%',
+              );
+            } else {
+              DownloadNotificationService.instance.showTranslationProgress(
+                versionKey: versionKey,
+                displayName: version.displayName,
+                progress: pct / 100,
+                isIndeterminate: false,
+              );
+            }
+          },
         );
-        state = {
-          ...state,
-          versionKey: TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: 'Download failed (HTTP ${response.statusCode})',
-          ),
-        };
-        return;
+      } finally {
+        client.close();
       }
-
-      final contentLength = response.contentLength ?? 0;
-      final bytes = <int>[];
-      int received = 0;
-
-      await for (final chunk in response.stream) {
-        if (cancelToken.isCancelled) {
-          client.close();
-          await _fgsStop();
-          DownloadNotificationService.instance.dismissTranslation();
-          state = {
-            ...state,
-            versionKey: const TranslationDownloadState(
-              status: DownloadStatus.cancelled,
-            ),
-          };
-          _cancelTokens.remove(versionKey);
-          return;
-        }
-
-        bytes.addAll(chunk);
-        received += chunk.length;
-        if (contentLength > 0) {
-          final progress = received / contentLength;
-          state = {
-            ...state,
-            versionKey: TranslationDownloadState(
-              status: DownloadStatus.downloading,
-              progress: progress,
-            ),
-          };
-          final pct = (progress * 100).round();
-          if (fgsActive) {
-            DownloadForegroundService.instance.updateDownload(
-              title: 'Downloading ${version.displayName}',
-              text: '$pct%',
-            );
-          } else {
-            DownloadNotificationService.instance.showTranslationProgress(
-              versionKey: versionKey,
-              displayName: version.displayName,
-              progress: progress,
-              isIndeterminate: false,
-            );
-          }
-        }
-      }
-
-      client.close();
       _cancelTokens.remove(versionKey);
 
       if (cancelToken.isCancelled) {
@@ -340,70 +322,19 @@ class TranslationDownloadNotifier
         );
       }
 
-      final dbDir = await getDatabaseDirectory();
-      final archive = ZipDecoder().decodeBytes(bytes);
-
-      ArchiveFile? dbEntry;
-      for (final entry in archive) {
-        if (entry.isFile && entry.name.endsWith('.db')) {
-          dbEntry = entry;
-          break;
-        }
-      }
-
-      if (dbEntry == null) {
-        await _fgsStop();
-        DownloadNotificationService.instance.showTranslationError(
-          version.displayName,
-          'No database file found in archive',
-        );
-        state = {
-          ...state,
-          versionKey: const TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: 'No database file found in the archive',
-          ),
-        };
-        return;
-      }
-
-      final dbContent = dbEntry.content as List<int>;
-
-      // ── Integrity verification against the manifest ─────────────────
-      // The server (upload_github_release.py) computes the manifest
-      // `checksum` as the SHA-256 of the .db FILE inside the zip, so the
-      // extracted database content must hash to the same value. `dbSize`
-      // is the size of that same .db file — a cheap extra check. A
-      // mismatch means the zip is corrupted, truncated, or from a
-      // different version than the manifest, and must never be installed.
-      final verifyError = verifyDownloadedDb(
-        dbContent: dbContent,
+      // Streams the entry straight to disk and verifies size/checksum, so
+      // the ~500MB database is never held fully in memory. Throws with a
+      // human-readable message when the zip has no .db or is corrupt.
+      await _extractDbFromZip(
+        zipPath: zipFile.path,
+        tmpPath: tmpDbPath,
         expectedChecksum: version.checksum,
         expectedDbSize: version.dbSize,
       );
-      if (verifyError != null) {
-        await _fgsStop();
-        _failDownload(
-          versionKey: versionKey,
-          displayName: version.displayName,
-          message: verifyError,
-        );
-        _cancelTokens.remove(versionKey);
-        return;
-      }
 
       // Write the .db file safely via a temp file to prevent corruption/truncation
       final destPath = p.join(dbDir.path, version.filename);
-      final tempPath = '$destPath.tmp';
-      final tempFile = File(tempPath);
-
-      await tempFile.writeAsBytes(dbEntry.content as List<int>, flush: true);
-
-      final writtenSize = await tempFile.length();
-      if (writtenSize == 0) {
-        if (await tempFile.exists()) await tempFile.delete();
-        throw Exception('Extracted database file is empty (0 bytes)');
-      }
+      final tempFile = File(tmpDbPath);
 
       // Remove stale WAL/SHM files before replacing the database
       await cleanWalFiles(destPath);
@@ -502,8 +433,10 @@ class TranslationDownloadNotifier
     required String displayName,
     required WidgetRef ref,
     String? versionKey,
+    int? expectedBytes,
   }) async {
     final key = versionKey ?? filename.replaceAll('.db', '');
+    _cancelTokens.remove(key);
 
     state = {
       ...state,
@@ -520,88 +453,101 @@ class TranslationDownloadNotifier
       title: 'Downloading $displayName',
       text: '0%',
     );
+    if (!fgsActive) {
+      DownloadNotificationService.instance.showTranslationProgress(
+        versionKey: key,
+        displayName: displayName,
+        progress: 0.0,
+        isIndeterminate: false,
+      );
+    }
+    final cancelToken = CancelableCompleter();
+    _cancelTokens[key] = cancelToken;
 
     try {
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await client.send(request);
+      final dbDir = await getDatabaseDirectory();
+      // Stream the .zip straight to disk: the core databases are hundreds
+      // of MB and holding them in memory OOM-kills low-RAM devices (the
+      // main Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
+      final zipFile = File(p.join(dbDir.path, '$filename.zip.tmp'));
+      if (await zipFile.exists()) await zipFile.delete();
+      final tmpDbPath = p.join(dbDir.path, '$filename.tmp');
 
-      if (response.statusCode != 200) {
+      final client = http.Client();
+      var lastShownPct = -1;
+      try {
+        await _streamDownloadToFile(
+          url: url,
+          destZip: zipFile,
+          cancelToken: cancelToken,
+          client: client,
+          expectedBytes: expectedBytes ?? 0,
+          onProgress: (progress) {
+            final pct = (progress * 100).round().clamp(0, 100);
+            state = {
+              ...state,
+              key: TranslationDownloadState(
+                status: DownloadStatus.downloading,
+                progress: pct / 100,
+              ),
+            };
+            if (pct == lastShownPct) return;
+            lastShownPct = pct;
+            if (fgsActive) {
+              DownloadForegroundService.instance.updateDownload(
+                title: 'Downloading $displayName',
+                text: '$pct%',
+              );
+            } else {
+              DownloadNotificationService.instance.showTranslationProgress(
+                versionKey: key,
+                displayName: displayName,
+                progress: pct / 100,
+                isIndeterminate: false,
+              );
+            }
+          },
+        );
+      } finally {
+        client.close();
+      }
+      _cancelTokens.remove(key);
+
+      if (cancelToken.isCancelled) {
         await _fgsStop();
+        DownloadNotificationService.instance.dismissTranslation();
         state = {
           ...state,
-          key: TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: 'Download failed (HTTP ${response.statusCode})',
-          ),
+          key: const TranslationDownloadState(status: DownloadStatus.cancelled),
         };
         return false;
       }
-
-      final contentLength = response.contentLength ?? 0;
-      final bytes = <int>[];
-      int received = 0;
-
-      await for (final chunk in response.stream) {
-        bytes.addAll(chunk);
-        received += chunk.length;
-        if (contentLength > 0) {
-          state = {
-            ...state,
-            key: TranslationDownloadState(
-              status: DownloadStatus.downloading,
-              progress: received / contentLength,
-            ),
-          };
-          if (fgsActive) {
-            DownloadForegroundService.instance.updateDownload(
-              title: 'Downloading $displayName',
-              text: '${(received / contentLength * 100).round()}%',
-            );
-          }
-        }
-      }
-      client.close();
 
       state = {
         ...state,
         key: const TranslationDownloadState(status: DownloadStatus.extracting),
       };
-
-      final dbDir = await getDatabaseDirectory();
-      final archive = ZipDecoder().decodeBytes(bytes);
-
-      ArchiveFile? dbEntry;
-      for (final entry in archive) {
-        if (entry.isFile && entry.name.endsWith('.db')) {
-          dbEntry = entry;
-          break;
-        }
+      if (fgsActive) {
+        DownloadForegroundService.instance.updateDownload(
+          title: 'Extracting $displayName',
+          text: '…',
+        );
+      } else {
+        DownloadNotificationService.instance.showTranslationProgress(
+          versionKey: key,
+          displayName: displayName,
+          progress: 1.0,
+          isIndeterminate: true,
+        );
       }
 
-      if (dbEntry == null) {
-        await _fgsStop();
-        state = {
-          ...state,
-          key: TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: 'No database file found in the archive',
-          ),
-        };
-        return false;
-      }
+      // Streams the entry straight to disk, so the ~500MB database is never
+      // held fully in memory. Throws with a human-readable message when the
+      // zip has no .db or is corrupt.
+      await _extractDbFromZip(zipPath: zipFile.path, tmpPath: tmpDbPath);
 
       final destPath = p.join(dbDir.path, filename);
-      final tempPath = '$destPath.tmp';
-      final tempFile = File(tempPath);
-
-      await tempFile.writeAsBytes(dbEntry.content as List<int>, flush: true);
-
-      final writtenSize = await tempFile.length();
-      if (writtenSize == 0) {
-        if (await tempFile.exists()) await tempFile.delete();
-        throw Exception('Extracted database file is empty (0 bytes)');
-      }
+      final tempFile = File(tmpDbPath);
 
       // Clean up stale WAL / SHM files
       await cleanWalFiles(destPath);
@@ -625,6 +571,7 @@ class TranslationDownloadNotifier
           progress: 1.0,
         ),
       };
+      DownloadNotificationService.instance.showTranslationComplete(displayName);
 
       // Invalidate translation-registry providers so the startup wizard
       // updates the continue button state after a core download finishes.
@@ -634,34 +581,182 @@ class TranslationDownloadNotifier
       return true;
     } catch (e) {
       await _fgsStop();
-      state = {
-        ...state,
-        key: TranslationDownloadState(
-          status: DownloadStatus.error,
-          errorMessage: e.toString(),
-        ),
-      };
+      _cancelTokens.remove(key);
+      if (cancelToken.isCancelled) {
+        DownloadNotificationService.instance.dismissTranslation();
+        state = {
+          ...state,
+          key: const TranslationDownloadState(status: DownloadStatus.cancelled),
+        };
+      } else {
+        // Previously silent: the notification just vanished and the wizard
+        // showed no reason, so failures looked like the download "closed".
+        DownloadNotificationService.instance.showTranslationError(
+          displayName,
+          e.toString(),
+        );
+        state = {
+          ...state,
+          key: TranslationDownloadState(
+            status: DownloadStatus.error,
+            errorMessage: e.toString(),
+          ),
+        };
+      }
       return false;
     }
   }
 
-  /// Report a download failure through state + notification and clean up.
-  void _failDownload({
-    required String versionKey,
-    required String displayName,
-    required String message,
-  }) {
-    DownloadNotificationService.instance.showTranslationError(
-      displayName,
-      message,
-    );
-    state = {
-      ...state,
-      versionKey: TranslationDownloadState(
-        status: DownloadStatus.error,
-        errorMessage: message,
-      ),
-    };
+  /// Streams the response body of [url] into [destZip] chunk by chunk, so
+  /// even multi-hundred-MB zips never sit in memory (in-memory accumulation
+  /// OOM-killed low-RAM devices mid-download).
+  ///
+  /// Progress reports are throttled to ~1 percentage point / 400ms and
+  /// clamped to 0..1 (a wrong Content-Length must never show 789%). When
+  /// the server sends no Content-Length, [expectedBytes] (the manifest zip
+  /// size) is used as the denominator; when neither is known, progress
+  /// stays 0.0 so the UI shows an indeterminate bar.
+  ///
+  /// Throws [HttpException] on HTTP errors, [_DownloadCancelled] when
+  /// [cancelToken] is cancelled. Partial files are deleted before throwing.
+  Future<void> _streamDownloadToFile({
+    required String url,
+    required File destZip,
+    required CancelableCompleter cancelToken,
+    required http.Client client,
+    int expectedBytes = 0,
+    void Function(double progress)? onProgress,
+  }) async {
+    final request = http.Request('GET', Uri.parse(url));
+    final response = await client.send(request);
+
+    if (response.statusCode != 200) {
+      await _deleteQuietly(destZip);
+      throw HttpException('Download failed (HTTP ${response.statusCode})');
+    }
+
+    final headerLength = response.contentLength ?? 0;
+    final total = headerLength > 0 ? headerLength : expectedBytes;
+    final sink = destZip.openWrite();
+    try {
+      var received = 0;
+      var lastReportMs = 0;
+      var lastReportedPct = -1;
+      await for (final chunk in response.stream) {
+        if (cancelToken.isCancelled) throw _DownloadCancelled();
+        sink.add(chunk);
+        received += chunk.length;
+        if (total <= 0) continue;
+        final pct = (received / total * 100).round().clamp(0, 100);
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (pct != lastReportedPct &&
+            (pct - lastReportedPct >= 1 || now - lastReportMs >= 400)) {
+          lastReportedPct = pct;
+          lastReportMs = now;
+          onProgress?.call(pct / 100);
+        }
+      }
+      await sink.flush();
+      if (total > 0) {
+        onProgress?.call((received / total).clamp(0.0, 1.0));
+      } else {
+        onProgress?.call(1.0);
+      }
+    } catch (_) {
+      await sink.close();
+      await _deleteQuietly(destZip);
+      rethrow;
+    }
+    await sink.close();
+  }
+
+  /// Extracts the first `.db` entry of the zip at [zipPath] to [tmpPath]
+  /// and verifies it against [expectedChecksum]/[expectedDbSize].
+  ///
+  /// The inflate runs in a background isolate and streams straight to
+  /// disk (`ArchiveFile.writeContent`), and the checksum is computed by
+  /// streaming the file back — the ~500MB database is never held fully
+  /// in memory. Throws with a human-readable message on any failure.
+  Future<void> _extractDbFromZip({
+    required String zipPath,
+    required String tmpPath,
+    String? expectedChecksum,
+    int? expectedDbSize,
+  }) async {
+    final tmpFile = File(tmpPath);
+    if (await tmpFile.exists()) await tmpFile.delete();
+    try {
+      await Isolate.run(() async {
+        final input = InputFileStream(zipPath);
+        try {
+          final archive = ZipDecoder().decodeStream(input);
+          ArchiveFile? dbEntry;
+          for (final entry in archive) {
+            if (entry.isFile && entry.name.endsWith('.db')) {
+              dbEntry = entry;
+              break;
+            }
+          }
+          if (dbEntry == null) {
+            throw const FormatException(
+              'No database file found in the archive',
+            );
+          }
+          final output = OutputFileStream(tmpPath);
+          try {
+            dbEntry.writeContent(output);
+          } finally {
+            await output.close();
+          }
+        } finally {
+          await input.close();
+        }
+      });
+
+      final size = await tmpFile.length();
+      if (size == 0) {
+        throw const FormatException(
+          'Extracted database file is empty (0 bytes)',
+        );
+      }
+      if (expectedDbSize != null &&
+          expectedDbSize > 0 &&
+          size != expectedDbSize) {
+        throw FormatException(
+          'Size mismatch — expected $expectedDbSize bytes, got $size',
+        );
+      }
+      if (expectedChecksum != null && expectedChecksum.isNotEmpty) {
+        final actual = await _sha256OfFile(tmpFile);
+        if (!_hexEquals(actual, expectedChecksum)) {
+          throw FormatException(
+            'Checksum mismatch — expected $expectedChecksum, got $actual',
+          );
+        }
+      }
+    } catch (_) {
+      await _deleteQuietly(tmpFile);
+      rethrow;
+    }
+  }
+
+  /// SHA-256 of [file], computed by streaming so large databases don't
+  /// need to fit in memory.
+  Future<String> _sha256OfFile(File file) async {
+    final accumulator = _DigestAccumulator();
+    final hashSink = sha256.startChunkedConversion(accumulator);
+    await for (final chunk in file.openRead()) {
+      hashSink.add(chunk);
+    }
+    hashSink.close();
+    return accumulator.value.toString();
+  }
+
+  /// Best-effort delete of a temp/partial file. Never throws.
+  Future<void> _deleteQuietly(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   /// Delete a translation database file from disk.
@@ -717,6 +812,25 @@ class CancelableCompleter {
   void cancel() {
     _cancelled = true;
   }
+}
+
+/// Thrown to unwind a streaming download the user cancelled. Caught by the
+/// download methods and mapped to [DownloadStatus.cancelled] (never shown
+/// as an error).
+class _DownloadCancelled implements Exception {
+  const _DownloadCancelled();
+}
+
+/// Minimal [Sink] collecting the single [Digest] produced by a chunked
+/// hash conversion, so large files can be hashed by streaming.
+class _DigestAccumulator implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) => value ??= data;
+
+  @override
+  void close() {}
 }
 
 final translationDownloadProvider =

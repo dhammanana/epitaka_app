@@ -50,8 +50,8 @@ class PaliDefinitionCard extends ConsumerWidget {
       fontFamily: scriptFontFamily(script) ?? pali.fontFamily.fontFamily,
     );
     final transStyle = TextStyle(
-      fontSize: (trans.fontSize * 0.8).clamp(11.0, 24.0),
-      height: trans.lineHeight,
+      fontSize: (pali.fontSize * 0.8).clamp(11.0, 24.0),
+      height: pali.lineHeight,
       fontStyle: FontStyle.italic,
       color: colors.onSurfaceVariant.withValues(alpha: 0.8),
       fontFamily: trans.fontFamily.fontFamily,
@@ -86,9 +86,10 @@ class PaliDefinitionCard extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
                       fontWeight: FontWeight.w600,
                       color: colors.onSurfaceVariant,
+                      fontFamily: pali.fontFamily.fontFamily,
                     ),
                   ),
                 ),
@@ -112,9 +113,10 @@ class PaliDefinitionCard extends ConsumerWidget {
                         Text(
                           'p${entry.paraId}.${entry.lineId}',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
                             color: colors.primary,
                             fontWeight: FontWeight.w500,
+                            fontFamily: pali.fontFamily.fontFamily,
                           ),
                         ),
                       ],
@@ -331,20 +333,30 @@ class _PaliDefinitionSectionState extends ConsumerState<PaliDefinitionSection> {
     );
   }
 
-  Widget _header() => Row(
-    children: [
-      Icon(Icons.auto_stories, size: 12, color: widget.colors.onSurfaceVariant),
-      const SizedBox(width: 4),
-      Text(
-        widget.bookName,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
+  Widget _header() {
+    final pali = ref.watch(settingsProvider).typography.pali;
+    return Row(
+      children: [
+        Icon(
+          Icons.auto_stories,
+          size: 12,
           color: widget.colors.onSurfaceVariant,
         ),
-      ),
-    ],
-  );
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            widget.bookName,
+            style: TextStyle(
+              fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+              fontWeight: FontWeight.w600,
+              color: widget.colors.onSurfaceVariant,
+              fontFamily: pali.fontFamily.fontFamily,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// A compact "Show N more" / "Less" toggle for the pali_definition section.

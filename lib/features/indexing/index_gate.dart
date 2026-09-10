@@ -33,9 +33,6 @@ class _IndexGateState extends ConsumerState<IndexGate>
   /// Whether the controller has completed its initial check.
   bool _initialCheckDone = false;
 
-  /// Whether the user has started building.
-  bool _buildStarted = false;
-
   /// Animation controller for step transitions.
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeAnim;
@@ -70,14 +67,17 @@ class _IndexGateState extends ConsumerState<IndexGate>
   Widget build(BuildContext context) {
     final state = ref.watch(indexControllerProvider);
     debugPrint(
-        '[INDEX_GATE] build: status=${state.status}, built=${state.isBuilt}, building=${state.isBuilding}');
+      '[INDEX_GATE] build: status=${state.status}, built=${state.isBuilt}, building=${state.isBuilding}',
+    );
 
     // Listen for download completions and invalidate FTS required-asset
     // providers so the "all ready" check re-evaluates.
     ref.listen(translationDownloadProvider, (prev, next) {
-      final completedNow = next.entries.any((e) =>
-          e.value.status == DownloadStatus.completed &&
-          (prev?[e.key]?.status != DownloadStatus.completed));
+      final completedNow = next.entries.any(
+        (e) =>
+            e.value.status == DownloadStatus.completed &&
+            (prev?[e.key]?.status != DownloadStatus.completed),
+      );
       if (completedNow) {
         ref.invalidate(ftsRequiredCoreAssetsProvider);
         ref.invalidate(ftsRequiredTranslationsProvider);
@@ -89,12 +89,13 @@ class _IndexGateState extends ConsumerState<IndexGate>
       return widget.child;
     }
 
-    // First frame (before postFrameCallback fires): show loading
-    if (!_initialCheckDone) {
+    // While the DB check hasn't finished, stay on loading — never show the
+    // setup wizard optimistically (that was the startup flash).
+    if (!_initialCheckDone || state.isChecking) {
       return _buildLoadingScreen();
     }
 
-    if (state.isBuilding && _buildStarted) {
+    if (state.isBuilding) {
       return _buildBuildStep(state);
     }
 
@@ -102,8 +103,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
       return _buildErrorScreen(state);
     }
 
-    // Not built - show setup wizard
-    return _buildSetupWizard(state);
+    if (state.status == IndexStatus.notBuilt) {
+      return _buildSetupWizard(state);
+    }
+
+    return _buildLoadingScreen();
   }
 
   Widget _buildLoadingScreen() {
@@ -114,13 +118,17 @@ class _IndexGateState extends ConsumerState<IndexGate>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search,
-                size: 48, color: colors.primary.withValues(alpha: 0.5)),
+            Icon(
+              Icons.search,
+              size: 48,
+              color: colors.primary.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: AppDimensions.md),
             Text(
               loc.checkingIndex,
-              style: AppTypography.labelMedium
-                  .copyWith(color: colors.onSurfaceVariant),
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: AppDimensions.sm),
             SizedBox(
@@ -161,8 +169,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 Text(
                   state.errorMessage ?? loc.unknownError,
                   textAlign: TextAlign.center,
-                  style: AppTypography.labelSmall
-                      .copyWith(color: colors.onSurfaceVariant),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: AppDimensions.lg),
                 FilledButton.icon(
@@ -200,8 +209,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final allRequiredReady = ref.watch(ftsAllRequiredReadyProvider);
 
     // Show loading while manifest is being fetched
-    final isLoading = availableAsync.isLoading || downloadableAsync.isLoading ||
-        requiredCoreAsync.isLoading || requiredTransAsync.isLoading;
+    final isLoading =
+        availableAsync.isLoading ||
+        downloadableAsync.isLoading ||
+        requiredCoreAsync.isLoading ||
+        requiredTransAsync.isLoading;
     if (isLoading) {
       return _buildWizardLoading(colors);
     }
@@ -211,11 +223,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
     availableAsync.whenData((v) => versions.addAll(v));
     downloadableAsync.whenData((v) => versions.addAll(v));
     versions.sort((a, b) {
-      if (a.isAvailable && !b.isAvailable) return -1;
-      if (!a.isAvailable && b.isAvailable) return 1;
-      final cmp = a.englishName.compareTo(b.englishName);
+      final cmp = a.englishName.toLowerCase().compareTo(
+        b.englishName.toLowerCase(),
+      );
       if (cmp != 0) return cmp;
-      return (a.displayName).compareTo(b.displayName);
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
     });
 
     // Gather required core assets that are not yet installed
@@ -232,8 +244,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
         .map((v) => '${v.languageCode}_${v.suffix ?? ''}')
         .toSet();
     final optionalVersions = versions
-        .where((v) => !requiredCodes
-            .contains('${v.languageCode}_${v.suffix ?? ''}'))
+        .where(
+          (v) => !requiredCodes.contains('${v.languageCode}_${v.suffix ?? ''}'),
+        )
         .toList();
 
     // Compute all-ready from download states as well — the FutureProvider
@@ -243,8 +256,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
       final s = downloadStates[a.slug] ?? const TranslationDownloadState();
       return s.status == DownloadStatus.completed;
     });
-    bool transAllComplete(List<TranslationVersion> versions) =>
-        versions.every((v) {
+    bool transAllComplete(List<TranslationVersion> versions) => versions.every((
+      v,
+    ) {
       // Must match the key format used in TranslationDownloadNotifier.downloadVersion
       final key = v.suffix != null && v.suffix!.isNotEmpty
           ? '${v.languageCode}_${v.suffix}'
@@ -252,9 +266,12 @@ class _IndexGateState extends ConsumerState<IndexGate>
       final s = downloadStates[key] ?? const TranslationDownloadState();
       return s.status == DownloadStatus.completed;
     });
-    final allReady = (allRequiredReady.valueOrNull ?? false) ||
+    final allReady =
+        (allRequiredReady.valueOrNull ?? false) ||
         (coreAllComplete(requiredCoreAssets) &&
-         transAllComplete(requiredTranslations));    // Determine current Pāli and translation colors
+            transAllComplete(
+              requiredTranslations,
+            )); // Determine current Pāli and translation colors
     // For selection highlighting, we compare against the LIGHT color from
     // the ColorPair (the user's chosen color), not the resolved
     // brightness-specific color, which in dark mode is a derived variant
@@ -265,9 +282,10 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final transLightColor = settings.translationColorPair.light;
 
     return Scaffold(
-      body: SafeArea(          child: FadeTransition(
-            opacity: _fadeAnim,
-            child: Column(
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Column(
             children: [
               // ── Header ──────────────────────────────────────────
               Padding(
@@ -284,8 +302,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       height: 72,
                       decoration: BoxDecoration(
                         color: colors.primaryContainer,
-                        borderRadius:
-                            BorderRadius.circular(AppDimensions.radiusXl),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.radiusXl,
+                        ),
                       ),
                       child: Icon(
                         Icons.menu_book,
@@ -304,8 +323,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     const SizedBox(height: 6),
                     Text(
                       loc.downloadRequiredDatabases,
-                      style: AppTypography.labelMedium
-                          .copyWith(color: colors.onSurfaceVariant),
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -326,6 +346,10 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     horizontal: AppDimensions.marginMobile,
                   ),
                   children: [
+                    // ── 1. Language first ─────────────────────────
+                    _buildLanguageSection(colors),
+                    const SizedBox(height: AppDimensions.md),
+
                     // ── Required Core Assets ──────────────────────
                     if (requiredCoreAssets.isNotEmpty) ...[
                       _buildRequiredSectionLabel(
@@ -334,13 +358,15 @@ class _IndexGateState extends ConsumerState<IndexGate>
                         colors,
                       ),
                       const SizedBox(height: AppDimensions.sm),
-                      ...requiredCoreAssets.map((asset) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildCoreAssetCard(
-                              asset: asset,
-                              colors: colors,
-                            ),
-                          )),
+                      ...requiredCoreAssets.map(
+                        (asset) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildCoreAssetCard(
+                            asset: asset,
+                            colors: colors,
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: AppDimensions.md),
                     ],
 
@@ -352,14 +378,16 @@ class _IndexGateState extends ConsumerState<IndexGate>
                         colors,
                       ),
                       const SizedBox(height: AppDimensions.sm),
-                      ...requiredTranslations.map((v) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildVersionCard(
-                              version: v,
-                              colors: colors,
-                              isRequired: true,
-                            ),
-                          )),
+                      ...requiredTranslations.map(
+                        (v) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildVersionCard(
+                            version: v,
+                            colors: colors,
+                            isRequired: true,
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: AppDimensions.md),
                     ],
 
@@ -375,14 +403,16 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     if (optionalVersions.isEmpty)
                       _buildNoVersions(colors)
                     else
-                      ...optionalVersions.map((v) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildVersionCard(
-                              version: v,
-                              colors: colors,
-                              isRequired: false,
-                            ),
-                          )),
+                      ...optionalVersions.map(
+                        (v) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildVersionCard(
+                            version: v,
+                            colors: colors,
+                            isRequired: false,
+                          ),
+                        ),
+                      ),
 
                     const SizedBox(height: AppDimensions.lg),
 
@@ -478,12 +508,14 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       label: Text(
                         allReady
                             ? loc.buildSearchIndex
-                            : loc.downloadRequiredItemsFirst),
+                            : loc.downloadRequiredItemsFirst,
+                      ),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppDimensions.radiusLg),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.radiusLg,
+                          ),
                         ),
                       ),
                     ),
@@ -497,7 +529,71 @@ class _IndexGateState extends ConsumerState<IndexGate>
     );
   }
 
-  Widget _buildRequiredSectionLabel(String title, String subtitle, ColorScheme colors) {
+  Widget _buildLanguageSection(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
+    final settings = ref.watch(settingsProvider);
+    final current = settings.appLanguage;
+    return Container(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            ),
+            child: Icon(Icons.language, size: 22, color: colors.primary),
+          ),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Text(
+              loc.language,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          DropdownButton<AppLanguage>(
+            value: current,
+            underline: const SizedBox.shrink(),
+            icon: Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+            onChanged: (lang) {
+              if (lang != null) {
+                ref.read(settingsProvider.notifier).setAppLanguage(lang);
+              }
+            },
+            items: AppLanguage.values
+                .map(
+                  (lang) => DropdownMenuItem(
+                    value: lang,
+                    child: Text(
+                      loc.appLanguageName(lang),
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequiredSectionLabel(
+    String title,
+    String subtitle,
+    ColorScheme colors,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -537,8 +633,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
               const SizedBox(height: AppDimensions.md),
               Text(
                 loc.loadingAvailableTranslations,
-                style: AppTypography.labelSmall
-                    .copyWith(color: colors.onSurfaceVariant),
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -557,15 +654,18 @@ class _IndexGateState extends ConsumerState<IndexGate>
       ),
       child: Column(
         children: [
-          Icon(Icons.cloud_off,
-              size: 36,
-              color: colors.onSurfaceVariant.withValues(alpha: 0.5)),
+          Icon(
+            Icons.cloud_off,
+            size: 36,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
           const SizedBox(height: AppDimensions.sm),
           Text(
             loc.noTranslationsAvailableShort,
             textAlign: TextAlign.center,
-            style:
-                AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant),
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -580,10 +680,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final loc = AppLocalizations.of(context);
     final downloadStates = ref.watch(translationDownloadProvider);
     final assetKey = asset.slug;
-    final downloadState = downloadStates[assetKey] ??
-        const TranslationDownloadState();
+    final downloadState =
+        downloadStates[assetKey] ?? const TranslationDownloadState();
 
-    final isActive = downloadState.status == DownloadStatus.downloading ||
+    final isActive =
+        downloadState.status == DownloadStatus.downloading ||
         downloadState.status == DownloadStatus.extracting;
     final isComplete = downloadState.status == DownloadStatus.completed;
 
@@ -598,139 +699,161 @@ class _IndexGateState extends ConsumerState<IndexGate>
               : colors.error.withValues(alpha: 0.3),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              // Asset icon
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: isComplete
-                      ? AppColors.successGreen.withValues(alpha: 0.15)
-                      : colors.errorContainer,
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                ),
-                child: Center(
-                  child: isComplete
-                      ? Icon(Icons.check_circle,
-                          size: 22, color: AppColors.successGreen)
-                      : Icon(Icons.storage,
-                          size: 22, color: colors.error),
-                ),
-              ),
-              const SizedBox(width: AppDimensions.md),
-              // Name + status
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: isComplete
+                  ? AppColors.successGreen.withValues(alpha: 0.15)
+                  : colors.errorContainer,
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            ),
+            child: Center(
+              child: isComplete
+                  ? Icon(
+                      Icons.check_circle,
+                      size: 22,
+                      color: AppColors.successGreen,
+                    )
+                  : Icon(Icons.storage, size: 22, color: colors.error),
+            ),
+          ),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          asset.displayName,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    Flexible(
+                      child: Text(
+                        asset.displayName,
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: colors.error.withValues(alpha: 0.12),
-                            borderRadius:
-                                BorderRadius.circular(AppDimensions.radiusSm),
-                          ),
-                          child: Text(
-                            loc.required,
-                            style: AppTypography.labelSmall.copyWith(
-                              fontSize: 10,
-                              color: colors.error,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isComplete
-                          ? loc.installed
-                          : loc.notInstalled,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: isComplete
-                            ? AppColors.successGreen
-                            : isActive
-                                ? colors.primary
-                                : colors.onSurfaceVariant,
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.radiusSm,
+                        ),
+                      ),
+                      child: Text(
+                        loc.required,
+                        style: AppTypography.labelSmall.copyWith(
+                          fontSize: 10,
+                          color: colors.error,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              // Action button / spinner
-              if (isActive)
-                SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: colors.primary,
-                    value: downloadState.status == DownloadStatus.extracting
-                        ? null
-                        : downloadState.progress,
+                const SizedBox(height: 2),
+                Text(
+                  isComplete ? loc.installed : loc.notInstalled,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isComplete
+                        ? AppColors.successGreen
+                        : isActive
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
                   ),
-                )
-              else if (!isComplete)
-                FilledButton.tonal(
-                  onPressed: () {
-                    final filename = asset.filename ??
-                        '${asset.slug.replaceAll('_', '-')}.db';
-                    ref
-                        .read(translationDownloadProvider.notifier)
-                        .downloadCoreAsset(
-                          url: asset.url,
-                          filename: filename,
-                          displayName: asset.displayName,
-                          ref: ref,
-                          versionKey: assetKey,
-                        );
-                  },
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    textStyle: AppTypography.labelSmall
-                        .copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  child: Text(loc.download),
                 ),
-            ],
+                if (asset.size != null && !isComplete && !isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _formatSize(asset.size!),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                if (isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(
+                      // Clamp: a wrong Content-Length must never push the
+                      // value above 1.0 (asserts in debug, glitches UI).
+                      value:
+                          downloadState.status == DownloadStatus.extracting ||
+                              downloadState.progress <= 0
+                          ? null
+                          : downloadState.progress.clamp(0.0, 1.0),
+                      minHeight: 3,
+                      borderRadius: BorderRadius.circular(2),
+                      backgroundColor: colors.surfaceContainerHigh,
+                    ),
+                  ),
+                // A failed download previously looked identical to
+                // "not installed" — surface the reason so a retry makes
+                // sense (e.g. storage full, connection dropped).
+                if (downloadState.status == DownloadStatus.error &&
+                    downloadState.errorMessage != null &&
+                    !isComplete)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      downloadState.errorMessage!,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.error,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          // File size
-          if (asset.size != null && !isComplete)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _formatSize(asset.size!),
-                style: AppTypography.labelSmall
-                    .copyWith(color: colors.onSurfaceVariant, fontSize: 11),
-              ),
-            ),
-          // Progress bar
-          if (isActive && downloadState.progress > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: LinearProgressIndicator(
-                value: downloadState.progress,
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(2),
-                backgroundColor: colors.surfaceContainerHighest,
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: isActive
+                ? IconButton.filledTonal(
+                    tooltip: loc.stopLabel,
+                    onPressed: () {
+                      ref
+                          .read(translationDownloadProvider.notifier)
+                          .cancelDownload(assetKey);
+                    },
+                    icon: const Icon(Icons.stop),
+                  )
+                : isComplete
+                ? const SizedBox.shrink()
+                : IconButton.filledTonal(
+                    tooltip: loc.download,
+                    onPressed: () {
+                      final filename =
+                          asset.filename ??
+                          '${asset.slug.replaceAll('_', '-')}.db';
+                      ref
+                          .read(translationDownloadProvider.notifier)
+                          .downloadCoreAsset(
+                            url: asset.url,
+                            filename: filename,
+                            displayName: asset.displayName,
+                            ref: ref,
+                            versionKey: assetKey,
+                            // Manifest zip size: fallback progress
+                            // denominator when the server omits
+                            // Content-Length.
+                            expectedBytes: asset.size,
+                          );
+                    },
+                    icon: const Icon(Icons.download),
+                  ),
+          ),
         ],
       ),
     );
@@ -748,12 +871,14 @@ class _IndexGateState extends ConsumerState<IndexGate>
         : version.languageCode;
 
     final downloadStates = ref.watch(translationDownloadProvider);
-    final downloadState = downloadStates[versionKey] ??
-        const TranslationDownloadState();
+    final downloadState =
+        downloadStates[versionKey] ?? const TranslationDownloadState();
 
-    final isActive = downloadState.status == DownloadStatus.downloading ||
+    final isActive =
+        downloadState.status == DownloadStatus.downloading ||
         downloadState.status == DownloadStatus.extracting;
-    final isComplete = downloadState.status == DownloadStatus.completed || version.isAvailable;
+    final isComplete =
+        downloadState.status == DownloadStatus.completed || version.isAvailable;
 
     return Container(
       padding: const EdgeInsets.all(AppDimensions.md),
@@ -766,166 +891,189 @@ class _IndexGateState extends ConsumerState<IndexGate>
               : colors.outlineVariant,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              // Language badge
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: isComplete
-                      ? AppColors.successGreen.withValues(alpha: 0.15)
-                      : colors.primaryContainer,
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                ),
-                child: Center(
-                  child: isComplete
-                      ? Icon(Icons.check_circle,
-                          size: 22, color: AppColors.successGreen)
-                      : Text(
-                          version.languageCode.toUpperCase(),
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w700,
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: isComplete
+                  ? AppColors.successGreen.withValues(alpha: 0.15)
+                  : colors.primaryContainer,
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            ),
+            child: Center(
+              child: isComplete
+                  ? Icon(
+                      Icons.check_circle,
+                      size: 22,
+                      color: AppColors.successGreen,
+                    )
+                  : Text(
+                      version.languageCode.toUpperCase(),
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        version.englishName,
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (isRequired && !isComplete) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.error.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.radiusSm,
                           ),
                         ),
-                ),
-              ),
-              const SizedBox(width: AppDimensions.md),
-              // Name + status + version
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          version.englishName,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
+                        child: Text(
+                          loc.required,
+                          style: AppTypography.labelSmall.copyWith(
+                            fontSize: 10,
+                            color: colors.error,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (isRequired && !isComplete) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: colors.error.withValues(alpha: 0.12),
-                              borderRadius:
-                                  BorderRadius.circular(AppDimensions.radiusSm),
-                            ),
-                            child: Text(
-                              loc.required,
-                              style: AppTypography.labelSmall.copyWith(
-                                fontSize: 10,
-                                color: colors.error,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        if (version.displayName.isNotEmpty)
-                          Container(
-                            margin: const EdgeInsets.only(right: 6),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: version.isNissaya
-                                  ? Colors.indigo.withValues(alpha: 0.12)
-                                  : colors.secondaryContainer,
-                              borderRadius:
-                                  BorderRadius.circular(AppDimensions.radiusSm),
-                            ),
-                            child: Text(
-                              version.displayName,
-                              style: AppTypography.labelSmall.copyWith(
-                                fontSize: 10,
-                                color: version.isNissaya
-                                    ? Colors.indigo
-                                    : colors.onSecondaryContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        Text(
-                          isComplete
-                              ? loc.readyLabel
-                              : version.hasDownloadUrl
-                                  ? loc.notInstalled
-                                  : loc.comingSoon,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: isComplete
-                                ? AppColors.successGreen
-                                : isActive
-                                    ? colors.primary
-                                    : colors.onSurfaceVariant,
+                      ),
+                    ],
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (version.displayName.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: version.isNissaya
+                              ? Colors.indigo.withValues(alpha: 0.12)
+                              : colors.secondaryContainer,
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.radiusSm,
                           ),
                         ),
-                      ],
+                        child: Text(
+                          version.displayName,
+                          style: AppTypography.labelSmall.copyWith(
+                            fontSize: 10,
+                            color: version.isNissaya
+                                ? Colors.indigo
+                                : colors.onSecondaryContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    Text(
+                      isComplete
+                          ? loc.readyLabel
+                          : version.hasDownloadUrl
+                          ? loc.notInstalled
+                          : loc.comingSoon,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isComplete
+                            ? AppColors.successGreen
+                            : isActive
+                            ? colors.primary
+                            : colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              // Action button / spinner
-              if (isActive)
-                SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: colors.primary,
-                    value: downloadState.status == DownloadStatus.extracting
-                        ? null
-                        : downloadState.progress,
+                if (version.fileSize != null && !isComplete && !isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _formatSize(version.fileSize!),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
                   ),
-                )
-              else if (!isComplete && version.hasDownloadUrl)
-                FilledButton.tonal(
-                  onPressed: () {
-                    ref
-                        .read(translationDownloadProvider.notifier)
-                        .downloadVersion(version, ref);
-                  },
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    textStyle: AppTypography.labelSmall
-                        .copyWith(fontWeight: FontWeight.w600),
+                if (isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(
+                      // Clamp: a wrong Content-Length must never push the
+                      // value above 1.0 (asserts in debug, glitches UI).
+                      value:
+                          downloadState.status == DownloadStatus.extracting ||
+                              downloadState.progress <= 0
+                          ? null
+                          : downloadState.progress.clamp(0.0, 1.0),
+                      minHeight: 3,
+                      borderRadius: BorderRadius.circular(2),
+                      backgroundColor: colors.surfaceContainerHigh,
+                    ),
                   ),
-                  child: Text(loc.download),
-                ),
-            ],
+                // A failed download previously looked identical to
+                // "not installed" — surface the reason so a retry makes
+                // sense (e.g. storage full, connection dropped).
+                if (downloadState.status == DownloadStatus.error &&
+                    downloadState.errorMessage != null &&
+                    !isComplete)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      downloadState.errorMessage!,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.error,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          // File size
-          if (version.fileSize != null && !isComplete)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _formatSize(version.fileSize!),
-                style: AppTypography.labelSmall
-                    .copyWith(color: colors.onSurfaceVariant, fontSize: 11),
-              ),
-            ),
-          // Progress bar for active downloads
-          if (isActive && downloadState.progress > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: LinearProgressIndicator(
-                value: downloadState.progress,
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(2),
-                backgroundColor: colors.surfaceContainerHighest,
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: isActive
+                ? IconButton.filledTonal(
+                    tooltip: loc.stopLabel,
+                    onPressed: () {
+                      ref
+                          .read(translationDownloadProvider.notifier)
+                          .cancelDownload(versionKey);
+                    },
+                    icon: const Icon(Icons.stop),
+                  )
+                : !isComplete && version.hasDownloadUrl
+                ? IconButton.filledTonal(
+                    tooltip: loc.download,
+                    onPressed: () {
+                      ref
+                          .read(translationDownloadProvider.notifier)
+                          .downloadVersion(version, ref);
+                    },
+                    icon: const Icon(Icons.download),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );
@@ -943,9 +1091,6 @@ class _IndexGateState extends ConsumerState<IndexGate>
   // ── Step 2: Build Progress ──────────────────────────────────────────
 
   void _startBuild() {
-    setState(() {
-      _buildStarted = true;
-    });
     _animCtrl.forward(from: 0);
     ref.read(indexControllerProvider.notifier).buildIndex();
   }
@@ -957,8 +1102,8 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final phaseColor = state.buildPhase == IndexBuildPhase.indexingCombined
         ? colors.primary
         : state.buildPhase == IndexBuildPhase.loadingTranslations
-            ? AppColors.successGreen
-            : colors.secondary;
+        ? AppColors.successGreen
+        : colors.secondary;
 
     return Scaffold(
       body: SafeArea(
@@ -971,138 +1116,155 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 constraints: BoxConstraints(
                   // Clamp so a tiny/landscape viewport can't produce a
                   // negative minHeight (which asserts in BoxConstraints).
-                  minHeight: (constraints.maxHeight -
-                          2 * AppDimensions.marginMobile)
-                      .clamp(0.0, double.infinity),
+                  minHeight:
+                      (constraints.maxHeight - 2 * AppDimensions.marginMobile)
+                          .clamp(0.0, double.infinity),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // ── Phase label chip ──────────────────────────────
-                  if (state.phaseLabel != null && state.phaseLabel!.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: phaseColor.withValues(alpha: 0.12),
-                        borderRadius:
-                            BorderRadius.circular(AppDimensions.radiusFull),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _phaseIcon(state.buildPhase),
-                            size: 16,
-                            color: phaseColor,
+                    if (state.phaseLabel != null &&
+                        state.phaseLabel!.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: phaseColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.radiusFull,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            state.phaseLabel!,
-                            style: AppTypography.labelSmall.copyWith(
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _phaseIcon(state.buildPhase),
+                              size: 16,
                               color: phaseColor,
-                              fontWeight: FontWeight.w600,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              state.phaseLabel!,
+                              style: AppTypography.labelSmall.copyWith(
+                                color: phaseColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // ── Circular progress ────────────────────────────
+                    SizedBox(
+                      width: 88,
+                      height: 88,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 88,
+                            height: 88,
+                            child: CircularProgressIndicator(
+                              value: progress,
+                              strokeWidth: 7,
+                              backgroundColor: colors.surfaceContainerHighest,
+                              valueColor: AlwaysStoppedAnimation(
+                                colors.primary,
+                              ),
+                              strokeCap: StrokeCap.round,
+                            ),
+                          ),
+                          Text(
+                            '${(progress * 100).round()}%',
+                            style: AppTypography.headlineSmall.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: AppDimensions.md),
 
-                  // ── Circular progress ────────────────────────────
-                  SizedBox(
-                    width: 88,
-                    height: 88,
-                    child: Stack(
-                      alignment: Alignment.center,
+                    // ── Sentence count ───────────────────────────────
+                    Text(
+                      state.totalProgress > 0
+                          ? loc.sentenceProgress(
+                              state.currentProgress,
+                              state.totalProgress,
+                            )
+                          : loc.preparing,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppDimensions.sm),
+
+                    // ── Batch + speed row ────────────────────────────
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        SizedBox(
-                          width: 88,
-                          height: 88,
-                          child: CircularProgressIndicator(
-                            value: progress,
-                            strokeWidth: 7,
-                            backgroundColor: colors.surfaceContainerHighest,
-                            valueColor:
-                                AlwaysStoppedAnimation(colors.primary),
-                            strokeCap: StrokeCap.round,
+                        if (state.batchTotal > 0) ...[
+                          Icon(
+                            Icons.list_alt,
+                            size: 12,
+                            color: colors.onSurfaceVariant,
                           ),
-                        ),
-                        Text(
-                          '${(progress * 100).round()}%',
-                          style: AppTypography.headlineSmall.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w700,
+                          const SizedBox(width: 4),
+                          Text(
+                            loc.batchProgress(
+                              state.batchCurrent,
+                              state.batchTotal,
+                            ),
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: AppDimensions.md),
+                        ],
+                        if (state.itemsPerSecond >= 1) ...[
+                          Icon(
+                            Icons.speed,
+                            size: 12,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '~${state.itemsPerSecond >= 1000 ? "${(state.itemsPerSecond / 1000).toStringAsFixed(1)}k" : state.itemsPerSecond.round().toString()}/s',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                  ),
-                  const SizedBox(height: AppDimensions.md),
+                    const SizedBox(height: AppDimensions.sm),
 
-                  // ── Sentence count ───────────────────────────────
-                  Text(
-                    state.totalProgress > 0
-                        ? loc.sentenceProgress(
-                            state.currentProgress, state.totalProgress)
-                        : loc.preparing,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.onSurface,
-                      fontWeight: FontWeight.w600,
+                    // ── Linear progress bar ──────────────────────────
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 6,
+                        backgroundColor: colors.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation(colors.primary),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppDimensions.sm),
 
-                  // ── Batch + speed row ────────────────────────────
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (state.batchTotal > 0) ...[
-                        Icon(Icons.list_alt,
-                            size: 12, color: colors.onSurfaceVariant),
-                        const SizedBox(width: 4),
-                        Text(
-                          loc.batchProgress(
-                              state.batchCurrent, state.batchTotal),
-                          style: AppTypography.labelSmall
-                              .copyWith(color: colors.onSurfaceVariant),
-                        ),
-                        const SizedBox(width: AppDimensions.md),
-                      ],
-                      if (state.itemsPerSecond >= 1) ...[
-                        Icon(Icons.speed,
-                            size: 12, color: colors.onSurfaceVariant),
-                        const SizedBox(width: 4),
-                        Text(
-                          '~${state.itemsPerSecond >= 1000 ? "${(state.itemsPerSecond / 1000).toStringAsFixed(1)}k" : state.itemsPerSecond.round().toString()}/s',
-                          style: AppTypography.labelSmall
-                              .copyWith(color: colors.onSurfaceVariant),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: AppDimensions.sm),
-
-                  // ── Linear progress bar ──────────────────────────
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 6,
-                      backgroundColor: colors.surfaceContainerHighest,
-                      valueColor: AlwaysStoppedAnimation(colors.primary),
-                    ),
-                  ),
-
-                  // ── Fill the waiting gap: Feature Guide preview ──
-                  const SizedBox(height: AppDimensions.lg),
-                  const FeatureGuideWhileWaiting(),
-                ],
+                    // ── Fill the waiting gap: Feature Guide preview ──
+                    const SizedBox(height: AppDimensions.lg),
+                    const FeatureGuideWhileWaiting(),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }

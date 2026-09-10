@@ -7,10 +7,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/config/supabase_config.dart';
+import 'core/services/app_analytics.dart';
 import 'core/utils/database_initializer.dart';
 import 'features/settings/services/download_notification_service.dart';
 
@@ -30,6 +32,7 @@ int _lastErrorTimeMs = 0;
 /// 2. Suppresses repeated identical errors to prevent console flooding
 /// 3. Still logs via [developer.log] for structured access
 void _handleFlutterError(FlutterErrorDetails details) {
+  AppAnalytics.instance.recordFlutterError(details);
   final now = DateTime.now().millisecondsSinceEpoch;
   final msg = details.exception.toString();
   final hash = msg.hashCode;
@@ -65,51 +68,63 @@ void _handleFlutterError(FlutterErrorDetails details) {
 }
 
 Future<void> main() async {
-  // Capture full stack traces for framework assertion errors
+  // Capture full stack traces for framework assertion errors.
+  // Crashlytics is attached inside [_handleFlutterError] once ready.
   FlutterError.onError = _handleFlutterError;
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Desktop only: copy databases/downloads left in the old locations
-  // (Documents or an exe-adjacent data/ folder) into the canonical per-user
-  // database directory, so existing users never have to re-download and
-  // bookmarks/history are preserved. Must run before any DB is opened.
-  //
-  // Both this and ensureBundledDatabases() are best-effort and must never
-  // prevent startup: path_provider's FFI (package:objective_c) can break
-  // after a macOS hot restart (dart-lang/native#3281) and throw here.
-  // getDatabaseDirectory() itself falls back to a pure-Dart directory, so
-  // the app keeps working until the next full restart.
-  try {
-    await migrateLegacyDatabases();
-  } catch (e) {
-    developer.log(
-      '[DB_MIGRATE] Legacy migration skipped: $e',
-      name: 'epitaka.database',
-    );
+  WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    AppAnalytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  // Initialise the port the foreground-service task handler uses to
+  // communicate with the main isolate (Android downloads). Pure-Dart, cheap
+  // and harmless on other platforms; must run before any download can start
+  // a foreground service.
+  FlutterForegroundTask.initCommunicationPort();
+
+  // Paint the first frame immediately. Everything below is non-critical for
+  // the first paint and runs in the background: the FTS gate shows a loading
+  // spinner until the DB copies + check finish, and cloud/analytics features
+  // degrade gracefully until their init completes.
+  runApp(const ProviderScope(child: EpitakaApp()));
+
+  unawaited(_initAsync());
+
+  // Debug-only macOS workaround: with `flutter run -d macos` the window
+  // sometimes fails to repaint frames produced after launch (e.g. the
+  // "Loading available translations…" screen → setup wizard transition)
+  // until the window is activated or resized. Keeping frames scheduled
+  // for the first seconds of a debug session makes the UI snap to the
+  // latest state. Profile/release builds are unaffected — `kDebugMode` is
+  // a const false there, so this whole block is compiled out.
+  if (kDebugMode && Platform.isMacOS) {
+    _nudgeMacDebugRepaints();
   }
+}
 
-  // Copy bundled databases from assets to writable storage (needed on
-  // Android/iOS where assets aren't directly file-system accessible).
+/// Background init deferred past the first frame so startup paints fast.
+///
+/// - Analytics/Firebase may hit network/disk — app works without it.
+/// - DB file copies must finish before the FTS check opens the DB, so this
+///   warms the shared [ensureDatabasesReady] future early; the FTS gate
+///   awaits it and shows loading meanwhile.
+/// - Supabase is optional/offline-safe ([AuthService] guards every access),
+///   so it can finish whenever.
+Future<void> _initAsync() async {
   try {
-    await ensureBundledDatabases();
-  } catch (e) {
-    developer.log(
-      '[DB_INIT] Bundled database copy skipped: $e',
-      name: 'epitaka.database',
+    final prefs = await SharedPreferences.getInstance();
+    await AppAnalytics.instance.init(
+      analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
+      crashEnabled: prefs.getBool('crash_reports_enabled') ?? true,
     );
-  }
+    await AppAnalytics.instance.logEvent('app_open');
+  } catch (_) {}
 
-  // On Android, copy the core databases (epitaka.db, dpd-dictionary.db) out
-  // of the install-time Play Asset Delivery pack so the app works fully
-  // offline (no download required). Falls back silently when the pack isn't
-  // present (debug builds, side-loaded APKs).
-  await ensureAssetPackDatabases();
+  await ensureDatabasesReady();
 
-  // Initialise the download notification service for showing progress
-  // in the Android notification bar. Wrapped in try-catch so that a
-  // plugin initialization failure (e.g. during hot restart) doesn't
-  // prevent the app from starting.
   try {
     await DownloadNotificationService.instance.init();
   } catch (e) {
@@ -119,14 +134,6 @@ Future<void> main() async {
     );
   }
 
-  // Initialise the port the foreground-service task handler uses to
-  // communicate with the main isolate (Android downloads). Pure-Dart and
-  // harmless on other platforms; must run before any download can start a
-  // foreground service.
-  FlutterForegroundTask.initCommunicationPort();
-
-  // Initialise Supabase (auth + cloud sync). Failures here only disable
-  // cloud features; the app must still start fully offline.
   try {
     await Supabase.initialize(
       url: SupabaseConfig.url,
@@ -134,16 +141,6 @@ Future<void> main() async {
       authOptions: FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
         persistSession: true,
-        // Native: the app handles the OAuth redirect itself via
-        // DeepLinkService → AuthService.handleRedirectUri, so disable the
-        // plugin's built-in deep-link session detection to avoid a double
-        // PKCE exchange.
-        //
-        // Web: DeepLinkService never runs on web (there are no custom
-        // scheme links), so the plugin must recover the session from the
-        // callback URL itself — otherwise the Google redirect lands back
-        // on the app with a `?code=…` query that nobody consumes, and the
-        // sign-in never completes.
         detectSessionInUri: kIsWeb,
       ),
     );
@@ -156,19 +153,6 @@ Future<void> main() async {
       '[SUPABASE] Initialization failed — cloud sync disabled: $e',
       name: 'epitaka.sync',
     );
-  }
-
-  runApp(const ProviderScope(child: EpitakaApp()));
-
-  // Debug-only macOS workaround: with `flutter run -d macos` the window
-  // sometimes fails to repaint frames produced after launch (e.g. the
-  // "Loading available translations…" screen → setup wizard transition)
-  // until the window is activated or resized. Keeping frames scheduled
-  // for the first seconds of a debug session makes the UI snap to the
-  // latest state. Profile/release builds are unaffected — `kDebugMode` is
-  // a const false there, so this whole block is compiled out.
-  if (kDebugMode && Platform.isMacOS) {
-    _nudgeMacDebugRepaints();
   }
 }
 

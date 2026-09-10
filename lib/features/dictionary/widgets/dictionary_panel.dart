@@ -245,6 +245,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final pali = ref.watch(settingsProvider).typography.pali;
+    final searchSize = (pali.fontSize * 0.72).clamp(12.0, 22.0);
+    final chipSize = (pali.fontSize * 0.55).clamp(9.0, 14.0);
 
     // Word lookups routed from the reader (e.g. double-clicking a word on
     // desktop) arrive as panelData changes on [sidePanelProvider].
@@ -305,7 +308,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             ),
             style: AppTypography.labelMedium.copyWith(
               color: colors.onSurface,
-              fontSize: 14,
+              fontSize: searchSize,
+              fontFamily: pali.fontFamily.fontFamily,
             ),
             onChanged: _onSearchChanged,
             onSubmitted: _performSearch,
@@ -326,7 +330,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                   label: Text(_searchHistory[index]),
                   labelStyle: AppTypography.labelSmall.copyWith(
                     color: colors.onSurfaceVariant,
-                    fontSize: 10,
+                    fontSize: chipSize,
+                    fontFamily: pali.fontFamily.fontFamily,
                   ),
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

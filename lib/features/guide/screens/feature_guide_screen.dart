@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -37,7 +38,13 @@ class FeatureGuideScreen extends ConsumerWidget {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           color: colors.primary,
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
         ),
         title: Text(
           loc.featureGuide,
@@ -100,15 +107,9 @@ class FeatureGuideScreen extends ConsumerWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   color: colors.primary,
-                  borderRadius: BorderRadius.circular(
-                    AppDimensions.radiusLg,
-                  ),
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
                 ),
-                child: Icon(
-                  Icons.menu_book,
-                  color: colors.onPrimary,
-                  size: 24,
-                ),
+                child: Icon(Icons.menu_book, color: colors.onPrimary, size: 24),
               ),
               const SizedBox(width: AppDimensions.md),
               Expanded(

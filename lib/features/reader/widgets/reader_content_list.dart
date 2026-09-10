@@ -54,6 +54,7 @@ class ReaderContentList extends StatefulWidget {
     required this.itemScrollController,
     required this.itemPositionsListener,
     required this.scrollOffsetListener,
+    required this.onScrollDelta,
     required this.highlightBundle,
     this.scrollOffsetController,
     this.showBookLinks = true,
@@ -93,6 +94,14 @@ class ReaderContentList extends StatefulWidget {
   final ItemPositionsListener itemPositionsListener;
   final ScrollOffsetListener scrollOffsetListener;
   final ScrollOffsetController? scrollOffsetController;
+
+  /// Reports finger/programmatic scroll deltas to the parent. Sourced from a
+  /// [NotificationListener] around the list instead of [scrollOffsetListener]:
+  /// after any long programmatic jump the package swaps its internal
+  /// primary/secondary lists and the listener attached in `initState` keeps
+  /// watching the detached controller, so it goes permanently silent and the
+  /// app bar would never collapse again.
+  final ValueChanged<double> onScrollDelta;
 
   /// Cross-paragraph highlight state (search, lookup, TTS, jump, keyboard
   /// cursor). Each paragraph only rebuilds when ITS slice of this bundle
@@ -474,23 +483,31 @@ class _ReaderContentListState extends State<ReaderContentList> {
       tween: Tween(begin: 0, end: pad),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
-      builder: (context, pad, _) => ScrollablePositionedList.builder(
-        key: ValueKey('reader-${widget.bookId}'),
-        initialScrollIndex: scrollIndex,
-        itemScrollController: widget.itemScrollController,
-        itemPositionsListener: widget.itemPositionsListener,
-        scrollOffsetListener: widget.scrollOffsetListener,
-        scrollOffsetController:
-            widget.scrollOffsetController ?? ScrollOffsetController(),
-        padding: EdgeInsets.fromLTRB(
-          0,
-          AppDimensions.lg + pad,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        itemCount: data.paragraphs.length,
-        itemBuilder: _buildParagraph,
-      ),
+      builder: (context, pad, _) =>
+          NotificationListener<ScrollUpdateNotification>(
+            onNotification: (notification) {
+              final delta = notification.scrollDelta;
+              if (delta != null && delta != 0) widget.onScrollDelta(delta);
+              return false;
+            },
+            child: ScrollablePositionedList.builder(
+              key: ValueKey('reader-${widget.bookId}'),
+              initialScrollIndex: scrollIndex,
+              itemScrollController: widget.itemScrollController,
+              itemPositionsListener: widget.itemPositionsListener,
+              scrollOffsetListener: widget.scrollOffsetListener,
+              scrollOffsetController:
+                  widget.scrollOffsetController ?? ScrollOffsetController(),
+              padding: EdgeInsets.fromLTRB(
+                0,
+                AppDimensions.lg + pad,
+                AppDimensions.marginMobile,
+                120,
+              ),
+              itemCount: data.paragraphs.length,
+              itemBuilder: _buildParagraph,
+            ),
+          ),
     );
 
     // Only phones collapse the app bar; elsewhere there is no compensation.

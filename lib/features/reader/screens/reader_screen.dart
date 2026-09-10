@@ -1731,6 +1731,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       itemScrollController: _scroll.scrollControllerFor(activeTab.bookId),
       itemPositionsListener: _scroll.positionsListenerFor(activeTab.bookId),
       scrollOffsetListener: _scroll.scrollOffsetListenerFor(activeTab.bookId),
+      onScrollDelta: (delta) =>
+          _scroll.onScrollOffsetChanged(activeTab.bookId, delta),
       initialScrollIndex: initialScrollIndex,
       contentHitTestKey: _contentHitTestKey,
       dragDxNotifier: _dragDxNotifier,

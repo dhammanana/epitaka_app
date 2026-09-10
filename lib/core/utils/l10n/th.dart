@@ -130,6 +130,11 @@ const Map<String, String> th = {
   'Account': 'บัญชี',
   'Profile': 'โปรไฟล์',
   'System': 'ระบบ',
+  'Usage statistics': 'สถิติการใช้งาน',
+  'Anonymous, helps improve the app': 'ไม่ระบุตัวตน ช่วยปรับปรุงแอป',
+  'Crash reports': 'รายงานข้อขัดข้อง',
+  'Sends error reports to fix bugs faster':
+      'ส่งรายงานข้อผิดพลาดเพื่อแก้ไขบั๊กได้เร็วขึ้น',
   'About ePitaka': 'เกี่ยวกับ ePitaka',
   'Help': 'ความช่วยเหลือ',
   'Keyboard Shortcuts': 'ปุ่มลัดแป้นพิมพ์',

@@ -8,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../router/app_router.dart' show AppRoutes;
+import '../../../shared/utils/app_navigation.dart';
+import '../../reader/providers/reader_tabs_provider.dart';
 
 /// The main navigation drawer.
 ///
@@ -27,6 +29,7 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final tabsState = ref.watch(readerTabsProvider);
 
     // ~78% of the screen on portrait phones, but capped so the drawer never
     // dominates landscape / tablet / desktop windows (Material 3 caps
@@ -86,6 +89,17 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   title: loc.tipitaka,
                   onTap: () => _closeAndGo(context, '/'),
                   selected: _isRouteActive(context, '/'),
+                  // Reading button — only when books are open; jumps back
+                  // to the reader without touching the route history.
+                  trailing: tabsState.isNotEmpty
+                      ? _ReaderButton(
+                          tooltip: tabsState.activeTab?.bookName ?? loc.reading,
+                          onTap: () {
+                            Navigator.of(context).pop(); // close drawer
+                            openReaderRoute(context);
+                          },
+                        )
+                      : null,
                 ),
                 _DrawerItem(
                   icon: Icons.auto_awesome,
@@ -108,7 +122,8 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   icon: Icons.psychology,
                   title: loc.gavesana,
                   subtitle: loc.semanticSearch,
-                  onTap: () => _closeAndGo(context, '/gavesana'),
+                  onTap: () =>
+                      _closeAndGo(context, '/gavesana?fromDrawer=true'),
                   selected: _isRouteActive(context, '/gavesana'),
                 ),
 
@@ -129,7 +144,8 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                 _DrawerItem(
                   icon: Icons.menu_book_outlined,
                   title: loc.dictionary,
-                  onTap: () => _closeAndGo(context, '/dictionary'),
+                  onTap: () =>
+                      _closeAndGo(context, '/dictionary?fromDrawer=true'),
                   selected: _isRouteActive(context, '/dictionary'),
                 ),
                 _DrawerItem(
@@ -143,7 +159,8 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   icon: Icons.translate,
                   title: loc.t('Translation Builder'),
                   subtitle: loc.t('Translate books on-device with AI'),
-                  onTap: () => _closeAndGo(context, '/translator'),
+                  onTap: () =>
+                      _closeAndGo(context, '/translator?fromDrawer=true'),
                   selected: _isRouteActive(context, '/translator'),
                 ),
               ],
@@ -249,6 +266,7 @@ class _DrawerItem extends StatelessWidget {
   final String? subtitle;
   final VoidCallback onTap;
   final bool selected;
+  final Widget? trailing;
 
   const _DrawerItem({
     required this.icon,
@@ -256,6 +274,7 @@ class _DrawerItem extends StatelessWidget {
     this.subtitle,
     required this.onTap,
     this.selected = false,
+    this.trailing,
   });
 
   @override
@@ -318,9 +337,45 @@ class _DrawerItem extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (trailing != null) ...[const SizedBox(width: 8), trailing!],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Reader shortcut button (Tipitaka row trailing) ────────────────────
+
+/// Small button beside the Tipitaka row that jumps back to the open book.
+///
+/// Shown only while reader tabs exist. Tapping it closes the drawer and
+/// returns to the reader without pushing or popping route history.
+class _ReaderButton extends StatelessWidget {
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _ReaderButton({required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: colors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.play_arrow, size: 18, color: colors.primary),
         ),
       ),
     );

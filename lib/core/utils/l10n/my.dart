@@ -132,6 +132,11 @@ const Map<String, String> my = {
   'Account': 'အကောင့်',
   'Profile': 'ကိုယ်ရေးအချက်အလက်',
   'System': 'စနစ်',
+  'Usage statistics': 'အသုံးပြုမှုစာရင်းအင်း',
+  'Anonymous, helps improve the app': 'အမည်မဖော်ဘဲ၊ အက်ပ်တိုးတက်စေရန် ကူညီသည်',
+  'Crash reports': 'ပျက်ကျမှုအစီရင်ခံစာများ',
+  'Sends error reports to fix bugs faster':
+      'အမှားအစီရင်ခံစာများပို့၍ အမှားများကို မြန်မြန်ပြင်ရန်',
   'About ePitaka': 'ePitaka အကြောင်း',
   'Help': 'အကူအညီ',
   'Keyboard Shortcuts': 'ကီးဘုတ်ဖြတ်လမ်းများ',

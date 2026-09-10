@@ -32,7 +32,8 @@ import '../../dictionary/widgets/dictionary_open.dart';
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
-import '../utils/reader_quote_utils.dart' show buildCitationFromTemplate;
+import '../utils/reader_quote_utils.dart'
+    show buildCitationFromTemplate, firstAvailablePageNumbers;
 import '../utils/reader_word_hit_test.dart'
     show cleanTranslationWord, selectWordAt;
 import '../widgets/reader_context_menu.dart'
@@ -942,7 +943,7 @@ class ReaderCopyService {
             activeTab.bookId,
             readerState.bookName,
             nearbyHeading,
-            firstPara.pageNumbers,
+            firstAvailablePageNumbers(paragraphs),
             paraId: firstPara.paraId,
           );
         }
@@ -1452,7 +1453,7 @@ class ReaderCopyService {
             activeTab.bookId,
             readerState.bookName,
             nearbyHeading,
-            firstPara.pageNumbers,
+            firstAvailablePageNumbers(paragraphs),
             paraId: firstPara.paraId,
           );
           if (citation.isNotEmpty) {

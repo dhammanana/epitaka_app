@@ -5,6 +5,7 @@ import '../../core/database/app_database.dart';
 import '../../core/providers/app_db_provider.dart';
 import '../../core/providers/database_provider.dart';
 import '../../core/providers/translation_manifest_provider.dart';
+import '../../core/utils/database_initializer.dart';
 import '../ai_qa/services/mention_service.dart';
 
 // ── Result types used by IndexController ───────────────────────────────
@@ -57,10 +58,7 @@ class IndexService {
     // Build the Pali index if not already built
     final paliBuilt = await appDb.isSearchIndexBuilt();
     if (!paliBuilt) {
-      await appDb.buildSearchIndex(
-        epitakaDb,
-        onProgress: onProgress,
-      );
+      await appDb.buildSearchIndex(epitakaDb, onProgress: onProgress);
     }
 
     // Build translation index
@@ -77,6 +75,7 @@ class IndexService {
   Future<IndexCheckStatus> checkStatus() async {
     debugPrint('[INDEX_SVC] checkStatus: checking index status');
     try {
+      await ensureDatabasesReady();
       final appDb = await _ref.read(appDbProvider.future);
       final paliBuilt = await appDb.isSearchIndexBuilt();
       final mentionService = _ref.read(mentionServiceProvider);
@@ -150,24 +149,24 @@ class IndexService {
         );
         if (transDb != null) {
           final alreadyBuilt = await appDb.isTranslationIndexBuilt(
-              version.languageCode);
+            version.languageCode,
+          );
           if (!alreadyBuilt) {
             await appDb.buildTranslationSearchIndex(
               version.languageCode,
               transDb,
-              onProgress: (p, msg) =>
-                  onProgress?.call(0.75 + p * 0.15, msg),
+              onProgress: (p, msg) => onProgress?.call(0.75 + p * 0.15, msg),
             );
           } else {
             debugPrint(
-                '[INDEX_SVC] build: ${version.languageCode} index already built, skipping');
+              '[INDEX_SVC] build: ${version.languageCode} index already built, skipping',
+            );
           }
         } else {
           pending.add(version.languageCode);
         }
       } catch (e) {
-        debugPrint(
-            '[INDEX_SVC] build: failed for ${version.languageCode}: $e');
+        debugPrint('[INDEX_SVC] build: failed for ${version.languageCode}: $e');
         pending.add(version.languageCode);
       }
     }
@@ -204,9 +203,9 @@ class IndexService {
   Future<int> getIndexedCount() async {
     final appDb = await _ref.read(appDbProvider.future);
     try {
-      final result = await appDb.customSelect(
-        'SELECT COUNT(*) AS cnt FROM search_fts',
-      ).get();
+      final result = await appDb
+          .customSelect('SELECT COUNT(*) AS cnt FROM search_fts')
+          .get();
       if (result.isNotEmpty) return (result.first.data['cnt'] as num).toInt();
     } catch (_) {}
     return 0;

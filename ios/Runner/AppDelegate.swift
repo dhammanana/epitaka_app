@@ -63,6 +63,17 @@ import NaturalLanguage
       switch call.method {
       case "isSupported":
         result(true)
+      case "listVoices":
+        let voices = AVSpeechSynthesisVoice.speechVoices().map { voice -> [String: String] in
+          [
+            "identifier": voice.identifier,
+            "name": voice.name,
+            "language": voice.language,
+            "quality": self.qualityString(for: voice),
+            "systemDefault": "false",
+          ]
+        }
+        result(voices)
       case "speak":
         guard let args = call.arguments as? [String: Any],
               let text = args["text"] as? String,
@@ -110,7 +121,11 @@ import NaturalLanguage
           self.ensureAudioSession()
 
           let utterance = AVSpeechUtterance(string: trimmedText)
-          if let voice = self.findBestVoice(for: language, text: trimmedText) {
+          let voiceIdentifier = args["voiceIdentifier"] as? String
+          if let vid = voiceIdentifier, !vid.isEmpty,
+             let pinned = AVSpeechSynthesisVoice.speechVoices().first(where: { $0.identifier == vid }) {
+            utterance.voice = pinned
+          } else if let voice = self.findBestVoice(for: language, text: trimmedText) {
             utterance.voice = voice
           }
           self.speechSynthesizer.speak(utterance)
@@ -189,7 +204,26 @@ import NaturalLanguage
     }
   }
 
+  /// Maps a voice quality to the string reported over `listVoices`.
+  private func qualityString(for voice: AVSpeechSynthesisVoice) -> String {
+    if #available(iOS 16.0, *) {
+      if voice.quality == .premium {
+        return "premium"
+      }
+    }
+    if voice.quality == .enhanced {
+      return "enhanced"
+    }
+    return "default"
+  }
+
   /// Finds the highest quality voice (Siri / Premium / Enhanced) matching the language or text content.
+  ///
+  /// REGRESSION GUARD: scoring must stay in sync with `AppleTtsVoicePolicy`
+  /// in lib/core/utils/apple_tts_voice_policy.dart (locked by
+  /// test/apple_tts_voice_policy_test.dart). Never replace with
+  /// `AVSpeechSynthesisVoice(language:)` — that returns the default
+  /// compact ("robot") voice.
   private func findBestVoice(for languageCode: String?, text: String? = nil) -> AVSpeechSynthesisVoice? {
     var targetLang = languageCode
     if (targetLang == nil || targetLang!.isEmpty), let sample = text, !sample.isEmpty {

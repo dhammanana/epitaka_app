@@ -8,6 +8,9 @@
 //   • external apps that handle ACTION_PROCESS_TEXT (dictionaries,
 //     translators, …) — discovered via [ProcessTextService],
 //   • custom AI prompts: run a saved prompt against the selected text.
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// What kind of action a context-menu entry performs.
 enum ContextMenuActionKind {
@@ -31,12 +34,15 @@ class ContextMenuBuiltins {
   static const excerpt = 'excerpt'; // copy with citation
   static const copyLink = 'copyLink';
   static const dictionary = 'dictionary';
-  static const lookUp = 'lookUp'; // device dictionary (iOS/macOS native Look Up)
-  static const speak = 'speak'; // native iOS/macOS text to speech (Speak Selection)
+  static const lookUp =
+      'lookUp'; // device dictionary (iOS/macOS native Look Up)
+  static const speak =
+      'speak'; // native iOS/macOS text to speech (Speak Selection)
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
-  static const editLineInfo = 'editLineInfo'; // edit the line's translation remark
+  static const editLineInfo =
+      'editLineInfo'; // edit the line's translation remark
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
@@ -53,6 +59,28 @@ class ContextMenuBuiltins {
     share,
     editLineInfo,
   ];
+
+  /// Built-ins that only work on Apple platforms (native Look Up / Speak).
+  /// Off by default everywhere else; the user can still enable them.
+  static const Set<String> appleOnly = {lookUp, speak};
+
+  /// Default enabled state for [id]. Pass [isApplePlatform] to override
+  /// platform detection (useful in tests).
+  static bool defaultEnabledFor(String id, {bool? isApplePlatform}) {
+    if (!appleOnly.contains(id)) return true;
+    return isApplePlatform ?? isAppleMenuPlatform;
+  }
+}
+
+/// True on iOS/macOS (native Look Up / Speak available). False on web and
+/// all other platforms. Never throws.
+bool get isAppleMenuPlatform {
+  if (kIsWeb) return false;
+  try {
+    return Platform.isIOS || Platform.isMacOS;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// One entry in the customizable reader context menu.
@@ -86,8 +114,7 @@ class ContextMenuAction {
 
   /// A human-readable label for settings UIs (not necessarily the label
   /// shown in the context menu itself, which may be localized).
-  String get label =>
-      appLabel ?? promptName ?? builtinId ?? id;
+  String get label => appLabel ?? promptName ?? builtinId ?? id;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -135,15 +162,20 @@ class ContextMenuAction {
   }
 }
 
-/// The default context menu configuration: every built-in action, enabled,
-/// in its natural order.
-List<ContextMenuAction> defaultContextMenuActions() {
+/// The default context menu configuration: built-ins in natural order;
+/// Apple-only actions ([ContextMenuBuiltins.appleOnly]) start off on
+/// non-Apple platforms.
+List<ContextMenuAction> defaultContextMenuActions({bool? isApplePlatform}) {
   return [
     for (final builtinId in ContextMenuBuiltins.defaults)
       ContextMenuAction(
         id: 'builtin:$builtinId',
         kind: ContextMenuActionKind.builtin,
         builtinId: builtinId,
+        enabled: ContextMenuBuiltins.defaultEnabledFor(
+          builtinId,
+          isApplePlatform: isApplePlatform,
+        ),
       ),
   ];
 }

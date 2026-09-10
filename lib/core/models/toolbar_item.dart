@@ -34,6 +34,12 @@ class ToolbarBuiltins {
     annotations,
     summarize,
   ];
+
+  /// Built-ins that are off by default (user can enable in Settings → Toolbar).
+  static const Set<String> disabledByDefault = {bookmark, summarize};
+
+  /// Default enabled state for [id].
+  static bool defaultEnabledFor(String id) => !disabledByDefault.contains(id);
 }
 
 /// One configurable entry in the reader toolbar.
@@ -60,8 +66,11 @@ class ToolbarItem {
   }
 }
 
-/// The default toolbar configuration: every built-in action, enabled, in
-/// its natural order.
+/// The default toolbar configuration: built-ins in natural order;
+/// [ToolbarBuiltins.disabledByDefault] start off.
 List<ToolbarItem> defaultToolbarItems() {
-  return [for (final id in ToolbarBuiltins.defaults) ToolbarItem(id: id)];
+  return [
+    for (final id in ToolbarBuiltins.defaults)
+      ToolbarItem(id: id, enabled: ToolbarBuiltins.defaultEnabledFor(id)),
+  ];
 }

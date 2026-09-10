@@ -136,12 +136,26 @@ class TtsAudioHandler extends BaseAudioHandler {
     String? artist,
     String? artUri,
   }) {
-    mediaItem.add(MediaItem(
-      id: id,
-      title: title,
-      artist: artist ?? 'ePitaka',
-      artUri: artUri != null ? Uri.tryParse(artUri) : null,
-    ));
+    mediaItem.add(
+      MediaItem(
+        id: id,
+        title: title,
+        artist: artist ?? 'ePitaka',
+        artUri: artUri != null ? Uri.tryParse(artUri) : null,
+      ),
+    );
+  }
+
+  /// Dismiss the notification WITHOUT killing the audio service.
+  ///
+  /// Lifecycle rule: `AudioService` is init-once per process (see
+  /// `AudioServiceInitializer`). Never broadcast `processingState: idle` —
+  /// `idle` shuts the service down permanently and later sessions lose
+  /// their notification with no way to restart it (`_cacheManager == null`
+  /// on re-init). `completed` fades the notification away while keeping
+  /// the service reusable for the next session.
+  void dismiss() {
+    setPlaybackState(playing: false, paused: false);
   }
 
   /// Updates the playback-state shown in the notification (play/pause
@@ -158,35 +172,39 @@ class TtsAudioHandler extends BaseAudioHandler {
     bool hasNext = false,
     AudioProcessingState? processingState,
   }) {
-    final procState = processingState ??
+    final procState =
+        processingState ??
         (playing
             ? AudioProcessingState.ready
-            : (paused ? AudioProcessingState.ready : AudioProcessingState.completed));
+            : (paused
+                  ? AudioProcessingState.ready
+                  : AudioProcessingState.completed));
     developer.log(
       '[TTS_LIFECYCLE] setPlaybackState: '
       'playing=$playing paused=$paused procState=$procState '
       'hasPrev=$hasPrev hasNext=$hasNext',
       name: 'epitaka.tts',
     );
-    playbackState.add(PlaybackState(
-      playing: playing,
-      processingState: procState,
-      controls: [
-        if (hasPrev) MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
-        if (hasNext) MediaControl.skipToNext,
-      ],
-      systemActions: const {
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-        MediaAction.play,
-        MediaAction.pause,
-        MediaAction.stop,
-        MediaAction.skipToNext,
-        MediaAction.skipToPrevious,
-      },
-    ));
+    playbackState.add(
+      PlaybackState(
+        playing: playing,
+        processingState: procState,
+        controls: [
+          if (hasPrev) MediaControl.skipToPrevious,
+          if (playing) MediaControl.pause else MediaControl.play,
+          MediaControl.stop,
+          if (hasNext) MediaControl.skipToNext,
+        ],
+        systemActions: const {
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+          MediaAction.play,
+          MediaAction.pause,
+          MediaAction.stop,
+          MediaAction.skipToNext,
+          MediaAction.skipToPrevious,
+        },
+      ),
+    );
   }
-
 }

@@ -14,7 +14,9 @@ import 'core/utils/l10n/app_strings.dart';
 import 'core/providers/dpd_dictionary_provider.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/indexing/index_controller.dart';
+import 'features/reader/providers/tts_reading_provider.dart';
 import 'features/settings/providers/translation_download_provider.dart';
+import 'features/settings/providers/tts_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_typography.dart';
 import 'features/annotations/widgets/sync_lifecycle_observer.dart';
@@ -44,16 +46,17 @@ import 'shared/utils/app_shortcuts.dart';
 ///
 /// This widget defers initialization to a post-frame callback from
 /// [initState], guaranteeing the engine is fully initialized.
-class AudioServiceInitializer extends StatefulWidget {
+class AudioServiceInitializer extends ConsumerStatefulWidget {
   final Widget child;
   const AudioServiceInitializer({super.key, required this.child});
 
   @override
-  State<AudioServiceInitializer> createState() =>
+  ConsumerState<AudioServiceInitializer> createState() =>
       _AudioServiceInitializerState();
 }
 
-class _AudioServiceInitializerState extends State<AudioServiceInitializer>
+class _AudioServiceInitializerState
+    extends ConsumerState<AudioServiceInitializer>
     with WidgetsBindingObserver {
   @override
   void initState() {
@@ -75,22 +78,22 @@ class _AudioServiceInitializerState extends State<AudioServiceInitializer>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     developer.log('[TTS_LIFECYCLE] App lifecycle: $state', name: 'epitaka.tts');
-    // NOTE: We deliberately do NOT stop AudioService on AppLifecycleState.detached.
-    // Why? Because on Android, `detached` fires NOT only when the process is about
-    // to be killed, but ALSO during normal backgrounding (e.g. user presses Home,
-    // the Activity is destroyed and recreated when they come back).
+    // `paused`/`inactive` (Home, screen off) intentionally do nothing here:
+    // background playback must continue via the foreground service.
     //
-    // Calling AudioService.stop() here would:
-    //   1. Kill the notification while TTS may still be playing
-    //   2. Prevent AudioService.init() from working in the next TTS session
-    //      (it asserts with '_cacheManager == null' after stop)
-    //
-    // If the process is truly killed by Android, the foreground service and
-    // notification are automatically cleaned up by the OS. If it's a transient
-    // detached, AudioService remains available for the next TTS session.
-    //
-    // AudioService.init() is called once at app startup in [_init] and never
-    // stopped until the process actually terminates.
+    // `detached` means the engine is being torn down (swipe-kill). The
+    // native TTS engine would otherwise finish the queued utterance with
+    // no UI left — so emergency-stop the engines and dismiss the
+    // notification. The audio service itself is init-once per process and
+    // is never `stop()`-ed here, so the next launch can reuse it.
+    if (state == AppLifecycleState.detached) {
+      try {
+        ref.read(ttsReadingProvider.notifier).handleAppDetached();
+      } catch (_) {}
+      try {
+        ref.read(ttsProvider.notifier).emergencyStop();
+      } catch (_) {}
+    }
   }
 
   Future<void> _init() async {
@@ -238,43 +241,43 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     return SyncLifecycleObserver(
       child: McpAutoStart(
         child: AudioServiceInitializer(
-        child: _KeepAwakeBinder(
-          child: Consumer(
-            builder: (context, ref, _) {
-              final app = CallbackShortcuts(
-                bindings: AppShortcuts.bindings(_navigatorKey, ref),
-                child: MaterialApp.router(
-                  title: 'ePitaka',
-                  debugShowCheckedModeBanner: false,
-                  // The resolved theme is set as the app theme; when no
-                  // darkTheme is provided MaterialApp falls back to [theme] in
-                  // every brightness, so the chosen scheme is always applied.
-                  theme: theme,
-                  routerConfig: _router,
-                  locale: _resolveLocale(settings.appLanguage),
-                  supportedLocales: AppLocalizationsDelegate.supportedLocales,
-                  localizationsDelegates: [
-                    const AppLocalizationsDelegate(),
-                    GlobalMaterialLocalizations.delegate,
-                    GlobalWidgetsLocalizations.delegate,
-                    GlobalCupertinoLocalizations.delegate,
-                  ],
-                  builder: (context, child) => IndexGate(child: child!),
-                ),
-              );
+          child: _KeepAwakeBinder(
+            child: Consumer(
+              builder: (context, ref, _) {
+                final app = CallbackShortcuts(
+                  bindings: AppShortcuts.bindings(_navigatorKey, ref),
+                  child: MaterialApp.router(
+                    title: 'ePitaka',
+                    debugShowCheckedModeBanner: false,
+                    // The resolved theme is set as the app theme; when no
+                    // darkTheme is provided MaterialApp falls back to [theme] in
+                    // every brightness, so the chosen scheme is always applied.
+                    theme: theme,
+                    routerConfig: _router,
+                    locale: _resolveLocale(settings.appLanguage),
+                    supportedLocales: AppLocalizationsDelegate.supportedLocales,
+                    localizationsDelegates: [
+                      const AppLocalizationsDelegate(),
+                      GlobalMaterialLocalizations.delegate,
+                      GlobalWidgetsLocalizations.delegate,
+                      GlobalCupertinoLocalizations.delegate,
+                    ],
+                    builder: (context, child) => IndexGate(child: child!),
+                  ),
+                );
 
-              // On macOS, wraps `app` in a native PlatformMenuBar so shortcuts
-              // are listed in the system menu bar and macOS's own default
-              // Cmd+F ("Find…") no longer swallows ours before CallbackShortcuts
-              // sees it. On other platforms this is a no-op passthrough.
-              return AppShortcuts.menuBar(
-                navigatorKey: _navigatorKey,
-                ref: ref,
-                child: app,
-              );
-            },
+                // On macOS, wraps `app` in a native PlatformMenuBar so shortcuts
+                // are listed in the system menu bar and macOS's own default
+                // Cmd+F ("Find…") no longer swallows ours before CallbackShortcuts
+                // sees it. On other platforms this is a no-op passthrough.
+                return AppShortcuts.menuBar(
+                  navigatorKey: _navigatorKey,
+                  ref: ref,
+                  child: app,
+                );
+              },
+            ),
           ),
-        ),
         ),
       ),
     );

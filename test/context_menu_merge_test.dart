@@ -10,109 +10,175 @@ import 'package:epitaka/core/utils/native_speech_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('saved context menu from older version gets highlight/note/lookUp/speak merged in',
-      () async {
-    // A config saved before highlight/note/lookUp/speak existed: only the legacy
-    // built-ins are present.
-    SharedPreferences.setMockInitialValues({
-      'context_menu_actions': jsonEncode([
-        ContextMenuAction(
-          id: 'builtin:copy',
-          kind: ContextMenuActionKind.builtin,
-          builtinId: ContextMenuBuiltins.copy,
+  test(
+    'saved context menu from older version gets highlight/note/lookUp/speak merged in',
+    () async {
+      // A config saved before highlight/note/lookUp/speak existed: only the legacy
+      // built-ins are present.
+      SharedPreferences.setMockInitialValues({
+        'context_menu_actions': jsonEncode(
+          [
+            ContextMenuAction(
+              id: 'builtin:copy',
+              kind: ContextMenuActionKind.builtin,
+              builtinId: ContextMenuBuiltins.copy,
+            ),
+            ContextMenuAction(
+              id: 'builtin:dictionary',
+              kind: ContextMenuActionKind.builtin,
+              builtinId: ContextMenuBuiltins.dictionary,
+            ),
+          ].map((a) => a.toJson()).toList(),
         ),
-        ContextMenuAction(
-          id: 'builtin:dictionary',
-          kind: ContextMenuActionKind.builtin,
-          builtinId: ContextMenuBuiltins.dictionary,
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs);
+      notifier.init(prefs);
+
+      final actions = notifier.state.contextMenuActions;
+      final builtinIds = actions
+          .where((a) => a.builtinId != null)
+          .map((a) => a.builtinId)
+          .toList();
+
+      // New built-ins must appear with their default enabled state
+      // (Apple-only Look Up / Speak follow the host platform).
+      expect(builtinIds, contains(ContextMenuBuiltins.highlight));
+      expect(builtinIds, contains(ContextMenuBuiltins.note));
+      expect(builtinIds, contains(ContextMenuBuiltins.lookUp));
+      expect(builtinIds, contains(ContextMenuBuiltins.speak));
+      final highlight = actions.firstWhere(
+        (a) => a.builtinId == ContextMenuBuiltins.highlight,
+      );
+      expect(highlight.enabled, isTrue);
+      final lookUp = actions.firstWhere(
+        (a) => a.builtinId == ContextMenuBuiltins.lookUp,
+      );
+      expect(
+        lookUp.enabled,
+        equals(
+          ContextMenuBuiltins.defaultEnabledFor(ContextMenuBuiltins.lookUp),
         ),
-      ].map((a) => a.toJson()).toList()),
-    });
-
-    final prefs = await SharedPreferences.getInstance();
-    final notifier = SettingsNotifier(prefs);
-    notifier.init(prefs);
-
-    final actions = notifier.state.contextMenuActions;
-    final builtinIds =
-        actions.where((a) => a.builtinId != null).map((a) => a.builtinId).toList();
-
-    // New built-ins must appear, enabled by default.
-    expect(builtinIds, contains(ContextMenuBuiltins.highlight));
-    expect(builtinIds, contains(ContextMenuBuiltins.note));
-    expect(builtinIds, contains(ContextMenuBuiltins.lookUp));
-    expect(builtinIds, contains(ContextMenuBuiltins.speak));
-    final highlight = actions.firstWhere(
-      (a) => a.builtinId == ContextMenuBuiltins.highlight,
-    );
-    expect(highlight.enabled, isTrue);
-    final lookUp = actions.firstWhere(
-      (a) => a.builtinId == ContextMenuBuiltins.lookUp,
-    );
-    expect(lookUp.enabled, isTrue);
-    final speak = actions.firstWhere(
-      (a) => a.builtinId == ContextMenuBuiltins.speak,
-    );
-    expect(speak.enabled, isTrue);
-
-    // The user's original order and toggles are preserved at the front.
-    expect(builtinIds.take(2), [
-      ContextMenuBuiltins.copy,
-      ContextMenuBuiltins.dictionary,
-    ]);
-
-    // Defaults only — no duplication when everything is already present.
-    SharedPreferences.setMockInitialValues({
-      'context_menu_actions': jsonEncode(
-        defaultContextMenuActions().map((a) => a.toJson()).toList(),
-      ),
-    });
-    final completePrefs = await SharedPreferences.getInstance();
-    final completeNotifier = SettingsNotifier(completePrefs);
-    completeNotifier.init(completePrefs);
-    final completeIds = completeNotifier.state.contextMenuActions
-        .where((a) => a.builtinId != null)
-        .map((a) => a.builtinId)
-        .toList();
-    expect(completeIds, hasLength(ContextMenuBuiltins.defaults.length));
-    expect(completeIds.toSet(), hasLength(ContextMenuBuiltins.defaults.length));
-    expect(completeIds, contains(ContextMenuBuiltins.speak));
-  });
-
-  test('resetContextMenuActions resets actions to defaults and default display order',
-      () async {
-    SharedPreferences.setMockInitialValues({
-      'context_menu_actions': jsonEncode([
-        ContextMenuAction(
-          id: 'builtin:share',
-          kind: ContextMenuActionKind.builtin,
-          builtinId: ContextMenuBuiltins.share,
-          enabled: false,
+      );
+      final speak = actions.firstWhere(
+        (a) => a.builtinId == ContextMenuBuiltins.speak,
+      );
+      expect(
+        speak.enabled,
+        equals(
+          ContextMenuBuiltins.defaultEnabledFor(ContextMenuBuiltins.speak),
         ),
-      ].map((a) => a.toJson()).toList()),
-    });
+      );
 
-    final prefs = await SharedPreferences.getInstance();
-    final notifier = SettingsNotifier(prefs);
-    notifier.init(prefs);
+      // The user's original order and toggles are preserved at the front.
+      expect(builtinIds.take(2), [
+        ContextMenuBuiltins.copy,
+        ContextMenuBuiltins.dictionary,
+      ]);
 
-    // Reset to defaults
-    await notifier.resetContextMenuActions();
+      // Defaults only — no duplication when everything is already present.
+      SharedPreferences.setMockInitialValues({
+        'context_menu_actions': jsonEncode(
+          defaultContextMenuActions().map((a) => a.toJson()).toList(),
+        ),
+      });
+      final completePrefs = await SharedPreferences.getInstance();
+      final completeNotifier = SettingsNotifier(completePrefs);
+      completeNotifier.init(completePrefs);
+      final completeIds = completeNotifier.state.contextMenuActions
+          .where((a) => a.builtinId != null)
+          .map((a) => a.builtinId)
+          .toList();
+      expect(completeIds, hasLength(ContextMenuBuiltins.defaults.length));
+      expect(
+        completeIds.toSet(),
+        hasLength(ContextMenuBuiltins.defaults.length),
+      );
+      expect(completeIds, contains(ContextMenuBuiltins.speak));
+    },
+  );
 
-    final resetActions = notifier.state.contextMenuActions;
-    final resetBuiltinIds = resetActions
-        .where((a) => a.builtinId != null)
-        .map((a) => a.builtinId)
-        .toList();
+  test(
+    'resetContextMenuActions resets actions to defaults and default display order',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'context_menu_actions': jsonEncode(
+          [
+            ContextMenuAction(
+              id: 'builtin:share',
+              kind: ContextMenuActionKind.builtin,
+              builtinId: ContextMenuBuiltins.share,
+              enabled: false,
+            ),
+          ].map((a) => a.toJson()).toList(),
+        ),
+      });
 
-    expect(resetBuiltinIds, equals(ContextMenuBuiltins.defaults));
-    expect(resetActions.every((a) => a.enabled), isTrue);
-  });
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs);
+      notifier.init(prefs);
 
-  test('NativeSpeechService returns false on empty text or unsupported platforms', () async {
-    final result = await NativeSpeechService.speak('');
-    expect(result, isFalse);
-    final whitespaceResult = await NativeSpeechService.speak('   ');
-    expect(whitespaceResult, isFalse);
-  });
+      // Reset to defaults
+      await notifier.resetContextMenuActions();
+
+      final resetActions = notifier.state.contextMenuActions;
+      final resetBuiltinIds = resetActions
+          .where((a) => a.builtinId != null)
+          .map((a) => a.builtinId)
+          .toList();
+
+      expect(resetBuiltinIds, equals(ContextMenuBuiltins.defaults));
+      for (final a in resetActions) {
+        expect(
+          a.enabled,
+          equals(ContextMenuBuiltins.defaultEnabledFor(a.builtinId ?? a.id)),
+          reason: a.builtinId,
+        );
+      }
+    },
+  );
+
+  test(
+    'Apple-only Look Up / Speak are off by default off Apple platforms',
+    () async {
+      final offApple = defaultContextMenuActions(isApplePlatform: false);
+      expect(
+        offApple
+            .firstWhere((a) => a.builtinId == ContextMenuBuiltins.lookUp)
+            .enabled,
+        isFalse,
+      );
+      expect(
+        offApple
+            .firstWhere((a) => a.builtinId == ContextMenuBuiltins.speak)
+            .enabled,
+        isFalse,
+      );
+
+      final onApple = defaultContextMenuActions(isApplePlatform: true);
+      expect(
+        onApple
+            .firstWhere((a) => a.builtinId == ContextMenuBuiltins.lookUp)
+            .enabled,
+        isTrue,
+      );
+      expect(
+        onApple
+            .firstWhere((a) => a.builtinId == ContextMenuBuiltins.speak)
+            .enabled,
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'NativeSpeechService returns false on empty text or unsupported platforms',
+    () async {
+      final result = await NativeSpeechService.speak('');
+      expect(result, isFalse);
+      final whitespaceResult = await NativeSpeechService.speak('   ');
+      expect(whitespaceResult, isFalse);
+    },
+  );
 }

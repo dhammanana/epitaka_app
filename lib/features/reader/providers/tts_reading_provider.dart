@@ -34,9 +34,8 @@ class PreparedAudioQueue {
   final List<_PreparedLine> _entries = [];
 
   /// Whether [index] (for [sessionId]) is already prepared or in flight.
-  bool contains(int sessionId, int index) => _entries.any(
-    (e) => e.sessionId == sessionId && e.index == index,
-  );
+  bool contains(int sessionId, int index) =>
+      _entries.any((e) => e.sessionId == sessionId && e.index == index);
 
   /// Take the prepared future for [index] (for [sessionId]) if present,
   /// removing it from the queue. Returns null when not prepared.
@@ -219,7 +218,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   TtsReadingNotifier(this._ref) : super(const TtsReadingState());
 
   /// Start reading from [lines] starting at [startIndex].
-Future<void> startReading(
+  Future<void> startReading(
     String bookId,
     List<TtsLineItem> lines, {
     int startIndex = 0,
@@ -374,32 +373,28 @@ Future<void> startReading(
     await _saveListeningHistoryNow();
     await _ref.read(ttsProvider.notifier).stop();
     state = const TtsReadingState();
-    _cleanupHandlerCallbacks();
-    // Stop the AudioService foreground service by transitioning to 'idle'
-    // state. When processingState becomes 'idle', audio_service internally
-    // calls AudioService._stop() which shuts down the Android background
-    // service, allowing the process to be killed.
-    //
-    // NOTE: AudioService.stop() (deprecated) does NOT actually stop
-    // the service — it only calls through the handler chain to
-    // onStopPressed which we already nulled above.
-    //
-    // Trade-off: Once the service is stopped ('idle'), showing the
-    // notification again requires restarting the service. If the platform
-    // can auto-restart it via the method channel, subsequent TTS sessions
-    // will still show a notification. Otherwise they won't (TTS audio
-    // works independently via flutter_tts either way).
-    developer.log(
-      '[TTS_LIFECYCLE] stopReading: setting state to idle to trigger service stop...',
-      name: 'epitaka.tts',
-    );
-    ttsAudioHandler.setPlaybackState(
-      playing: false,
-      paused: false,
-      hasPrev: false,
-      hasNext: false,
-      processingState: AudioProcessingState.idle,
-    );
+    // Keep notification callbacks registered: the audio service lives for
+    // the whole process (init-once), so the next startReading() reuses it.
+    // Clearing them here + broadcasting `idle` killed restart ("after stop,
+    // cannot start again" — the service never came back).
+    ttsAudioHandler.dismiss();
+  }
+
+  /// Process teardown (`detached` / swipe-kill). Stops the engines
+  /// synchronously-ish and dismisses the notification. Safe to call when
+  /// idle; never throws.
+  Future<void> handleAppDetached() async {
+    _currentSessionId++;
+    _prepared.clear();
+    _listeningSaveTimer?.cancel();
+    _listeningSaveTimer = null;
+    try {
+      _ref.read(ttsProvider.notifier).emergencyStop();
+    } catch (_) {}
+    try {
+      ttsAudioHandler.dismiss();
+    } catch (_) {}
+    if (state.isActive) state = const TtsReadingState();
   }
 
   /// Pause reading.
@@ -438,7 +433,8 @@ Future<void> startReading(
 
   /// Speak the current line and schedule the next.
   Future<void> _speakCurrent(int sessionId, {bool isResume = false}) async {
-    if (sessionId != _currentSessionId || state.currentIndex >= state.lines.length) {
+    if (sessionId != _currentSessionId ||
+        state.currentIndex >= state.lines.length) {
       if (sessionId == _currentSessionId) {
         _finishReading();
       }
@@ -456,7 +452,10 @@ Future<void> startReading(
     );
 
     if (line.text.trim().isEmpty) {
-      developer.log('[TTS_PIPE] line $index is empty, skipping', name: 'epitaka.tts');
+      developer.log(
+        '[TTS_PIPE] line $index is empty, skipping',
+        name: 'epitaka.tts',
+      );
       _advanceToNext(sessionId);
       return;
     }
@@ -646,19 +645,8 @@ Future<void> startReading(
     _listeningSaveTimer = null;
     _saveListeningHistoryNow();
     state = const TtsReadingState();
-    _cleanupHandlerCallbacks();
-    // Same as stopReading(): use 'idle' state to trigger internal service stop.
-    developer.log(
-      '[TTS_LIFECYCLE] _finishReading: setting state to idle to trigger service stop...',
-      name: 'epitaka.tts',
-    );
-    ttsAudioHandler.setPlaybackState(
-      playing: false,
-      paused: false,
-      hasPrev: false,
-      hasNext: false,
-      processingState: AudioProcessingState.idle,
-    );
+    // Keep callbacks + service alive for the next session (see stopReading).
+    ttsAudioHandler.dismiss();
   }
 
   /// Cancel the audio-becoming-noisy listener subscription and clear all
@@ -698,18 +686,9 @@ Future<void> startReading(
       _ref.read(ttsProvider.notifier).stop();
     } catch (_) {}
     _cleanupHandlerCallbacks();
-    // Same as stopReading / _finishReading: trigger internal service stop via idle.
-    developer.log(
-      '[TTS_LIFECYCLE] dispose: setting state to idle to trigger service stop...',
-      name: 'epitaka.tts',
-    );
-    ttsAudioHandler.setPlaybackState(
-      playing: false,
-      paused: false,
-      hasPrev: false,
-      hasNext: false,
-      processingState: AudioProcessingState.idle,
-    );
+    try {
+      ttsAudioHandler.dismiss();
+    } catch (_) {}
     developer.log(
       '[TTS_LIFECYCLE] TtsReadingNotifier.dispose() completed',
       name: 'epitaka.tts',
@@ -721,5 +700,5 @@ Future<void> startReading(
 /// Provider for line-by-line TTS reading state and control.
 final ttsReadingProvider =
     StateNotifierProvider<TtsReadingNotifier, TtsReadingState>((ref) {
-  return TtsReadingNotifier(ref);
-});
+      return TtsReadingNotifier(ref);
+    });

@@ -11,7 +11,13 @@ import '../../../core/theme/app_typography.dart';
 class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
   final ColorScheme colors;
 
-  const SettingsAppBar({super.key, required this.colors});
+  /// Optional leading widget override. When null, a back arrow that pops
+  /// the route is shown (correct for pushed sub-screens). Top-level routes
+  /// opened from the drawer via `go()` (single-page stack, nothing to pop)
+  /// pass a hamburger button that opens their drawer instead.
+  final Widget? leading;
+
+  const SettingsAppBar({super.key, required this.colors, this.leading});
 
   @override
   // AppBar adds status-bar height on top of toolbarHeight automatically.
@@ -29,11 +35,13 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
         preferredSize: const Size.fromHeight(1),
         child: Divider(height: 1, thickness: 1, color: colors.outlineVariant),
       ),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        color: colors.primary,
-        onPressed: () => context.pop(),
-      ),
+      leading:
+          leading ??
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            color: colors.primary,
+            onPressed: () => context.pop(),
+          ),
       title: Text(
         'ePitaka',
         style: AppTypography.displayPali.copyWith(color: colors.primary),

@@ -11,6 +11,8 @@ if (keystorePropertiesFile.exists()) {
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -31,23 +33,14 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // sqlite_vector 1.0.0 only ships a prebuilt Android binary for
-        // arm64-v8a (native_libraries/android/vector_android_arm64.so).
-        // Without this filter the default build targets armeabi-v7a and
-        // x86_64 as well, and the package's native-assets hook fails with
-        // "Pre-built binary not found: vector_android_arm.so". arm64-v8a
-        // covers all modern devices (Google Play has required 64-bit
-        // support since Aug 2019).
-        //
-        // If other ABIs are ever needed, the missing binaries can be
-        // fetched from the sqlite-vector GitHub release (tag 1.0.0):
-        //   vector-android-armeabi-v7a-1.0.0.zip  -> vector_android_arm.so
-        //   vector-android-x86_64-1.0.0.zip       -> vector_android_x64.so
-        // extracted into the pub cache package dir at
-        //   ~/.pub-cache/hosted/pub.dev/sqlite_vector-1.0.0/native_libraries/android/
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        // NOTE: no abiFilters here — the app must ship native libraries for
+        // ALL Android ABIs (armeabi-v7a, arm64-v8a, x86_64). Restricting to
+        // arm64-v8a crashes on 32-bit devices at startup with
+        // "Could not find 'libflutter.so'. Looked for: [armeabi-v7a, ...]"
+        // (seen on POCO C61). The AAB carries per-ABI slices and Google Play
+        // serves each device its matching slice, so 64-bit devices pay no
+        // size penalty. (An old arm64-only filter for sqlite_vector was
+        // removed: that package is no longer a dependency.)
     }
 
     flavorDimensions += "environment"

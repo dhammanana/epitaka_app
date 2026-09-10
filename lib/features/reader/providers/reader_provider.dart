@@ -91,10 +91,15 @@ class ParagraphHeading {
   final int level;
   final int paraId;
 
+  /// Paragraph span covered by this heading
+  /// (`[paraId, paraId + chapterLen)`), from `headings.chapter_len`.
+  final int? chapterLen;
+
   const ParagraphHeading({
     required this.title,
     required this.level,
     required this.paraId,
+    this.chapterLen,
   });
 }
 
@@ -385,6 +390,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           title: h.title ?? '',
           level: h.level ?? 1,
           paraId: h.paraId,
+          chapterLen: h.chapterLen,
         );
       }
     }
@@ -402,6 +408,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           title: h.title ?? '',
           level: h.level ?? 1,
           paraId: h.paraId,
+          chapterLen: h.chapterLen,
         );
       } else {
         break; // headings are ordered by paraId ascending

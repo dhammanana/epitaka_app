@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1038669536024",
+    "project_id": "epitaka",
+    "storage_bucket": "epitaka.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1038669536024:android:8cf18aa0c18b740e769c6d",
+        "android_client_info": {
+          "package_name": "com.dn.epitaka"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAut-209SHnb_cLzYLnLC-Dq4KcRPChNRI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1038669536024:android:8cf18aa0c18b740e769c6d",
+        "android_client_info": {
+          "package_name": "com.dn.epitaka.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAut-209SHnb_cLzYLnLC-Dq4KcRPChNRI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

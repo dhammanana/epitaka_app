@@ -183,6 +183,11 @@ class AppLocalizations {
   String get account => _t('Account');
   String get profile => _t('Profile');
   String get system => _t('System');
+  String get usageStatistics => _t('Usage statistics');
+  String get usageStatisticsSubtitle => _t('Anonymous, helps improve the app');
+  String get crashReports => _t('Crash reports');
+  String get crashReportsSubtitle =>
+      _t('Sends error reports to fix bugs faster');
   String get about => _t('About ePitaka');
   String get help => _t('Help');
   String get keyboardShortcuts => _t('Keyboard Shortcuts');

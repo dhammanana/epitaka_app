@@ -432,16 +432,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
-    final trans = settings.typography.typographyFor(
-      settings.primaryTranslationLang,
-    );
+    final pali = settings.typography.pali;
     // Use paddingOf() instead of MediaQuery.of(context) to avoid
     // rebuilding on every keyboard animation frame. MediaQuery.of(context)
     // subscribes to the entire MediaQuery including viewInsets, which
     // changes ~60 times during the ~300ms keyboard open animation,
     // causing the expensive dictionary results to rebuild per frame.
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
-    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
+    final paliSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
 
     // Strip the keyboard view insets so the Scaffold created by
     // showModalBottomSheet does not resize when the keyboard opens.
@@ -603,9 +601,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                     style: AppTypography.bodyTranslation
                                         .copyWith(
                                           color: colors.onSurface,
-                                          fontSize: transSize,
+                                          fontSize: paliSize,
                                           fontFamily:
-                                              trans.fontFamily.fontFamily,
+                                              pali.fontFamily.fontFamily,
                                         ),
                                     onChanged: _onSearchChanged,
                                     onSubmitted: _performSearch,
@@ -698,11 +696,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   ) {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
-    final trans = settings.typography.typographyFor(
-      settings.primaryTranslationLang,
-    );
     final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
-    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
+    final idlePromptSize = (pali.fontSize * 0.72).clamp(12.0, 24.0);
     // Attach the sheet's scroll controller even when idle: the header's
     // drag-to-resize/close reads the sheet size via the controller, and
     // DraggableScrollableController.isAttached requires the controller to
@@ -737,8 +732,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyTranslation.copyWith(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                    fontSize: transSize,
-                    fontFamily: trans.fontFamily.fontFamily,
+                    fontSize: idlePromptSize,
+                    fontFamily: pali.fontFamily.fontFamily,
                   ),
                 ),
               ],
@@ -792,11 +787,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// match for the searched word.
   List<Widget> _prefixSuggestionsSlivers(ColorScheme colors, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
-    final trans = settings.typography.typographyFor(
-      settings.primaryTranslationLang,
-    );
+    final pali = settings.typography.pali;
 
-    final transSize = (trans.fontSize * 0.8).clamp(12.0, 24.0);
+    final didYouMeanSize = (pali.fontSize * 0.64).clamp(10.0, 18.0);
     return ref
         .watch(dpdDictionarySearchProvider(_query))
         .when(
@@ -869,7 +862,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                     AppLocalizations.of(context).didYouMean,
                     style: AppTypography.labelSmall.copyWith(
                       color: colors.onSurfaceVariant,
-                      fontSize: transSize,
+                      fontSize: didYouMeanSize,
+                      fontFamily: pali.fontFamily.fontFamily,
                     ),
                   ),
                 ),

@@ -27,6 +27,7 @@ import '../features/outline/screens/outline_screen.dart';
 import '../core/utils/platform_info.dart';
 import '../core/utils/responsive_breakpoint.dart';
 import '../shared/widgets/responsive_scaffold.dart';
+import 'analytics_observer.dart';
 
 /// The route paths for the app.
 class AppRoutes {
@@ -68,8 +69,7 @@ bool redirectLibraryToReader({
   double? windowWidth,
 }) {
   if (!isDesktopPlatform) return false;
-  if (windowWidth == null ||
-      windowWidth >= ResponsiveBreakpoint.desktopWidth) {
+  if (windowWidth == null || windowWidth >= ResponsiveBreakpoint.desktopWidth) {
     return true;
   }
   return false;
@@ -87,6 +87,7 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
         : AppRoutes.library,
     navigatorKey: navigatorKey,
     debugLogDiagnostics: false,
+    observers: [AnalyticsRouteObserver()],
     redirect: (context, state) {
       if (state.matchedLocation != AppRoutes.library) return null;
       // Desktop: any navigation to the library root lands on the reader
@@ -220,8 +221,7 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
         path: AppRoutes.featureGuide,
         name: 'featureGuide',
         builder: (context, state) {
-          final showIntro =
-              state.uri.queryParameters['intro'] == 'true';
+          final showIntro = state.uri.queryParameters['intro'] == 'true';
           return FeatureGuideScreen(showIntro: showIntro);
         },
       ),

@@ -47,6 +47,14 @@ String buildCitationFromTemplate(
     result = result.replaceAll('{para_id}', '');
   }
 
+  // Drop the page label (e.g. "VRI p.{vri_page}") when that system has
+  // no page number, otherwise the citation ends with a dangling "VRI p."
+  // with no number.
+  result = _stripEmptyPageLabel(result, 'vri_page', pageNumbers['vri']);
+  result = _stripEmptyPageLabel(result, 'pts_page', pageNumbers['pts']);
+  result = _stripEmptyPageLabel(result, 'thai_page', pageNumbers['thai']);
+  result = _stripEmptyPageLabel(result, 'myanmar_page', pageNumbers['my']);
+
   // Replace each page placeholder with the correct value from the map
   result = result.replaceAll('{vri_page}', pageNumbers['vri'] ?? '');
   result = result.replaceAll('{pts_page}', pageNumbers['pts'] ?? '');
@@ -62,8 +70,63 @@ String buildCitationFromTemplate(
   // deliberately not stripped here.
   result = result.replaceAll(RegExp(r'^[\s>\—:|,;.]+\s*'), '').trim();
   result = result.replaceAll(RegExp(r'\s*[\s>\-—:|,;.]+$'), '').trim();
+  // Leftover page marker with no number (e.g. template used a custom
+  // label the pre-strip above did not recognise): "… VRI p" → "…".
+  result = result
+      .replaceAll(
+        RegExp(r'\s*\b(VRI|PTS|Thai|Myanmar)\s*p\.?\s*$', caseSensitive: false),
+        '',
+      )
+      .trim();
+  result = result.replaceAll(RegExp(r'\s*\bp\.?\s*$'), '').trim();
 
   return result;
+}
+
+/// Remove `"<label> p. {placeholder}"` (or any subset of it) from
+/// [template] when [pageValue] is empty, so no dangling "VRI p." remains.
+String _stripEmptyPageLabel(
+  String template,
+  String placeholder,
+  String? pageValue,
+) {
+  if (pageValue != null && pageValue.trim().isNotEmpty) return template;
+  var result = template;
+  // "VRI p. {vri_page}" / "PTS p {pts_page}" / … (case-insensitive)
+  result = result.replaceAll(
+    RegExp(
+      r'\b(VRI|PTS|Thai|Myanmar)\s*p\.?\s*\{' + placeholder + r'\}',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  // "p. {vri_page}" without a system label
+  result = result.replaceAll(
+    RegExp(r'\bp\.?\s*\{' + placeholder + r'\}', caseSensitive: false),
+    '',
+  );
+  // Bare "{vri_page}"
+  result = result.replaceAll('{$placeholder}', '');
+  return result;
+}
+
+/// First paragraph in [paragraphs] carrying any page number, falling back
+/// to the first paragraph's (possibly empty) map.
+///
+/// The first paragraph of a section/selection often starts before the first
+/// page marker, so citing only `paragraphs.first.pageNumbers` yields a
+/// citation with no page ("… VRI p.") even though the section does have
+/// pages. Scanning forward fixes most of those.
+Map<String, String> firstAvailablePageNumbers(List<ParagraphData> paragraphs) {
+  if (paragraphs.isEmpty) return const {};
+  final first = paragraphs.first.pageNumbers;
+  if (first.values.any((v) => v.trim().isNotEmpty)) return first;
+  for (final p in paragraphs) {
+    if (p.pageNumbers.values.any((v) => v.trim().isNotEmpty)) {
+      return p.pageNumbers;
+    }
+  }
+  return first;
 }
 
 /// Returns a human-readable label for a page numbering system code.

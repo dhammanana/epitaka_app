@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
+import '../services/app_analytics.dart';
 import '../models/context_menu_action.dart';
 import '../models/toolbar_item.dart';
 import '../theme/app_colors.dart';
@@ -579,6 +580,12 @@ class AppSettings {
   /// welcome (during first-run indexing or on the Library screen).
   final bool featureGuideSeen;
 
+  /// Anonymous usage statistics (Firebase Analytics). Default on.
+  final bool analyticsEnabled;
+
+  /// Automatic crash/error reports (Firebase Crashlytics). Default on.
+  final bool crashReportsEnabled;
+
   /// The reader bottom toolbar: which built-in actions appear and in what
   /// order (drag-to-reorder in Settings → Toolbar).
   final List<ToolbarItem> toolbarItems;
@@ -635,6 +642,8 @@ class AppSettings {
     this.dictionaryDockFraction = 0,
     this.contextMenuActions = const [],
     this.featureGuideSeen = false,
+    this.analyticsEnabled = true,
+    this.crashReportsEnabled = true,
     this.toolbarItems = const [],
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
     this.useBookName = true,
@@ -687,6 +696,8 @@ class AppSettings {
     double? dictionaryDockFraction,
     List<ContextMenuAction>? contextMenuActions,
     bool? featureGuideSeen,
+    bool? analyticsEnabled,
+    bool? crashReportsEnabled,
     List<ToolbarItem>? toolbarItems,
     String? quoteTemplate,
     bool? useBookName,
@@ -746,6 +757,8 @@ class AppSettings {
           dictionaryDockFraction ?? this.dictionaryDockFraction,
       contextMenuActions: contextMenuActions ?? this.contextMenuActions,
       featureGuideSeen: featureGuideSeen ?? this.featureGuideSeen,
+      analyticsEnabled: analyticsEnabled ?? this.analyticsEnabled,
+      crashReportsEnabled: crashReportsEnabled ?? this.crashReportsEnabled,
       toolbarItems: toolbarItems ?? this.toolbarItems,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
       useBookName: useBookName ?? this.useBookName,
@@ -883,7 +896,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   /// Append any built-in actions from [ContextMenuBuiltins.defaults] that
   /// are missing from [actions], preserving the user's existing order and
-  /// only touching the tail of the list.
+  /// only touching the tail of the list. Missing items use their default
+  /// enabled state (Apple-only Look Up / Speak start off elsewhere).
   List<ContextMenuAction> _mergeMissingBuiltins(
     List<ContextMenuAction> actions,
   ) {
@@ -903,6 +917,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
           id: 'builtin:$id',
           kind: ContextMenuActionKind.builtin,
           builtinId: id,
+          enabled: ContextMenuBuiltins.defaultEnabledFor(id),
         ),
     ];
   }
@@ -932,7 +947,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   /// Append any built-in toolbar actions from [ToolbarBuiltins.defaults]
   /// that are missing from [items], preserving the user's existing order
-  /// and only touching the tail of the list.
+  /// and only touching the tail of the list. Missing items use their
+  /// default enabled state (bookmark/summarize start off).
   List<ToolbarItem> _mergeMissingToolbarItems(List<ToolbarItem> items) {
     final present = items.map((i) => i.id).toSet();
     final missing = [
@@ -940,7 +956,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         if (!present.contains(id)) id,
     ];
     if (missing.isEmpty) return items;
-    return [...items, for (final id in missing) ToolbarItem(id: id)];
+    return [
+      ...items,
+      for (final id in missing)
+        ToolbarItem(id: id, enabled: ToolbarBuiltins.defaultEnabledFor(id)),
+    ];
   }
 
   /// Quote templates saved by older versions didn't start with "- ", but the
@@ -1061,6 +1081,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       dictionaryDockFraction: prefs.getDouble('dict_dock_fraction') ?? 0,
       contextMenuActions: _loadContextMenuActions(),
       featureGuideSeen: prefs.getBool('feature_guide_seen') ?? false,
+      analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
+      crashReportsEnabled: prefs.getBool('crash_reports_enabled') ?? true,
       toolbarItems: _loadToolbarItems(),
       quoteTemplate: _migrateQuoteTemplate(
         prefs.getString('quote_template') ??
@@ -1518,6 +1540,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setFeatureGuideSeen(bool seen) async {
     state = state.copyWith(featureGuideSeen: seen);
     await _prefs?.setBool('feature_guide_seen', seen);
+  }
+
+  Future<void> setAnalyticsEnabled(bool enabled) async {
+    state = state.copyWith(analyticsEnabled: enabled);
+    await _prefs?.setBool('analytics_enabled', enabled);
+    await AppAnalytics.instance.setCollectionEnabled(analyticsEnabled: enabled);
+  }
+
+  Future<void> setCrashReportsEnabled(bool enabled) async {
+    state = state.copyWith(crashReportsEnabled: enabled);
+    await _prefs?.setBool('crash_reports_enabled', enabled);
+    await AppAnalytics.instance.setCollectionEnabled(crashEnabled: enabled);
   }
 
   /// Set the translation version (suffix) to use for a language code.

@@ -14,34 +14,42 @@ import java.io.File
 import java.io.InputStream
 
 class MainActivity : FlutterActivity() {
-    override fun provideFlutterEngine(context: Context): FlutterEngine {
-        // audio_service expects a shared FlutterEngine cached under the key
-        // "audio_service_engine". Without this override, FlutterActivity
-        // creates its own engine while audio_service creates a separate
-        // background engine, causing:
-        //
-        //   IllegalStateException: The Activity class declared in your
-        //   AndroidManifest.xml is wrong or has not provided the correct
-        //   FlutterEngine.
-        //
-        // By creating the engine here and caching it under the expected
-        // key, both the Activity and audio_service share the same engine.
-        val engineId = "audio_service_engine"
-        var engine = FlutterEngineCache.getInstance().get(engineId)
-        if (engine == null) {
-            engine = FlutterEngine(context)
-            // Don't execute the Dart entrypoint here — FlutterActivity
-            // will do that after provideFlutterEngine() returns. We only
-            // need to create + cache the engine so that audio_service's
-            // getFlutterEngine() finds it and reuses it instead of
-            // creating a second, incompatible engine.
-            FlutterEngineCache.getInstance().put(engineId, engine)
+    // TTS lifecycle ownership:
+    // - Dart `TtsNotifier` owns the speech engines, `TtsReadingNotifier`
+    //   owns the reading session + notification callbacks.
+    // - This Activity only (a) shares the engine via the cache so
+    //   audio_service reuses it, and (b) guarantees speech stops when the
+    //   app task is swiped away (system TTS would otherwise finish the
+    //   queued utterance after the Dart isolate is gone).
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        // Never `new FlutterEngine()` here: the FlutterLoader is not yet
+        // initialized at this point, so manual creation crashes on cold
+        // start (`FlutterLoader.ensureInitializationComplete:533`
+        // RuntimeException, seen in Play Console v28). Returning the cached
+        // engine — or null so FlutterActivity creates it correctly —
+        // shares the engine without the crash.
+        return FlutterEngineCache.getInstance().get(engineId)
+    }
+
+    override fun onDestroy() {
+        // Swipe-kill: stop the audio foreground service so the notification
+        // goes away with the task. The Dart `detached` handler stops the
+        // speech engines themselves.
+        try {
+            stopService(Intent(this, Class.forName("com.ryanheise.audioservice.AudioService")))
+        } catch (_: Exception) {
         }
-        return engine
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Share the correctly-initialized engine with audio_service.
+        // First launch: provideFlutterEngine returned null, FlutterActivity
+        // created this engine safely — cache it now for reuse.
+        if (FlutterEngineCache.getInstance().get(engineId) == null) {
+            FlutterEngineCache.getInstance().put(engineId, flutterEngine)
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -257,6 +265,7 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
+        private const val engineId = "audio_service_engine"
         private const val TAG = "EPITAKA_ASSET_PACK"
         private const val CHANNEL = "epitaka/asset_pack"
         private const val PROCESS_TEXT_CHANNEL = "epitaka/process_text"

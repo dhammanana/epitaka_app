@@ -25,6 +25,7 @@ import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart' show scriptFontFamily;
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../services/script_conversion.dart';
+import '../../gavesana/screens/gavesana_drawer.dart';
 
 /// Full-screen Pāli script converter.
 class ScriptConverterScreen extends ConsumerStatefulWidget {
@@ -89,18 +90,34 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
     final wide = _isWide(context);
 
     return Scaffold(
+      drawer: isFromDrawer ? const MainDrawer() : null,
       appBar: AppBar(
         toolbarHeight: AppDimensions.appBarHeight,
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(isFromDrawer ? Icons.menu : Icons.arrow_back),
-          color: colors.onSurfaceVariant,
-          tooltip: loc.navigationMenu,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        leading: isFromDrawer
+            ? Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  color: colors.onSurfaceVariant,
+                  tooltip: loc.navigationMenu,
+                  onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: colors.onSurfaceVariant,
+                tooltip: loc.navigationMenu,
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/');
+                  }
+                },
+              ),
         title: Text(
           loc.scriptConverter,
           style: AppTypography.headlineSmall.copyWith(
@@ -109,7 +126,9 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
           ),
         ),
       ),
-      body: wide ? _buildDesktopBody(colors, loc) : _buildMobileBody(colors, loc),
+      body: wide
+          ? _buildDesktopBody(colors, loc)
+          : _buildMobileBody(colors, loc),
     );
   }
 
@@ -132,9 +151,7 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
         _buildIntro(colors, loc),
         const SizedBox(height: AppDimensions.md),
         _buildSourceCard(colors, loc),
-        Center(
-          child: _buildSwapButton(colors, loc),
-        ),
+        Center(child: _buildSwapButton(colors, loc)),
         _buildTargetCard(colors, loc, wrapScripts: false),
       ],
     );
@@ -169,7 +186,9 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
                       ),
                     ),
                     // Target (right)
-                    Expanded(child: _buildTargetCard(colors, loc, wrapScripts: true)),
+                    Expanded(
+                      child: _buildTargetCard(colors, loc, wrapScripts: true),
+                    ),
                   ],
                 ),
               ),
@@ -248,7 +267,11 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
       colors: colors,
       trailing: detected == null
           ? null
-          : _ScriptBadge(label: _scriptLabel(detected), script: detected, colors: colors),
+          : _ScriptBadge(
+              label: _scriptLabel(detected),
+              script: detected,
+              colors: colors,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

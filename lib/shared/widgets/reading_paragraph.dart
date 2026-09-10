@@ -19,6 +19,7 @@ import '../../features/annotations/services/highlight_span_painter.dart';
 import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
+import '../../features/reader/widgets/section_copy_menu.dart';
 import '../../features/reader/widgets/translation_remark_dialog.dart';
 import '../../shared/widgets/pali_text.dart';
 import '../../shared/widgets/nissaya_text.dart';
@@ -174,7 +175,7 @@ class ReadingParagraph extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Book title at the very top
-        if (isFirst) _buildBookTitle(colors),
+        if (isFirst) _buildBookTitle(context, colors),
 
         // Heading (if this paragraph starts a new section)
         if (paragraph.heading != null)
@@ -201,16 +202,27 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
-  Widget _buildBookTitle(ColorScheme colors) {
+  Widget _buildBookTitle(BuildContext context, ColorScheme colors) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 32, left: 12),
       child: Column(
         children: [
-          PaliTextStatic(
-            bookName ?? '',
-            script,
-            style: AppTypography.displayPali.copyWith(color: colors.primary),
-            textAlign: TextAlign.center,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: PaliTextStatic(
+                  bookName ?? '',
+                  script,
+                  style: AppTypography.displayPali.copyWith(
+                    color: colors.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              if (bookId != null && bookId!.isNotEmpty)
+                BookCopyMenuButton(bookId: bookId!),
+            ],
           ),
           if (bookDescription != null && bookDescription!.isNotEmpty)
             Padding(
@@ -285,6 +297,9 @@ class ReadingParagraph extends StatelessWidget {
       child: title,
     );
 
+    final showCopyMenu =
+        heading.level < 10 && bookId != null && bookId!.isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8, left: 10),
       child: Column(
@@ -299,7 +314,14 @@ class ReadingParagraph extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          wrappedTitle,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: wrappedTitle),
+              if (showCopyMenu)
+                SectionCopyMenuButton(bookId: bookId!, heading: heading),
+            ],
+          ),
         ],
       ),
     );
@@ -535,10 +557,7 @@ class ReadingParagraph extends StatelessWidget {
           return Padding(
             key: lineKeys?[lineId],
             padding: const EdgeInsets.only(bottom: 6),
-            child: _JumpHighlightContainer(
-              colors: colors,
-              child: lineContent,
-            ),
+            child: _JumpHighlightContainer(colors: colors, child: lineContent),
           );
         }
 

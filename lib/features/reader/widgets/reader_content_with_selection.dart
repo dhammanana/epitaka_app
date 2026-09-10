@@ -26,6 +26,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     required this.itemScrollController,
     required this.itemPositionsListener,
     required this.scrollOffsetListener,
+    required this.onScrollDelta,
     required this.contentHitTestKey,
     required this.dragDxNotifier,
     required this.selectableRegionKey,
@@ -57,6 +58,7 @@ class ReaderContentWithSelection extends StatelessWidget {
   final ItemScrollController itemScrollController;
   final ItemPositionsListener itemPositionsListener;
   final ScrollOffsetListener scrollOffsetListener;
+  final ValueChanged<double> onScrollDelta;
 
   // Hit-test / drag
   final GlobalKey contentHitTestKey;
@@ -112,6 +114,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       itemScrollController: itemScrollController,
       itemPositionsListener: itemPositionsListener,
       scrollOffsetListener: scrollOffsetListener,
+      onScrollDelta: onScrollDelta,
       scrollOffsetController: scrollOffsetController,
       highlightBundle: highlightBundle,
       showBookLinks: showBookLinks,

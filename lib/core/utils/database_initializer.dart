@@ -87,9 +87,7 @@ List<File> _databasePathMarkers() {
     ];
     final container = _macContainerAppSupportDir();
     if (container != null) {
-      markers.add(
-        File('${container.path}/epitaka_db_path'),
-      );
+      markers.add(File('${container.path}/epitaka_db_path'));
     }
     return markers;
   }
@@ -97,7 +95,8 @@ List<File> _databasePathMarkers() {
     final appData = Platform.environment['APPDATA'] ?? '.';
     return [File('$appData/epitaka_db_path')];
   }
-  final dataHome = Platform.environment['XDG_DATA_HOME'] ??
+  final dataHome =
+      Platform.environment['XDG_DATA_HOME'] ??
       '${Platform.environment['HOME'] ?? '.'}/.local/share';
   return [File('$dataHome/epitaka_db_path')];
 }
@@ -156,15 +155,18 @@ Directory _fallbackAppSupportDirectory() {
       return container;
     }
     return Directory(
-      '$home/Library/Application Support/${_macBundleIdentifier()}'
-          .replaceAll(RegExp(r'/+'), '/'),
+      '$home/Library/Application Support/${_macBundleIdentifier()}'.replaceAll(
+        RegExp(r'/+'),
+        '/',
+      ),
     );
   }
   if (Platform.isWindows) {
     final appData = Platform.environment['APPDATA'] ?? '.';
     return Directory('$appData/epitaka');
   }
-  final dataHome = Platform.environment['XDG_DATA_HOME'] ??
+  final dataHome =
+      Platform.environment['XDG_DATA_HOME'] ??
       '${Platform.environment['HOME'] ?? '.'}/.local/share';
   return Directory('$dataHome/epitaka');
 }
@@ -179,8 +181,7 @@ Directory? _macContainerAppSupportDir() {
     final home = Platform.environment['HOME'] ?? '.';
     final bundleId = _macBundleIdentifier();
     if (bundleId.isEmpty || bundleId.startsWith(r'$(')) return null;
-    final containerBase =
-        Directory('$home/Library/Containers/$bundleId/Data');
+    final containerBase = Directory('$home/Library/Containers/$bundleId/Data');
     if (!containerBase.existsSync()) return null;
     final appSupport = Directory(
       p.join(containerBase.path, 'Library', 'Application Support', bundleId),
@@ -224,6 +225,46 @@ Future<void> cleanWalFiles(String dbPath) async {
         await walFile.delete();
       } catch (_) {}
     }
+  }
+}
+
+/// Cached file-copy prep shared by [main] and the FTS check.
+///
+/// The FTS gate must not open the DB until these copies have finished, but
+/// [main] no longer awaits them before `runApp` (they would block the first
+/// frame). Instead [main] warms this future in the background and
+/// `IndexService.checkStatus` awaits it — the gate shows a loading spinner
+/// meanwhile instead of flashing the setup wizard.
+Future<void>? _dbPrepFuture;
+
+Future<void> ensureDatabasesReady() {
+  return _dbPrepFuture ??= _ensureDatabasesReadyInternal();
+}
+
+Future<void> _ensureDatabasesReadyInternal() async {
+  try {
+    await migrateLegacyDatabases();
+  } catch (e) {
+    developer.log(
+      '[DB_MIGRATE] Legacy migration skipped: $e',
+      name: 'epitaka.database',
+    );
+  }
+  try {
+    await ensureBundledDatabases();
+  } catch (e) {
+    developer.log(
+      '[DB_INIT] Bundled database copy skipped: $e',
+      name: 'epitaka.database',
+    );
+  }
+  try {
+    await ensureAssetPackDatabases();
+  } catch (e) {
+    developer.log(
+      '[ASSET_PACK] Asset pack copy skipped: $e',
+      name: 'epitaka.database',
+    );
   }
 }
 
@@ -333,8 +374,14 @@ File? _assetOnDisk(String assetPath) {
       // Assets live in <App>.app/Contents/Frameworks/App.framework/
       // Resources/flutter_assets (some layouts: Contents/Resources/…).
       roots = [
-        p.join(base, '..', 'Frameworks', 'App.framework', 'Resources',
-            'flutter_assets'),
+        p.join(
+          base,
+          '..',
+          'Frameworks',
+          'App.framework',
+          'Resources',
+          'flutter_assets',
+        ),
         p.join(base, '..', 'Resources', 'flutter_assets'),
       ];
     } else {
@@ -409,8 +456,10 @@ Future<void> migrateLegacyDatabases() async {
           final dest = File(p.join(target.path, '$name$suffix'));
           if (await dest.exists()) continue;
           await src.copy(dest.path);
-          developer.log('[DB_MIGRATE] Copied $name$suffix → ${dest.path}',
-              name: 'epitaka.database');
+          developer.log(
+            '[DB_MIGRATE] Copied $name$suffix → ${dest.path}',
+            name: 'epitaka.database',
+          );
         }
       }
 
@@ -427,13 +476,18 @@ Future<void> migrateLegacyDatabases() async {
           final dest = File(p.join(gavesanaDest.path, p.basename(f.path)));
           if (await dest.exists()) continue;
           await f.copy(dest.path);
-          developer.log('[DB_MIGRATE] Copied gavesana/${p.basename(f.path)} '
-              '→ ${dest.path}', name: 'epitaka.database');
+          developer.log(
+            '[DB_MIGRATE] Copied gavesana/${p.basename(f.path)} '
+            '→ ${dest.path}',
+            name: 'epitaka.database',
+          );
         }
       }
     } catch (e) {
-      developer.log('[DB_MIGRATE] Failed to migrate from $legacyPath: $e',
-          name: 'epitaka.database');
+      developer.log(
+        '[DB_MIGRATE] Failed to migrate from $legacyPath: $e',
+        name: 'epitaka.database',
+      );
     }
   }
 }

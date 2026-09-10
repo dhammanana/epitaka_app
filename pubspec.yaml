@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.1.0+28
+version: 1.1.0+29
 
 environment:
   sdk: ^3.12.2
@@ -100,6 +100,13 @@ dependencies:
   # the app is backgrounded and shows the ongoing status-bar notification
   flutter_foreground_task: ^10.0.0
   google_sign_in: ^7.2.0
+
+  # Firebase: usage stats (Analytics) + crash/error tracking (Crashlytics).
+  # google-services.json is Android-only, so on iOS/desktop/web these
+  # init as no-ops (see AppAnalytics).
+  firebase_core: ^4.2.1
+  firebase_analytics: ^12.0.1
+  firebase_crashlytics: ^5.0.1
 
 flutter:
   uses-material-design: true

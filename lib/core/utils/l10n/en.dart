@@ -228,6 +228,11 @@ const Map<String, String> en = {
   'Account': 'Account',
   'Profile': 'Profile',
   'System': 'System',
+  'Usage statistics': 'Usage statistics',
+  'Anonymous, helps improve the app': 'Anonymous, helps improve the app',
+  'Crash reports': 'Crash reports',
+  'Sends error reports to fix bugs faster':
+      'Sends error reports to fix bugs faster',
   'About ePitaka': 'About ePitaka',
   'Help': 'Help',
   'Keyboard Shortcuts': 'Keyboard Shortcuts',

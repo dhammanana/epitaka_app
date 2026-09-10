@@ -432,9 +432,18 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       state = TtsPlaybackState.playing;
       _broadcastToAudioService();
 
+      // Pin the Siri/premium voice picked by AppleTtsVoicePolicy. Without
+      // an explicit identifier the native side uses its own default —
+      // never leave it to chance, or macOS falls back to the compact
+      // "robot" voice.
+      final voiceId = await NativeSpeechService.pickVoiceId(
+        language: effectiveLang,
+      );
+
       final ok = await NativeSpeechService.speak(
         speakText,
         language: effectiveLang,
+        voiceIdentifier: voiceId,
         onCompletion: () {
           if (!_disposed && speechId == _currentSpeechId) {
             developer.log(
@@ -1091,6 +1100,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _paliPlan = null;
     paliFallbackNotice = null;
     _voicesCache = null;
+    NativeSpeechService.clearVoiceCache();
     try {
       if (_flutterTts != null) {
         await _flutterTts!.stop();
@@ -1118,6 +1128,35 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     state = TtsPlaybackState.stopped;
     _broadcastToAudioService();
     _completeSpeech();
+  }
+
+  /// Emergency stop for process teardown (`detached` / swipe-kill).
+  ///
+  /// Fire-and-forget: never throws, never reads settings (providers may
+  /// already be torn down). Without this, the native engine (Android
+  /// TextToSpeech / AVSpeechSynthesizer) finishes the queued utterance
+  /// after the Dart isolate is gone — "kill the app but TTS keeps
+  /// speaking".
+  void emergencyStop() {
+    _currentSpeechId++;
+    _completeSpeech();
+    try {
+      _flutterTts?.stop();
+    } catch (_) {}
+    try {
+      _player?.stop();
+    } catch (_) {}
+    if (NativeSpeechService.isSupported) {
+      try {
+        NativeSpeechService.stop();
+      } catch (_) {}
+    }
+    _noisySubscription?.cancel();
+    _noisySubscription = null;
+    if (!_disposed) {
+      state = TtsPlaybackState.stopped;
+      _broadcastToAudioService();
+    }
   }
 
   /// Pause current TTS playback.
@@ -1191,13 +1230,29 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       name: 'epitaka.tts',
     );
     _disposed = true;
+    // Stop the native engines BEFORE dropping the handles — otherwise a
+    // queued utterance outlives the provider ("app killed, TTS keeps
+    // speaking"). Unawaited: dispose is synchronous.
+    try {
+      _flutterTts?.stop();
+    } catch (_) {}
+    try {
+      _player?.stop();
+    } catch (_) {}
+    if (NativeSpeechService.isSupported) {
+      try {
+        NativeSpeechService.stop();
+      } catch (_) {}
+    }
     _completeSpeech();
     _noisySubscription?.cancel();
     _noisySubscription = null;
     _playerSubscription?.cancel();
     _playerSubscription = null;
-    _flutterTts?.setCompletionHandler(() {});
-    _flutterTts?.setErrorHandler((_) {});
+    try {
+      _flutterTts?.setCompletionHandler(() {});
+      _flutterTts?.setErrorHandler((_) {});
+    } catch (_) {}
     _flutterTts = null;
     _supertonicTts?.dispose();
     _supertonicTts = null;

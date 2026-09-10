@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../widgets/gavesana_search_view.dart';
+import 'gavesana_drawer.dart';
 
 /// Full-screen Gavesana AI search.
 ///
@@ -23,18 +25,36 @@ class GavesanaScreen extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
+    final isFromDrawer =
+        GoRouterState.of(context).uri.queryParameters['fromDrawer'] == 'true';
+
     return Scaffold(
+      drawer: isFromDrawer ? const MainDrawer() : null,
       appBar: AppBar(
         toolbarHeight: AppDimensions.appBarHeight,
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          color: colors.onSurfaceVariant,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        leading: isFromDrawer
+            ? Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  color: colors.onSurfaceVariant,
+                  onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: colors.onSurfaceVariant,
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/');
+                  }
+                },
+              ),
         title: Row(
           children: [
             Container(

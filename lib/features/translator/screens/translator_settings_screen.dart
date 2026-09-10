@@ -28,6 +28,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
+import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_app_bar.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
@@ -97,9 +98,11 @@ class _TranslatorSettingsScreenState
 
   void _saveFields() {
     final notifier = ref.read(translatorSettingsProvider.notifier);
-    notifier.setModel(_modelController.text.trim().isEmpty
-        ? kTranslatorDefaultModel
-        : _modelController.text.trim());
+    notifier.setModel(
+      _modelController.text.trim().isEmpty
+          ? kTranslatorDefaultModel
+          : _modelController.text.trim(),
+    );
     notifier.setBaseUrl(_baseUrlController.text);
     notifier.setCustomPrompt(_promptController.text);
   }
@@ -220,8 +223,10 @@ class _TranslatorSettingsScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            loc.t('Translate the Tipiṭaka on-device with AI. '
-                'Pick a language, tick the books, then run.'),
+            loc.t(
+              'Translate the Tipiṭaka on-device with AI. '
+              'Pick a language, tick the books, then run.',
+            ),
             style: AppTypography.labelMedium.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -243,9 +248,7 @@ class _TranslatorSettingsScreenState
               optionLabel: (p) => p.displayName,
               onChanged: (p) {
                 if (p != null) {
-                  ref
-                      .read(translatorSettingsProvider.notifier)
-                      .setProvider(p);
+                  ref.read(translatorSettingsProvider.notifier).setProvider(p);
                   setState(() {
                     _availableModels = [];
                     _modelsError = null;
@@ -309,12 +312,13 @@ class _TranslatorSettingsScreenState
               colors: colors,
               icon: Icons.sync,
               label: loc.t('Re-translate existing lines'),
-              subtitle: loc.t('Off: only translate lines without a '
-                  'translation yet.'),
+              subtitle: loc.t(
+                'Off: only translate lines without a '
+                'translation yet.',
+              ),
               value: settings.overwrite,
-              onChanged: (v) => ref
-                  .read(translatorSettingsProvider.notifier)
-                  .setOverwrite(v),
+              onChanged: (v) =>
+                  ref.read(translatorSettingsProvider.notifier).setOverwrite(v),
             ),
             _ChunkSizeTile(
               colors: colors,
@@ -340,9 +344,8 @@ class _TranslatorSettingsScreenState
             _BookPickerTile(
               colors: colors,
               selectedIds: settings.bookIds,
-              onChanged: (ids) => ref
-                  .read(translatorSettingsProvider.notifier)
-                  .setBookIds(ids),
+              onChanged: (ids) =>
+                  ref.read(translatorSettingsProvider.notifier).setBookIds(ids),
             ),
           ],
         ),
@@ -401,8 +404,10 @@ class _TranslatorSettingsScreenState
           ),
           const SizedBox(height: AppDimensions.sm),
           Text(
-            loc.t('A translation is running in the background — tap above '
-                'to see its live progress.'),
+            loc.t(
+              'A translation is running in the background — tap above '
+              'to see its live progress.',
+            ),
             style: AppTypography.labelSmall.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -423,8 +428,23 @@ class _TranslatorSettingsScreenState
 
     if (widget.embedded) return body;
 
+    final isFromDrawer =
+        GoRouterState.of(context).uri.queryParameters['fromDrawer'] == 'true';
+
     return Scaffold(
-      appBar: SettingsAppBar(colors: colors),
+      drawer: isFromDrawer ? const MainDrawer() : null,
+      appBar: SettingsAppBar(
+        colors: colors,
+        leading: isFromDrawer
+            ? Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  color: colors.primary,
+                  onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+                ),
+              )
+            : null,
+      ),
       body: body,
     );
   }
@@ -542,9 +562,7 @@ class _DropdownTile<T> extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: colors.primary),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: AppTypography.labelMedium),
-          ),
+          Expanded(child: Text(label, style: AppTypography.labelMedium)),
           DropdownButton<T>(
             value: value,
             underline: const SizedBox.shrink(),
@@ -694,7 +712,8 @@ class _ChunkSizeTile extends StatelessWidget {
             min: _linesMin.toDouble(),
             max: _linesMax.toDouble(),
             step: _linesStep,
-            onChanged: (v) => onLinesChanged((v / _linesStep).round() * _linesStep),
+            onChanged: (v) =>
+                onLinesChanged((v / _linesStep).round() * _linesStep),
           ),
           const SizedBox(height: 4),
           _SliderRow(
@@ -1004,8 +1023,7 @@ class _ManageKeysSheetState extends ConsumerState<_ManageKeysSheet> {
                             icon: const Icon(Icons.delete_outline, size: 18),
                             color: colors.error,
                             visualDensity: VisualDensity.compact,
-                            onPressed: () =>
-                                setState(() => keys.removeAt(i)),
+                            onPressed: () => setState(() => keys.removeAt(i)),
                           ),
                         ],
                       ),
@@ -1146,9 +1164,7 @@ class _ModelConfigTile extends StatelessWidget {
             children: [
               Icon(Icons.smart_toy_outlined, size: 20, color: colors.primary),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text('Model', style: AppTypography.labelMedium),
-              ),
+              Expanded(child: Text('Model', style: AppTypography.labelMedium)),
             ],
           ),
           const SizedBox(height: 6),
@@ -1274,10 +1290,7 @@ class _ProviderGuideCard extends StatelessWidget {
   final AiProvider provider;
   final ColorScheme colors;
 
-  const _ProviderGuideCard({
-    required this.provider,
-    required this.colors,
-  });
+  const _ProviderGuideCard({required this.provider, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -1294,13 +1307,17 @@ class _ProviderGuideCard extends StatelessWidget {
             loc.t('Tap "Get free Gemini API key" below.'),
             loc.t('Sign in with your Google account (free, no credit card).'),
             loc.t('Tap "Create API key" and copy it (it starts with AIza).'),
-            loc.t('Paste it in the API Key field above — it is checked automatically.'),
+            loc.t(
+              'Paste it in the API Key field above — it is checked automatically.',
+            ),
           ]
         : [
             loc.t('Tap "Get free OpenRouter API key" below.'),
             loc.t('Sign in with Google or GitHub (free, no credit card).'),
             loc.t('Tap "Create API key" and copy it (it starts with sk-or-).'),
-            loc.t('No credit card needed. Free models (marked :free) are selected automatically.'),
+            loc.t(
+              'No credit card needed. Free models (marked :free) are selected automatically.',
+            ),
           ];
 
     return Padding(
@@ -1464,8 +1481,7 @@ class _SearchableLanguageDialogState extends State<_SearchableLanguageDialog> {
       if (_query.isEmpty) return true;
       return e.key.contains(_query.toLowerCase()) ||
           e.value.toLowerCase().contains(_query.toLowerCase());
-    }).toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
+    }).toList()..sort((a, b) => a.value.compareTo(b.value));
 
     return AlertDialog(
       title: TextField(
@@ -1555,10 +1571,12 @@ class _BookPickerTileState extends ConsumerState<_BookPickerTile> {
 
   Future<void> _showBookPicker(BuildContext context) async {
     final db = await ref.read(epitakaDbProvider.future);
-    final rows = await db.customSelect(
-      'SELECT book_id, book_name, category, nikaya, sub_nikaya '
-      'FROM books ORDER BY category, nikaya, sub_nikaya, book_id ASC',
-    ).get();
+    final rows = await db
+        .customSelect(
+          'SELECT book_id, book_name, category, nikaya, sub_nikaya '
+          'FROM books ORDER BY category, nikaya, sub_nikaya, book_id ASC',
+        )
+        .get();
     if (!context.mounted) return;
 
     final books = [
@@ -1574,10 +1592,8 @@ class _BookPickerTileState extends ConsumerState<_BookPickerTile> {
 
     final result = await showDialog<List<String>>(
       context: context,
-      builder: (ctx) => _BookPickerDialog(
-        books: books,
-        selectedIds: widget.selectedIds,
-      ),
+      builder: (ctx) =>
+          _BookPickerDialog(books: books, selectedIds: widget.selectedIds),
     );
     if (result != null) widget.onChanged(result);
   }
@@ -1589,10 +1605,7 @@ class _BookPickerDialog extends StatefulWidget {
   final List<TranslatorBookEntry> books;
   final List<String> selectedIds;
 
-  const _BookPickerDialog({
-    required this.books,
-    required this.selectedIds,
-  });
+  const _BookPickerDialog({required this.books, required this.selectedIds});
 
   @override
   State<_BookPickerDialog> createState() => _BookPickerDialogState();
@@ -1729,10 +1742,7 @@ class _PromptTile extends StatelessWidget {
               Icon(Icons.description_outlined, size: 20, color: colors.primary),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Custom prompt',
-                  style: AppTypography.labelMedium,
-                ),
+                child: Text('Custom prompt', style: AppTypography.labelMedium),
               ),
               TextButton.icon(
                 onPressed: onLoadDefault,

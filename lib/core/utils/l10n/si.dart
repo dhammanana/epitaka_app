@@ -132,6 +132,12 @@ const Map<String, String> si = {
   'Account': 'ගිණුම',
   'Profile': 'පැතිකඩ',
   'System': 'පද්ධතිය',
+  'Usage statistics': 'භාවිත සංඛ්‍යාලේඛන',
+  'Anonymous, helps improve the app':
+      'නිර්නාමිකව, යෙදුම වැඩිදියුණු කිරීමට උපකාරී වේ',
+  'Crash reports': 'බිඳවැටීම් වාර්තා',
+  'Sends error reports to fix bugs faster':
+      'දෝෂ වාර්තා යවා දෝෂ වේගයෙන් නිවැරදි කිරීමට',
   'About ePitaka': 'ePitaka ගැන',
   'Help': 'උදව්',
   'Keyboard Shortcuts': 'යතුරු පුවරු කෙටිමං',

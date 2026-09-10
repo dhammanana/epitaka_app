@@ -53,9 +53,11 @@ class _IndexBuildDialogState extends ConsumerState<IndexBuildDialog> {
     final state = ref.watch(indexControllerProvider);
     final colors = Theme.of(context).colorScheme;
 
-    debugPrint('[INDEX_DIALOG] build: status=${state.status}, '
-        'progress=${state.currentProgress}/${state.totalProgress}, '
-        'phase=${state.phaseLabel}');
+    debugPrint(
+      '[INDEX_DIALOG] build: status=${state.status}, '
+      'progress=${state.currentProgress}/${state.totalProgress}, '
+      'phase=${state.phaseLabel}',
+    );
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.55,
@@ -84,9 +86,9 @@ class _IndexBuildDialogState extends ConsumerState<IndexBuildDialog> {
                 const SizedBox(width: 8),
                 Text(
                   'Build Search Index',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: colors.onSurface,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(color: colors.onSurface),
                 ),
                 const Spacer(),
                 if (state.isBuilt)
@@ -135,7 +137,9 @@ class _IndexBuildDialogState extends ConsumerState<IndexBuildDialog> {
       case IndexStatus.ready:
         return FtsBuildComplete(
           lang: state.indexedTranslationLang ?? 'en',
-          count: state.totalProgress > 0 ? state.totalProgress : state.currentProgress,
+          count: state.totalProgress > 0
+              ? state.totalProgress
+              : state.currentProgress,
           colors: colors,
         );
 
@@ -150,6 +154,8 @@ class _IndexBuildDialogState extends ConsumerState<IndexBuildDialog> {
         );
 
       case IndexStatus.unknown:
+      case IndexStatus.checking:
+      case IndexStatus.notBuilt:
         return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -158,9 +164,9 @@ class _IndexBuildDialogState extends ConsumerState<IndexBuildDialog> {
               const SizedBox(height: 16),
               Text(
                 'Preparing…',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
             ],
           ),

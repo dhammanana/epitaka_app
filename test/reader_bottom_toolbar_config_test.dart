@@ -44,10 +44,13 @@ void main() {
     );
   }
 
-  testWidgets('default config renders every action in natural order', (
+  testWidgets('all-enabled config renders every action in natural order', (
     tester,
   ) async {
-    await tester.pumpWidget(wrap(toolbar()));
+    final allEnabled = [
+      for (final id in ToolbarBuiltins.defaults) ToolbarItem(id: id),
+    ];
+    await tester.pumpWidget(wrap(toolbar(items: allEnabled)));
     await tester.pump();
 
     // All ten pill actions present.
@@ -70,6 +73,17 @@ void main() {
     final bookmarkX = tester.getTopLeft(find.byIcon(Icons.bookmark)).dx;
     expect(contentsY, lessThan(jumpX));
     expect(jumpX, lessThan(bookmarkX));
+  });
+
+  testWidgets('default config hides bookmark/summarize (off by default)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(toolbar()));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.format_list_bulleted), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark), findsNothing);
+    expect(find.byIcon(Icons.summarize_outlined), findsNothing);
   });
 
   testWidgets('disabled items are hidden, enabled order is preserved', (
@@ -115,7 +129,7 @@ void main() {
       displayMode: TranslationDisplayMode.lineByLine,
       showTranslation: true,
       ttsPlayback: TtsPlaybackState.stopped,
-      items: defaultToolbarItems(),
+      items: [for (final id in ToolbarBuiltins.defaults) ToolbarItem(id: id)],
       flat: true,
       onJumpTap: () {},
       onDisplayLayoutTap: () {},

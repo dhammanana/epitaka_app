@@ -265,18 +265,37 @@ class SettingsAccountSection extends StatelessWidget {
 }
 
 /// System section: feature guide, help, reset data, about.
-class SettingsSystemSection extends StatelessWidget {
+class SettingsSystemSection extends ConsumerWidget {
   const SettingsSystemSection({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final settings = ref.watch(settingsProvider);
     return SettingsSection(
       title: loc.system,
       colors: colors,
       showDividers: true,
       children: [
+        _SystemSwitchTile(
+          colors: colors,
+          icon: Icons.bar_chart_outlined,
+          title: loc.usageStatistics,
+          subtitle: loc.usageStatisticsSubtitle,
+          value: settings.analyticsEnabled,
+          onChanged: (v) =>
+              ref.read(settingsProvider.notifier).setAnalyticsEnabled(v),
+        ),
+        _SystemSwitchTile(
+          colors: colors,
+          icon: Icons.bug_report_outlined,
+          title: loc.crashReports,
+          subtitle: loc.crashReportsSubtitle,
+          value: settings.crashReportsEnabled,
+          onChanged: (v) =>
+              ref.read(settingsProvider.notifier).setCrashReportsEnabled(v),
+        ),
         _SettingsTile(
           icon: Icons.explore_outlined,
           title: loc.featureGuide,
@@ -728,6 +747,64 @@ class _ThemePickerTile extends ConsumerWidget {
 
   String _themeLabel(ThemePreference pref, AppLocalizations loc) =>
       loc.themeName(pref);
+}
+
+/// Switch row matching the other settings tiles (labelMedium title,
+/// labelSmall subtitle, leading icon, trailing Switch).
+class _SystemSwitchTile extends StatelessWidget {
+  final ColorScheme colors;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SystemSwitchTile({
+    required this.colors,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
 }
 
 /// Toggle for expanding/collapsing search result groups by default.

@@ -17,6 +17,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../widgets/global_annotations_view.dart';
+import '../../gavesana/screens/gavesana_drawer.dart';
 
 /// Full-screen overview of all annotations across every book.
 class AnnotationsScreen extends StatelessWidget {
@@ -33,18 +34,34 @@ class AnnotationsScreen extends StatelessWidget {
     final view = const GlobalAnnotationsView();
 
     return Scaffold(
+      drawer: isFromDrawer ? const MainDrawer() : null,
       appBar: AppBar(
         toolbarHeight: AppDimensions.appBarHeight,
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(isFromDrawer ? Icons.menu : Icons.arrow_back),
-          color: colors.onSurfaceVariant,
-          tooltip: loc.navigationMenu,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        leading: isFromDrawer
+            ? Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  color: colors.onSurfaceVariant,
+                  tooltip: loc.navigationMenu,
+                  onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: colors.onSurfaceVariant,
+                tooltip: loc.navigationMenu,
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/');
+                  }
+                },
+              ),
         title: Text(
           loc.annotations,
           style: AppTypography.headlineSmall.copyWith(

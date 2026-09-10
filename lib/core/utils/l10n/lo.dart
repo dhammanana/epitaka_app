@@ -130,6 +130,11 @@ const Map<String, String> lo = {
   'Account': 'ບັນຊີ',
   'Profile': 'ໂປຣໄຟລ໌',
   'System': 'ລະບົບ',
+  'Usage statistics': 'ສະຖິຕິການນຳໃຊ້',
+  'Anonymous, helps improve the app': 'ບໍ່ລະບຸຊື່, ຊ່ວຍປັບປຸງແອັບ',
+  'Crash reports': 'ລາຍງານຂໍ້ຂັດຂ້ອງ',
+  'Sends error reports to fix bugs faster':
+      'ສົ່ງລາຍງານຂໍ້ຜິດພາດເພື່ອແກ້ໄຂບັກໃຫ້ໄວຂຶ້ນ',
   'About ePitaka': 'ກ່ຽວກັບ ePitaka',
   'Help': 'ຊ່ວຍເຫຼືອ',
   'Keyboard Shortcuts': 'ປຸ່ມລັດແປ້ນພິມ',

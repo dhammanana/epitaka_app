@@ -12,6 +12,7 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
 import '../providers/search_provider.dart';
+import '../../gavesana/screens/gavesana_drawer.dart';
 import 'search_results_view.dart';
 
 /// The full-page search screen.
@@ -182,24 +183,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         GoRouterState.of(context).uri.queryParameters['fromDrawer'] == 'true';
 
     return Scaffold(
+      drawer: isFromDrawer ? const MainDrawer() : null,
       appBar: AppBar(
         toolbarHeight: AppDimensions.appBarHeight,
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(isFromDrawer ? Icons.menu : Icons.arrow_back),
-          color: colors.onSurfaceVariant,
-          onPressed: () {
-            if (isFromDrawer) {
-              // Go back to library
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pop();
-            }
-          },
-        ),
+        leading: isFromDrawer
+            ? Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  color: colors.onSurfaceVariant,
+                  onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: colors.onSurfaceVariant,
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/');
+                  }
+                },
+              ),
         title: Text(
           loc.search,
           style: AppTypography.headlineSmall.copyWith(

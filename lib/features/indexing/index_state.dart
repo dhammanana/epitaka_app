@@ -3,6 +3,12 @@ enum IndexStatus {
   /// FTS has not been checked yet.
   unknown,
 
+  /// Check is in progress — still show loading, never the setup wizard.
+  checking,
+
+  /// Check finished: index is missing — show the setup wizard.
+  notBuilt,
+
   /// FTS index is ready (already built).
   ready,
 
@@ -70,22 +76,18 @@ class IndexState {
   const IndexState.unknown() : this();
 
   /// State while checking the index status.
-  const IndexState.checking() : this(status: IndexStatus.unknown);
+  const IndexState.checking() : this(status: IndexStatus.checking);
 
   /// State when the index is corrupted.
-  const IndexState.corrupted(String message) : this(
-    status: IndexStatus.error,
-    errorMessage: message,
-  );
+  const IndexState.corrupted(String message)
+    : this(status: IndexStatus.error, errorMessage: message);
 
   /// State when the index is ready and built.
   const IndexState.ready() : this(status: IndexStatus.ready);
 
   /// State when index building failed.
-  const IndexState.failed(String message) : this(
-    status: IndexStatus.error,
-    errorMessage: message,
-  );
+  const IndexState.failed(String message)
+    : this(status: IndexStatus.error, errorMessage: message);
 
   /// State while the index is being built with progress info.
   factory IndexState.building({double progress = 0, String status = ''}) {
@@ -98,12 +100,12 @@ class IndexState {
   }
 
   /// State when the index is not built yet — the gate shows the setup wizard.
-  const IndexState.notBuilt() : this(status: IndexStatus.unknown);
+  const IndexState.notBuilt() : this(status: IndexStatus.notBuilt);
 
   /// Apply a progress snapshot to produce an updated state.
   IndexState withProgress(dynamic p) {
-    final phase = p.phaseIndex >= 0 &&
-            p.phaseIndex < IndexBuildPhase.values.length
+    final phase =
+        p.phaseIndex >= 0 && p.phaseIndex < IndexBuildPhase.values.length
         ? IndexBuildPhase.values[p.phaseIndex]
         : null;
     return copyWith(
@@ -151,4 +153,6 @@ class IndexState {
 
   bool get isBuilt => status == IndexStatus.ready;
   bool get isBuilding => status == IndexStatus.building;
+  bool get isChecking =>
+      status == IndexStatus.unknown || status == IndexStatus.checking;
 }
