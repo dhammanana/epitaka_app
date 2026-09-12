@@ -89,6 +89,9 @@ jobs:
           find /tmp/epitaka_en_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
           ls -la android/packs/core_db/src/main/assets/
 
+      - name: Extract version
+        run: scripts/app-version.sh >> "$GITHUB_ENV"
+
       - name: Build Android App Bundle (prod flavor)
         # MUST pass --flavor prod: now that product flavors are declared in
         # android/app/build.gradle.kts, a bare `flutter build appbundle
@@ -100,10 +103,10 @@ jobs:
         # "Could not find 'libflutter.so'. Looked for: [armeabi-v7a, ...]"
         # (seen on POCO C61). The AAB carries per-ABI slices and Google Play
         # serves each device its matching slice.
-        run: flutter build appbundle --release --flavor prod
+        run: flutter build appbundle --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Build Android APK (prod flavor)
-        run: flutter build apk --release --flavor prod
+        run: flutter build apk --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
@@ -146,8 +149,11 @@ jobs:
       - name: Ensure assets/db directory exists
         run: mkdir -p assets/db
 
+      - name: Extract version
+        run: scripts/app-version.sh >> "$GITHUB_ENV"
+
       - name: Build iOS Release (no codesign)
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Upload iOS Artifact (app)
         uses: actions/upload-artifact@v4
@@ -194,26 +200,15 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Extract version from pubspec
-        shell: pwsh
-        run: |
-          # Single source of truth for the build number: pubspec.yaml
-          # `version: <major>.<minor>.<patch>+<build>` (e.g. 1.0.10+12).
-          $pubspec = Get-Content -Raw pubspec.yaml
-          # (?m) anchors '^' to each line so only the top-level `version:`
-          # entry (never a dependency line) is matched.
-          if ($pubspec -match '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
-            $versionName = $Matches[1]
-            $buildNumber = $Matches[2]
-          } elseif ($pubspec -match '(?m)^version:\s*(\d+\.\d+\.\d+)') {
-            $versionName = $Matches[1]
-            $buildNumber = '0'
-          } else {
-            throw 'Could not parse version from pubspec.yaml'
-          }
-          Write-Host "pubspec version: $versionName (build $buildNumber)"
-          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$versionName"
-          Add-Content -Path $env:GITHUB_ENV -Value "APP_BUILD_NUMBER=$buildNumber"
+      - name: Extract version
+        # bash, not pwsh: the windows runner ships Git Bash, so all five jobs
+        # can share one version script instead of keeping a PowerShell
+        # translation of it in step with the others. Invoked through `bash`
+        # rather than directly because the executable bit does not reliably
+        # survive checkout on Windows; .gitattributes keeps the line endings
+        # LF, which the shebang and the `case` patterns both need.
+        shell: bash
+        run: bash scripts/app-version.sh >> "$GITHUB_ENV"
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
@@ -333,7 +328,12 @@ jobs:
         shell: pwsh
         run: |
           $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS /wd4189"
-          flutter build windows --release
+          # --build-number must accompany --build-name here: flutter_tools'
+          # _determineVersionString stops falling back to pubspec's build
+          # number once a build name is supplied, which would drop the exe's
+          # FILEVERSION from 1.1.1.31 to 1.1.1.0. The Linux build shares that
+          # same cmake code path and passes both flags for the same reason.
+          flutter build windows --release --build-name="$env:APP_VERSION" --build-number="$env:APP_BUILD_NUMBER"
 
       # ---------------------------------------------------------
       # Microsoft Store MSIX
@@ -370,9 +370,9 @@ jobs:
       - name: Build NSIS Installer
         shell: pwsh
         run: |
-          # DisplayVersion in the registry comes from pubspec.yaml (the
-          # version before '+'), NOT the tag name: GITHUB_REF_NAME is
-          # 'v1.0.10' on tag pushes and the branch name on manual dispatch.
+          # DisplayVersion in the registry is APP_VERSION: the release tag on
+          # a tag push, and pubspec.yaml's version (the part before '+') on a
+          # manual dispatch, where GITHUB_REF_NAME is only a branch name.
           pushd install/windows
           & "C:\Program Files (x86)\NSIS\makensis.exe" "/DVERSION=$env:APP_VERSION" epitaka.nsi
           popd
@@ -451,12 +451,15 @@ jobs:
           pod install --repo-update
           cd ..
 
+      - name: Extract version
+        run: scripts/app-version.sh >> "$GITHUB_ENV"
+
       - name: Build macOS Release
         # `flutter build macos --release` already produces a UNIVERSAL binary
         # (x86_64 + arm64) by default — the Flutter tool passes the generic
         # 'platform=macOS' destination for release builds, which builds both
         # architectures. There is no --target-platform option for macos.
-        run: flutter build macos --release
+        run: flutter build macos --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Build DMG Installer
         run: |
@@ -594,16 +597,8 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Extract version from pubspec
-        run: |
-          # Single source of truth for the version: pubspec.yaml
-          APP_VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          if [ -z "$APP_VERSION" ]; then
-            echo "ERROR: could not parse version from pubspec.yaml" >&2
-            exit 1
-          fi
-          echo "pubspec version: $APP_VERSION"
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+      - name: Extract version
+        run: scripts/app-version.sh >> "$GITHUB_ENV"
 
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
@@ -628,7 +623,10 @@ jobs:
           ls -la assets/db/
 
       - name: Build Linux Release
-        run: flutter build linux --release
+        # --build-name writes APP_VERSION into the bundle's version.json, which
+        # is what package_info_plus reads and what the in-app update check
+        # compares against the latest GitHub release tag.
+        run: flutter build linux --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Build Linux .deb
         # Runs before the AppImage step on purpose: that step assembles AppDir/
