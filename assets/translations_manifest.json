@@ -15,11 +15,14 @@
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en.zip",
           "note": "English translation — used by AI Q&A to search and provide answers",
-          "size": 123407103,
-          "dbSize": 645386240,
-          "updated": "2026-08-29",
-          "compulsory": false,
-          "checksum": "4fff4778f39ba1ceb2ee62948457a45aab6b5f16d300b59d7a72df5c89bbae11"
+          "size": 84274232,
+          "dbSize": 274866176,
+          "updated": "2026-09-12",
+          "compulsory": true,
+          "checksum": "7cafb34d9347d9f5bf10d275d7ee4a3e9f38a46f4a12f184c459352024ccf8e5",
+          "version": "2026-09-12-7cafb34d",
+          "versionedFile": "epitaka_en_20260912-7cafb34d.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en_20260912-7cafb34d.zip"
         }
       }
     },
