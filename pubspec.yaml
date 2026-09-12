@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.1.0+29
+version: 1.1.0+31
 
 environment:
   sdk: ^3.12.2
@@ -189,14 +189,16 @@ flutter:
 # flutter_html 3.0.0 imports package:html/src/query_selector.dart — another
 # package's private src/ directory — and calls its top-level
 # matches(Element, String). html 0.15.7 removed that function; because it lived
-# under src/ the removal was not treated as breaking, so pub is free to pick
-# 0.15.7 under flutter_html's ^0.15.0 constraint and the build fails with
-# "Method not found: 'matches'". flutter_html 3.0.0 is its latest release, so
-# there is no newer version to move to.
+# under src/ the removal was not treated as breaking, so a fresh resolve picks
+# 0.15.7 and the build fails with "Method not found: 'matches'".
+# flutter_html 3.0.0 is its latest release, so there is no newer version to
+# move to. NOTE: this must be an EXACT range, not `html: 0.15.6` (which means
+# ^0.15.6 and still allows 0.15.7 — that is what broke the Windows/Linux CI
+# builds when the runner's newer Flutter re-resolved dependencies).
 #
 # Remove this once the dictionary widgets no longer use flutter_html.
 dependency_overrides:
-  html: 0.15.6
+  html: '>=0.15.6 <0.15.7'
 
 dev_dependencies:
   flutter_test:

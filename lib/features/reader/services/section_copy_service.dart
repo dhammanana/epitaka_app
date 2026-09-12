@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show File;
 
 import 'package:clipboard/clipboard.dart';
 import 'package:drift/drift.dart' show Variable;
@@ -7,6 +8,9 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/database/translation_database.dart';
 import '../../../core/models/translation_version.dart'
@@ -72,10 +76,35 @@ class _CommentaryBlock {
   });
 }
 
+/// What happened when writing copy output, so callers can tell the user
+/// when Android's clipboard size limit forced a downgrade.
+enum _CopyOutcome {
+  /// Full styled (rich HTML) copy, or plain on platforms without rich
+  /// support — nothing was stripped for size reasons.
+  full,
+
+  /// Too large for styled copy on Android — pasted as plain text instead.
+  strippedToPlain,
+
+  /// Too large even for plain clipboard on Android — sent to share instead.
+  shared,
+}
+
 class SectionCopyService {
   SectionCopyService._();
 
   static const int _maxCommentarySections = 30;
+
+  /// Rich copy sends plain text + HTML (~3-4x the plain bytes) in one
+  /// platform-channel transaction. The Android binder limit (~1MB) silently
+  /// truncates larger payloads mid-sentence, so rich copy is only used for
+  /// small content; anything bigger goes as plain text.
+  static const int _richCopyMaxChars = 50000;
+
+  /// Above this plain-text size even a plain clipboard write risks binder
+  /// truncation, so the content goes straight to the system share sheet
+  /// (full text, user picks the target app) instead of the clipboard.
+  static const int _plainCopyMaxChars = 300000;
 
   static ({int start, int endExclusive}) sectionRange(
     List<ParagraphData> paragraphs,
@@ -171,7 +200,7 @@ class SectionCopyService {
       }
 
       if (!withCommentaries) {
-        await _copyMain(
+        final outcome = await _copyMain(
           bookId: bookId,
           bookName: bookName,
           mainHeading: heading,
@@ -183,7 +212,9 @@ class SectionCopyService {
           paliColor: paliColor,
           transColor: transColor,
         );
-        if (context.mounted) _snack(context, 'Section copied');
+        if (context.mounted) {
+          _snack(context, _copiedMessage(outcome, 'Section'));
+        }
         return;
       }
 
@@ -196,7 +227,7 @@ class SectionCopyService {
         enabledLangs,
       );
       if (!context.mounted) return;
-      await _copyWithCommentaries(
+      final outcome = await _copyWithCommentaries(
         bookId: bookId,
         bookName: bookName,
         mainHeading: heading,
@@ -212,9 +243,12 @@ class SectionCopyService {
       if (context.mounted) {
         _snack(
           context,
-          commentaries.isEmpty
-              ? 'Section copied (no commentaries found)'
-              : 'Section copied (+ ${commentaries.length} commentaries)',
+          _copiedMessage(
+            outcome,
+            commentaries.isEmpty
+                ? 'Section (no commentaries found)'
+                : 'Section (+ ${commentaries.length} commentaries)',
+          ),
         );
       }
     } catch (_) {
@@ -278,7 +312,7 @@ class SectionCopyService {
         _firstPages(paras),
         paraId: paras.first.paraId,
       );
-      await _copyMain(
+      final outcome = await _copyMain(
         bookId: bookId,
         bookName: bookName,
         mainHeading: nearby,
@@ -290,7 +324,9 @@ class SectionCopyService {
         paliColor: paliColor,
         transColor: transColor,
       );
-      if (context.mounted) _snack(context, 'Book copied');
+      if (context.mounted) {
+        _snack(context, _copiedMessage(outcome, 'Book'));
+      }
     } catch (_) {
       if (context.mounted) _snack(context, 'Copy failed');
     }
@@ -741,7 +777,9 @@ class SectionCopyService {
     );
   }
 
-  static Future<void> _copyMain({
+  /// Returns how the output was delivered (full styled copy, plain text
+  /// after Android's size limit stripped the styling, or share sheet).
+  static Future<_CopyOutcome> _copyMain({
     required String bookId,
     required String bookName,
     required ParagraphHeading? mainHeading,
@@ -790,10 +828,15 @@ class SectionCopyService {
       );
     }
     html.writeln('</div>');
-    await _writeClipboard(plain.toString().trim(), html.toString());
+    return _writeClipboard(
+      plainText: plain.toString().trim(),
+      htmlBody: html.toString(),
+      shareSubject: '$bookName ($bookId)',
+      bookId: bookId,
+    );
   }
 
-  static Future<void> _copyWithCommentaries({
+  static Future<_CopyOutcome> _copyWithCommentaries({
     required String bookId,
     required String bookName,
     required ParagraphHeading mainHeading,
@@ -895,7 +938,12 @@ class SectionCopyService {
       );
     }
     html.writeln('</div>');
-    await _writeClipboard(plain.toString().trim(), html.toString());
+    return _writeClipboard(
+      plainText: plain.toString().trim(),
+      htmlBody: html.toString(),
+      shareSubject: '$bookName ($bookId)',
+      bookId: bookId,
+    );
   }
 
   static void _appendCopyParas(
@@ -1032,19 +1080,91 @@ class SectionCopyService {
     }
   }
 
-  static Future<void> _writeClipboard(String plainText, String htmlBody) async {
-    if (plainText.isEmpty) return;
-    final htmlDoc =
-        '<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
-        '<meta name="generator" content="ePitaka"></head>\n<body>\n$htmlBody\n</body>\n</html>';
+  /// Only Android funnels the clipboard through a ~1MB binder transaction
+  /// that truncates large payloads. Other platforms copy without size caps,
+  /// so they always get the full styled content.
+  static bool get _sizeCapped =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  static String _copiedMessage(_CopyOutcome outcome, String what) {
+    switch (outcome) {
+      case _CopyOutcome.full:
+        return '$what copied';
+      case _CopyOutcome.strippedToPlain:
+        return '$what copied as plain text — too large for styled copy on Android';
+      case _CopyOutcome.shared:
+        return '$what too large for the Android clipboard — opened share instead';
+    }
+  }
+
+  /// Writes to the clipboard. On Android the size caps apply (styled copy
+  /// for small content, plain text when styling no longer fits, share sheet
+  /// when even plain text no longer fits); other platforms always get the
+  /// full styled copy with no stripping.
+  static Future<_CopyOutcome> _writeClipboard({
+    required String plainText,
+    required String htmlBody,
+    required String shareSubject,
+    required String bookId,
+  }) async {
+    if (plainText.isEmpty) return _CopyOutcome.full;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
-      await Clipboard.setData(ClipboardData(text: plainText));
-      return;
+      try {
+        await Clipboard.setData(ClipboardData(text: plainText));
+      } catch (_) {}
+      return _CopyOutcome.full;
+    }
+    if (_sizeCapped && plainText.length > _plainCopyMaxChars) {
+      await _shareFile(text: plainText, bookId: bookId, subject: shareSubject);
+      return _CopyOutcome.shared;
+    }
+    final useRich = !_sizeCapped || plainText.length <= _richCopyMaxChars;
+    if (useRich) {
+      final htmlDoc =
+          '<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
+          '<meta name="generator" content="ePitaka"></head>\n<body>\n$htmlBody\n</body>\n</html>';
+      try {
+        await FlutterClipboard.copyRichText(text: plainText, html: htmlDoc);
+        return _CopyOutcome.full;
+      } catch (_) {}
     }
     try {
-      await FlutterClipboard.copyRichText(text: plainText, html: htmlDoc);
-    } catch (_) {
       await Clipboard.setData(ClipboardData(text: plainText));
+      return useRich ? _CopyOutcome.full : _CopyOutcome.strippedToPlain;
+    } catch (_) {
+      await _shareFile(text: plainText, bookId: bookId, subject: shareSubject);
+      return _CopyOutcome.shared;
+    }
+  }
+
+  /// Shares over-cap content as a `.md` file. Sharing the text inline would
+  /// hit the same ~1MB binder ceiling as the clipboard; a content-URI file
+  /// has no size limit, so the full text always arrives intact.
+  static Future<void> _shareFile({
+    required String text,
+    required String bookId,
+    required String subject,
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final safe = bookId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final file = File(p.join(dir.path, 'epitaka_$safe.md'));
+      await file.writeAsString(text);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'text/markdown')],
+          subject: subject,
+          text: '$subject — exported from ePitaka',
+        ),
+      );
+      return;
+    } catch (_) {}
+    try {
+      await SharePlus.instance.share(ShareParams(text: text, subject: subject));
+    } catch (_) {
+      try {
+        await Clipboard.setData(ClipboardData(text: text));
+      } catch (_) {}
     }
   }
 

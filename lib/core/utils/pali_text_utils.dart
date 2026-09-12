@@ -179,9 +179,11 @@ List<PaliSegment> _convertPaliToScriptSegmentsUncached(
 }
 
 void _removeOldestEntries<K, V>(Map<K, V> cache, int count) {
-  final iterator = cache.keys.iterator;
-  for (var i = 0; i < count && iterator.moveNext(); i++) {
-    cache.remove(iterator.current);
+  // Snapshot the keys first: removing from the map while its live key
+  // iterator is active throws ConcurrentModificationError.
+  final oldest = cache.keys.take(count).toList();
+  for (final key in oldest) {
+    cache.remove(key);
   }
 }
 

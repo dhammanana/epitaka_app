@@ -166,30 +166,16 @@ class EpitakaDatabase extends _$EpitakaDatabase {
       await Isolate.run(() {
         final db = sqlite.sqlite3.open(dbPath);
         try {
-          // A concurrent writer (settings/annotations writes) may hold the
-          // lock briefly; wait instead of failing outright.
-          db.execute('PRAGMA busy_timeout=5000');
-          final exists = db
-              .select(
-                "SELECT 1 FROM sqlite_master WHERE type = 'index' "
-                "AND name = 'idx_dictionary_word_book' LIMIT 1",
-              )
-              .isNotEmpty;
-          if (!exists) {
-            db.execute(
-              'CREATE INDEX idx_dictionary_word_book '
-              'ON dictionary(word, book_id)',
-            );
-          }
+          db.execute('PRAGMA journal_mode=WAL');
+          db.execute('PRAGMA busy_timeout=10000');
+          db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_dictionary_word_book '
+            'ON dictionary(word, book_id)',
+          );
         } finally {
           db.dispose();
         }
       });
-    } catch (_) {
-      // Never fail the DB open because the optional index could not be
-      // built (read-only file system, replaced file mid-build, …). The
-      // dictionary sections keep working — just slower until the index
-      // exists.
-    }
+    } catch (_) {}
   }
 }

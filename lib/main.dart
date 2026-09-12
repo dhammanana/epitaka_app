@@ -120,7 +120,9 @@ Future<void> _initAsync() async {
       analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
       crashEnabled: prefs.getBool('crash_reports_enabled') ?? true,
     );
-    await AppAnalytics.instance.logEvent('app_open');
+    // NOTE: 'app_open' is a reserved auto-collected event — logging it
+    // manually is silently dropped. Use a custom name so DebugView shows it.
+    await AppAnalytics.instance.logEvent('app_launched');
   } catch (_) {}
 
   await ensureDatabasesReady();

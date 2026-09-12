@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../database/epitaka_database.dart';
 import '../models/app_models.dart';
 import 'database_provider.dart';
 
@@ -56,11 +57,10 @@ List<RelatedBookRef> _resolveRefs(
       .split(' ')
       .map((id) => id.trim())
       .where((id) => id.isNotEmpty)
-      .map((id) => RelatedBookRef(
-            type: type,
-            bookId: id,
-            bookName: nameMap[id] ?? id,
-          ))
+      .map(
+        (id) =>
+            RelatedBookRef(type: type, bookId: id, bookName: nameMap[id] ?? id),
+      )
       .toList();
 }
 
@@ -68,9 +68,22 @@ List<RelatedBookRef> _resolveRefs(
 final booksTreeProvider = FutureProvider<List<BookCategory>>((ref) async {
   final db = await ref.watch(epitakaDbProvider.future);
 
-  final rows = await db.select(db.books).get();
+  Object? lastError;
+  for (var attempt = 0; attempt < 5; attempt++) {
+    try {
+      final rows = await db.select(db.books).get();
+      return _buildTree(rows);
+    } catch (e) {
+      lastError = e;
+      final msg = e.toString().toLowerCase();
+      if (!msg.contains('locked') && !msg.contains('busy')) rethrow;
+      await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+    }
+  }
+  throw lastError ?? Exception('Could not load the Tipitaka library.');
+});
 
-  // Build bookId → bookName map first
+List<BookCategory> _buildTree(List<Book> rows) {
   final nameMap = <String, String>{};
   for (final row in rows) {
     nameMap[row.bookId] = row.bookName ?? row.bookId;
@@ -80,22 +93,26 @@ final booksTreeProvider = FutureProvider<List<BookCategory>>((ref) async {
   final categoryMap = <String, List<BookInfo>>{};
   for (final row in rows) {
     final cat = row.category ?? 'Other';
-    categoryMap.putIfAbsent(cat, () => []).add(BookInfo(
-          id: row.id,
-          refId: row.refId,
-          vriId: row.vriId,
-          bookId: row.bookId,
-          category: row.category,
-          nikaya: row.nikaya,
-          subNikaya: row.subNikaya,
-          bookName: row.bookName,
-          description: row.description,
-          mulaRef: row.mulaRef,
-          atthaRef: row.atthaRef,
-          tikaRef: row.tikaRef,
-          paraId: row.paraId,
-          chapterLen: row.chapterLen,
-        ));
+    categoryMap
+        .putIfAbsent(cat, () => [])
+        .add(
+          BookInfo(
+            id: row.id,
+            refId: row.refId,
+            vriId: row.vriId,
+            bookId: row.bookId,
+            category: row.category,
+            nikaya: row.nikaya,
+            subNikaya: row.subNikaya,
+            bookName: row.bookName,
+            description: row.description,
+            mulaRef: row.mulaRef,
+            atthaRef: row.atthaRef,
+            tikaRef: row.tikaRef,
+            paraId: row.paraId,
+            chapterLen: row.chapterLen,
+          ),
+        );
   }
 
   final categories = <BookCategory>[];
@@ -114,11 +131,7 @@ final booksTreeProvider = FutureProvider<List<BookCategory>>((ref) async {
     }
 
     // Desired nikaya order for Tipitaka
-    const nikayaOrder = [
-      'Vinaya Piṭaka',
-      'Sutta Piṭaka',
-      'Abhidhamma Piṭaka',
-    ];
+    const nikayaOrder = ['Vinaya Piṭaka', 'Sutta Piṭaka', 'Abhidhamma Piṭaka'];
 
     final nikayas = <BookNikaya>[];
     // Process in order, then add remaining
@@ -151,7 +164,7 @@ final booksTreeProvider = FutureProvider<List<BookCategory>>((ref) async {
   }
 
   return categories;
-});
+}
 
 BookNikaya _buildNikaya(
   String name,

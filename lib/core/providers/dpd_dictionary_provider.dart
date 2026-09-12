@@ -109,6 +109,7 @@ class DpdFullLookup {
 
   bool get hasDeconstructor => deconstructionCandidates.isNotEmpty;
   bool get hasHeadwords => headwords.isNotEmpty;
+  bool get hasEpd => lookup?.epd?.isNotEmpty == true;
 }
 
 /// Full lookup for a word in the DPD dictionary.

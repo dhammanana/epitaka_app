@@ -12,6 +12,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <!-- Required on Android 13+ (API 33) to show download progress notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Firebase Analytics pulls in play-services-ads-identifier which adds
+         the AD_ID permission. This app shows no ads and collects no
+         Advertising ID, so strip it — otherwise Play Console flags the
+         release as "uses Advertising ID" and demands an AD_ID declaration. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove"/>
 
     <!-- Package visibility (Android 11+): lets us discover installed apps that
          handle ACTION_PROCESS_TEXT (dictionaries, translators) so the user can
@@ -88,6 +94,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Tell Google Analytics / Firebase not to collect the Advertising
+             ID even if the permission ever sneaks back via a transitive dep.
+             Pairs with the AD_ID tools:node="remove" above. -->
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
+            android:value="false" />
 
         <!-- Foreground service that keeps translation downloads running
              when the app is backgrounded and shows the ongoing status-bar

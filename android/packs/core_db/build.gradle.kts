@@ -1,6 +1,6 @@
 // Play Asset Delivery asset pack module — "core_db".
 //
-// Ships the two core databases (epitaka.db, dpd-dictionary.db) with the app
+// Ships the core databases (epitaka.db, epitaka_en.db, dpd-dictionary.db) with the app
 // via an INSTALL-TIME asset pack. Install-time packs are delivered as part of
 // the AAB install (no runtime download — works fully offline) and are readable
 // directly through the Android AssetManager.

@@ -49,7 +49,7 @@ jobs:
           cache: true
 
       - name: Install Dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Decode Android Keystore
         run: |
@@ -64,11 +64,12 @@ jobs:
           storeFile=upload-keystore.jks
           EOF
 
-      - name: Download core DBs (epitaka, dpd-dictionary) into asset pack
+      - name: Download core DBs (epitaka, epitaka_en, dpd-dictionary) into asset pack
         run: |
           # URLs come from the checked-out translations manifest (single source of truth)
           EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
           DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+          EN_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['languages']['en']['versions']['default']['url'])")
 
           mkdir -p android/packs/core_db/src/main/assets
 
@@ -76,12 +77,16 @@ jobs:
           curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
           echo "Downloading $DPD_URL"
           curl -fL -o /tmp/dpd.zip "$DPD_URL"
+          echo "Downloading $EN_URL"
+          curl -fL -o /tmp/epitaka_en.zip "$EN_URL"
 
           unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
           unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+          unzip -o /tmp/epitaka_en.zip -d /tmp/epitaka_en_x
 
           find /tmp/epitaka_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
           find /tmp/dpd_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
+          find /tmp/epitaka_en_x -name '*.db' -exec cp {} android/packs/core_db/src/main/assets/ \;
           ls -la android/packs/core_db/src/main/assets/
 
       - name: Build Android App Bundle (prod flavor)
@@ -125,7 +130,7 @@ jobs:
           cache: true
 
       - name: Install Dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Install CocoaPods
         run: |
           cd ios
@@ -187,7 +192,7 @@ jobs:
           }
 
       - name: Install Dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Extract version from pubspec
         shell: pwsh
@@ -410,7 +415,7 @@ jobs:
           fi
 
       - name: Install Flutter Dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
@@ -551,7 +556,7 @@ jobs:
   build-linux:
     name: Build Linux
     if: github.event_name == 'push' || github.event.inputs.build_linux == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -587,7 +592,7 @@ jobs:
           fi
 
       - name: Install Dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Extract version from pubspec
         run: |

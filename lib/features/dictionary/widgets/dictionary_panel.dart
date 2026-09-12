@@ -45,10 +45,12 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
-  Timer? _debounce;
+  Timer? _suggestDebounce;
   bool _isConverting = false;
 
+  // Submitted word (meanings shown) vs live draft (suggestions only).
   String _query = '';
+  String _draft = '';
   final List<String> _searchHistory = [];
 
   /// The last selection made inside the results, tracked via the
@@ -63,6 +65,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
+      _draft = initial;
       _addToHistory(initial);
     } else if (widget.autoFocus) {
       // Focus the search field after the first frame so the keyboard can show.
@@ -114,7 +117,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
-    _debounce?.cancel();
+    _suggestDebounce?.cancel();
     super.dispose();
   }
 
@@ -132,7 +135,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   void _onSearchChanged(String value) {
     if (_isConverting) return;
-    _debounce?.cancel();
+    _suggestDebounce?.cancel();
 
     final converted = velthuis(value);
     // Only update the display for Roman-script input; non-Roman
@@ -149,25 +152,37 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
     final trimmed = converted.trim();
     if (trimmed.isEmpty) {
-      setState(() => _query = '');
+      setState(() {
+        _draft = '';
+        _query = '';
+      });
       return;
     }
 
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _initiateSearch(trimmed);
+    // Typing only refreshes prefix suggestions (debounced). The full
+    // meaning lookup runs on submit/enter via _performSearch.
+    _suggestDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _draft = trimmed);
     });
   }
 
   void _performSearch(String value) {
     final converted = velthuis(value).trim();
+    if (converted.isEmpty) return;
+    _suggestDebounce?.cancel();
     _focusNode.unfocus();
     _initiateSearch(converted);
   }
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
+    _suggestDebounce?.cancel();
     _addToHistory(word);
-    setState(() => _query = word);
+    setState(() {
+      _query = word;
+      _draft = word;
+    });
   }
 
   void _selectWord(String word) {
@@ -352,13 +367,64 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
         const SizedBox(height: 4),
         const Divider(height: 1),
 
-        // Results
+        if (_draft.isNotEmpty &&
+            _draft != _query &&
+            _draft.length >= kDictionarySuggestionMinLength)
+          _buildSuggestionBox(colors),
+
+        // Results (only for the submitted word)
         Expanded(
           child: _query.isEmpty
               ? _buildIdleState(colors)
               : _buildResults(colors),
         ),
       ],
+    );
+  }
+
+  /// Prefix suggestions for the live draft (typing). Tapping a suggestion
+  /// submits it as the full lookup.
+  Widget _buildSuggestionBox(ColorScheme colors) {
+    final suggestionsAsync = ref.watch(dpdDictionarySearchProvider(_draft));
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 220),
+      margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: suggestionsAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        error: (_, _) => const SizedBox.shrink(),
+        data: (results) {
+          if (results.isEmpty) return const SizedBox.shrink();
+          final shown = results.take(8).toList();
+          return ListView.builder(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: shown.length,
+            itemBuilder: (context, index) {
+              final r = shown[index];
+              return SuggestionTile(
+                word: r.lemma1,
+                meaningPreview: r.meaningHtml,
+                onTap: () => _selectWord(r.cleanLemma1),
+                colors: colors,
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -402,7 +468,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             ),
           ),
           data: (lookup) {
-            final hasDpdMatch = lookup.hasHeadwords || lookup.hasDeconstructor;
+            final hasDpdMatch =
+                lookup.hasHeadwords || lookup.hasDeconstructor || lookup.hasEpd;
             // DPD is not the only dictionary: the enabled Bold Definition
             // and other books can match words DPD has no entry for. When DPD
             // misses, still render those sections and append DPD's
@@ -519,7 +586,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             final children = <Widget>[];
             for (final book in enabledBooks) {
               if (book.id == 11) {
-                if (lookup.hasHeadwords || lookup.hasDeconstructor) {
+                if (lookup.hasHeadwords ||
+                    lookup.hasDeconstructor ||
+                    lookup.hasEpd) {
                   children.add(_DpdSection(colors: colors, lookup: lookup));
                 }
               } else if (book.id == 100) {
@@ -663,6 +732,10 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
               _buildDeconstructorSection(colors, lookup),
               const SizedBox(height: 12),
             ],
+            if (lookup.hasEpd) ...[
+              _buildEpdSection(colors, lookup.lookup!.epd!),
+              const SizedBox(height: 12),
+            ],
             ...lookup.headwords.map(
               (hw) => DpdHeadwordCard(
                 lemma: hw.lemma1,
@@ -675,6 +748,40 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildEpdSection(ColorScheme colors, String epdHtml) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.translate, size: 14, color: colors.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              AppLocalizations.of(context).englishMeaning,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        DpdHtmlRichText(
+          html: epdHtml,
+          baseStyle: AppTypography.bodyTranslation.copyWith(
+            color: colors.onSurface,
+            fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
+            fontFamily: pali.fontFamily.fontFamily,
+          ),
+          linkColor: colors.primary,
+        ),
+      ],
     );
   }
 

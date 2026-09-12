@@ -99,7 +99,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _sheetController = DraggableScrollableController();
-  Timer? _debounce;
+  Timer? _suggestDebounce;
   bool _isConverting = false;
 
   // ── Swipe-down-to-close tracking ──────────────────────────────────
@@ -113,8 +113,11 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   // drag gesture can't pop the reader route underneath as well.
   bool _dismissed = false;
 
-  // The currently looked up word
+  // The submitted word whose meanings are shown. Typing alone only
+  // updates [_draft] (suggestions); meanings load on submit/enter.
   String _query = '';
+  // Live textbox value (debounced) driving prefix suggestions.
+  String _draft = '';
 
   // Deconstructor state (simple ints instead of TabController to avoid
   // !semantics.parentDataDirty assertion errors inside CustomScrollView)
@@ -185,8 +188,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
+      _draft = initial;
       _addToHistory(initial);
-      _performSearch(initial);
     }
   }
 
@@ -225,13 +228,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _searchController.dispose();
     _focusNode.dispose();
     _sheetController.dispose();
-    _debounce?.cancel();
+    _suggestDebounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
     if (_isConverting) return;
-    _debounce?.cancel();
+    _suggestDebounce?.cancel();
 
     final converted = velthuis(value);
 
@@ -249,18 +252,25 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
     final trimmed = converted.trim();
     if (trimmed.isEmpty) {
-      setState(() => _query = '');
+      setState(() {
+        _draft = '';
+        _query = '';
+      });
       return;
     }
 
-    _debounce = Timer(const Duration(milliseconds: 200), () {
-      _initiateSearch(trimmed);
+    // Typing only refreshes prefix suggestions (debounced). The full
+    // meaning lookup runs on submit/enter via _performSearch.
+    _suggestDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _draft = trimmed);
     });
   }
 
   void _performSearch(String value) {
     final converted = velthuis(value).trim();
     if (converted.isEmpty) return;
+    _suggestDebounce?.cancel();
     _focusNode.unfocus();
     _addToHistory(converted);
     _initiateSearch(converted);
@@ -275,8 +285,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
+    _suggestDebounce?.cancel();
     setState(() {
       _query = word;
+      _draft = word;
       _activeDeconCardIndex = -1;
       _activeDeconTokenIndex = 0;
       _subLookupCache.clear();
@@ -684,10 +696,81 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildContent(ColorScheme colors, ScrollController scrollController) {
-    if (_query.isEmpty) {
+    final showSuggestions =
+        _draft.isNotEmpty &&
+        _draft != _query &&
+        _draft.length >= kDictionarySuggestionMinLength;
+    if (_query.isEmpty && !showSuggestions) {
       return _buildIdleState(colors, scrollController);
     }
-    return _buildResults(colors, scrollController);
+    return Column(
+      children: [
+        if (showSuggestions) _buildSuggestionBox(colors),
+        if (_query.isNotEmpty)
+          Expanded(child: _buildResults(colors, scrollController))
+        else
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  AppLocalizations.of(context).dictIdlePrompt,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyTranslation.copyWith(
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Prefix suggestions for the live draft (typing). Tapping a suggestion
+  /// submits it as the full lookup.
+  Widget _buildSuggestionBox(ColorScheme colors) {
+    final suggestionsAsync = ref.watch(dpdDictionarySearchProvider(_draft));
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: suggestionsAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        error: (_, _) => const SizedBox.shrink(),
+        data: (results) {
+          if (results.isEmpty) return const SizedBox.shrink();
+          final shown = results.take(8).toList();
+          return ListView.builder(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: shown.length,
+            itemBuilder: (context, index) {
+              final r = shown[index];
+              return SuggestionTile(
+                word: r.lemma1,
+                meaningPreview: r.meaningHtml,
+                onTap: () => _selectWord(r.cleanLemma1),
+                colors: colors,
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildIdleState(
@@ -764,7 +847,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
           ),
           data: (lookup) {
-            final hasDpdMatch = lookup.hasHeadwords || lookup.hasDeconstructor;
+            final hasDpdMatch =
+                lookup.hasHeadwords || lookup.hasDeconstructor || lookup.hasEpd;
             // DPD is not the only dictionary: the enabled Bold Definition
             // and other books can match words DPD has no entry for. When DPD
             // misses, still render those sections and append DPD's
@@ -1016,7 +1100,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     return enabledBooks.map((book) {
       final child = switch (book.id) {
         11 =>
-          (lookup.hasHeadwords || lookup.hasDeconstructor)
+          (lookup.hasHeadwords || lookup.hasDeconstructor || lookup.hasEpd)
               ? _buildDpdSectionMemoized(colors, lookup)
               : const SizedBox.shrink(),
         100 => PaliDefinitionSection(
@@ -1102,6 +1186,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               const SizedBox(height: 12),
             ],
 
+            // English meaning from lookup.epd (if available)
+            if (lookup.hasEpd) ...[
+              _buildEpdSection(colors, lookup.lookup!.epd!),
+              const SizedBox(height: 12),
+            ],
+
             // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
             // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
             // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
@@ -1117,6 +1207,40 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEpdSection(ColorScheme colors, String epdHtml) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.translate, size: 14, color: colors.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              AppLocalizations.of(context).englishMeaning,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        DpdHtmlRichText(
+          html: epdHtml,
+          baseStyle: AppTypography.bodyTranslation.copyWith(
+            color: colors.onSurface,
+            fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
+            fontFamily: pali.fontFamily.fontFamily,
+          ),
+          linkColor: colors.primary,
+        ),
+      ],
     );
   }
 

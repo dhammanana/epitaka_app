@@ -8,11 +8,14 @@ class DpdLookupRow {
   final String lookupKey;
   final List<int> headwords; // parsed JSON array of ints
   final List<String> deconstructor; // parsed JSON array of strings
+  final String?
+  epd; // pre-rendered HTML from converter, null if column missing/empty
 
   const DpdLookupRow({
     required this.lookupKey,
     required this.headwords,
     required this.deconstructor,
+    this.epd,
   });
 }
 
@@ -47,10 +50,7 @@ class DeconstructionCandidate {
   final String raw;
   final List<String> tokens;
 
-  const DeconstructionCandidate({
-    required this.raw,
-    required this.tokens,
-  });
+  const DeconstructionCandidate({required this.raw, required this.tokens});
 
   factory DeconstructionCandidate.parse(String line) {
     return DeconstructionCandidate(
@@ -67,7 +67,7 @@ class DeconstructionCandidate {
 /// Raw SQL database for the DPD dictionary (dpd-dictionary.db).
 ///
 /// This database has two tables:
-/// - `dpd_lookup` (lookup_key TEXT, headwords TEXT JSON, deconstructor TEXT JSON)
+/// - `dpd_lookup` (lookup_key TEXT, headwords TEXT JSON, deconstructor TEXT JSON, epd TEXT HTML, optional)
 /// - `dpd_headwords` (id INTEGER PK, lemma_1 TEXT, meaning_html TEXT, ...)
 class DpdDictionaryDatabase {
   final Database _db;
@@ -86,6 +86,24 @@ class DpdDictionaryDatabase {
   static const int _cacheCap = 500;
 
   DpdDictionaryDatabase(this._db);
+
+  bool? _hasEpdColumn;
+
+  /// Whether dpd_lookup has the optional `epd` column (old DBs don't).
+  /// Checked once per DB instance via PRAGMA.
+  bool get hasEpdColumn {
+    final cached = _hasEpdColumn;
+    if (cached != null) return cached;
+    try {
+      final info = _db.select('PRAGMA table_info(dpd_lookup)');
+      final has = info.any((r) => r['name'] == 'epd');
+      _hasEpdColumn = has;
+      return has;
+    } catch (_) {
+      _hasEpdColumn = false;
+      return false;
+    }
+  }
 
   /// Drop all memoized query results. Call after the underlying DB file has
   /// been replaced (e.g. a core-asset re-download) so stale rows are never
@@ -118,6 +136,7 @@ class DpdDictionaryDatabase {
     }
     final db = sqlite3.open(dbPath);
     db.execute('PRAGMA journal_mode=WAL');
+    db.execute('PRAGMA busy_timeout=10000');
     db.execute('PRAGMA foreign_keys=ON');
     return DpdDictionaryDatabase(db);
   }
@@ -131,8 +150,9 @@ class DpdDictionaryDatabase {
     if (cached != null || _lookupCache.containsKey(normalized)) {
       return cached;
     }
+    final epdSelect = hasEpdColumn ? ', epd' : '';
     final result = _db.select(
-      'SELECT lookup_key, headwords, deconstructor FROM dpd_lookup WHERE lookup_key = ?',
+      'SELECT lookup_key, headwords, deconstructor$epdSelect FROM dpd_lookup WHERE lookup_key = ?',
       [normalized],
     );
     final row = result.isEmpty ? null : _parseLookupRow(result.first);
@@ -150,8 +170,9 @@ class DpdDictionaryDatabase {
     if (cached != null) return cached;
 
     final pattern = '$normalized%';
+    final epdSelect = hasEpdColumn ? ', epd' : '';
     final results = _db.select(
-      'SELECT lookup_key, headwords, deconstructor FROM dpd_lookup WHERE lookup_key LIKE ? LIMIT ?',
+      'SELECT lookup_key, headwords, deconstructor$epdSelect FROM dpd_lookup WHERE lookup_key LIKE ? LIMIT ?',
       [pattern, limit],
     );
     final rows = results.map(_parseLookupRow).toList();
@@ -192,10 +213,20 @@ class DpdDictionaryDatabase {
   // ── Parsing helpers ───────────────────────────────────────────────
 
   DpdLookupRow _parseLookupRow(Row row) {
+    String? epd;
+    if (hasEpdColumn) {
+      try {
+        final v = row['epd'] as String?;
+        if (v != null && v.trim().isNotEmpty) epd = v;
+      } catch (_) {
+        epd = null;
+      }
+    }
     return DpdLookupRow(
       lookupKey: row['lookup_key'] as String,
       headwords: _parseJsonIntArray(row['headwords'] as String?),
       deconstructor: _parseJsonStringArray(row['deconstructor'] as String?),
+      epd: epd,
     );
   }
 

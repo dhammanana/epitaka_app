@@ -13,7 +13,18 @@ import '../utils/database_initializer.dart';
 final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
   final dbDir = await getDatabaseDirectory();
   final dbPath = p.join(dbDir.path, 'epitaka.db');
-  return EpitakaDatabase.open(dbPath);
+  Object? lastError;
+  for (var attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await EpitakaDatabase.open(dbPath);
+    } catch (e) {
+      lastError = e;
+      final msg = e.toString().toLowerCase();
+      if (!msg.contains('locked') && !msg.contains('busy')) rethrow;
+      await Future.delayed(Duration(milliseconds: 250 * (attempt + 1)));
+    }
+  }
+  throw lastError ?? Exception('Database not found at $dbPath');
 });
 
 /// Provider for a specific translation database (regular schema).

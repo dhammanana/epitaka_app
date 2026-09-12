@@ -31,13 +31,24 @@ QueryExecutor openDriftExecutor(
   bool logStatements = false,
 }) {
   final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  void wrappedSetup(db) {
+    try {
+      (db as dynamic).execute('PRAGMA busy_timeout=10000');
+    } catch (_) {}
+    setup?.call(db);
+  }
+
   if (isMobile) {
     return NativeDatabase.createInBackground(
       file,
-      setup: setup,
+      setup: wrappedSetup,
       logStatements: logStatements,
     );
   }
 
-  return NativeDatabase(file, setup: setup, logStatements: logStatements);
+  return NativeDatabase(
+    file,
+    setup: wrappedSetup,
+    logStatements: logStatements,
+  );
 }

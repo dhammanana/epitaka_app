@@ -157,8 +157,8 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Copies the two core databases (epitaka.db, dpd-dictionary.db) from the
-     * install-time Play Asset Delivery pack ("core_db") into [destDir] on
+     * Copies the core databases (epitaka.db, epitaka_en.db, dpd-dictionary.db)
+     * from the install-time Play Asset Delivery pack ("core_db") into [destDir] on
      * first launch.
      *
      * Install-time asset packs ship inside the AAB and are immediately
@@ -270,6 +270,6 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "epitaka/asset_pack"
         private const val PROCESS_TEXT_CHANNEL = "epitaka/process_text"
         private const val TTS_SETTINGS_CHANNEL = "epitaka/tts_settings"
-        private val CORE_DB_FILES = listOf("epitaka.db", "dpd-dictionary.db")
+        private val CORE_DB_FILES = listOf("epitaka.db", "epitaka_en.db", "dpd-dictionary.db")
     }
 }

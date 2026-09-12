@@ -1049,6 +1049,7 @@ class AppLocalizations {
 
   String get dpdDictionary => _t('DPD Dictionary');
   String get compoundBreakdown => _t('Compound breakdown');
+  String get englishMeaning => _t('English meaning');
   String get pinToSidePanel => _t('Pin to side panel');
   String get unpinFromSidePanel => _t('Unpin from side panel');
   String get jumpLabel => _t('Jump');
