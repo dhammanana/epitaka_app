@@ -795,8 +795,11 @@ class SectionCopyService {
     final html = StringBuffer(
       '<div style="color:${_toCss(transColor)};font-family:Georgia,serif;font-size:16px;line-height:1.6;">',
     );
+    // Georgia has no Indic glyphs: Pāli lines need a script-appropriate
+    // stack or pasted Sinhala/Myanmar/Thai etc. breaks shaping in
+    // Word/Docs (dotted circles). See _paliFontStack.
     final paliStyle =
-        'color:${_toCss(paliColor)};font-family:Georgia,serif;font-size:16px;font-weight:400;';
+        'color:${_toCss(paliColor)};font-family:${_paliFontStack(script)};font-size:16px;font-weight:400;';
 
     plain.writeln('$bookName ($bookId)');
     html.writeln(
@@ -853,8 +856,11 @@ class SectionCopyService {
     final html = StringBuffer(
       '<div style="color:${_toCss(transColor)};font-family:Georgia,serif;font-size:16px;line-height:1.6;">',
     );
+    // Georgia has no Indic glyphs: Pāli lines need a script-appropriate
+    // stack or pasted Sinhala/Myanmar/Thai etc. breaks shaping in
+    // Word/Docs (dotted circles). See _paliFontStack.
     final paliStyle =
-        'color:${_toCss(paliColor)};font-family:Georgia,serif;font-size:16px;font-weight:400;';
+        'color:${_toCss(paliColor)};font-family:${_paliFontStack(script)};font-size:16px;font-weight:400;';
 
     plain.writeln('# $bookName ($bookId)');
     html.writeln(
@@ -904,7 +910,9 @@ class SectionCopyService {
         if (scope != CopyScope.translation) {
           final pali = line.pali.trim();
           if (pali.isNotEmpty) {
-            final converted = convertPaliToScriptPreservingHtml(pali, script);
+            final converted = _cleanForClipboard(
+              convertPaliToScriptPreservingHtml(pali, script),
+            );
             plain.writeln(_stripTags(converted));
             html.writeln(
               '<p style="${paliStyle}margin:0 0 4px 0;"><i>${_htmlFromTaggedText(converted)}</i></p>',
@@ -970,7 +978,9 @@ class SectionCopyService {
         if (scope != CopyScope.translation) {
           final pali = line.pali.trim();
           if (pali.isNotEmpty) {
-            final converted = convertPaliToScriptPreservingHtml(pali, script);
+            final converted = _cleanForClipboard(
+              convertPaliToScriptPreservingHtml(pali, script),
+            );
             plain.writeln(_stripTags(converted));
             html.writeln(
               '<p style="${paliStyle}margin:0 0 4px 0;"><i>${_htmlFromTaggedText(converted)}</i></p>',
@@ -1180,6 +1190,62 @@ class SectionCopyService {
     } catch (_) {}
   }
 
+  /// Strip invisible hyphenation points before writing to the clipboard.
+  ///
+  /// Defensive: a U+00AD soft hyphen sitting inside a non-Roman grapheme
+  /// cluster (e.g. between a Sinhala vowel sign and the next consonant)
+  /// breaks shaping in other apps (dotted circles), while Flutter renders
+  /// through it so the corruption goes unnoticed in-app. U+200D (ZWJ) is
+  /// NOT stripped: Sinhala yansaya/rakāra need it.
+  static String _cleanForClipboard(String s) =>
+      s.replaceAll('\u00AD', '').replaceAll('\u200B', '');
+
+  /// CSS font stack for Pāli clipboard HTML in [script].
+  ///
+  /// The body uses Georgia, which has no Indic glyphs — pasting Sinhala /
+  /// Myanmar / Thai etc. with that family breaks shaping in Word/Docs.
+  /// Each stack names a Noto/Pyidaungsu font first, then the OS system
+  /// fonts that carry the script on Windows/macOS/iOS/Android.
+  static String _paliFontStack(Script script) {
+    switch (script) {
+      case Script.sinhala:
+        return "'Noto Sans Sinhala','Nirmala UI','Iskoola Pota','Sinhala Sangam MN',sans-serif";
+      case Script.devanagari:
+        return "'Noto Sans Devanagari','Nirmala UI','Mangal','Devanagari Sangam MN',sans-serif";
+      case Script.myanmar:
+        return "'Pyidaungsu','Myanmar Text','Noto Sans Myanmar','Myanmar Sangam MN',sans-serif";
+      case Script.thai:
+        return "'Noto Sans Thai','Leelawadee UI','Thonburi',sans-serif";
+      case Script.laos:
+        return "'Noto Sans Lao','Lao UI','Saysettha OT',sans-serif";
+      case Script.khmer:
+        return "'Noto Sans Khmer','Khmer UI','Khmer Sangam MN',sans-serif";
+      case Script.bengali:
+        return "'Noto Sans Bengali','Nirmala UI','Vrinda',sans-serif";
+      case Script.gurmukhi:
+        return "'Noto Sans Gurmukhi','Nirmala UI','Raavi',sans-serif";
+      case Script.gujarati:
+        return "'Noto Sans Gujarati','Nirmala UI','Shruti',sans-serif";
+      case Script.telugu:
+        return "'Noto Sans Telugu','Nirmala UI','Gautami',sans-serif";
+      case Script.kannada:
+        return "'Noto Sans Kannada','Nirmala UI','Tunga',sans-serif";
+      case Script.malayalam:
+        return "'Noto Sans Malayalam','Nirmala UI','Kartika',sans-serif";
+      case Script.tamil:
+        return "'Noto Sans Tamil','Nirmala UI','Latha',sans-serif";
+      case Script.taitham:
+        return "'Noto Sans Tai Tham','Leelawadee UI',sans-serif";
+      case Script.brahmi:
+        return "'Noto Sans Brahmi',sans-serif";
+      case Script.tibetan:
+        return "'Noto Serif Tibetan','Noto Sans Tibetan','Microsoft Himalaya',sans-serif";
+      case Script.cyrillic:
+      case Script.roman:
+        return 'Georgia,serif';
+    }
+  }
+
   static String _toCss(Color c) {
     final r = (c.r * 255).round().toRadixString(16).padLeft(2, '0');
     final g = (c.g * 255).round().toRadixString(16).padLeft(2, '0');
@@ -1196,6 +1262,8 @@ class SectionCopyService {
       .replaceAll('<br>', '\n')
       .replaceAll('<br/>', '\n')
       .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('\u00AD', '')
+      .replaceAll('\u200B', '')
       .split('\n')
       .map((line) => line.replaceAll(RegExp(r'\s+'), ' ').trim())
       .where((line) => line.isNotEmpty)

@@ -16,15 +16,20 @@ NEXT=$((CURRENT + 1))
 
 VERSION=$(grep '^version:' "$PUBSPEC" | sed -E 's/version: ([0-9.]+)\+.*/\1/')
 
+# Also bump the last version component (e.g. 1.1.0 -> 1.1.1): the Windows
+# package identity comes from the semantic version, so bumping only the
+# build number after '+' would leave the Windows version unchanged.
+NEXT_VERSION=$(echo "$VERSION" | awk -F. '{$(NF)=$(NF)+1; print}' OFS=.)
+
 # Remove stray 0-byte databases from the bundled assets. An empty db file in
 # assets/db/ gets copied by the app on first launch (ensureBundledDatabases)
 # and then blocks the real install-time asset-pack copy, leaving fresh
 # installs with an empty database.
 find assets/db -name '*.db' -size 0 -delete 2>/dev/null || true
 
-sed -i '' -E "s/^version: (.*)\\+[0-9]+/version: \\1+$NEXT/" "$PUBSPEC"
+sed -i '' -E "s/^version: .*/version: $NEXT_VERSION+$NEXT/" "$PUBSPEC"
 
-echo "Building version with build number: $NEXT"
+echo "Building version $NEXT_VERSION with build number: $NEXT"
 
 # ── Generate changelog (release notes) ────────────────────────────────────
 # Collect commit messages since the last release tag and bundle them into
@@ -43,14 +48,14 @@ if [ -z "$CHANGES" ]; then
 fi
 
 {
-    echo "## What's new in version $VERSION (build $NEXT)"
+    echo "## What's new in version $NEXT_VERSION (build $NEXT)"
     echo ""
     echo "$CHANGES"
 } > "$CHANGELOG_FILE"
 
 echo ""
 echo "────────────────────────── Release notes ──────────────────────────"
-echo "Version $VERSION (build $NEXT)"
+echo "Version $NEXT_VERSION (build $NEXT)"
 echo ""
 echo "$CHANGES"
 echo "───────────────────────────────────────────────────────────────────"

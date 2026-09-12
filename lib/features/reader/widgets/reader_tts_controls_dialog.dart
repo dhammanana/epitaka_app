@@ -105,9 +105,9 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
           // Set when the engine can't speak Sinhala and is reading Pāli
           // in a fallback script — tell the user instead of silently
           // skipping the Pāli lines.
-          final paliNotice = watchRef
-              .read(ttsProvider.notifier)
-              .paliFallbackNotice;
+          final ttsNotifier = watchRef.read(ttsProvider.notifier);
+          final paliNotice = ttsNotifier.paliFallbackNotice;
+          final translationNotice = ttsNotifier.translationIssueNotice;
           // Cap the dialog at the card width: the stretched column would
           // otherwise grow as wide as the fallback notice's intrinsic text
           // width (very wide on desktop), dragging the card along with it.
@@ -118,6 +118,11 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (paliNotice != null) _TtsFallbackNotice(text: paliNotice),
+                if (translationNotice != null)
+                  _TtsFallbackNotice(
+                    text: translationNotice,
+                    onInstallTap: () => openSystemTtsSettings(ctx),
+                  ),
                 TtsControlsCard(
                   colors: colors,
                   settings: settings,
@@ -166,9 +171,10 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
 /// to fall back from Sinhala for Pāli (no Sinhala voice on this device /
 /// engine), so the user knows why Pāli isn't being read in Sinhala.
 class _TtsFallbackNotice extends StatelessWidget {
-  const _TtsFallbackNotice({required this.text});
+  const _TtsFallbackNotice({required this.text, this.onInstallTap});
 
   final String text;
+  final VoidCallback? onInstallTap;
 
   @override
   Widget build(BuildContext context) {
@@ -191,6 +197,17 @@ class _TtsFallbackNotice extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: colors.onErrorContainer),
             ),
           ),
+          if (onInstallTap != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onInstallTap,
+              child: Icon(
+                Icons.download,
+                size: 18,
+                color: colors.onErrorContainer,
+              ),
+            ),
+          ],
         ],
       ),
     );

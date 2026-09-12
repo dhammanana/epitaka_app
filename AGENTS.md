@@ -28,3 +28,7 @@ Prefix the subject with a bracketed tag:
 - Don't invent tags from other conventions. This repo does not use `feat:`, `fix:`, `chore:`, or scopes in parentheses.
 
 Adopting the tag is recent and deliberate: 18 of the last 25 non-merge commits use it, against 2 of the 25 before that. Match the recent history, not the old.
+
+## Response format — end with issue and fix
+
+End every response with a short `Issue:` / `Fix:` summary (2–4 lines total) explaining what the problem was and what was changed. Skip it only for trivial one-shot answers.

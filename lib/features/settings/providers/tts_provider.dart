@@ -10,6 +10,7 @@ import 'package:audioplayers/audioplayers.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/native_speech_service.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../services/system_tts_availability.dart';
 import '../services/tts_audio_handler.dart';
 
 /// TTS playback state.
@@ -37,6 +38,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
   // Speech completion tracking
   Completer<void>? _speechCompleter;
+  bool _speechStarted = false;
   String? _currentText;
 
   /// Subscription to Android's ACTION_AUDIO_BECOMING_NOISY broadcast
@@ -96,6 +98,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// to tell the user once per session instead of silently skipping.
   String? paliFallbackNotice;
 
+  String? translationIssueNotice;
+
+  final Map<String, TtsLanguageCheck> _langChecks = {};
+
   TtsNotifier(this._ref) : super(TtsPlaybackState.stopped);
 
   /// Get the currently configured engine type from settings.
@@ -112,6 +118,16 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       _speechCompleter!.complete();
     }
     _speechCompleter = null;
+    _speechStarted = false;
+  }
+
+  void _markSpeechStarted(int speechId) {
+    if (!_disposed && speechId == _currentSpeechId) {
+      _speechStarted = true;
+      if (_speechCompleter != null && !_speechCompleter!.isCompleted) {
+        _speechCompleter!.complete();
+      }
+    }
   }
 
   /// Wait for the current speech to finish playing, with a dynamic timeout.
@@ -142,14 +158,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   Future<void> _waitForCompletion([String? text]) async {
     _completeSpeech();
     _speechCompleter = Completer<void>();
+    _speechStarted = false;
 
-    // Dynamic timeout: at 0.5x speed (slowest) ~6 chars/sec → 167ms/char.
-    // Use 200ms/char + 4s buffer, clamped to [4s, 5min]. The buffer is a
-    // safety net for the native completion callback arriving late — it must
-    // never be the thing that gates line advancement on its own, or a missed
-    // completion handler turns into a multi-second silent gap between
-    // sentences (previously 15s+, which is what the macOS logs showed when
-    // NSSpeechSynthesizer never reported completion).
     final speechId = _currentSpeechId;
     Duration timeout;
     if (text != null && text.isNotEmpty) {
@@ -160,24 +170,28 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
 
     try {
-      await _speechCompleter!.future.timeout(timeout);
+      await _speechCompleter!.future.timeout(const Duration(seconds: 4));
+      if (_currentSpeechId != speechId) return;
+      if (_speechStarted) {
+        _speechCompleter = Completer<void>();
+        await _speechCompleter!.future.timeout(timeout);
+      } else {
+        developer.log(
+          '[TTS] _waitForCompletion STALL speechId=$speechId '
+          'no onStart in 4s text.length=${text?.length ?? 0}',
+          name: 'epitaka.tts',
+        );
+      }
     } on TimeoutException {
       developer.log(
         '[TTS] _waitForCompletion TIMEOUT speechId=$speechId '
+        'started=$_speechStarted '
         'text.length=${text?.length ?? 0} timeout=${timeout.inMilliseconds}ms '
         'currentId=$_currentSpeechId',
         name: 'epitaka.tts',
       );
-      // Only complete if this speech is still the active one
-      // (guard against stale completer races, Bug 2).
       if (_currentSpeechId == speechId) {
         _completeSpeech();
-        // Return the state machine to `stopped` so the next line's speak()
-        // skips the redundant stop() (which resets _audioSessionConfigured
-        // and forces the next line to re-configure the audio session and
-        // re-register the becoming-noisy listener — a large chunk of the
-        // audible gap between sentences). Without this, one missed
-        // completion handler made every following line pay that cost.
         state = TtsPlaybackState.stopped;
         _broadcastToAudioService();
       } else {
@@ -552,7 +566,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
           final voiceLang = (matches.first['locale'] ?? '')
               .split(RegExp(r'[-_]'))
               .first;
-          if (voiceLang.toLowerCase() == effectiveLang.toLowerCase()) {
+          if (voiceLang.toLowerCase() == effectiveLang.toLowerCase() &&
+              SystemTtsAvailability.isVoiceUsable(matches.first)) {
             matchedVoice = matches.first;
           } else {
             voiceMismatch = true;
@@ -560,6 +575,23 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         }
       } catch (e) {
         developer.log('[TTS] voice lookup failed: $e', name: 'epitaka.tts');
+      }
+    }
+    if (!isPaliLine) {
+      try {
+        final voices = await getVoices();
+        final check = await SystemTtsAvailability.checkLanguage(
+          tts,
+          voices,
+          effectiveLang,
+        );
+        _langChecks[effectiveLang] = check;
+        if (check.status == TtsVoiceStatus.needsDownload ||
+            check.status == TtsVoiceStatus.notSupported) {
+          _noteTranslationIssue(effectiveLang, check.status);
+        }
+      } catch (e) {
+        developer.log('[TTS] language check failed: $e', name: 'epitaka.tts');
       }
     }
     if (voiceMismatch) {
@@ -623,15 +655,29 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       if (_cachedVoiceKey != autoKey && _cachedVoiceKey != voiceKey) {
         try {
           final voices = await getVoices();
-          final lc = effectiveLang.toLowerCase();
+          final local = SystemTtsAvailability.localVoicesFor(
+            voices,
+            effectiveLang,
+          );
+          final usable = SystemTtsAvailability.usableVoicesFor(
+            voices,
+            effectiveLang,
+          );
           Map<String, String>? auto;
-          for (final v in voices) {
-            final loc = (v['locale'] ?? '').toLowerCase();
-            if (loc == lc ||
-                loc.startsWith('$lc-') ||
-                loc.startsWith('${lc}_')) {
-              auto = v;
-              break;
+          if (local.isNotEmpty) {
+            auto = local.first;
+          } else if (usable.isNotEmpty) {
+            auto = usable.first;
+          } else {
+            final lc = effectiveLang.toLowerCase();
+            for (final v in voices) {
+              final loc = (v['locale'] ?? '').toLowerCase();
+              if (loc == lc ||
+                  loc.startsWith('$lc-') ||
+                  loc.startsWith('${lc}_')) {
+                auto = v;
+                break;
+              }
             }
           }
           if (auto != null) {
@@ -653,6 +699,18 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     } else if (!isPaliLine) {
       _cachedVoiceKey = voiceKey;
     }
+
+    tts.setStartHandler(() {
+      _markSpeechStarted(speechId);
+    });
+
+    tts.setCancelHandler(() {
+      if (!_disposed && speechId == _currentSpeechId) {
+        state = TtsPlaybackState.stopped;
+        _broadcastToAudioService();
+        _completeSpeech();
+      }
+    });
 
     // Set completion handler with speech-ID guard to prevent stale
     // completions from resolving the wrong line's completer.
@@ -696,7 +754,19 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     await _configureAudioSession();
     state = TtsPlaybackState.playing;
     _broadcastToAudioService();
-    await tts.speak(speakText);
+    final speakRes = await tts.speak(speakText);
+    final ok = speakRes == true || speakRes == 1;
+    if (!ok) {
+      developer.log(
+        '[TTS] speak() rejected res=$speakRes speechId=$speechId',
+        name: 'epitaka.tts',
+      );
+      _noteTranslationIssue(effectiveLang, TtsVoiceStatus.unknown);
+      state = TtsPlaybackState.stopped;
+      _broadcastToAudioService();
+      _completeSpeech();
+      return;
+    }
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     developer.log(
       '[TTS] _speakFlutterTts() took ${elapsed}ms speechId=$speechId',
@@ -937,6 +1007,86 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     );
   }
 
+  void _noteTranslationIssue(String langCode, TtsVoiceStatus status) {
+    if (translationIssueNotice != null) return;
+    final label = _languageLabel(langCode);
+    translationIssueNotice = switch (status) {
+      TtsVoiceStatus.needsDownload =>
+        '$label voice not installed. Install it in System TTS settings, '
+            'then play again.',
+      TtsVoiceStatus.notSupported =>
+        '$label is not supported by this TTS engine. Switch to Google TTS '
+            'in System TTS settings.',
+      TtsVoiceStatus.networkOnly =>
+        '$label voice needs internet. Connect or download the voice.',
+      _ => '$label voice failed to start. Check System TTS settings.',
+    };
+    developer.log(
+      '[TTS] translation issue: $translationIssueNotice',
+      name: 'epitaka.tts',
+    );
+  }
+
+  TtsLanguageCheck? languageCheckFor(String langCode) => _langChecks[langCode];
+
+  Future<TtsLanguageCheck?> refreshLanguageCheck(String langCode) async {
+    try {
+      final tts = await _getFlutterTts();
+      final voices = await getVoices();
+      final check = await SystemTtsAvailability.checkLanguage(
+        tts,
+        voices,
+        langCode,
+      );
+      _langChecks[langCode] = check;
+      return check;
+    } catch (_) {
+      return _langChecks[langCode];
+    }
+  }
+
+  Future<List<String>> getEngines() async {
+    try {
+      final tts = await _getFlutterTts();
+      return SystemTtsAvailability.getEngines(tts);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<String?> getDefaultEngine() async {
+    try {
+      final tts = await _getFlutterTts();
+      return SystemTtsAvailability.getDefaultEngine(tts);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setEngine(String name) async {
+    try {
+      final tts = await _getFlutterTts();
+      await tts.setEngine(name);
+      _cachedLanguage = '';
+      _cachedVoiceKey = '';
+      _voicesCache = null;
+      _langChecks.clear();
+    } catch (e) {
+      developer.log('[TTS] setEngine failed: $e', name: 'epitaka.tts');
+    }
+  }
+
+  static String _languageLabel(String langCode) => switch (langCode) {
+    'si' => 'Sinhala',
+    'hi' => 'Hindi',
+    'my' => 'Myanmar',
+    'th' => 'Thai',
+    'te' => 'Telugu',
+    'kn' => 'Kannada',
+    'en' => 'English',
+    _ => langCode,
+  };
+
   /// Display name of a Pāli TTS script key.
   static String _paliScriptLabel(String script) => switch (script) {
     'kn' => 'Kannada',
@@ -1099,6 +1249,8 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     // the next session re-probes (picks up a newly-installed voice).
     _paliPlan = null;
     paliFallbackNotice = null;
+    translationIssueNotice = null;
+    _langChecks.clear();
     _voicesCache = null;
     NativeSpeechService.clearVoiceCache();
     try {

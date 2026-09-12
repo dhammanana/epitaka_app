@@ -1005,7 +1005,7 @@ class ReadingParagraph extends StatelessWidget {
     }
 
     return PaliTextWithVariants(
-      _insertSoftHyphens(text),
+      text,
       script: script,
       colors: colors,
       style: baseStyle,
@@ -1548,76 +1548,6 @@ class ReadingParagraph extends StatelessWidget {
     _htmlParseCache[html] = spans;
     return spans;
   }
-}
-
-/// Minimum word length (in characters) before soft hyphens are inserted.
-/// Short/ordinary words never need breaking, so this avoids peppering
-/// every word with invisible hyphenation points.
-const int _hyphenationMinWordLength = 12;
-
-/// Pāli vowels (both cases). A vowel followed by a consonant is a natural
-/// syllable boundary in Pāli, since syllables are (C)(C)V — so breaking
-/// right after a vowel is always a valid hyphenation point.
-const Set<String> _paliVowels = {
-  'a',
-  'ā',
-  'i',
-  'ī',
-  'u',
-  'ū',
-  'e',
-  'o',
-  'A',
-  'Ā',
-  'I',
-  'Ī',
-  'U',
-  'Ū',
-  'E',
-  'O',
-};
-
-/// Matches runs of Pāli letters (including diacritics), so hyphenation
-/// only touches actual words and leaves spaces, punctuation, and any
-/// markup untouched.
-final RegExp _paliWordPattern = RegExp(r'[a-zA-ZāīūṅñṭḍṇḷṃĀĪŪṄÑṬḌṆḶṀ]+');
-
-/// Inserts Unicode soft hyphens (U+00AD) at Pāli syllable boundaries in
-/// any word at least [_hyphenationMinWordLength] characters long. A soft
-/// hyphen is invisible and has no effect on layout unless the text engine
-/// actually needs to break the line there — which is exactly the case a
-/// single very long Pāli word can hit on a narrow phone screen, where it
-/// would otherwise overflow instead of wrapping.
-///
-/// Only operates on runs of plain Pāli letters (see [_paliWordPattern]),
-/// so it's safe to call on text that may also contain HTML-style markup.
-String _insertSoftHyphens(String input) {
-  const softHyphen = '\u00AD';
-  const minSegment = 3;
-
-  return input.replaceAllMapped(_paliWordPattern, (match) {
-    final word = match.group(0)!;
-    if (word.length < _hyphenationMinWordLength) return word;
-
-    final buffer = StringBuffer();
-    var sinceLastBreak = 0;
-    for (var i = 0; i < word.length; i++) {
-      final ch = word[i];
-      buffer.write(ch);
-      sinceLastBreak++;
-      final hasNext = i + 1 < word.length;
-      final remaining = word.length - (i + 1);
-      if (hasNext &&
-          _paliVowels.contains(ch) &&
-          !_paliVowels.contains(word[i + 1]) &&
-          sinceLastBreak >= minSegment &&
-          remaining >= minSegment) {
-        buffer.write(softHyphen);
-        sinceLastBreak = 0;
-      }
-    }
-    return buffer.toString();
-  });
 }
 
 /// Display form of a raw page number: strips the leading "volume." prefix so

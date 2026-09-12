@@ -7,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../providers/tts_provider.dart';
 import '../providers/supertonic_download_provider.dart';
+import '../services/system_tts_availability.dart';
 import '../services/system_tts_settings.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
@@ -228,6 +229,19 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
               ),
               onTap: () => openSystemTtsSettings(context),
             ),
+            _VoiceStatusTile(
+              colors: colors,
+              langCode: settings.visibleTranslationLangs.isNotEmpty
+                  ? settings.visibleTranslationLangs.first
+                  : 'en',
+              label: loc.ttsTranslationVoice,
+            ),
+            _VoiceStatusTile(
+              colors: colors,
+              langCode: settings.ttsScript,
+              label: loc.ttsPaliVoice,
+            ),
+            _EngineTile(colors: colors),
           ],
         ),
         const SizedBox(height: AppDimensions.md),
@@ -1269,6 +1283,212 @@ class _RealVoiceTile extends StatelessWidget {
       orElse: () => const {},
     );
     return match['name'] ?? loc.systemDefault;
+  }
+}
+
+class _VoiceStatusTile extends ConsumerStatefulWidget {
+  const _VoiceStatusTile({
+    required this.colors,
+    required this.langCode,
+    required this.label,
+  });
+
+  final ColorScheme colors;
+  final String langCode;
+  final String label;
+
+  @override
+  ConsumerState<_VoiceStatusTile> createState() => _VoiceStatusTileState();
+}
+
+class _VoiceStatusTileState extends ConsumerState<_VoiceStatusTile> {
+  TtsLanguageCheck? _check;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VoiceStatusTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.langCode != widget.langCode) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    try {
+      final check = await ref
+          .read(ttsProvider.notifier)
+          .refreshLanguageCheck(widget.langCode);
+      if (mounted) setState(() => _check = check);
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final status = _check?.status;
+    final ready = status == TtsVoiceStatus.ready;
+    final needsDownload = status == TtsVoiceStatus.needsDownload;
+    final notSupported = status == TtsVoiceStatus.notSupported;
+    final subtitle = _loading
+        ? loc.loadingDots
+        : ready
+        ? '${widget.label}: OK'
+        : needsDownload
+        ? '${widget.label}: ${loc.ttsVoiceNotInstalledFor(widget.langCode)}'
+        : notSupported
+        ? '${widget.label}: not supported by this engine'
+        : '${widget.label}: ${_check?.status.name ?? loc.loadingDots}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            ready ? Icons.check_circle : Icons.warning_amber,
+            color: ready ? Colors.green : widget.colors.error,
+          ),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: AppTypography.labelSmall.copyWith(
+                color: ready
+                    ? widget.colors.onSurfaceVariant
+                    : widget.colors.error,
+              ),
+            ),
+          ),
+          if (needsDownload || notSupported)
+            TextButton(
+              onPressed: () => openSystemTtsSettings(context),
+              child: Text(loc.ttsInstallVoice),
+            )
+          else if (!_loading)
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              onPressed: _refresh,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EngineTile extends ConsumerStatefulWidget {
+  const _EngineTile({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  ConsumerState<_EngineTile> createState() => _EngineTileState();
+}
+
+class _EngineTileState extends ConsumerState<_EngineTile> {
+  List<String> _engines = const [];
+  String? _defaultEngine;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    try {
+      final notifier = ref.read(ttsProvider.notifier);
+      final engines = await notifier.getEngines();
+      final def = await notifier.getDefaultEngine();
+      if (mounted) {
+        setState(() {
+          _engines = engines;
+          _defaultEngine = def;
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    if (_engines.isEmpty) return const SizedBox.shrink();
+    final short = _engines.map((e) {
+      final parts = e.split('.');
+      return parts.isNotEmpty ? parts.last : e;
+    }).toList();
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.md,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.settings_voice, color: widget.colors.primary),
+          const SizedBox(width: AppDimensions.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TTS Engine',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: widget.colors.onSurface,
+                  ),
+                ),
+                Text(
+                  _defaultEngine ?? _engines.first,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: widget.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_engines.length > 1)
+            PopupMenuButton<String>(
+              initialValue: _defaultEngine,
+              onSelected: (name) async {
+                await ref.read(ttsProvider.notifier).setEngine(name);
+                _refresh();
+              },
+              itemBuilder: (context) => [
+                for (var i = 0; i < _engines.length; i++)
+                  PopupMenuItem<String>(
+                    value: _engines[i],
+                    child: Text(short[i], overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Switch',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: widget.colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right,
+                    color: widget.colors.onSurfaceVariant,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
