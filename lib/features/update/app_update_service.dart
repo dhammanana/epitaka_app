@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Metadata for a newer desktop release.
@@ -32,7 +33,25 @@ class AppUpdateService {
   final http.Client _client;
   AppUpdateService({http.Client? client}) : _client = client ?? http.Client();
 
-  Future<AppUpdate?> checkForUpdate() async {
+  static const dismissedVersionKey = 'desktop_update_dismissed_version';
+
+  Future<String?> getDismissedVersion() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(dismissedVersionKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> dismissVersion(String version) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(dismissedVersionKey, version);
+    } catch (_) {}
+  }
+
+  Future<AppUpdate?> checkForUpdate({String? dismissedVersion}) async {
     if (!_isDesktop) return null;
 
     final info = await PackageInfo.fromPlatform();
@@ -55,6 +74,9 @@ class AppUpdateService {
     final tag = json['tag_name'] as String?;
     final latest = Version.parse(tag ?? '');
     if (latest == null || latest <= current) return null;
+    if (dismissedVersion != null && latest.toString() == dismissedVersion) {
+      return null;
+    }
 
     final htmlUrl = json['html_url'] as String?;
     final uri = Uri.tryParse(htmlUrl ?? releasePage);

@@ -32,6 +32,13 @@ class AppUpdateDialog extends StatelessWidget {
       content: Text(loc.desktopUpdateDescription(update.version)),
       actions: [
         TextButton(
+          onPressed: () async {
+            await service.dismissVersion(update.version);
+            if (context.mounted) Navigator.of(context).pop();
+          },
+          child: Text(loc.dontAskForThisVersion),
+        ),
+        TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(loc.later),
         ),
@@ -39,7 +46,8 @@ class AppUpdateDialog extends StatelessWidget {
           icon: const Icon(Icons.open_in_new),
           label: Text(loc.downloadUpdate),
           onPressed: () async {
-            Navigator.of(context).pop();
+            await service.dismissVersion(update.version);
+            if (context.mounted) Navigator.of(context).pop();
             await service.openReleasePage(update.releasePage);
           },
         ),

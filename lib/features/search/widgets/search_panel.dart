@@ -145,9 +145,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           _onResultTap(row.summary!, row.item!);
         }
       case SearchRowKind.loadMore:
-        ref
-            .read(searchProvider.notifier)
-            .loadMoreForBook(row.summaryIndex);
+        ref.read(searchProvider.notifier).loadMoreForBook(row.summaryIndex);
     }
   }
 
@@ -169,7 +167,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final effectiveValue = converted;
     final wordCount = effectiveValue.trim().isEmpty
         ? 0
-        : effectiveValue.trim().split(RegExp(r'\\s+')).length;
+        : effectiveValue.trim().split(RegExp(r'\s+')).length;
     if (wordCount >= 2 && !_isMultiWord) {
       setState(() {
         _isMultiWord = true;
@@ -185,7 +183,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final seq = ++_suggestSeq;
     _debounce = Timer(const Duration(milliseconds: 120), () async {
       if (effectiveValue.trim().isNotEmpty) {
-        final words = effectiveValue.trim().split(RegExp(r'\\s+'));
+        final words = effectiveValue.trim().split(RegExp(r'\s+'));
         final lastWord = words.isNotEmpty ? words.last : '';
         if (lastWord.isNotEmpty) {
           final suggestions = await ref
@@ -373,27 +371,45 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                     itemBuilder: (_) => [
                       PopupMenuItem(
                         value: 0,
-                        child: Text(loc.anyShort, style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.anyShort,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 3,
-                        child: Text(loc.withinNShort(3), style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.withinNShort(3),
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 1,
-                        child: Text(loc.withinNShort(1), style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.withinNShort(1),
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 2,
-                        child: Text(loc.withinNShort(2), style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.withinNShort(2),
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 5,
-                        child: Text(loc.withinNShort(5), style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.withinNShort(5),
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 10,
-                        child: Text(loc.withinNShort(10), style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          loc.withinNShort(10),
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                     ],
                     child: Container(
@@ -436,14 +452,22 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                   // Filter toggle
                   IconButton(
                     icon: Icon(
-                      _showFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                      _showFilters
+                          ? Icons.filter_alt
+                          : Icons.filter_alt_outlined,
                       size: 16,
                     ),
-                    color: _showFilters ? colors.primary : colors.onSurfaceVariant,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    color: _showFilters
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
                     padding: EdgeInsets.zero,
                     tooltip: loc.toggleFilters,
-                    onPressed: () => setState(() => _showFilters = !_showFilters),
+                    onPressed: () =>
+                        setState(() => _showFilters = !_showFilters),
                   ),
                   if (searchState is SearchResults)
                     Container(
@@ -579,7 +603,9 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
         decoration: BoxDecoration(
           color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-          border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -600,12 +626,16 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                   child: Wrap(
                     spacing: 3,
                     runSpacing: 3,
-                    children: kAllCategories.map((key) => _PanelFilterChip(
-                      label: key,
-                      selected: enabledCats.contains(key),
-                      colors: colors,
-                      onTap: () => notifier.toggleCategory(key),
-                    )).toList(),
+                    children: kAllCategories
+                        .map(
+                          (key) => _PanelFilterChip(
+                            label: key,
+                            selected: enabledCats.contains(key),
+                            colors: colors,
+                            onTap: () => notifier.toggleCategory(key),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -627,12 +657,16 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                   child: Wrap(
                     spacing: 3,
                     runSpacing: 3,
-                    children: kAllNikayas.map((key) => _PanelFilterChip(
-                      label: key,
-                      selected: enabledNik.contains(key),
-                      colors: colors,
-                      onTap: () => notifier.toggleNikaya(key),
-                    )).toList(),
+                    children: kAllNikayas
+                        .map(
+                          (key) => _PanelFilterChip(
+                            label: key,
+                            selected: enabledNik.contains(key),
+                            colors: colors,
+                            onTap: () => notifier.toggleNikaya(key),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -910,10 +944,7 @@ class _BookResultHeader extends ConsumerWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: summary.isExpanded
                       ? colors.primaryContainer
@@ -1020,30 +1051,29 @@ class _ResultItemTile extends ConsumerWidget {
     final List<String> searchTerms;
     if (searchState is SearchResults) {
       final q = searchState.query;
-      searchTerms = normalizePaliFuzzy(q)
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
+      searchTerms = normalizePaliFuzzy(
+        q,
+      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     } else {
       searchTerms = const [];
     }
 
     final paliTypo = settings.typography.pali;
-    final paliTextStyle = paliTypo.toTextStyle(
-      fallbackColor: colors.onSurface,
-    );
+    final paliTextStyle = paliTypo.toTextStyle(fallbackColor: colors.onSurface);
 
     final transTypo = activeLang != null
         ? settings.typography.typographyFor(activeLang)
         : null;
-    final transTextStyle = transTypo?.toTextStyle(
-      fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
-    ) ?? TextStyle(
-      fontSize: 11,
-      color: colors.onSurfaceVariant.withValues(alpha: 0.8),
-      fontStyle: FontStyle.italic,
-      height: 1.3,
-    );
+    final transTextStyle =
+        transTypo?.toTextStyle(
+          fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
+        ) ??
+        TextStyle(
+          fontSize: 11,
+          color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+          fontStyle: FontStyle.italic,
+          height: 1.3,
+        );
 
     // Only show matching lines
     final matchingLines = item.lines.where((l) => l.isMatch).toList();
@@ -1093,17 +1123,19 @@ class _ResultItemTile extends ConsumerWidget {
               ],
             ),
             // Matching lines
-            ...matchingLines.map((line) => Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: _PanelLineTile(
-                line: line,
-                searchTerms: searchTerms,
-                paliTextStyle: paliTextStyle,
-                transTextStyle: transTextStyle,
-                colors: colors,
-                script: script,
+            ...matchingLines.map(
+              (line) => Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: _PanelLineTile(
+                  line: line,
+                  searchTerms: searchTerms,
+                  paliTextStyle: paliTextStyle,
+                  transTextStyle: transTextStyle,
+                  colors: colors,
+                  script: script,
+                ),
               ),
-            )),
+            ),
           ],
         ),
       ),
@@ -1134,10 +1166,7 @@ class _PanelLineTile extends StatelessWidget {
     final highlightColor = colors.primary.withValues(alpha: 0.25);
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 1,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(2),

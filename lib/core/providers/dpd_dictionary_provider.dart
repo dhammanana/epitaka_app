@@ -80,7 +80,11 @@ final dpdDictionarySearchProvider = FutureProvider.autoDispose
         final lookups = db.searchLookup(trimmed, limit: 25);
         final allIds = <int>{};
         for (final lr in lookups) {
-          allIds.addAll(lr.headwords);
+          for (final id in lr.headwords) {
+            allIds.add(id);
+            if (allIds.length >= 16) break;
+          }
+          if (allIds.length >= 16) break;
         }
 
         if (allIds.isEmpty) return <DpdHeadwordRow>[];

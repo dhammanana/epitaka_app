@@ -1,18 +1,40 @@
+final _bracketAnnotation = RegExp(r'\[[^\]]*\]');
+final _parenPageRef = RegExp(r'\([^)]*\d+[^)]*\)');
+final _htmlTag = RegExp(r'<[^>]*>');
+final _whitespaceRun = RegExp(r'\s+');
+
+String foldPaliDiacritics(String text) {
+  return text
+      .toLowerCase()
+      .replaceAll('ā', 'a')
+      .replaceAll('ī', 'i')
+      .replaceAll('ū', 'u')
+      .replaceAll('ō', 'o')
+      .replaceAll('ṅ', 'n')
+      .replaceAll('ñ', 'n')
+      .replaceAll('ṭ', 't')
+      .replaceAll('ḍ', 'd')
+      .replaceAll('ṇ', 'n')
+      .replaceAll('ḷ', 'l')
+      .replaceAll('ṃ', 'm')
+      .replaceAll('ṁ', 'm');
+}
+
 /// Clean Pali text for FTS5 indexing by stripping annotations, removing
 /// punctuation, and normalizing whitespace.
 String cleanPaliForIndexing(String text) {
   // 1. Strip [...] and all content inside (variant annotations like
   //    "[variant text]" should not contribute any words to the index).
-  text = text.replaceAll(RegExp(r'\[[^\]]*\]'), '');
+  text = text.replaceAll(_bracketAnnotation, '');
 
   // 2. Strip (...) that contain at least one digit (page/location
   //    references like "(page 12.3)") but preserve parentheses that
   //    wrap actual text like "(and)" — those will be handled below.
-  text = text.replaceAll(RegExp(r'\([^)]*\d+[^)]*\)'), '');
+  text = text.replaceAll(_parenPageRef, '');
 
   // 3. Strip HTML tags (e.g. "<b>", "<mark>") that should never become
   //    part of the index or the word-frequency table.
-  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+  text = text.replaceAll(_htmlTag, '');
 
   // 4. Remove any remaining individual bracket characters that survived
   //    the content-stripping regexes (e.g. `(text)` without numbers, or
@@ -44,7 +66,7 @@ String cleanPaliForIndexing(String text) {
       .replaceAll("'", '')
       .replaceAll('\u2018', '')
       .replaceAll('\u2019', '');
-  return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return cleaned.replaceAll(_whitespaceRun, ' ').trim();
 }
 
 /// Normalize a Pali string for fuzzy matching by replacing diacritics with
@@ -75,6 +97,6 @@ String normalizePaliFuzzy(String text) {
       .replaceAll('*', '')
       .replaceAll('^', '')
       .replaceAll('~', '')
-      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(_whitespaceRun, ' ')
       .trim();
 }

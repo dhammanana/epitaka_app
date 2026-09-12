@@ -118,6 +118,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   String _query = '';
   // Live textbox value (debounced) driving prefix suggestions.
   String _draft = '';
+  double? _normProgress;
 
   // Deconstructor state (simple ints instead of TabController to avoid
   // !semantics.parentDataDirty assertion errors inside CustomScrollView)
@@ -191,6 +192,24 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _draft = initial;
       _addToHistory(initial);
     }
+    _attachNormProgress();
+  }
+
+  void _attachNormProgress() {
+    ref
+        .read(dpdDictionaryDbProvider.future)
+        .then((db) {
+          if (!mounted || db.isNormReady) return;
+          final current = db.normBuildProgress;
+          if (current != null && current < 1) {
+            setState(() => _normProgress = current);
+          }
+          db.onNormProgress = (p) {
+            if (!mounted) return;
+            setState(() => _normProgress = p >= 1 ? null : p);
+          };
+        })
+        .catchError((_) {});
   }
 
   Future _loadHistory() async {
@@ -675,6 +694,34 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                         ],
                       ),
                     ),
+
+                    if (_normProgress != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                value: _normProgress! > 0
+                                    ? _normProgress
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                AppLocalizations.of(context).preparing,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
                     const SizedBox(height: AppDimensions.sm),
                     const Divider(height: 1),

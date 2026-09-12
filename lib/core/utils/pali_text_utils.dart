@@ -239,9 +239,18 @@ String convertPaliToScript(String text, Script? targetScript) {
     return TextProcessor.beautify(text, Script.roman);
   }
 
-  // Step 1: Roman → Sinhala (internal intermediate). This intermediate is
-  // independent of the target script, so cache it under Script.roman.
+  // Step 1: normalize to the Sinhala internal intermediate. Input is
+  // usually Roman, but callers sometimes pass already-converted text
+  // (e.g. the copy service re-converts trimmed selection matches, which
+  // hold display-script text). Running the Roman pipeline over non-Roman
+  // text double-converts it: removeA inserts viramas before dependent
+  // vowel signs (තේන → ත්ෙන්), which other apps render as dotted
+  // circles. Detect non-Latin input and pivot through script detection
+  // instead — safe for every script, not just Sinhala.
   final sinhalaText = _cacheConvert(text, Script.roman, () {
+    if (isNonLatinScript(text)) {
+      return TextProcessor.convertFromMixed(text);
+    }
     final out = TextProcessor.convertFrom(text, Script.roman);
     return out;
   });

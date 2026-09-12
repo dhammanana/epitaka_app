@@ -70,6 +70,7 @@ class AppLocalizations {
   );
   String get downloadUpdate => _t('Download update');
   String get later => _t('Later');
+  String get dontAskForThisVersion => _t("Don't ask for this version");
 
   /// Error prefix for `Error: $message` lines.
   String errorMessage(String message) => '${_t('Error')}: $message';
@@ -189,6 +190,7 @@ class AppLocalizations {
   String get crashReportsSubtitle =>
       _t('Sends error reports to fix bugs faster');
   String get about => _t('About ePitaka');
+  String get version => _t('Version');
   String get help => _t('Help');
   String get keyboardShortcuts => _t('Keyboard Shortcuts');
   String get searchInBook => _t('Search within the book');

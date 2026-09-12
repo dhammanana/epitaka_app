@@ -150,7 +150,9 @@ class ReadingHistory extends Table {
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
-@DriftDatabase(tables: [Bookmarks, ReadingHistory, TtsReplacements, Annotations])
+@DriftDatabase(
+  tables: [Bookmarks, ReadingHistory, TtsReplacements, Annotations],
+)
 class AppDatabase extends _$AppDatabase {
   // ── Chat Threads & Messages (raw SQL tables) ──────────────────────────
 
@@ -416,7 +418,9 @@ class AppDatabase extends _$AppDatabase {
           // primary key via ALTER TABLE, so rebuild the table in place:
           // rename old → create new (with PK) → copy rows → drop old. All
           // existing bookmarks/highlights/notes are preserved.
-          await customStatement('ALTER TABLE annotations RENAME TO annotations_old');
+          await customStatement(
+            'ALTER TABLE annotations RENAME TO annotations_old',
+          );
           await m.createTable(annotations);
           await customStatement('''
             INSERT INTO annotations (
@@ -741,9 +745,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// Get a single annotation by id.
   Future<AnnotationRow?> getAnnotation(String id) async {
-    final rows = await (select(annotations)
-          ..where((a) => a.id.equals(id)))
-        .get();
+    final rows = await (select(
+      annotations,
+    )..where((a) => a.id.equals(id))).get();
     return rows.isEmpty ? null : rows.first;
   }
 
@@ -753,17 +757,21 @@ class AppDatabase extends _$AppDatabase {
     return (select(annotations)
           ..where((a) => a.bookId.equals(bookId))
           ..orderBy([
-            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+            (a) =>
+                OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
           ]))
         .get();
   }
 
   /// All non-deleted annotations for a book, newest first (UI queries).
-  Future<List<AnnotationRow>> getVisibleAnnotationsForBook(String bookId) async {
+  Future<List<AnnotationRow>> getVisibleAnnotationsForBook(
+    String bookId,
+  ) async {
     return (select(annotations)
           ..where((a) => a.bookId.equals(bookId) & a.deletedAt.isNull())
           ..orderBy([
-            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+            (a) =>
+                OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
           ]))
         .get();
   }
@@ -773,7 +781,8 @@ class AppDatabase extends _$AppDatabase {
     return (select(annotations)
           ..where((a) => a.bookId.equals(bookId) & a.deletedAt.isNull())
           ..orderBy([
-            (a) => OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
+            (a) =>
+                OrderingTerm(expression: a.createdAt, mode: OrderingMode.desc),
           ]))
         .watch();
   }
@@ -832,8 +841,10 @@ class AppDatabase extends _$AppDatabase {
   /// Permanently remove soft-deleted tombstones older than [before]. Called
   /// after a successful sync so the local DB doesn't accumulate them.
   Future<void> purgeAnnotationTombstones(DateTime before) async {
-    await (delete(annotations)
-          ..where((a) => a.deletedAt.isNotNull() & a.deletedAt.isSmallerThanValue(before)))
+    await (delete(annotations)..where(
+          (a) =>
+              a.deletedAt.isNotNull() & a.deletedAt.isSmallerThanValue(before),
+        ))
         .go();
   }
 
@@ -978,10 +989,7 @@ class AppDatabase extends _$AppDatabase {
   /// Delete a listening-history entry by ID.
   Future<void> deleteListeningHistoryEntry(int id) async {
     await _ensureListeningHistoryTable();
-    await customStatement(
-      'DELETE FROM listening_history WHERE id = ?',
-      [id],
-    );
+    await customStatement('DELETE FROM listening_history WHERE id = ?', [id]);
   }
 
   // ── TTS Replacements ────────────────────────────────────────────────────
@@ -1409,7 +1417,8 @@ class AppDatabase extends _$AppDatabase {
       const yieldInterval = 200;
       const insertChunk = 200;
       int yieldCounter = 0;
-      final ftsBuffer = <Object?>[]; // flat book_id, para_id, translation tuples
+      final ftsBuffer =
+          <Object?>[]; // flat book_id, para_id, translation tuples
 
       for (final row in sentenceRows) {
         final bookId = row.data['book_id'] as String;
@@ -1620,10 +1629,9 @@ class AppDatabase extends _$AppDatabase {
         // Strip FTS5 operator characters (* ^ ~) that would otherwise
         // produce a syntax error once the prefix `*` is appended.
         .map(
-          (w) => _escapeFtsTerm(w)
-              .replaceAll('*', '')
-              .replaceAll('^', '')
-              .replaceAll('~', ''),
+          (w) => _escapeFtsTerm(
+            w,
+          ).replaceAll('*', '').replaceAll('^', '').replaceAll('~', ''),
         )
         .where((w) => w.isNotEmpty)
         .toList();
@@ -1847,16 +1855,34 @@ class AppDatabase extends _$AppDatabase {
 
     final fuzzy = _normalizeFuzzy(trimmed);
 
-    final rows = await customSelect(
-      'SELECT pali, fuzzy, count FROM search_words '
-      'WHERE pali LIKE ?1 OR fuzzy LIKE ?2 '
-      'ORDER BY count DESC LIMIT ?3',
-      variables: [
-        Variable.withString('$trimmed%'),
-        Variable.withString('$fuzzy%'),
-        Variable.withInt(limit),
-      ],
-    ).get();
+    final paliUpper = _prefixUpperBound(trimmed);
+    final fuzzyUpper = _prefixUpperBound(fuzzy);
+    final rows = (paliUpper == null || fuzzyUpper == null)
+        ? await customSelect(
+            'SELECT pali, fuzzy, count FROM search_words '
+            'WHERE pali LIKE ?1 OR fuzzy LIKE ?2 '
+            'ORDER BY count DESC LIMIT ?3',
+            variables: [
+              Variable.withString('$trimmed%'),
+              Variable.withString('$fuzzy%'),
+              Variable.withInt(limit),
+            ],
+          ).get()
+        : await customSelect(
+            'SELECT pali, fuzzy, count FROM search_words '
+            'WHERE (pali LIKE ?1 AND pali >= ?2 AND pali < ?3) '
+            'OR (fuzzy LIKE ?4 AND fuzzy >= ?5 AND fuzzy < ?6) '
+            'ORDER BY count DESC LIMIT ?7',
+            variables: [
+              Variable.withString('$trimmed%'),
+              Variable.withString(trimmed),
+              Variable.withString(paliUpper),
+              Variable.withString('$fuzzy%'),
+              Variable.withString(fuzzy),
+              Variable.withString(fuzzyUpper),
+              Variable.withInt(limit),
+            ],
+          ).get();
 
     final suggestions = rows
         .map(
@@ -1898,15 +1924,28 @@ class AppDatabase extends _$AppDatabase {
           return suggestions;
         }
       }
-      final tRows = await customSelect(
-        'SELECT word, count FROM $tableName '
-        'WHERE word LIKE ?1 '
-        'ORDER BY count DESC LIMIT ?2',
-        variables: [
-          Variable.withString('$trimmed%'),
-          Variable.withInt(limit),
-        ],
-      ).get();
+      final wordUpper = _prefixUpperBound(trimmed);
+      final tRows = wordUpper == null
+          ? await customSelect(
+              'SELECT word, count FROM $tableName '
+              'WHERE word LIKE ?1 '
+              'ORDER BY count DESC LIMIT ?2',
+              variables: [
+                Variable.withString('$trimmed%'),
+                Variable.withInt(limit),
+              ],
+            ).get()
+          : await customSelect(
+              'SELECT word, count FROM $tableName '
+              'WHERE word LIKE ?1 AND word >= ?2 AND word < ?3 '
+              'ORDER BY count DESC LIMIT ?4',
+              variables: [
+                Variable.withString('$trimmed%'),
+                Variable.withString(trimmed),
+                Variable.withString(wordUpper),
+                Variable.withInt(limit),
+              ],
+            ).get();
       suggestions.addAll(
         tRows.map(
           (r) => SearchSuggestion(
@@ -1932,6 +1971,16 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // ── Search helpers ────────────────────────────────────────────────────
+
+  static String? _prefixUpperBound(String prefix) {
+    final runes = prefix.runes.toList();
+    for (var i = runes.length - 1; i >= 0; i--) {
+      if (runes[i] < 0x10FFFF) {
+        return String.fromCharCodes([...runes.sublist(0, i), runes[i] + 1]);
+      }
+    }
+    return null;
+  }
 
   String _cleanPaliText(String text) {
     return cleanPaliForIndexing(text);

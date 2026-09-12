@@ -121,11 +121,9 @@ class BookResultSummary {
 
   /// Whether we've loaded all available results for this book.
   bool get fullyLoaded =>
-      forceFullyLoaded ||
-      loadedPages.length * kSearchPageSize >= totalCount;
+      forceFullyLoaded || loadedPages.length * kSearchPageSize >= totalCount;
 
-  int get loadedCount =>
-      loadedPages.fold(0, (sum, page) => sum + page.length);
+  int get loadedCount => loadedPages.fold(0, (sum, page) => sum + page.length);
 
   BookResultSummary({
     required this.book,
@@ -161,7 +159,10 @@ class SearchIdle extends SearchState {
 class SearchIndexing extends SearchState {
   final double progress;
   final String status;
-  const SearchIndexing({this.progress = 0, this.status = 'Building search index…'});
+  const SearchIndexing({
+    this.progress = 0,
+    this.status = 'Building search index…',
+  });
 }
 
 class SearchLoading extends SearchState {
@@ -202,9 +203,18 @@ class SearchError extends SearchState {
 
 // ── Provider ─────────────────────────────────────────────────────────────
 
-final searchProvider =
-    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
+  ref,
+) {
   return SearchNotifier(ref);
+});
+
+typedef RawHeading = ({
+  String bookId,
+  int paraId,
+  int? level,
+  String title,
+  String key,
 });
 
 class SearchNotifier extends StateNotifier<SearchState> {
@@ -212,6 +222,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Timer? _debounce;
   EpitakaDatabase? _cachedEpitakaDb;
   List<BookInfo>? _cachedAllBooks;
+  int _searchGen = 0;
 
   /// Filter state: which categories (layers) are enabled.
   Set<String> _enabledCategories = {...kAllCategories};
@@ -243,22 +254,24 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final db = await _epitakaDb();
       final rows = await db.select(db.books).get();
       _cachedAllBooks = rows
-          .map((b) => BookInfo(
-                id: b.id,
-                refId: b.refId,
-                vriId: b.vriId,
-                bookId: b.bookId,
-                category: b.category,
-                nikaya: b.nikaya,
-                subNikaya: b.subNikaya,
-                bookName: b.bookName,
-                description: b.description,
-                mulaRef: b.mulaRef,
-                atthaRef: b.atthaRef,
-                tikaRef: b.tikaRef,
-                paraId: b.paraId,
-                chapterLen: b.chapterLen,
-              ))
+          .map(
+            (b) => BookInfo(
+              id: b.id,
+              refId: b.refId,
+              vriId: b.vriId,
+              bookId: b.bookId,
+              category: b.category,
+              nikaya: b.nikaya,
+              subNikaya: b.subNikaya,
+              bookName: b.bookName,
+              description: b.description,
+              mulaRef: b.mulaRef,
+              atthaRef: b.atthaRef,
+              tikaRef: b.tikaRef,
+              paraId: b.paraId,
+              chapterLen: b.chapterLen,
+            ),
+          )
           .toList();
     }
     return _cachedAllBooks!;
@@ -337,10 +350,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<void> _reSearch() async {
     final current = state;
     if (current is SearchResults) {
-      await search(
-        query: current.query,
-        distance: current.distance,
-      );
+      await search(query: current.query, distance: current.distance);
     } else if (current is SearchIdle) {
       // No search active yet — still emit a fresh idle state so the
       // filter chips (which read from this provider) rebuild with the
@@ -366,6 +376,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
         debugPrint('[SEARCH] Index build FAILED: $e');
       }
     }
+    _warmHeadingsCache().ignore();
+  }
+
+  Future<void> _warmHeadingsCache() async {
+    try {
+      await _allHeadings(await _epitakaDb());
+    } catch (_) {}
   }
 
   // ── Main search entry point ───────────────────────────────────────────
@@ -376,10 +393,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Search is always diacritic-insensitive (fuzzy): the FTS index is
   /// built with `remove_diacritics 1`, so the database layer normalizes
   /// the query the same way the index text was cleaned.
-  Future<void> search({
-    required String query,
-    int distance = 0,
-  }) async {
+  Future<void> search({required String query, int distance = 0}) async {
+    final gen = ++_searchGen;
     final normalized = query.trim();
     // A query made only of punctuation (",", "…") has no searchable words
     // after cleaning — treat it like an empty query instead of running a
@@ -393,22 +408,24 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     try {
       final appDb = await _ref.read(appDbProvider.future);
+      if (gen != _searchGen) return;
 
       // Ensure Pali index is built
       final paliBuilt = await appDb.isSearchIndexBuilt();
       if (!paliBuilt) {
         await ensureIndexBuilt();
       }
+      if (gen != _searchGen) return;
 
       // ── Count results by book ──────────────────────────────────────
-      final allBooks = await _allBooks();
-      final bookMap = <String, BookInfo>{
-        for (final b in allBooks) b.bookId: b,
-      };
-
-      final combinedCounts = <String, int>{};
-
-      // Run both count queries in parallel
+      // Books, the headings bulk load, and both count queries run
+      // concurrently so a cold headings cache overlaps the FTS counts
+      // instead of stalling behind them.
+      final epitakaDbFuture = _epitakaDb();
+      final headingsFuture = epitakaDbFuture.then<List<RawHeading>>(
+        (db) => _allHeadings(db),
+        onError: (_) => <RawHeading>[],
+      );
       final activeLang = _activeTranslationLang();
       final countFutures = <Future<Map<String, int>>>[
         () async {
@@ -435,8 +452,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
           }
         }());
       }
-      final countResults = await Future.wait(countFutures);
-      for (final result in countResults) {
+      final waited = await Future.wait([
+        _allBooks(),
+        headingsFuture,
+        ...countFutures,
+      ]);
+      if (gen != _searchGen) return;
+
+      final allBooks = waited[0] as List<BookInfo>;
+      final rawHeadings = waited[1] as List<RawHeading>;
+      final bookMap = <String, BookInfo>{for (final b in allBooks) b.bookId: b};
+
+      final combinedCounts = <String, int>{};
+      for (var i = 2; i < waited.length; i++) {
+        final result = waited[i] as Map<String, int>;
         for (final entry in result.entries) {
           combinedCounts[entry.key] =
               (combinedCounts[entry.key] ?? 0) + entry.value;
@@ -444,12 +473,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       }
 
       // ── Search headings ───────────────────────────────────────────
-      final epitakaDb = await _epitakaDb();
-      final headingResults = await _searchHeadings(
-        epitakaDb,
-        normalized,
-        bookMap,
-      );
+      final headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
 
       if (combinedCounts.isEmpty && headingResults.isEmpty) {
         state = SearchResults(
@@ -486,13 +510,16 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
       final summaries = <BookResultSummary>[];
       for (final bookId in filteredBookIds) {
-        final book = bookMap[bookId] ??
+        final book =
+            bookMap[bookId] ??
             BookInfo(id: 0, bookId: bookId, bookName: bookId);
-        summaries.add(BookResultSummary(
-          book: book,
-          totalCount: combinedCounts[bookId]!,
-          isExpanded: autoExpand,
-        ));
+        summaries.add(
+          BookResultSummary(
+            book: book,
+            totalCount: combinedCounts[bookId]!,
+            isExpanded: autoExpand,
+          ),
+        );
       }
 
       state = SearchResults(
@@ -505,13 +532,16 @@ class SearchNotifier extends StateNotifier<SearchState> {
         enabledNikayas: _enabledNikayas,
       );
 
-      // If auto-expanded, load first page for every book
+      // If auto-expanded, load every book concurrently instead of one
+      // book at a time — latency is the slowest book, not the sum.
       if (autoExpand) {
-        for (int i = 0; i < summaries.length; i++) {
-          await _loadBookPage(i, fetchAll: true);
-        }
+        await Future.wait([
+          for (final s in summaries)
+            _loadBookPages(s.book.bookId, fetchAll: true),
+        ]);
       }
     } catch (e) {
+      if (gen != _searchGen) return;
       state = SearchError('Search failed: $e');
     }
   }
@@ -523,208 +553,262 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<void> _loadBookPage(int summaryIndex, {bool fetchAll = false}) async {
     final current = state;
     if (current is! SearchResults) return;
+    if (summaryIndex < 0 || summaryIndex >= current.bookSummaries.length) {
+      return;
+    }
+    await _loadBookPages(
+      current.bookSummaries[summaryIndex].book.bookId,
+      fetchAll: fetchAll,
+    );
+  }
 
-    if (summaryIndex < 0 || summaryIndex >= current.bookSummaries.length) return;
+  Future<void> _loadBookPages(String bookId, {bool fetchAll = false}) async {
+    final gen = _searchGen;
+    while (true) {
+      if (gen != _searchGen) return;
+      final current = state;
+      if (current is! SearchResults) return;
+      final idx = current.bookSummaries.indexWhere(
+        (s) => s.book.bookId == bookId,
+      );
+      if (idx < 0) return;
+      final summary = current.bookSummaries[idx];
+      if (summary.fullyLoaded) return;
 
-    final appDb = await _ref.read(appDbProvider.future);
-    final activeLang = _activeTranslationLang();
-    final query = current.query;
-    final searchWords = normalizePaliFuzzy(query)
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .toList();
-
-    // Work with a mutable copy of the summaries so we can update incrementally.
-    var summaries = [...current.bookSummaries];
-    var summary = summaries[summaryIndex];
-
-    if (summary.fullyLoaded) return;
-
-    bool hasMore = true;
-    while (hasMore) {
       final offset = summary.loadedPages.length * kSearchPageSize;
       final remaining = summary.totalCount - offset;
-      if (remaining <= 0) break;
+      if (remaining <= 0) return;
+      final pageSize = remaining < kSearchPageSize
+          ? remaining
+          : kSearchPageSize;
 
-      final pageSize = remaining < kSearchPageSize ? remaining : kSearchPageSize;
+      final items = await _fetchBookPageItems(
+        bookId: bookId,
+        offset: offset,
+        pageSize: pageSize,
+        query: current.query,
+        distance: current.distance,
+      );
+      if (gen != _searchGen) return;
+      if (items.isEmpty) return;
+      _commitBookPageItems(bookId, items);
+      if (!fetchAll || items.length < pageSize) return;
+    }
+  }
 
-      // Get matching para_ids from BOTH Pali and translation FTS
-      final detailFutures = <Future<List<SearchResultRow>>>[
-        appDb.searchPaliFtsByBook(
-          summary.book.bookId,
+  bool _commitBookPageItems(String bookId, List<SearchResultItem> items) {
+    final current = state;
+    if (current is! SearchResults) return false;
+    final idx = current.bookSummaries.indexWhere(
+      (s) => s.book.bookId == bookId,
+    );
+    if (idx < 0) return false;
+    final summaries = [...current.bookSummaries];
+    final summary = summaries[idx];
+    summaries[idx] = BookResultSummary(
+      book: summary.book,
+      totalCount: summary.totalCount,
+      isExpanded: true,
+      loadedPages: [...summary.loadedPages, items],
+      forceFullyLoaded: summary.forceFullyLoaded,
+    );
+    state = SearchResults(
+      query: current.query,
+      totalResults: current.totalResults,
+      bookSummaries: summaries,
+      headings: current.headings,
+      distance: current.distance,
+      enabledCategories: _enabledCategories,
+      enabledNikayas: _enabledNikayas,
+    );
+    return true;
+  }
+
+  Future<List<SearchResultItem>> _fetchBookPageItems({
+    required String bookId,
+    required int offset,
+    required int pageSize,
+    required String query,
+    required int distance,
+  }) async {
+    final appDb = await _ref.read(appDbProvider.future);
+    final activeLang = _activeTranslationLang();
+    final searchWords = normalizePaliFuzzy(
+      query,
+    ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+    // Get matching para_ids from BOTH Pali and translation FTS
+    final detailFutures = <Future<List<SearchResultRow>>>[
+      appDb.searchPaliFtsByBook(
+        bookId,
+        query,
+        distance: distance,
+        limit: pageSize,
+        offset: offset,
+      ),
+    ];
+    if (activeLang != null) {
+      detailFutures.add(
+        appDb.searchTranslationFtsByBook(
+          activeLang,
+          bookId,
           query,
-          distance: current.distance,
+          distance: distance,
           limit: pageSize,
           offset: offset,
         ),
-      ];
-      if (activeLang != null) {
-        detailFutures.add(appDb.searchTranslationFtsByBook(
-          activeLang,
-          summary.book.bookId,
-          query,
-          distance: current.distance,
-          limit: pageSize,
-          offset: offset,
-        ));
-      } else {
-        detailFutures.add(Future.value(<SearchResultRow>[]));
-      }
+      );
+    } else {
+      detailFutures.add(Future.value(<SearchResultRow>[]));
+    }
 
-      final detailResults = await Future.wait(detailFutures);
-      final paliRows = detailResults[0];
-      final transRows = detailResults.length > 1 ? detailResults[1] : <SearchResultRow>[];
+    final detailResults = await Future.wait(detailFutures);
+    final paliRows = detailResults[0];
+    final transRows = detailResults.length > 1
+        ? detailResults[1]
+        : <SearchResultRow>[];
 
-      // Merge para_ids from both Pali and translation results
-      final seenParaIds = <int>{};
-      final allSnippets = <int, SearchResultRow>{};
+    // Merge para_ids from both Pali and translation results
+    final seenParaIds = <int>{};
+    final allSnippets = <int, SearchResultRow>{};
 
-      for (final row in paliRows) {
-        if (row.firstParaId == null) continue;
-        seenParaIds.add(row.firstParaId!);
+    for (final row in paliRows) {
+      if (row.firstParaId == null) continue;
+      seenParaIds.add(row.firstParaId!);
+      allSnippets[row.firstParaId!] = row;
+    }
+    for (final row in transRows) {
+      if (row.firstParaId == null) continue;
+      if (seenParaIds.add(row.firstParaId!)) {
+        // Translation-only match — store snippet
         allSnippets[row.firstParaId!] = row;
       }
-      for (final row in transRows) {
-        if (row.firstParaId == null) continue;
-        if (seenParaIds.add(row.firstParaId!)) {
-          // Translation-only match — store snippet
-          allSnippets[row.firstParaId!] = row;
-        }
-      }
+    }
 
-      final matchingParaIds = seenParaIds.toList();
-      if (matchingParaIds.isEmpty) break;
+    final matchingParaIds = seenParaIds.toList();
+    if (matchingParaIds.isEmpty) return [];
 
-      // Fetch individual lines from epitaka_db.sentences for matching para_ids
-      final placeholders = matchingParaIds.map((_) => '?').join(',');
-      final epitakaDb = await _epitakaDb();
-      final lineRows = await epitakaDb.customSelect(
-        'SELECT para_id, line_id, pali '
-        'FROM sentences '
-        'WHERE book_id = ? AND para_id IN ($placeholders) '
-        'ORDER BY para_id, line_id',
-        variables: [
-          Variable.withString(summary.book.bookId),
-          ...matchingParaIds.map((id) => Variable.withInt(id)),
-        ],
-      ).get();
+    // Fetch individual lines from epitaka_db.sentences for matching para_ids
+    final placeholders = matchingParaIds.map((_) => '?').join(',');
+    final epitakaDb = await _epitakaDb();
+    final lineRows = await epitakaDb
+        .customSelect(
+          'SELECT para_id, line_id, pali '
+          'FROM sentences '
+          'WHERE book_id = ? AND para_id IN ($placeholders) '
+          'ORDER BY para_id, line_id',
+          variables: [
+            Variable.withString(bookId),
+            ...matchingParaIds.map((id) => Variable.withInt(id)),
+          ],
+        )
+        .get();
 
-      // Fetch translations for those para_ids
-      final transLineMap = <int, Map<int, String>>{};
-      if (activeLang != null) {
-        try {
-          if (TranslationFilenameParser.isNissaya(activeLang)) {
-            final filename = TranslationFilenameParser.build(activeLang);
-            final nissayaDb =
-                await _ref.read(nissayaDbByFilenameProvider(filename).future);
-            if (nissayaDb != null) {
-              for (final pid in matchingParaIds) {
-                final sentences =
-                    await nissayaDb.getSentences(summary.book.bookId, pid);
-                for (final s in sentences) {
-                  final t = s.formattedText;
-                  if (t.isNotEmpty) {
-                    transLineMap.putIfAbsent(pid, () => {})[s.lineId] = t;
-                  }
-                }
-              }
-            }
-          } else {
-            final transDb =
-                await _ref.read(translationDbProvider(activeLang).future);
-            if (transDb != null) {
-              final tRows = await transDb.customSelect(
-                'SELECT para_id, line_id, translation '
-                'FROM sentences '
-                'WHERE book_id = ? AND para_id IN ($placeholders) '
-                'ORDER BY para_id, line_id',
-                variables: [
-                  Variable.withString(summary.book.bookId),
-                  ...matchingParaIds.map((id) => Variable.withInt(id)),
-                ],
-              ).get();
-              for (final row in tRows) {
-                final pid = row.data['para_id'] as int;
-                final lid = row.data['line_id'] as int;
-                final t = row.data['translation'] as String?;
-                if (t != null && t.isNotEmpty) {
-                  transLineMap.putIfAbsent(pid, () => {})[lid] = t;
+    // Fetch translations for those para_ids
+    final transLineMap = <int, Map<int, String>>{};
+    if (activeLang != null) {
+      try {
+        if (TranslationFilenameParser.isNissaya(activeLang)) {
+          final filename = TranslationFilenameParser.build(activeLang);
+          final nissayaDb = await _ref.read(
+            nissayaDbByFilenameProvider(filename).future,
+          );
+          if (nissayaDb != null) {
+            final perPara = await Future.wait(
+              matchingParaIds.map((pid) => nissayaDb.getSentences(bookId, pid)),
+            );
+            for (var i = 0; i < matchingParaIds.length; i++) {
+              final pid = matchingParaIds[i];
+              for (final s in perPara[i]) {
+                final t = s.formattedText;
+                if (t.isNotEmpty) {
+                  transLineMap.putIfAbsent(pid, () => {})[s.lineId] = t;
                 }
               }
             }
           }
-        } catch (_) {}
-      }
-
-      // Group lines by para_id and build SearchResultItems
-      final paraLines = <int, List<SearchResultLine>>{};
-      for (final row in lineRows) {
-        final pid = row.data['para_id'] as int;
-        final lid = row.data['line_id'] as int;
-        final pali = (row.data['pali'] as String?) ?? '';
-        final lineTranslations = transLineMap[pid] ?? {};
-        final lineTrans = lineTranslations[lid];
-
-        // Check if this line matches the search query (in Pali or translation).
-        // Both the line text and search words must be normalized through
-        // normalizePaliFuzzy so diacritics don't cause a mismatch — the
-        // FTS index stores normalized text, but the sentences table stores
-        // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
-        final paliNormalized = normalizePaliFuzzy(pali);
-        bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
-        if (!isMatch && lineTrans != null) {
-          final transNormalized = normalizePaliFuzzy(lineTrans);
-          isMatch = searchWords.any((w) => transNormalized.contains(w));
+        } else {
+          final transDb = await _ref.read(
+            translationDbProvider(activeLang).future,
+          );
+          if (transDb != null) {
+            final tRows = await transDb
+                .customSelect(
+                  'SELECT para_id, line_id, translation '
+                  'FROM sentences '
+                  'WHERE book_id = ? AND para_id IN ($placeholders) '
+                  'ORDER BY para_id, line_id',
+                  variables: [
+                    Variable.withString(bookId),
+                    ...matchingParaIds.map((id) => Variable.withInt(id)),
+                  ],
+                )
+                .get();
+            for (final row in tRows) {
+              final pid = row.data['para_id'] as int;
+              final lid = row.data['line_id'] as int;
+              final t = row.data['translation'] as String?;
+              if (t != null && t.isNotEmpty) {
+                transLineMap.putIfAbsent(pid, () => {})[lid] = t;
+              }
+            }
+          }
         }
+      } catch (_) {}
+    }
 
-        paraLines.putIfAbsent(pid, () => []).add(SearchResultLine(
-          lineId: lid,
-          pali: pali,
-          translation: lineTrans,
-          isMatch: isMatch,
-        ));
+    // Group lines by para_id and build SearchResultItems
+    final paraLines = <int, List<SearchResultLine>>{};
+    for (final row in lineRows) {
+      final pid = row.data['para_id'] as int;
+      final lid = row.data['line_id'] as int;
+      final pali = (row.data['pali'] as String?) ?? '';
+      final lineTranslations = transLineMap[pid] ?? {};
+      final lineTrans = lineTranslations[lid];
+
+      // Check if this line matches the search query (in Pali or translation).
+      // Both the line text and search words must be normalized through
+      // normalizePaliFuzzy so diacritics don't cause a mismatch — the
+      // FTS index stores normalized text, but the sentences table stores
+      // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
+      final paliNormalized = normalizePaliFuzzy(pali);
+      bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
+      if (!isMatch && lineTrans != null) {
+        final transNormalized = normalizePaliFuzzy(lineTrans);
+        isMatch = searchWords.any((w) => transNormalized.contains(w));
       }
 
-      // Build SearchResultItems — only include paras that had lines
-      final items = <SearchResultItem>[];
-      for (final pid in matchingParaIds) {
-        final lines = paraLines[pid];
-        if (lines == null || lines.isEmpty) continue;
+      paraLines
+          .putIfAbsent(pid, () => [])
+          .add(
+            SearchResultLine(
+              lineId: lid,
+              pali: pali,
+              translation: lineTrans,
+              isMatch: isMatch,
+            ),
+          );
+    }
 
-        final snippet = allSnippets[pid];
-        items.add(SearchResultItem(
-          bookId: summary.book.bookId,
+    // Build SearchResultItems — only include paras that had lines
+    final items = <SearchResultItem>[];
+    for (final pid in matchingParaIds) {
+      final lines = paraLines[pid];
+      if (lines == null || lines.isEmpty) continue;
+
+      final snippet = allSnippets[pid];
+      items.add(
+        SearchResultItem(
+          bookId: bookId,
           paraId: pid,
           lines: lines,
-          paliSnippet: snippet?.snippet.isNotEmpty == true ? snippet!.snippet : null,
-        ));
-      }
-
-      // Build updated summary with new page appended
-      final newLoadedPages = [...summary.loadedPages, items];
-      final newSummary = BookResultSummary(
-        book: summary.book,
-        totalCount: summary.totalCount,
-        isExpanded: true,
-        loadedPages: newLoadedPages,
+          paliSnippet: snippet?.snippet.isNotEmpty == true
+              ? snippet!.snippet
+              : null,
+        ),
       );
-
-      summaries[summaryIndex] = newSummary;
-      summary = newSummary;
-
-      state = SearchResults(
-        query: current.query,
-        totalResults: current.totalResults,
-        bookSummaries: summaries,
-        headings: current.headings,
-        distance: current.distance,
-        enabledCategories: _enabledCategories,
-        enabledNikayas: _enabledNikayas,
-      );
-
-      if (!fetchAll) break;
-      hasMore = !summary.fullyLoaded && items.length >= pageSize;
     }
+    return items;
   }
 
   /// Expand a book summary and load its first page of results.
@@ -827,14 +911,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
       }
 
       final allBooks = await _allBooks();
-      final bookMap = <String, BookInfo>{
-        for (final b in allBooks) b.bookId: b,
-      };
+      final bookMap = <String, BookInfo>{for (final b in allBooks) b.bookId: b};
       final activeLang = _activeTranslationLang();
-      final searchWords = normalizePaliFuzzy(query)
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
+      final searchWords = normalizePaliFuzzy(
+        query,
+      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
       // Sort books by id (stable, matches normal search ordering).
       final bookIds = grouped.keys.toList()
@@ -843,25 +924,28 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final summaries = <BookResultSummary>[];
       for (final bookId in bookIds) {
         final refs = grouped[bookId]!;
-        final book = bookMap[bookId] ??
+        final book =
+            bookMap[bookId] ??
             BookInfo(id: 0, bookId: bookId, bookName: bookId);
-        final items = <SearchResultItem>[];
-        for (final ref in refs) {
-          final item = await _buildAiResultItem(
-            ref: ref,
-            activeLang: activeLang,
-            searchWords: searchWords,
-          );
-          if (item != null) items.add(item);
-        }
+        final built = await Future.wait([
+          for (final ref in refs)
+            _buildAiResultItem(
+              ref: ref,
+              activeLang: activeLang,
+              searchWords: searchWords,
+            ),
+        ]);
+        final items = built.whereType<SearchResultItem>().toList();
         if (items.isEmpty) continue;
-        summaries.add(BookResultSummary(
-          book: book,
-          totalCount: items.length,
-          isExpanded: true,
-          loadedPages: [items],
-          forceFullyLoaded: true,
-        ));
+        summaries.add(
+          BookResultSummary(
+            book: book,
+            totalCount: items.length,
+            isExpanded: true,
+            loadedPages: [items],
+            forceFullyLoaded: true,
+          ),
+        );
       }
 
       state = SearchResults(
@@ -884,16 +968,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }) async {
     try {
       final epitakaDb = await _epitakaDb();
-      final lineRows = await epitakaDb.customSelect(
-        'SELECT para_id, line_id, pali '
-        'FROM sentences '
-        'WHERE book_id = ? AND para_id = ? '
-        'ORDER BY line_id',
-        variables: [
-          Variable.withString(ref.bookId),
-          Variable.withInt(ref.paraId),
-        ],
-      ).get();
+      final lineRows = await epitakaDb
+          .customSelect(
+            'SELECT para_id, line_id, pali '
+            'FROM sentences '
+            'WHERE book_id = ? AND para_id = ? '
+            'ORDER BY line_id',
+            variables: [
+              Variable.withString(ref.bookId),
+              Variable.withInt(ref.paraId),
+            ],
+          )
+          .get();
       if (lineRows.isEmpty) return null;
 
       // Translations for the same paragraph (best-effort).
@@ -902,11 +988,14 @@ class SearchNotifier extends StateNotifier<SearchState> {
         try {
           if (TranslationFilenameParser.isNissaya(activeLang)) {
             final filename = TranslationFilenameParser.build(activeLang);
-            final nissayaDb =
-                await _ref.read(nissayaDbByFilenameProvider(filename).future);
+            final nissayaDb = await _ref.read(
+              nissayaDbByFilenameProvider(filename).future,
+            );
             if (nissayaDb != null) {
-              final sentences =
-                  await nissayaDb.getSentences(ref.bookId, ref.paraId);
+              final sentences = await nissayaDb.getSentences(
+                ref.bookId,
+                ref.paraId,
+              );
               for (final s in sentences) {
                 final t = s.formattedText;
                 if (t.isNotEmpty) {
@@ -915,19 +1004,22 @@ class SearchNotifier extends StateNotifier<SearchState> {
               }
             }
           } else {
-            final transDb =
-                await _ref.read(translationDbProvider(activeLang).future);
+            final transDb = await _ref.read(
+              translationDbProvider(activeLang).future,
+            );
             if (transDb != null) {
-              final tRows = await transDb.customSelect(
-                'SELECT line_id, translation '
-                'FROM sentences '
-                'WHERE book_id = ? AND para_id = ? '
-                'ORDER BY line_id',
-                variables: [
-                  Variable.withString(ref.bookId),
-                  Variable.withInt(ref.paraId),
-                ],
-              ).get();
+              final tRows = await transDb
+                  .customSelect(
+                    'SELECT line_id, translation '
+                    'FROM sentences '
+                    'WHERE book_id = ? AND para_id = ? '
+                    'ORDER BY line_id',
+                    variables: [
+                      Variable.withString(ref.bookId),
+                      Variable.withInt(ref.paraId),
+                    ],
+                  )
+                  .get();
               for (final row in tRows) {
                 final t = row.data['translation'] as String?;
                 if (t != null && t.isNotEmpty) {
@@ -946,15 +1038,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
         final paliNormalized = normalizePaliFuzzy(pali);
         bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
         if (!isMatch && lineTrans != null) {
-          isMatch =
-              searchWords.any((w) => normalizePaliFuzzy(lineTrans).contains(w));
+          isMatch = searchWords.any(
+            (w) => normalizePaliFuzzy(lineTrans).contains(w),
+          );
         }
-        lines.add(SearchResultLine(
-          lineId: row.data['line_id'] as int,
-          pali: pali,
-          translation: lineTrans,
-          isMatch: isMatch,
-        ));
+        lines.add(
+          SearchResultLine(
+            lineId: row.data['line_id'] as int,
+            pali: pali,
+            translation: lineTrans,
+            isMatch: isMatch,
+          ),
+        );
       }
 
       if (lines.isEmpty) return null;
@@ -973,10 +1068,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// A cached heading row with its [normalizePaliFuzzy]-normalised title
   /// precomputed, so heading search scans the full list in memory without
   /// re-normalising on every keystroke. The headings table is static per
-  /// database file, so the cache is safe for a whole session (invalidated
-  /// in [clear]).
-  List<({String bookId, int paraId, int? level, String title, String key})>?
-      _cachedHeadings;
+  /// database file, so the cache is safe for a whole session.
+  List<RawHeading>? _cachedHeadings;
 
   /// Diacritic-insensitive heading search.
   ///
@@ -988,65 +1081,57 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// every heading title is normalised with the same [normalizePaliFuzzy]
   /// pipeline used for search terms, and a heading matches when every query
   /// word (also normalised) occurs inside it.
-  Future<List<HeadingResult>> _searchHeadings(
-    EpitakaDatabase epitakaDb,
+  List<HeadingResult> _filterHeadings(
+    List<RawHeading> headings,
     String normalized,
     Map<String, BookInfo> bookMap,
-  ) async {
-    try {
-      // Clean punctuation the same way the FTS query is cleaned, then split
-      // into words — each word must occur somewhere in the heading title.
-      final cleaned = cleanPaliForIndexing(normalized);
-      if (cleaned.isEmpty) return [];
-      final words = normalizePaliFuzzy(cleaned)
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-      if (words.isEmpty) return [];
+  ) {
+    // Clean punctuation the same way the FTS query is cleaned, then split
+    // into words — each word must occur somewhere in the heading title.
+    final cleaned = cleanPaliForIndexing(normalized);
+    if (cleaned.isEmpty) return [];
+    final words = normalizePaliFuzzy(
+      cleaned,
+    ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty || headings.isEmpty) return [];
 
-      final headings = await _allHeadings(epitakaDb);
-      if (headings.isEmpty) return [];
-
-      final results = <HeadingResult>[];
-      final seen = <String>{};
-      for (final h in headings) {
-        if (h.key.isEmpty) continue;
-        var matches = true;
-        for (final word in words) {
-          if (!h.key.contains(word)) {
-            matches = false;
-            break;
-          }
+    final results = <HeadingResult>[];
+    final seen = <String>{};
+    for (final h in headings) {
+      if (h.key.isEmpty) continue;
+      var matches = true;
+      for (final word in words) {
+        if (!h.key.contains(word)) {
+          matches = false;
+          break;
         }
-        if (!matches) continue;
+      }
+      if (!matches) continue;
 
-        // Deduplicate by book_id + title to avoid showing the same
-        // heading multiple times (e.g. when multiple para_ids match).
-        final key = '${h.bookId}:${h.title}';
-        if (seen.contains(key)) continue;
-        seen.add(key);
+      // Deduplicate by book_id + title to avoid showing the same
+      // heading multiple times (e.g. when multiple para_ids match).
+      final key = '${h.bookId}:${h.title}';
+      if (seen.contains(key)) continue;
+      seen.add(key);
 
-        final book = bookMap[h.bookId];
-        results.add(HeadingResult(
+      final book = bookMap[h.bookId];
+      results.add(
+        HeadingResult(
           bookId: h.bookId,
           paraId: h.paraId,
           title: h.title,
           level: h.level,
           bookName: book?.bookName,
-        ));
-        if (results.length >= 10) break;
-      }
-      return results;
-    } catch (e) {
-      debugPrint('[SEARCH] Headings search failed: $e');
-      return [];
+        ),
+      );
+      if (results.length >= 10) break;
     }
+    return results;
   }
 
   /// Load every row of the `headings` table once, caching it in memory so
   /// repeated searches don't re-query the database.
-  Future<List<({String bookId, int paraId, int? level, String title, String key})>>
-      _allHeadings(EpitakaDatabase epitakaDb) async {
+  Future<List<RawHeading>> _allHeadings(EpitakaDatabase epitakaDb) async {
     final cached = _cachedHeadings;
     if (cached != null) return cached;
 
@@ -1054,24 +1139,25 @@ class SearchNotifier extends StateNotifier<SearchState> {
     // (122k of them in the real corpus — "1", "2", …), not titles a user
     // would search for, and they'd flood the results. The app's section
     // logic (`level < 10`) uses the same rule to identify real titles.
-    final rows = await epitakaDb.customSelect(
-      'SELECT book_id, para_id, title, level '
-      'FROM headings '
-      'WHERE level IS NULL OR level < 10 '
-      'ORDER BY book_id, para_id',
-    ).get();
+    final rows = await epitakaDb
+        .customSelect(
+          'SELECT book_id, para_id, title, level '
+          'FROM headings '
+          'WHERE level IS NULL OR level < 10 '
+          'ORDER BY book_id, para_id',
+        )
+        .get();
 
-    final headings =
-        <({String bookId, int paraId, int? level, String title, String key})>[
-          for (final row in rows)
-            (
-              bookId: row.data['book_id'] as String,
-              paraId: row.data['para_id'] as int,
-              title: (row.data['title'] as String?) ?? '',
-              level: row.data['level'] as int?,
-              key: normalizePaliFuzzy((row.data['title'] as String?) ?? ''),
-            ),
-        ];
+    final headings = <RawHeading>[
+      for (final row in rows)
+        (
+          bookId: row.data['book_id'] as String,
+          paraId: row.data['para_id'] as int,
+          title: (row.data['title'] as String?) ?? '',
+          level: row.data['level'] as int?,
+          key: normalizePaliFuzzy((row.data['title'] as String?) ?? ''),
+        ),
+    ];
     // Don't cache an empty result — a concurrent database swap may have
     // raced this query; an empty cache would poison every later search.
     if (headings.isNotEmpty) {
@@ -1085,11 +1171,21 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Only returns suggestions once the prefix is at least
   /// [kSearchSuggestionMinLength] characters — short prefixes are too
   /// ambiguous to suggest from.
+  final Map<String, List<SearchSuggestion>> _suggestionCache = {};
+
   Future<List<SearchSuggestion>> getSuggestions(String prefix) async {
     if (prefix.trim().length < kSearchSuggestionMinLength) return [];
+    final key = prefix.trim().toLowerCase();
+    final cached = _suggestionCache[key];
+    if (cached != null) return cached;
     try {
       final appDb = await _ref.read(appDbProvider.future);
-      return appDb.getSearchSuggestions(prefix, limit: 10);
+      final result = await appDb.getSearchSuggestions(prefix, limit: 10);
+      while (_suggestionCache.length >= 100) {
+        _suggestionCache.remove(_suggestionCache.keys.first);
+      }
+      _suggestionCache[key] = result;
+      return result;
     } catch (_) {
       return [];
     }
@@ -1097,9 +1193,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   /// Clear the search state.
   void clear() {
+    _searchGen++;
     _debounce?.cancel();
-    _cachedAllBooks = null;
-    _cachedHeadings = null;
     _enabledCategories = {...kAllCategories};
     _enabledNikayas = {...kAllNikayas};
     state = const SearchIdle();
@@ -1116,11 +1211,7 @@ class AiPassageRef {
   /// Optional display text (Pāli) captured from the tool result.
   final String? text;
 
-  const AiPassageRef({
-    required this.bookId,
-    required this.paraId,
-    this.text,
-  });
+  const AiPassageRef({required this.bookId, required this.paraId, this.text});
 }
 
 final expandSearchResultsProvider = StateProvider<bool>((ref) => true);

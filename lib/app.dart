@@ -134,6 +134,7 @@ class EpitakaApp extends ConsumerStatefulWidget {
 class _EpitakaAppState extends ConsumerState<EpitakaApp> {
   late final GoRouter _router;
   final _updateService = AppUpdateService();
+  bool _updateCheckDone = false;
 
   /// Passed to GoRouter (see `buildRouter`) so AppShortcuts can resolve a
   /// BuildContext that's under MaterialApp/GoRouter at invocation time —
@@ -179,8 +180,13 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
   }
 
   Future<void> _checkForDesktopUpdate() async {
+    if (_updateCheckDone) return;
+    _updateCheckDone = true;
     try {
-      final update = await _updateService.checkForUpdate();
+      final dismissed = await _updateService.getDismissedVersion();
+      final update = await _updateService.checkForUpdate(
+        dismissedVersion: dismissed,
+      );
       if (!mounted || update == null) return;
       final context = _navigatorKey.currentContext;
       if (context == null || !context.mounted) return;

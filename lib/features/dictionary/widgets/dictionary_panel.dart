@@ -51,6 +51,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   // Submitted word (meanings shown) vs live draft (suggestions only).
   String _query = '';
   String _draft = '';
+  double? _normProgress;
   final List<String> _searchHistory = [];
 
   /// The last selection made inside the results, tracked via the
@@ -73,6 +74,24 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
         if (mounted) _focusNode.requestFocus();
       });
     }
+    _attachNormProgress();
+  }
+
+  void _attachNormProgress() {
+    ref
+        .read(dpdDictionaryDbProvider.future)
+        .then((db) {
+          if (!mounted || db.isNormReady) return;
+          final current = db.normBuildProgress;
+          if (current != null && current < 1) {
+            setState(() => _normProgress = current);
+          }
+          db.onNormProgress = (p) {
+            if (!mounted) return;
+            setState(() => _normProgress = p >= 1 ? null : p);
+          };
+        })
+        .catchError((_) {});
   }
 
   @override
@@ -330,6 +349,37 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             onSubmitted: _performSearch,
           ),
         ),
+
+        if (_normProgress != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimensions.sm,
+              6,
+              AppDimensions.sm,
+              0,
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    value: _normProgress! > 0 ? _normProgress : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    loc.preparing,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // Search history chips
         if (_searchHistory.isNotEmpty)

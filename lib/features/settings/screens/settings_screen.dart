@@ -17,6 +17,7 @@ import '../../mcp/widgets/mcp_settings_tile.dart';
 import '../widgets/index_progress_screen.dart';
 import '../widgets/tiles/reset_data_tile.dart';
 import '../widgets/tiles/storage_location_tile.dart';
+import '../widgets/about_dialog.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
@@ -310,7 +311,11 @@ class SettingsSystemSection extends ConsumerWidget {
         ),
         const StorageLocationTile(),
         ResetDataTile(),
-        _SettingsTile(icon: Icons.info, title: loc.about, onTap: () {}),
+        _SettingsTile(
+          icon: Icons.info,
+          title: loc.about,
+          onTap: () => showEpitakaAboutDialog(context),
+        ),
       ],
     );
   }

@@ -88,7 +88,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // Detect multi-word and auto-set distance=3 when second word is typed
     final wordCount = effectiveValue.trim().isEmpty
         ? 0
-        : effectiveValue.trim().split(RegExp(r'\\s+')).length;
+        : effectiveValue.trim().split(RegExp(r'\s+')).length;
     if (wordCount >= 2 && !_isMultiWord) {
       setState(() {
         _isMultiWord = true;
