@@ -35,7 +35,7 @@ class _BookResultGroupState extends ConsumerState<BookResultGroup> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,14 +93,16 @@ class _BookResultGroupState extends ConsumerState<BookResultGroup> {
         ),
         // Results
         if (_expanded)
-          ...widget.results.map((result) => Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: SearchResultItemTile(
-                  result: result,
-                  searchQuery: widget.searchQuery,
-                  onTap: () => widget.onResultTap(result),
-                ),
-              )),
+          ...widget.results.map(
+            (result) => Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: SearchResultItemTile(
+                result: result,
+                searchQuery: widget.searchQuery,
+                onTap: () => widget.onResultTap(result),
+              ),
+            ),
+          ),
         Divider(
           height: 1,
           color: colors.outlineVariant.withValues(alpha: 0.5),

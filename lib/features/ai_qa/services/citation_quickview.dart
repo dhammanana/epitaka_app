@@ -26,22 +26,30 @@ Future<void> showCitationQuickview(
   HapticFeedback.mediumImpact();
 
   try {
-    // 1–4. Load the cited paragraph's excerpt (heading title + Pāli +
-    // translation lines) via the shared loader used by every quickview.
+    // Load the cited paragraph plus surrounding context so single-sentence
+    // paragraphs don't show as a 1-line excerpt. Highlight/scroll still
+    // target the exact cited paragraph.
+    final startPara = (paraId - 2).clamp(1, paraId);
     final data = await loadParagraphPreview(
       ref,
       bookId: bookId,
-      paraId: paraId,
+      paraId: startPara,
+      paraEnd: paraId + 2,
+      titleParaId: paraId,
+      targetParaId: paraId,
+      targetLineId: lineId,
     );
-    final headingTitle = data.headingTitle;
+    final headingTitle = isNumericOnlyTitle(data.headingTitle)
+        ? ''
+        : data.headingTitle;
     final previewLines = data.lines;
 
     if (previewLines.isEmpty) {
       if (context.mounted) {
         final loc = AppLocalizations.of(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(loc.passageNotFound)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(loc.passageNotFound)));
       }
       return;
     }
@@ -53,7 +61,8 @@ Future<void> showCitationQuickview(
     // highlight only that line. When the cited line isn't in the loaded
     // range (e.g. a hallucinated number), fall back to the paragraph-wide
     // highlight instead of highlighting nothing.
-    final hasExactCitedLine = lineId != null &&
+    final hasExactCitedLine =
+        lineId != null &&
         previewLines.any((l) => l.paraId == paraId && l.lineId == lineId);
     // Build footer showing the line range (e.g. "§5:3-7").
     final String? footer = lineIdTo != null
@@ -92,9 +101,9 @@ Future<void> showCitationQuickview(
   } catch (e) {
     if (context.mounted) {
       final loc = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${loc.couldNotLoadPreviewMsg}$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${loc.couldNotLoadPreviewMsg}$e')),
+      );
     }
   }
 }

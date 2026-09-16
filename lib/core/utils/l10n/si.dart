@@ -39,7 +39,6 @@ const Map<String, String> si = {
   'sentences': 'වාක්‍ය',
   'results': 'ප්‍රතිඵල',
   'Loading…': 'පූරණය වෙමින්…',
-  'files': 'ගොනු',
   'Manage translation databases: download, update, and delete.':
       'පරිවර්තන දත්ත සමුදායන් කළමනාකරණය කරන්න: බාගැනීම, යාවත්කාලීන කිරීම සහ මකා දැමීම.',
   'Pāli': 'පාලි',
@@ -244,23 +243,8 @@ const Map<String, String> si = {
   'Update check complete.': 'යාවත්කාලීන පරීක්ෂාව සම්පූර්ණයි.',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'TTS එන්ජිම',
-  'Voice': 'හඬ',
   'Speed': 'වේගය',
   'Pitch': 'තාරතාවය',
-  'Engine': 'එන්ජිම',
-  'System TTS': 'පද්ධති TTS',
-  'Platform-native text-to-speech (fast, no download)':
-      'වේදිකා-ස්වදේශික පෙළ-සිට-කථනය (වේගවත්, බාගැනීම අවශ්‍ය නැත)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'භාෂා 31ක් සහිත ස්නායු TTS (~මෙ.බ. 400 ආකෘති බාගැනීම)',
-  'Model Download': 'ආකෘති බාගැනීම',
-  'Models Installed': 'ආකෘති ස්ථාපනය කර ඇත',
-  'TTS Models': 'TTS ආකෘති',
-  'All models are ready for use': 'සියලුම ආකෘති භාවිතයට සූදානම්',
-  'Requires ~400 MB download for neural TTS':
-      'ස්නායු TTS සඳහා ~මෙ.බ. 400ක බාගැනීමක් අවශ්‍යයි',
   'Speaking Rate': 'කථන වේගය',
   'Low': 'අඩු',
   'High': 'ඉහළ',
@@ -274,16 +258,8 @@ const Map<String, String> si = {
   'Paused': 'විරාමයි',
   'Tap resume to continue': 'දිගටම කිරීමට නැවත ආරම්භ කරන්න තට්ටු කරන්න',
   'Preparing audio…': 'ශ්‍රව්‍ය සූදානම් කරමින්…',
-  'Voice Style': 'හඬ රටාව',
   'System Default': 'පද්ධති පෙරනිමිය',
   'Config': 'වින්‍යාසය',
-  'TTS Language': 'TTS භාෂාව',
-  'Quality': 'ගුණාත්මකභාවය',
-  'Synthesis quality — higher sounds better but is slower':
-      'සංශ්ලේෂණ ගුණාත්මකභාවය — ඉහළ නම් හඬ වඩා හොඳයි, නමුත් මන්දගාමී',
-  'Medium': 'මධ්‍යම',
-  'Follows the reading language (first enabled translation)':
-      'කියවීමේ භාෂාව අනුගමනය කරයි (සක්‍රීය කළ පළමු පරිවර්තනය)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

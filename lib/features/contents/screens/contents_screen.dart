@@ -105,10 +105,11 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
     final viewportHeight = _scrollController.position.viewportDimension;
     // Offset so the target row lands in the middle of the visible area,
     // not pinned to the very top.
-    final target = (index * estimatedItemHeight -
-            (viewportHeight / 2) +
-            (estimatedItemHeight / 2))
-        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    final target =
+        (index * estimatedItemHeight -
+                (viewportHeight / 2) +
+                (estimatedItemHeight / 2))
+            .clamp(0.0, _scrollController.position.maxScrollExtent);
     _scrollController.jumpTo(target);
   }
 
@@ -177,9 +178,9 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
     final result = query.isNotEmpty
         ? [
             for (var i = 0; i < headings.length; i++)
-              if (normalizePaliFuzzy(headings[i].title ?? '')
-                  .toLowerCase()
-                  .contains(query))
+              if (normalizePaliFuzzy(
+                headings[i].title ?? '',
+              ).toLowerCase().contains(query))
                 i,
           ]
         : [
@@ -222,11 +223,15 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
     // within the existing tab (updating its initialParaId) rather than
     // creating a duplicate — so there's no need to branch on whether one
     // already exists.
-    ref.read(readerTabsProvider.notifier).openTab(ReaderTabInfo(
-          bookId: widget.bookId,
-          bookName: widget.bookName,
-          initialParaId: heading.paraId,
-        ));
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
+          ReaderTabInfo(
+            bookId: widget.bookId,
+            bookName: widget.bookName,
+            initialParaId: heading.paraId,
+          ),
+        );
     context.pop();
   }
 
@@ -239,8 +244,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
     return Scaffold(
       body: contentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, stack) =>
-            Center(child: Text(loc.errorMessage('$e'))),
+        error: (e, stack) => Center(child: Text(loc.errorMessage('$e'))),
         data: (headings) {
           final currentIndex = _currentHeadingIndex(headings);
 
@@ -316,8 +320,9 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                           final isCurrent = index == currentIndex;
                           final hasChildren =
                               query.isEmpty && _hasChildren(index, headings);
-                          final isCollapsed =
-                              _collapsedParaIds.contains(heading.paraId);
+                          final isCollapsed = _collapsedParaIds.contains(
+                            heading.paraId,
+                          );
 
                           return _ContentsRow(
                             heading: heading,
@@ -455,7 +460,7 @@ class _ContentsRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     return Padding(
       padding: EdgeInsets.only(left: indent * indentUnit),
@@ -470,12 +475,7 @@ class _ContentsRow extends ConsumerWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              leftPadding,
-              12,
-              AppDimensions.md,
-              12,
-            ),
+            padding: EdgeInsets.fromLTRB(leftPadding, 12, AppDimensions.md, 12),
             child: Row(
               children: [
                 if (hasChildren)
@@ -499,8 +499,7 @@ class _ContentsRow extends ConsumerWidget {
                     script,
                     style: AppTypography.headlineSmall.copyWith(
                       color: isCurrent ? colors.primary : colors.onSurface,
-                      fontWeight:
-                          isCurrent ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),

@@ -66,7 +66,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final activeTab = ref.watch(readerTabsProvider.select((s) => s.activeTab));
 
     if (activeTab == null) {

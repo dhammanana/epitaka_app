@@ -6,7 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// translation DBs, AI models, and Gavesana assets.
 ///
 /// Uses a single ongoing notification per download "family" (translations,
-/// supertonic, gavesana) that gets updated with progress and dismissed on
+/// gavesana) that gets updated with progress and dismissed on
 /// completion.  On Android this satisfies the
 /// `FOREGROUND_SERVICE_DATA_SYNC` requirement for Google Play compliance
 /// and gives the user a visible, cancellable download indicator.
@@ -28,7 +28,6 @@ class DownloadNotificationService {
   // Notification IDs — keep them distinct so channels don't collide.
   static const int _translationNotificationId = 1001;
   static const int _gavesanaNotificationId = 1002;
-  static const int _supertonicNotificationId = 1003;
   static const int _translatorRunNotificationId = 1004;
   static const int _indexBuildNotificationId = 1005;
 
@@ -150,55 +149,6 @@ class DownloadNotificationService {
 
   void dismissGavesana() {
     _safeCancel(_gavesanaNotificationId);
-  }
-
-  // ── Supertonic TTS model download notifications ─────────────────────
-
-  void showSupertonicProgress({
-    required double progress,
-    required bool isIndeterminate,
-    String? currentFile,
-    int filesDone = 0,
-    int filesTotal = 0,
-  }) {
-    final title = filesTotal > 0
-        ? 'Downloading TTS voice ($filesDone/$filesTotal)'
-        : 'Downloading TTS voice…';
-    final body = currentFile != null ? 'File: $currentFile' : null;
-    _showProgressNotification(
-      id: _supertonicNotificationId,
-      channelId: 'download_supertonic',
-      channelName: 'TTS Voice Downloads',
-      title: title,
-      body: body,
-      progress: progress,
-      isIndeterminate: isIndeterminate,
-      ongoing: true,
-    );
-  }
-
-  void showSupertonicComplete() {
-    _showDoneNotification(
-      id: _supertonicNotificationId,
-      channelId: 'download_supertonic',
-      channelName: 'TTS Voice Downloads',
-      title: 'TTS voice ready',
-      body: 'High-quality TTS model downloaded.',
-    );
-  }
-
-  void showSupertonicError(String error) {
-    _showErrorNotification(
-      id: _supertonicNotificationId,
-      channelId: 'download_supertonic',
-      channelName: 'TTS Voice Downloads',
-      title: 'TTS voice download failed',
-      body: error,
-    );
-  }
-
-  void dismissSupertonic() {
-    _safeCancel(_supertonicNotificationId);
   }
 
   // ── Translation Builder run notifications ───────────────────────────

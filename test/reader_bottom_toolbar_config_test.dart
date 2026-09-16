@@ -40,7 +40,7 @@ void main() {
       onStopTap: () {},
       onBookmarkTap: () {},
       onAnnotationsTap: () {},
-      onSummarizeTap: () {},
+      onAiAskTap: () {},
     );
   }
 
@@ -63,7 +63,7 @@ void main() {
     expect(find.byIcon(Icons.volume_up), findsOneWidget);
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
     expect(find.byIcon(Icons.edit_note), findsOneWidget);
-    expect(find.byIcon(Icons.summarize_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
 
     // Default order: contents before jump, jump before bookmark.
     final contentsY = tester
@@ -75,15 +75,13 @@ void main() {
     expect(jumpX, lessThan(bookmarkX));
   });
 
-  testWidgets('default config hides bookmark/summarize (off by default)', (
-    tester,
-  ) async {
+  testWidgets('default config hides bookmark (off by default)', (tester) async {
     await tester.pumpWidget(wrap(toolbar()));
     await tester.pump();
 
     expect(find.byIcon(Icons.format_list_bulleted), findsOneWidget);
     expect(find.byIcon(Icons.bookmark), findsNothing);
-    expect(find.byIcon(Icons.summarize_outlined), findsNothing);
+    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
   });
 
   testWidgets('disabled items are hidden, enabled order is preserved', (
@@ -121,7 +119,7 @@ void main() {
   testWidgets('flat status bar skips actions it does not wire up', (
     tester,
   ) async {
-    // Flat mode only wires jump/display/listen/bookmark/summarize (like the
+    // Flat mode only wires jump/display/listen/bookmark/aiAsk (like the
     // desktop status bar) — contents/outline/search/dictionary/annotations
     // must be skipped even though they're enabled in the config.
     final flatToolbar = ReaderBottomToolbar(
@@ -136,7 +134,7 @@ void main() {
       onListenTap: () {},
       onStopTap: () {},
       onBookmarkTap: () {},
-      onSummarizeTap: () {},
+      onAiAskTap: () {},
     );
 
     await tester.pumpWidget(wrap(flatToolbar));
@@ -151,7 +149,7 @@ void main() {
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
     expect(find.byIcon(Icons.volume_up), findsOneWidget);
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
-    expect(find.byIcon(Icons.summarize_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
   });
 
   testWidgets('all actions disabled renders nothing', (tester) async {

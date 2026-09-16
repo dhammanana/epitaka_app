@@ -408,7 +408,7 @@ class _OpenTabCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     // Look up nearest heading title
     final headingAsync = tab.currentParaId != null
@@ -679,7 +679,7 @@ class _BookmarkCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final displayName = bookmark.name ?? '';
 
     // Look up nearest heading title

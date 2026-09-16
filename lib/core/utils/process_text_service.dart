@@ -20,8 +20,8 @@ class ProcessTextApp {
 
   factory ProcessTextApp.fromMap(Map<dynamic, dynamic> map) {
     return ProcessTextApp(
-      packageName: map['packageName'] as String? ?? '',
-      label: map['label'] as String? ?? '',
+      packageName: '${map['packageName'] ?? ''}',
+      label: '${map['label'] ?? ''}',
     );
   }
 }
@@ -35,19 +35,40 @@ class ProcessTextService {
 
   /// Queries installed apps that can process selected text.
   /// Returns an empty list on non-Android platforms or on failure.
+  /// Never throws — callers can treat an empty result as "none found".
   static Future<List<ProcessTextApp>> queryApps() async {
     if (!isSupported) return const [];
     try {
-      final raw = await _channel.invokeMethod<List<dynamic>>(
-        'queryProcessTextApps',
+      // Untyped call: a strict `invokeMethod<List<dynamic>>` throws a
+      // TypeError when the codec decodes the payload with a different
+      // generic shape (e.g. `List<Object?>`), which used to surface here
+      // as a silently empty list.
+      final raw = await _channel.invokeMethod('queryProcessTextApps');
+      if (raw is! List) return const [];
+      final apps = <ProcessTextApp>[];
+      for (final entry in raw) {
+        if (entry is! Map) continue;
+        final app = ProcessTextApp.fromMap(
+          entry.map((k, v) => MapEntry('$k', v)),
+        );
+        if (app.packageName.isEmpty) continue;
+        if (app.label.isEmpty) {
+          apps.add(
+            ProcessTextApp(
+              packageName: app.packageName,
+              label: app.packageName,
+            ),
+          );
+        } else {
+          apps.add(app);
+        }
+      }
+      apps.sort(
+        (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
       );
-      if (raw == null) return const [];
-      return raw
-          .whereType<Map<dynamic, dynamic>>()
-          .map(ProcessTextApp.fromMap)
-          .where((a) => a.packageName.isNotEmpty)
-          .toList();
-    } catch (_) {
+      return apps;
+    } catch (e) {
+      debugPrint('ProcessTextService.queryApps failed: $e');
       return const [];
     }
   }

@@ -39,7 +39,6 @@ const Map<String, String> lo = {
   'sentences': 'ປະໂຫຍກ',
   'results': 'ຜົນລັບ',
   'Loading…': 'ກຳລັງໂຫລດ…',
-  'files': 'ໄຟລ໌',
   'Manage translation databases: download, update, and delete.':
       'ຈັດການຖານຂໍ້ມູນການແປ: ດາວໂຫລດ, ອັບເດດ, ແລະລຶບ.',
   'Pāli': 'ບາລີ',
@@ -238,23 +237,8 @@ const Map<String, String> lo = {
   'Update check complete.': 'ການກວດສອບອັບເດດສຳເລັດແລ້ວ.',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'ເອັນຈິນ TTS',
-  'Voice': 'ສຽງ',
   'Speed': 'ຄວາມໄວ',
   'Pitch': 'ລະດັບສຽງ',
-  'Engine': 'ເອັນຈິນ',
-  'System TTS': 'TTS ຂອງລະບົບ',
-  'Platform-native text-to-speech (fast, no download)':
-      'ຂໍ້ຄວາມເປັນສຽງເວົ້າໃນຕົວແພລດຟອມ (ໄວ, ບໍ່ຕ້ອງດາວໂຫລດ)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'TTS ແບບນິວຣອນ ຮອງຮັບ 31 ພາສາ (ດາວໂຫລດໂມເດວ ~400 MB)',
-  'Model Download': 'ດາວໂຫລດໂມເດວ',
-  'Models Installed': 'ຕິດຕັ້ງໂມເດວແລ້ວ',
-  'TTS Models': 'ໂມເດວ TTS',
-  'All models are ready for use': 'ໂມເດວທັງໝົດພ້ອມໃຊ້ງານ',
-  'Requires ~400 MB download for neural TTS':
-      'ຕ້ອງການດາວໂຫລດປະມານ 400 MB ສຳລັບ TTS ແບບນິວຣອນ',
   'Speaking Rate': 'ອັດຕາການເວົ້າ',
   'Low': 'ຕ່ຳ',
   'High': 'ສູງ',
@@ -268,16 +252,8 @@ const Map<String, String> lo = {
   'Paused': 'ຢຸດຊົ່ວຄາວ',
   'Tap resume to continue': 'ແຕະຫຼິ້ນຕໍ່ເພື່ອດຳເນີນຕໍ່',
   'Preparing audio…': 'ກຳລັງກະກຽມສຽງ…',
-  'Voice Style': 'ຮູບແບບສຽງ',
   'System Default': 'ຄ່າເລີ່ມຕົ້ນຂອງລະບົບ',
   'Config': 'ການຕັ້ງຄ່າ',
-  'TTS Language': 'ພາສາ TTS',
-  'Quality': 'ຄຸນນະພາບ',
-  'Synthesis quality — higher sounds better but is slower':
-      'ຄຸນນະພາບການສັງເຄາະສຽງ — ຍິ່ງສູງສຽງຍິ່ງດີແຕ່ຊ້າລົງ',
-  'Medium': 'ປານກາງ',
-  'Follows the reading language (first enabled translation)':
-      'ຕາມພາສາທີ່ອ່ານ (ການແປທຳອິດທີ່ເປີດໃຊ້)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

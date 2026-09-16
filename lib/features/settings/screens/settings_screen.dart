@@ -50,6 +50,10 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppDimensions.lg),
 
           // Sections
+          const SettingsAccountSection(),
+
+          const SizedBox(height: AppDimensions.md),
+
           const SettingsGeneralSection(),
 
           const SizedBox(height: AppDimensions.md),
@@ -80,6 +84,12 @@ class SettingsScreen extends ConsumerWidget {
                 icon: Icons.download,
                 title: loc.translationsDownloads,
                 onTap: () => context.push('/settings/translation'),
+              ),
+              _SettingsTile(
+                icon: Icons.menu_book,
+                title: loc.dictionarySettings,
+                subtitle: loc.dictionarySettingsSubtitle,
+                onTap: () => context.push('/settings/dictionary'),
               ),
             ],
           ),
@@ -131,28 +141,8 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: AppDimensions.md),
 
-          // ── Dictionaries ────────────────────────────────────────────
-          SettingsSection(
-            title: loc.dictionaries,
-            colors: colors,
-            children: [
-              _SettingsTile(
-                icon: Icons.menu_book,
-                title: loc.dictionarySettings,
-                subtitle: loc.dictionarySettingsSubtitle,
-                onTap: () => context.push('/settings/dictionary'),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: AppDimensions.md),
-
           // ── Vīmaṃsā (AI Q&A + Gavesana) ────────────────────────────
           const SettingsAiSection(),
-
-          const SizedBox(height: AppDimensions.md),
-
-          const SettingsAccountSection(),
 
           const SizedBox(height: AppDimensions.md),
 

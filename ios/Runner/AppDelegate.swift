@@ -85,6 +85,11 @@ import NaturalLanguage
         let language = args["language"] as? String
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let needsCompletion = args["needsCompletion"] as? Bool ?? false
+        // Dart sends 0.5 = normal (1x), 1.0 = 2x, 1.5 = 3x. AVSpeech clamps
+        // to [min, max] (max == 2x equivalent).
+        let requestedRate = (args["rate"] as? NSNumber)?.doubleValue ?? Double(AVSpeechUtteranceDefaultSpeechRate)
+        let clampedRate = min(max(requestedRate, Double(AVSpeechUtteranceMinimumSpeechRate)), Double(AVSpeechUtteranceMaximumSpeechRate))
+        let speedFactor = max(0.25, clampedRate / Double(AVSpeechUtteranceDefaultSpeechRate))
 
         DispatchQueue.main.async {
           if self.speechSynthesizer.isSpeaking {
@@ -103,7 +108,7 @@ import NaturalLanguage
               // Standard iOS speech is ~150-180 wpm (~2.7 words/sec, ~14 chars/sec)
               let wordDuration = Double(max(1, words)) / 2.7
               let charDuration = Double(max(1, charCount)) / 14.0
-              let estimatedDuration = max(0.8, max(wordDuration, charDuration) + 0.35)
+              let estimatedDuration = max(0.8, (max(wordDuration, charDuration) + 0.35) / speedFactor)
 
               self.accessibilitySpeakTimer?.invalidate()
               self.accessibilitySpeakTimer = Timer.scheduledTimer(withTimeInterval: estimatedDuration, repeats: false) { [weak self] _ in
@@ -121,6 +126,7 @@ import NaturalLanguage
           self.ensureAudioSession()
 
           let utterance = AVSpeechUtterance(string: trimmedText)
+          utterance.rate = Float(clampedRate)
           let voiceIdentifier = args["voiceIdentifier"] as? String
           if let vid = voiceIdentifier, !vid.isEmpty,
              let pinned = AVSpeechSynthesisVoice.speechVoices().first(where: { $0.identifier == vid }) {

@@ -36,11 +36,11 @@ import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
-import '../services/reader_ai_service.dart';
 import '../utils/reader_word_hit_test.dart' show ReaderWordHitResult;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
+import '../widgets/reader_ai_sheet.dart';
 import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
 import '../widgets/reader_content_with_selection.dart';
@@ -356,13 +356,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _onBookmarkTap(activeTab, _toolbarReaderState(activeTab));
   }
 
-  /// Summarize the current chapter with AI (Vīmaṃsā). Shared by the mobile
-  /// pill toolbar and the desktop status bar (via [onSummarizeTap]).
-  void _handleToolbarSummarize() {
+  /// Ask Vīmaṃsā AI about the current section. Shared by the mobile pill
+  /// toolbar and the desktop status bar (via [ReaderToolbarController]).
+  /// Mobile shows a bottom sheet, desktop a dialog — both embed the shared
+  /// Vīmaṃsā chat with the section attached as context.
+  void _handleToolbarAiAsk() {
     final activeTab = _toolbarActiveTab();
     if (activeTab == null) return;
     final readerState = _toolbarReaderState(activeTab);
-    ReaderAiService.stageChapterSummaryPrompt(
+    showReaderAiSheet(
       context: context,
       ref: ref,
       activeTab: activeTab,
@@ -1109,6 +1111,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onListen: _handleToolbarListen,
       onStop: _handleToolbarStop,
       onBookmark: _handleToolbarBookmark,
+      onAiAsk: _handleToolbarAiAsk,
     );
 
     // ── Detect tab switch and start timing ───────────────────────────
@@ -1319,6 +1322,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
         ? ttsReadingState.currentParaId
         : null;
+    final ttsCurrentIsPali =
+        _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
+        ? ttsReadingState.currentIsPali
+        : null;
 
     // ── Keyboard-navigation cleanup on tab close ──────────────────
     // Drop the bridge registrations for books that are no longer open (the
@@ -1527,6 +1534,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         langTypographies,
                         ttsCurrentLineId,
                         ttsCurrentParaId,
+                        ttsCurrentIsPali,
                         initialScrollIdx,
                       ),
                     ),
@@ -1621,7 +1629,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             onStopTap: _handleToolbarStop,
                             onBookmarkTap: _handleToolbarBookmark,
                             onAnnotationsTap: _handleToolbarAnnotations,
-                            onSummarizeTap: _handleToolbarSummarize,
+                            onAiAskTap: _handleToolbarAiAsk,
                           ),
                         ),
                       ),
@@ -1654,6 +1662,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     Map<String, LanguageTypography> langTypographies,
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
+    bool? ttsHighlightIsPali,
     int initialScrollIndex,
   ) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
@@ -1672,13 +1681,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // The keyboard reading cursor (focus line + selected chip), threaded
     // down to the paragraph renderer so the highlight is drawn.
     final kbNav = ref.watch(readerKeyboardNavProvider);
-    final keyboardFocusParaId =
-        kbNav.engaged && kbNav.bookId == activeTab.bookId ? kbNav.paraId : null;
-    final keyboardFocusLineId =
-        kbNav.engaged && kbNav.bookId == activeTab.bookId ? kbNav.lineId : null;
+    final kbForThisBook = kbNav.engaged && kbNav.bookId == activeTab.bookId;
+    final keyboardFocusParaId = kbForThisBook ? kbNav.paraId : null;
+    final keyboardFocusLineId = kbForThisBook ? kbNav.lineId : null;
     final keyboardFocusChipIndex = keyboardFocusLineId != null
         ? kbNav.chipIndex
         : null;
+    // Per-line keys for the keyboard centering fine-scroll (same plumbing
+    // as the TTS fine-scroll, but scoped to the keyboard cursor so TTS
+    // state is never touched).
+    final keyboardTargetParaId = kbForThisBook && kbNav.lineKeys.isNotEmpty
+        ? kbNav.paraId
+        : null;
+    final keyboardTargetLineKeys = kbForThisBook
+        ? kbNav.lineKeys
+        : const <int, GlobalKey>{};
 
     // Final cleanup the moment a dictionary sheet closes: the framework's
     // double-tap processing can land its leftover selection / toolbar after
@@ -1706,6 +1723,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       lookupHighlight: activeLookupHighlight,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
+      ttsHighlightIsPali: ttsHighlightIsPali,
       jumpHighlightLineId: _jumpHighlightLineId,
       jumpHighlightParaId: _jumpHighlightParaId,
       ttsTargetParaId: ref
@@ -1714,6 +1732,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ttsTargetLineKeys: ref
           .read(ttsSyncProvider(activeTab.bookId))
           .ttsTargetLineKeys,
+      keyboardTargetParaId: keyboardTargetParaId,
+      keyboardTargetLineKeys: keyboardTargetLineKeys,
       keyboardFocusParaId: keyboardFocusParaId,
       keyboardFocusLineId: keyboardFocusLineId,
       keyboardFocusChipIndex: keyboardFocusChipIndex,

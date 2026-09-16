@@ -50,9 +50,11 @@ class PaliText extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    stripVariantAnnotations = settings.stripVariantAnnotations;
-    final script = settings.paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final strip = ref.watch(
+      settingsProvider.select((s) => s.stripVariantAnnotations),
+    );
+    stripVariantAnnotations = strip;
     final converted = convertPaliToScriptPreservingHtml(data, script);
     final fontFamily = scriptFontFamily(script);
     final effectiveStyle =
@@ -222,9 +224,11 @@ class PaliHtmlText extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    stripVariantAnnotations = settings.stripVariantAnnotations;
-    final script = settings.paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final strip = ref.watch(
+      settingsProvider.select((s) => s.stripVariantAnnotations),
+    );
+    stripVariantAnnotations = strip;
     final converted = convertPaliToScriptPreservingHtml(html, script);
     final fontFamily = scriptFontFamily(script);
     final effectiveStyle =

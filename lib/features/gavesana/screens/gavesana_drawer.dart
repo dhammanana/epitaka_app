@@ -7,9 +7,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../router/app_router.dart' show AppRoutes;
 import '../../../shared/utils/app_navigation.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../settings/widgets/settings_dialog.dart';
 
 /// The main navigation drawer.
 ///
@@ -213,7 +215,7 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   _DrawerIconButton(
                     icon: Icons.settings_outlined,
                     tooltip: loc.settings,
-                    onTap: () => _closeAndGo(context, '/settings'),
+                    onTap: () => _closeAndOpenSettings(context),
                   ),
                 ],
               ),
@@ -227,6 +229,16 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
   void _closeAndGo(BuildContext context, String route) {
     Navigator.of(context).pop(); // close drawer
     context.go(route);
+  }
+
+  void _closeAndOpenSettings(BuildContext context) {
+    final isDesktop = ResponsiveBreakpoint.isDesktop(context);
+    Navigator.of(context).pop(); // close drawer
+    if (isDesktop) {
+      showSettingsDialog(context);
+    } else {
+      context.push('/settings');
+    }
   }
 
   bool _isRouteActive(BuildContext context, String route) {

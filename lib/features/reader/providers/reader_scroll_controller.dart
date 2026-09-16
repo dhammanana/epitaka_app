@@ -587,7 +587,7 @@ class ReaderScrollController {
         );
         if (lineIndex >= 0 && para.lines.length > 1) {
           final lineFraction = _estimateLineFraction(para, lineIndex);
-          return (0.3 - lineFraction).clamp(0.0, 0.3);
+          return (0.1 - lineFraction).clamp(0.0, 0.1);
         }
       }
       return alignment;
@@ -733,7 +733,7 @@ class ReaderScrollController {
     );
     Scrollable.ensureVisible(
       lineContext,
-      alignment: 0.3,
+      alignment: 0.1,
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
     ).then((_) {
@@ -915,14 +915,14 @@ class ReaderScrollController {
     final lineFraction = _estimateLineFraction(para, lineIndex);
 
     // The target line is estimated at `lineFraction * span` viewports from
-    // the paragraph top. To place the line at 30% (0.3) of the viewport:
-    // targetAlignment = 0.3 - lineFraction * span.
-    // Clamped so the top never drops below 0.3 and the bottom never rises
-    // above 0.3 (allowing large negative alignments for multi-viewport
+    // the paragraph top. To place the line at 10% (0.1) of the viewport:
+    // targetAlignment = 0.1 - lineFraction * span.
+    // Clamped so the top never drops below 0.1 and the bottom never rises
+    // above 0.1 (allowing large negative alignments for multi-viewport
     // paragraphs when translations are enabled).
-    final minAlignment = (0.3 - span).clamp(-100.0, 0.3);
-    const maxAlignment = 0.3;
-    final targetAlignment = (0.3 - lineFraction * span).clamp(
+    final minAlignment = (0.1 - span).clamp(-100.0, 0.1);
+    const maxAlignment = 0.1;
+    final targetAlignment = (0.1 - lineFraction * span).clamp(
       minAlignment,
       maxAlignment,
     );

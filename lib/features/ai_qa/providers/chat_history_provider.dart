@@ -18,23 +18,26 @@ final chatThreadsProvider = FutureProvider<List<ChatThread>>((ref) async {
 });
 
 /// Provider for a single chat thread by ID.
-final chatThreadProvider =
-    FutureProvider.family<ChatThread?, String>((ref, threadId) async {
+final chatThreadProvider = FutureProvider.family<ChatThread?, String>((
+  ref,
+  threadId,
+) async {
   final db = await ref.watch(appDbProvider.future);
   return db.getChatThread(threadId);
 });
 
 /// Provider that fetches all messages for a thread.
 final chatMessagesProvider =
-    FutureProvider.family<List<ChatMessageRecord>, String>(
-        (ref, threadId) async {
-  final db = await ref.watch(appDbProvider.future);
-  return db.getChatMessages(threadId);
-});
+    FutureProvider.family<List<ChatMessageRecord>, String>((
+      ref,
+      threadId,
+    ) async {
+      final db = await ref.watch(appDbProvider.future);
+      return db.getChatMessages(threadId);
+    });
 
 /// Notifier for thread management operations.
-final chatHistoryNotifierProvider =
-    Provider<ChatHistoryNotifier>((ref) {
+final chatHistoryNotifierProvider = Provider<ChatHistoryNotifier>((ref) {
   return ChatHistoryNotifier(ref);
 });
 
@@ -125,6 +128,23 @@ class ChatHistoryNotifier {
   }) async {
     final db = await _ref.read(appDbProvider.future);
     await db.updateAssistantMessage(messageId, content, metadata);
+    _ref.invalidate(chatMessagesProvider(threadId));
+  }
+
+  /// Delete the most recent assistant message (retry/regenerate).
+  Future<bool> deleteLastAssistantMessage(String threadId) async {
+    final db = await _ref.read(appDbProvider.future);
+    final deleted = await db.deleteLastAssistantMessage(threadId);
+    _ref.invalidate(chatMessagesProvider(threadId));
+    return deleted;
+  }
+
+  /// Drop every message beyond the first [keepCount] (edit flow).
+  Future<void> truncateMessages(String threadId, int keepCount) async {
+    final db = await _ref.read(appDbProvider.future);
+    await db.truncateChatMessages(threadId, keepCount);
+    _ref.invalidate(chatThreadsProvider);
+    _ref.invalidate(chatThreadProvider(threadId));
     _ref.invalidate(chatMessagesProvider(threadId));
   }
 

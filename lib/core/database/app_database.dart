@@ -370,6 +370,56 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Delete the most recent assistant message in [threadId] (used by
+  /// Vīmaṃsā retry/regenerate so the new answer replaces the old one
+  /// instead of appending after it).
+  Future<bool> deleteLastAssistantMessage(String threadId) async {
+    await _ensureChatTables();
+    final rows = await customSelect(
+      'SELECT id FROM chat_messages WHERE thread_id = ? AND role = ? '
+      'ORDER BY created_at DESC, id DESC LIMIT 1',
+      variables: [
+        Variable.withString(threadId),
+        Variable.withString('assistant'),
+      ],
+    ).get();
+    if (rows.isEmpty) return false;
+    final id = rows.first.data['id'] as int;
+    await customStatement('DELETE FROM chat_messages WHERE id = ?', [id]);
+    return true;
+  }
+
+  /// Delete every message in [threadId] beyond the first [keepCount]
+  /// chronological messages (used by Vīmaṃsā edit so later prompts and
+  /// responses are cleared). Also recounts user messages into
+  /// `chat_threads.message_count` so the per-thread limit stays accurate.
+  Future<void> truncateChatMessages(String threadId, int keepCount) async {
+    await _ensureChatTables();
+    if (keepCount < 0) keepCount = 0;
+    final rows = await customSelect(
+      'SELECT id FROM chat_messages WHERE thread_id = ? '
+      'ORDER BY created_at ASC, id ASC',
+      variables: [Variable.withString(threadId)],
+    ).get();
+    if (rows.length <= keepCount) return;
+    final idsToDelete = rows
+        .skip(keepCount)
+        .map((r) => r.data['id'] as int)
+        .toList();
+    for (final id in idsToDelete) {
+      await customStatement('DELETE FROM chat_messages WHERE id = ?', [id]);
+    }
+    final remaining = await customSelect(
+      'SELECT COUNT(*) AS c FROM chat_messages WHERE thread_id = ? AND role = ?',
+      variables: [Variable.withString(threadId), Variable.withString('user')],
+    ).get();
+    final userCount = (remaining.first.data['c'] as int?) ?? 0;
+    await customStatement(
+      'UPDATE chat_threads SET message_count = ?, updated_at = ? WHERE id = ?',
+      [userCount, DateTime.now().toIso8601String(), threadId],
+    );
+  }
+
   AppDatabase(super.e);
 
   @override

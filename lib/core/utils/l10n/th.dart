@@ -39,7 +39,6 @@ const Map<String, String> th = {
   'sentences': 'ประโยค',
   'results': 'ผลลัพธ์',
   'Loading…': 'กำลังโหลด…',
-  'files': 'ไฟล์',
   'Manage translation databases: download, update, and delete.':
       'จัดการฐานข้อมูลคำแปล: ดาวน์โหลด อัปเดต และลบ',
   'Pāli': 'บาลี',
@@ -239,23 +238,8 @@ const Map<String, String> th = {
   'Update check complete.': 'ตรวจสอบการอัปเดตเสร็จสิ้น',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'เอนจิน TTS',
-  'Voice': 'เสียง',
   'Speed': 'ความเร็ว',
   'Pitch': 'ระดับเสียง',
-  'Engine': 'เอนจิน',
-  'System TTS': 'TTS ของระบบ',
-  'Platform-native text-to-speech (fast, no download)':
-      'ระบบอ่านออกเสียงในตัวแพลตฟอร์ม (เร็ว ไม่ต้องดาวน์โหลด)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'TTS แบบนิวรัลรองรับ 31 ภาษา (ดาวน์โหลดโมเดล ~400 MB)',
-  'Model Download': 'ดาวน์โหลดโมเดล',
-  'Models Installed': 'ติดตั้งโมเดลแล้ว',
-  'TTS Models': 'โมเดล TTS',
-  'All models are ready for use': 'โมเดลทั้งหมดพร้อมใช้งาน',
-  'Requires ~400 MB download for neural TTS':
-      'ต้องดาวน์โหลดประมาณ 400 MB สำหรับ TTS แบบนิวรัล',
   'Speaking Rate': 'อัตราการพูด',
   'Low': 'ต่ำ',
   'High': 'สูง',
@@ -269,16 +253,8 @@ const Map<String, String> th = {
   'Paused': 'หยุดชั่วคราว',
   'Tap resume to continue': 'แตะเล่นต่อเพื่อดำเนินการต่อ',
   'Preparing audio…': 'กำลังเตรียมเสียง…',
-  'Voice Style': 'สไตล์เสียง',
   'System Default': 'ค่าเริ่มต้นของระบบ',
   'Config': 'การตั้งค่า',
-  'TTS Language': 'ภาษา TTS',
-  'Quality': 'คุณภาพ',
-  'Synthesis quality — higher sounds better but is slower':
-      'คุณภาพการสังเคราะห์เสียง — ยิ่งสูงเสียงยิ่งดีแต่ช้าลง',
-  'Medium': 'ปานกลาง',
-  'Follows the reading language (first enabled translation)':
-      'ตามภาษาที่อ่าน (คำแปลแรกที่เปิดใช้งาน)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

@@ -43,10 +43,7 @@ class MentionOverlay extends ConsumerWidget {
       surfaceTintColor: colors.surfaceTint,
       shadowColor: Colors.black.withValues(alpha: 0.2),
       child: Container(
-        constraints: const BoxConstraints(
-          maxWidth: 420,
-          maxHeight: 360,
-        ),
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 360),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
           border: Border.all(
@@ -77,26 +74,32 @@ class MentionOverlay extends ConsumerWidget {
                   itemBuilder: (context, index) {
                     return _ResultItem(
                       result: state.results[index],
+                      index: index,
                       isSelected: index == state.selectedIndex,
                     );
                   },
                 ),
               ),
-            if (state.results.isNotEmpty)
-              _buildFooter(context, colors),
+            if (state.results.isNotEmpty) _buildFooter(context, colors),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, ColorScheme colors, MentionSearchState state) {
+  Widget _buildHeader(
+    BuildContext context,
+    ColorScheme colors,
+    MentionSearchState state,
+  ) {
     final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusMd)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppDimensions.radiusMd),
+        ),
       ),
       child: Row(
         children: [
@@ -127,7 +130,11 @@ class MentionOverlay extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, ColorScheme colors, String query) {
+  Widget _buildEmptyState(
+    BuildContext context,
+    ColorScheme colors,
+    String query,
+  ) {
     final loc = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -178,18 +185,52 @@ class MentionOverlay extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.keyboard_return, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            Icons.keyboard_return,
+            size: 12,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(width: 4),
-          Text(loc.selectShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(
+            loc.selectShort,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+              fontSize: 9,
+            ),
+          ),
           const SizedBox(width: 10),
-          Icon(Icons.keyboard_arrow_up, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
-          Icon(Icons.keyboard_arrow_down, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            Icons.keyboard_arrow_up,
+            size: 12,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          Icon(
+            Icons.keyboard_arrow_down,
+            size: 12,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(width: 4),
-          Text(loc.navigateShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(
+            loc.navigateShort,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+              fontSize: 9,
+            ),
+          ),
           const Spacer(),
-          Icon(Icons.close, size: 12, color: colors.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            Icons.close,
+            size: 12,
+            color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(width: 4),
-          Text(loc.escShort, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant.withValues(alpha: 0.4), fontSize: 9)),
+          Text(
+            loc.escShort,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+              fontSize: 9,
+            ),
+          ),
         ],
       ),
     );
@@ -204,10 +245,12 @@ class MentionOverlay extends ConsumerWidget {
 /// With a leading icon indicating Mūla, Aṭṭhakathā, or Ṭīkā.
 class _ResultItem extends ConsumerWidget {
   final MentionSearchResult result;
+  final int index;
   final bool isSelected;
 
   const _ResultItem({
     required this.result,
+    required this.index,
     required this.isSelected,
   });
 
@@ -228,7 +271,9 @@ class _ResultItem extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? colors.primaryContainer.withValues(alpha: 0.15) : null,
+          color: isSelected
+              ? colors.primaryContainer.withValues(alpha: 0.15)
+              : null,
           border: Border(
             bottom: BorderSide(
               color: colors.outlineVariant.withValues(alpha: 0.3),
@@ -248,11 +293,7 @@ class _ResultItem extends ConsumerWidget {
                 color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Icon(
-                icon,
-                size: 14,
-                color: iconColor,
-              ),
+              child: Icon(icon, size: 14, color: iconColor),
             ),
             const SizedBox(width: 10),
 
@@ -313,11 +354,12 @@ class _ResultItem extends ConsumerWidget {
   }
 
   void _select(WidgetRef ref) {
-    final notifier = ref.read(mentionSearchProvider.notifier);
-    final attachmentsNotifier = ref.read(attachmentsProvider.notifier);
-
-    attachmentsNotifier.add(result.toAttachment());
-    notifier.deactivate();
+    // Text cleanup (@query stripping) is handled by the chat screen, which
+    // listens for the stripEpoch bump. Uses the tapped row's index (it may
+    // not be the keyboard-highlighted one).
+    ref
+        .read(mentionSearchProvider.notifier)
+        .attachAt(index, ref.read(attachmentsProvider.notifier));
   }
 }
 
@@ -329,7 +371,8 @@ class _RebuildIndexButton extends ConsumerStatefulWidget {
   const _RebuildIndexButton({required this.colors});
 
   @override
-  ConsumerState<_RebuildIndexButton> createState() => _RebuildIndexButtonState();
+  ConsumerState<_RebuildIndexButton> createState() =>
+      _RebuildIndexButtonState();
 }
 
 class _RebuildIndexButtonState extends ConsumerState<_RebuildIndexButton> {
@@ -350,11 +393,7 @@ class _RebuildIndexButtonState extends ConsumerState<_RebuildIndexButton> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.refresh,
-              size: 13,
-              color: widget.colors.primary,
-            ),
+            Icon(Icons.refresh, size: 13, color: widget.colors.primary),
             const SizedBox(width: 5),
             Text(
               AppLocalizations.of(context).rebuildSuggestionIndex,

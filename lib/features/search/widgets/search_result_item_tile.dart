@@ -25,11 +25,12 @@ class SearchResultItemTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final paliText = convertPaliToScriptPreservingHtml(result.paliText, script);
     final translation = result.translation;
-    final convertedQuery =
-        searchQuery != null ? convertSearchQueryForScript(searchQuery!, script) : null;
+    final convertedQuery = searchQuery != null
+        ? convertSearchQueryForScript(searchQuery!, script)
+        : null;
 
     return InkWell(
       onTap: onTap,
@@ -45,11 +46,7 @@ class SearchResultItemTile extends ConsumerWidget {
             // Header row: book name + para badge
             Row(
               children: [
-                Icon(
-                  Icons.import_contacts,
-                  size: 14,
-                  color: colors.primary,
-                ),
+                Icon(Icons.import_contacts, size: 14, color: colors.primary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -61,7 +58,6 @@ class SearchResultItemTile extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-
               ],
             ),
             const SizedBox(height: 4),
@@ -70,9 +66,7 @@ class SearchResultItemTile extends ConsumerWidget {
               _HighlightedText(
                 text: paliText,
                 query: convertedQuery,
-                style: AppTypography.bodyPali.copyWith(
-                  color: colors.onSurface,
-                ),
+                style: AppTypography.bodyPali.copyWith(color: colors.onSurface),
                 maxLines: 2,
               ),
             // Translation snippet
@@ -158,25 +152,28 @@ class _HighlightedText extends StatelessWidget {
       int lastEnd = 0;
       for (final r in ranges) {
         if (r.key > lastEnd) {
-          resultSpans.add(TextSpan(
-            text: spanText.substring(lastEnd, r.key),
-            style: spanStyle,
-          ));
+          resultSpans.add(
+            TextSpan(
+              text: spanText.substring(lastEnd, r.key),
+              style: spanStyle,
+            ),
+          );
         }
-        resultSpans.add(TextSpan(
-          text: spanText.substring(r.key, r.value),
-          style: spanStyle.copyWith(
-            backgroundColor: Colors.yellow.withValues(alpha: 0.3),
-            fontWeight: FontWeight.w600,
+        resultSpans.add(
+          TextSpan(
+            text: spanText.substring(r.key, r.value),
+            style: spanStyle.copyWith(
+              backgroundColor: Colors.yellow.withValues(alpha: 0.3),
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ));
+        );
         lastEnd = r.value;
       }
       if (lastEnd < spanText.length) {
-        resultSpans.add(TextSpan(
-          text: spanText.substring(lastEnd),
-          style: spanStyle,
-        ));
+        resultSpans.add(
+          TextSpan(text: spanText.substring(lastEnd), style: spanStyle),
+        );
       }
     }
 

@@ -279,7 +279,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final pali = ref.watch(settingsProvider).typography.pali;
+    final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
     final searchSize = (pali.fontSize * 0.72).clamp(12.0, 22.0);
     final chipSize = (pali.fontSize * 0.55).clamp(9.0, 14.0);
 

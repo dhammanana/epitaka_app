@@ -145,7 +145,7 @@ class _OutlineSectionSheetState extends ConsumerState<_OutlineSectionSheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final item = widget.item;
 
     // Resolve the study guide up front (reads the local epitaka_en.db
@@ -393,7 +393,7 @@ class _OutlineSectionSheetState extends ConsumerState<_OutlineSectionSheet> {
   }
 
   Widget _buildText(ColorScheme colors) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final preview = widget.preview;
 
     return SingleChildScrollView(

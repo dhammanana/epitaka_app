@@ -8,7 +8,6 @@ import '../../core/utils/pali_script_converter.dart';
 import '../../core/utils/pali_text_utils.dart';
 import '../../features/reader/utils/reader_word_hit_test.dart'
     show cleanPali, wordRangeAt;
-import 'pali_text.dart';
 import 'nissaya_text.dart';
 import '../utils/html_text_parser.dart';
 
@@ -35,6 +34,8 @@ class PreviewLineData {
 /// only the exact matched line) with a left border + background tint.
 /// Supports optional Pāli word tap via [onPaliWordTap] (e.g. dictionary lookup).
 class PreviewContent extends ConsumerWidget {
+  static final Map<String, String> _scriptCache = {};
+
   final List<PreviewLineData> lines;
 
   /// Paragraph to highlight. When [highlightLineId] is null the whole
@@ -47,11 +48,13 @@ class PreviewContent extends ConsumerWidget {
   final int? firstSnippetIndex;
   final String? paliSnippet;
 
-  /// Per-line [GlobalKey]s indexed by position in [lines]. The owning sheet
-  /// uses them both to scroll the target line into view on open and to
-  /// resolve the currently-visible line when the user taps an action (e.g.
-  /// "open in reader" should jump to where the user stopped reading).
-  final Map<int, GlobalKey>? lineKeys;
+  /// Key for the target line the owning sheet scrolls to on open. All other
+  /// lines get a lightweight [ValueKey], so only the target carries the cost
+  /// of a [GlobalKey].
+  final GlobalKey? targetLineKey;
+
+  /// Index into [lines] of the target line (matches [targetLineKey]).
+  final int? targetLineIndex;
 
   /// Called when the user double-taps on a Pāli text (opens dictionary).
   final ValueChanged<String>? onPaliWordTap;
@@ -63,19 +66,41 @@ class PreviewContent extends ConsumerWidget {
     this.highlightLineId,
     this.firstSnippetIndex,
     this.paliSnippet,
-    this.lineKeys,
+    this.targetLineKey,
+    this.targetLineIndex,
     this.onPaliWordTap,
   });
+
+  /// Script conversion with a small FIFO cache: rebuilds (scroll, unrelated
+  /// settings changes) must not re-run the expensive converter for every
+  /// line. Keyed by script + source text so identical lines share entries.
+  static String _cachedConvert(String text, Script script) {
+    final key = '${script.name}|$text';
+    final hit = _scriptCache[key];
+    if (hit != null) return hit;
+    final converted = convertPaliToScriptPreservingHtml(text, script);
+    if (_scriptCache.length >= 500) {
+      _scriptCache.remove(_scriptCache.keys.first);
+    }
+    _scriptCache[key] = converted;
+    return converted;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final brightness = Theme.of(context).brightness;
-    final settings = ref.watch(settingsProvider);
-    final paliColor = settings.paliColorPair.resolve(brightness);
-    final transColor = settings.translationColorPair.resolve(brightness);
-    final script = settings.paliScript;
-    final paliTypo = settings.typography.pali;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final paliTypo = ref.watch(
+      settingsProvider.select((s) => s.typography.pali),
+    );
+    final paliColor = ref
+        .watch(settingsProvider.select((s) => s.paliColorPair))
+        .resolve(brightness);
+    final transColor = ref
+        .watch(settingsProvider.select((s) => s.translationColorPair))
+        .resolve(brightness);
+    final typography = ref.watch(settingsProvider.select((s) => s.typography));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -93,71 +118,127 @@ class PreviewContent extends ConsumerWidget {
         // The snippet (with <mark> highlights) always shows on the line the
         // caller pointed at, independent of which line is highlighted.
         final isFirstSnippetLine =
-            isTargetPara && firstSnippetIndex != null && index == firstSnippetIndex;
+            isTargetPara &&
+            firstSnippetIndex != null &&
+            index == firstSnippetIndex;
 
-        final isNewPara = index == 0 || line.paraId != lines[index - 1].paraId;
-
-        return Column(
-          key: lineKeys?[index],
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Paragraph gap
-            if (isNewPara && index > 0) const SizedBox(height: 12),
-
-            // Match-highlighted paragraph block
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isMatch
-                    ? colors.primaryContainer.withValues(alpha: 0.25)
-                    : null,
-                border: isMatch
-                    ? Border(left: BorderSide(color: colors.primary, width: 3))
-                    : null,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Pāli text
-                  if (isFirstSnippetLine &&
-                      paliSnippet != null &&
-                      paliSnippet!.isNotEmpty)
-                    _buildPaliSnippet(paliSnippet!, paliColor, paliTypo, script)
-                  else if (line.pali.isNotEmpty)
-                    _buildPaliLine(line.pali, paliColor, paliTypo, script),
-                  // Translations
-                  ...line.translations.entries.map((tEntry) {
-                    if (tEntry.value.isEmpty) return const SizedBox.shrink();
-                    // Resolve the effective typography (override or scaled
-                    // default) so previews follow the global font-size
-                    // controls, matching the reader.
-                    final langTypo = settings.typography.typographyFor(
-                      tEntry.key,
-                    );
-                    return _buildTranslationLine(
-                      tEntry.value,
-                      transColor,
-                      langTypo,
-                    );
-                  }),
-                ],
-              ),
-            ),
-          ],
+        return RepaintBoundary(
+          child: PreviewLine(
+            key: index == targetLineIndex && targetLineKey != null
+                ? targetLineKey
+                : ValueKey('${line.paraId}_${line.lineId}_$index'),
+            line: line,
+            isMatch: isMatch,
+            isNewPara: index > 0 && line.paraId != lines[index - 1].paraId,
+            paliSnippet: isFirstSnippetLine ? paliSnippet : null,
+            script: script,
+            colors: colors,
+            paliColor: paliColor,
+            transColor: transColor,
+            paliTypo: paliTypo,
+            typography: typography,
+            onPaliWordTap: onPaliWordTap,
+          ),
         );
       }).toList(),
     );
   }
+}
 
-  Widget _buildPaliSnippet(
-    String snippet,
-    Color paliColor,
-    LanguageTypography paliTypo,
-    Script script,
-  ) {
+/// One preview line: Pāli + translations with match highlight.
+///
+/// Const-constructible so list parents rebuild cheaply; callers wrap it in a
+/// [RepaintBoundary] to isolate repaints while scrolling.
+class PreviewLine extends StatelessWidget {
+  final PreviewLineData line;
+
+  /// Whether this line gets the match highlight (left border + tint).
+  final bool isMatch;
+
+  /// Whether to render the paragraph gap above this line.
+  final bool isNewPara;
+
+  /// When non-null/non-empty, rendered instead of [line.pali] (search hit
+  /// with `<mark>` highlights).
+  final String? paliSnippet;
+
+  final Script script;
+  final ColorScheme colors;
+  final Color paliColor;
+  final Color transColor;
+  final LanguageTypography paliTypo;
+  final TypographySettings typography;
+
+  /// Called when the user double-taps on a Pāli text (opens dictionary).
+  final ValueChanged<String>? onPaliWordTap;
+
+  const PreviewLine({
+    super.key,
+    required this.line,
+    required this.isMatch,
+    required this.isNewPara,
+    this.paliSnippet,
+    required this.script,
+    required this.colors,
+    required this.paliColor,
+    required this.transColor,
+    required this.paliTypo,
+    required this.typography,
+    this.onPaliWordTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final snippet = paliSnippet;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Paragraph gap
+        if (isNewPara) const SizedBox(height: 12),
+
+        // Match-highlighted paragraph block
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isMatch
+                ? colors.primaryContainer.withValues(alpha: 0.25)
+                : null,
+            border: isMatch
+                ? Border(left: BorderSide(color: colors.primary, width: 3))
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Pāli text
+              if (snippet != null && snippet.isNotEmpty)
+                _buildPaliSnippet(snippet)
+              else if (line.pali.isNotEmpty)
+                _buildPaliLine(line.pali),
+              // Translations
+              ...line.translations.entries.map((tEntry) {
+                if (tEntry.value.isEmpty) return const SizedBox.shrink();
+                // Resolve the effective typography (override or scaled
+                // default) so previews follow the global font-size
+                // controls, matching the reader.
+                final langTypo = typography.typographyFor(tEntry.key);
+                return _buildTranslationLine(
+                  tEntry.value,
+                  transColor,
+                  langTypo,
+                );
+              }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPaliSnippet(String snippet) {
     // Convert the snippet to match the target script (preserving HTML <mark> tags)
-    final converted = convertPaliToScriptPreservingHtml(snippet, script);
+    final converted = PreviewContent._cachedConvert(snippet, script);
     final effectiveColor = paliTypo.effectiveColor(paliColor);
     final baseStyle = TextStyle(
       fontFamily: scriptFontFamily(script),
@@ -176,12 +257,7 @@ class PreviewContent extends ConsumerWidget {
     );
   }
 
-  Widget _buildPaliLine(
-    String text,
-    Color paliColor,
-    LanguageTypography paliTypo,
-    Script script,
-  ) {
+  Widget _buildPaliLine(String text) {
     final effectiveColor = paliTypo.effectiveColor(paliColor);
     final baseStyle = TextStyle(
       fontFamily: scriptFontFamily(script),
@@ -195,8 +271,11 @@ class PreviewContent extends ConsumerWidget {
       color: effectiveColor,
     );
 
+    // Pre-converted via the shared cache; parse directly instead of going
+    // through PaliHtmlText (which would re-watch settings + re-convert).
+    final converted = PreviewContent._cachedConvert(text, script);
     return _buildTappablePali(
-      child: PaliHtmlText(text, style: baseStyle, maxLines: null),
+      child: HtmlTextParser.richText(converted, baseStyle, maxLines: null),
     );
   }
 

@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../features/ai_qa/providers/ai_qa_settings_provider.dart';
-import '../../features/reader/providers/reader_provider.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/reader/providers/tts_reading_provider.dart';
-import '../../features/reader/services/reader_ai_service.dart';
 import '../../features/reader/widgets/reader_bottom_toolbar.dart';
 import '../../features/settings/providers/tts_provider.dart';
 import '../../shared/providers/vimamsa_panel_provider.dart';
@@ -84,19 +82,7 @@ class DesktopStatusBar extends ConsumerWidget {
                       onListenTap: controller.onListen,
                       onStopTap: controller.onStop,
                       onBookmarkTap: controller.onBookmark,
-                      onSummarizeTap: () {
-                        final tab = ref.read(readerTabsProvider).activeTab;
-                        if (tab == null) return;
-                        final readerState = ref.read(
-                          readerDataProvider(tab.bookId),
-                        );
-                        ReaderAiService.stageChapterSummaryPrompt(
-                          context: context,
-                          ref: ref,
-                          activeTab: tab,
-                          readerState: readerState,
-                        );
-                      },
+                      onAiAskTap: controller.onAiAsk,
                     ),
                     // Right side: shell actions, end-aligned.
                     Expanded(

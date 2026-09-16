@@ -31,13 +31,19 @@ class BookmarksPanel extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 8),
-          child: Row(children: [
-            Icon(Icons.bookmark, size: 14, color: colors.primary),
-            const SizedBox(width: 6),
-            Text(loc.bookmarks,
+          child: Row(
+            children: [
+              Icon(Icons.bookmark, size: 14, color: colors.primary),
+              const SizedBox(width: 6),
+              Text(
+                loc.bookmarks,
                 style: AppTypography.labelMedium.copyWith(
-                    color: colors.primary, fontWeight: FontWeight.w600)),
-          ]),
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
         bookmarksAsync.when(
           loading: () => const Padding(
@@ -46,29 +52,48 @@ class BookmarksPanel extends ConsumerWidget {
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(loc.errorMessage('$e'),
-                style: AppTypography.labelSmall.copyWith(color: colors.error)),
+            child: Text(
+              loc.errorMessage('$e'),
+              style: AppTypography.labelSmall.copyWith(color: colors.error),
+            ),
           ),
           data: (bookmarks) {
             if (bookmarks.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Center(
-                  child: Text(loc.noBookmarksShort,
-                      style: AppTypography.labelSmall.copyWith(
-                          color: colors.onSurfaceVariant)),
+                  child: Text(
+                    loc.noBookmarksShort,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               );
             }
             return Column(
-              children: bookmarks.map((bm) => _BookmarkCard(
-                    bookmark: bm,
-                    colors: colors,
-                    onTap: () => _openBook(context, ref, bm.bookId,
-                        bm.bookName, bm.paraId, bm.lineId),
-                    onDelete: () => _confirmDeleteBookmark(
-                        context, ref, bm.id, bm.name ?? ''),
-                  )).toList(),
+              children: bookmarks
+                  .map(
+                    (bm) => _BookmarkCard(
+                      bookmark: bm,
+                      colors: colors,
+                      onTap: () => _openBook(
+                        context,
+                        ref,
+                        bm.bookId,
+                        bm.bookName,
+                        bm.paraId,
+                        bm.lineId,
+                      ),
+                      onDelete: () => _confirmDeleteBookmark(
+                        context,
+                        ref,
+                        bm.id,
+                        bm.name ?? '',
+                      ),
+                    ),
+                  )
+                  .toList(),
             );
           },
         ),
@@ -76,9 +101,17 @@ class BookmarksPanel extends ConsumerWidget {
     );
   }
 
-  void _openBook(BuildContext context, WidgetRef ref, String bookId,
-      String? bookName, int? paraId, [int? lineId]) {
-    ref.read(readerTabsProvider.notifier).openTab(
+  void _openBook(
+    BuildContext context,
+    WidgetRef ref,
+    String bookId,
+    String? bookName,
+    int? paraId, [
+    int? lineId,
+  ]) {
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
           ReaderTabInfo(
             bookId: bookId,
             bookName: bookName ?? bookId,
@@ -90,7 +123,11 @@ class BookmarksPanel extends ConsumerWidget {
   }
 
   void _confirmDeleteBookmark(
-      BuildContext context, WidgetRef ref, String id, String name) {
+    BuildContext context,
+    WidgetRef ref,
+    String id,
+    String name,
+  ) {
     final loc = AppLocalizations.of(context);
     showDialog(
       context: context,
@@ -99,8 +136,9 @@ class BookmarksPanel extends ConsumerWidget {
         content: Text(loc.deleteBookmarkConfirm(name)),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(loc.cancel)),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(loc.cancel),
+          ),
           FilledButton(
             onPressed: () {
               Navigator.of(ctx).pop();
@@ -135,7 +173,7 @@ class _BookmarkCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 0,
@@ -149,27 +187,32 @@ class _BookmarkCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(children: [
-            Expanded(
-              child: PaliTextStatic(
-                bookmark.name ?? '',
-                script,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
+          child: Row(
+            children: [
+              Expanded(
+                child: PaliTextStatic(
+                  bookmark.name ?? '',
+                  script,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            IconButton(
-              onPressed: onDelete,
-              icon: Icon(Icons.delete_outline,
-                  size: 14, color: colors.error.withValues(alpha: 0.6)),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            ),
-          ]),
+              IconButton(
+                onPressed: onDelete,
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 14,
+                  color: colors.error.withValues(alpha: 0.6),
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ],
+          ),
         ),
       ),
     );

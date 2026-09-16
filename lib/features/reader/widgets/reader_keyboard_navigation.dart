@@ -9,6 +9,7 @@ import '../../../shared/providers/vimamsa_panel_provider.dart';
 import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
+import '../providers/tts_reading_provider.dart';
 import 'book_link_section_sheet.dart';
 
 /// Wraps the reader content (inside the desktop shell's center area) and
@@ -106,6 +107,19 @@ class _ReaderKeyboardNavigationState
 
   String? get _activeBookId => ref.read(readerTabsProvider).activeTab?.bookId;
 
+  /// Whether keyboard navigation is blocked because TTS is active for the
+  /// active book (playing or paused). TTS owns the auto-scroll and the
+  /// line-by-line display override for that book; letting j/k jump around
+  /// would fight the spoken-line scrolling, so every key except Esc is
+  /// handed through. TTS on another tab — or no TTS at all — leaves
+  /// keyboard navigation fully working.
+  bool get _ttsBlocksNavigation {
+    final bookId = _activeBookId;
+    if (bookId == null) return false;
+    final tts = ref.read(ttsReadingProvider);
+    return tts.isActive && tts.bookId == bookId;
+  }
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
@@ -120,6 +134,12 @@ class _ReaderKeyboardNavigationState
     if (data == null || data.paragraphs.isEmpty) return KeyEventResult.ignored;
 
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      _disengage();
+      return KeyEventResult.handled;
+    }
+    // TTS owns this book's scrolling — don't fight the spoken line.
+    if (_ttsBlocksNavigation) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.arrowDown) {
       _moveLine(1);
       return KeyEventResult.handled;
@@ -143,10 +163,6 @@ class _ReaderKeyboardNavigationState
       _openSelectedChip();
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.escape) {
-      _disengage();
-      return KeyEventResult.handled;
-    }
     return KeyEventResult.ignored;
   }
 
@@ -163,9 +179,11 @@ class _ReaderKeyboardNavigationState
 
     int paraIndex;
     int lineIndex;
+    Future<void>? paragraphJump;
     if (!nav.engaged || nav.bookId != bookId || nav.paraId == null) {
       // Not engaged yet: force line-by-line (so the focus line renders) and
-      // start from the topmost visible paragraph.
+      // start from the topmost visible paragraph. The engage press just
+      // highlights where the user already is — no centering scroll.
       _ensureLineByLine();
       paraIndex = bridge.firstVisibleIndex(bookId) ?? 0;
       paraIndex = paraIndex.clamp(0, paragraphs.length - 1);
@@ -189,37 +207,142 @@ class _ReaderKeyboardNavigationState
         paraIndex--;
         final prev = paragraphs[paraIndex];
         lineIndex = prev.lines.isNotEmpty ? prev.lines.length - 1 : 0;
-        _scrollToParagraph(controller, paraIndex, alignment: 1.0);
+        paragraphJump = _scrollToParagraph(
+          controller,
+          paraIndex,
+          alignment: 1.0,
+        );
       } else if (lineIndex >= para.lines.length) {
         // Move to the next paragraph's first line.
         if (paraIndex >= paragraphs.length - 1) return;
         paraIndex++;
         lineIndex = 0;
-        _scrollToParagraph(controller, paraIndex, alignment: 0.0);
+        paragraphJump = _scrollToParagraph(
+          controller,
+          paraIndex,
+          alignment: 0.0,
+        );
       }
     }
 
     final para = paragraphs[paraIndex];
     if (para.lines.isEmpty) return;
     final line = para.lines[lineIndex.clamp(0, para.lines.length - 1)];
+    // Fresh per-line keys every step so the centering fine-scroll below can
+    // reach the new focus line even when the paragraph didn't move.
     ref
         .read(readerKeyboardNavProvider.notifier)
-        .focus(bookId, para.paraId, line.lineId);
+        .focus(
+          bookId,
+          para.paraId,
+          line.lineId,
+          lineKeys: {for (final l in para.lines) l.lineId: GlobalKey()},
+        );
+    if (nav.engaged && nav.bookId == bookId && nav.paraId != null) {
+      // Was already engaged — center the new focus line.
+      if (paragraphJump != null) {
+        // Center only after the paragraph scroll settles — an ensureVisible
+        // issued mid-animation would be overridden by the animation itself.
+        paragraphJump.whenComplete(() {
+          _centerFocusedLine(bookId, controller, para.paraId, line.lineId);
+        });
+      } else {
+        _centerFocusedLine(bookId, controller, para.paraId, line.lineId);
+      }
+    }
+    // Engage press: no scrolling — the highlight lands where the user is.
   }
 
-  void _scrollToParagraph(
+  Future<void>? _scrollToParagraph(
     ItemScrollController controller,
     int index, {
     required double alignment,
   }) {
-    if (!controller.isAttached) return;
-    controller.scrollTo(
+    if (!controller.isAttached) return null;
+    return controller.scrollTo(
       index: index,
       alignment: alignment,
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
   }
+
+  /// Fine-scroll the keyboard focus line to the vertical center of the
+  /// viewport.
+  ///
+  /// The per-line [GlobalKey]s registered via [focus]'s `lineKeys` are
+  /// attached by the paragraph renderer (see `ReadingParagraph.lineKeys`),
+  /// the same plumbing the TTS fine-scroll uses — but they live in the
+  /// keyboard-nav state, never in TTS state, so the two can't fight. The
+  /// line widget may not be laid out yet, so this retries for a few frames
+  /// before giving up (leaving the focus line wherever the paragraph-level
+  /// scroll put it).
+  void _centerFocusedLine(
+    String bookId,
+    ItemScrollController controller,
+    int paraId,
+    int lineId,
+  ) {
+    // Snapshot the key instance this attempt targets: if another j/k press
+    // replaces the keys map (fresh GlobalKey instances), this stale attempt
+    // must not scroll or clear the newer attempt's keys.
+    final attemptKey = ref.read(readerKeyboardNavProvider).lineKeys[lineId];
+    if (attemptKey == null) return;
+
+    void attempt(int remaining) {
+      final nav = ref.read(readerKeyboardNavProvider);
+      final key = nav.lineKeys[lineId];
+      // Focus moved on, disengaged, keys consumed, or this attempt
+      // superseded by a newer one — done.
+      if (!nav.engaged || nav.paraId != paraId) return;
+      if (key == null || !identical(key, attemptKey)) return;
+
+      final ctx = key.currentContext;
+      if (ctx == null || !ctx.mounted) {
+        if (remaining <= 0) {
+          // Give up: the focus line stays where the paragraph scroll put it.
+          if (identical(
+            ref.read(readerKeyboardNavProvider).lineKeys[lineId],
+            attemptKey,
+          )) {
+            ref.read(readerKeyboardNavProvider.notifier).clearLineKeys();
+          }
+          return;
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          attempt(remaining - 1);
+        });
+        return;
+      }
+
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: _kFocusLineAlignment,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOut,
+      ).whenComplete(() {
+        // Only clear if this attempt is still the current one.
+        if (!identical(
+          ref.read(readerKeyboardNavProvider).lineKeys[lineId],
+          attemptKey,
+        )) {
+          return;
+        }
+        ref.read(readerKeyboardNavProvider.notifier).clearLineKeys();
+      });
+    }
+
+    if (!controller.isAttached) return;
+    attempt(_kMaxCenterRetries);
+  }
+
+  /// Viewport alignment for the focus line: slightly above center so the
+  /// next line is visible while reading.
+  static const double _kFocusLineAlignment = 0.45;
+
+  /// Max frames to wait for the focus line widget to be laid out before
+  /// giving up on centering (the paragraph-level scroll still holds).
+  static const int _kMaxCenterRetries = 15;
 
   // ── Chip selection (h/l, ←/→) ──────────────────────────────────────
 
@@ -338,6 +461,21 @@ class _ReaderKeyboardNavigationState
     ref.listen(readerTabsProvider, (prev, next) {
       if (prev?.activeTab?.bookId != next.activeTab?.bookId) {
         _disengage();
+      }
+    });
+
+    // If TTS starts for the active book while the focus line is visible,
+    // disengage: TTS owns the auto-scroll and its own line-by-line
+    // override from here on, and the cursor would only fight it (keyboard
+    // keys are separately blocked for TTS books in [_handleKeyEvent]).
+    // This listener runs before the TTS controller's own, so the display
+    // mode restored here is what TTS then snapshots and re-forces.
+    ref.listen(ttsReadingProvider, (prev, next) {
+      if (!(prev?.isActive ?? false) && next.isActive) {
+        final activeBookId = ref.read(readerTabsProvider).activeTab?.bookId;
+        if (next.bookId == activeBookId) {
+          _disengage();
+        }
       }
     });
 

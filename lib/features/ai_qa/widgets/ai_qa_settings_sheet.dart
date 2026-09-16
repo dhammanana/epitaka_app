@@ -10,6 +10,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
 import '../providers/ai_qa_settings_provider.dart';
+import '../services/answer_fallbacks.dart';
 import 'mention_index_build_dialog.dart';
 
 /// Show the AI Q&A settings bottom sheet.
@@ -84,18 +85,50 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       text: settings.maxQueriesPerChat.toString(),
     );
     _selectedProvider = settings.provider;
-    // Prefill the base URL for OpenAI-compatible providers so the field is
-    // never empty when opened (and the fetch works out of the box).
-    // Gemini's endpoint is hardcoded, so it is left untouched.
-    if (settings.provider != AiProvider.gemini &&
+    _toolModelController.addListener(_onModelTextChanged);
+    _answerModelController.addListener(_onModelTextChanged);
+    // Prefill the base URL for providers without a fixed endpoint so the
+    // field is never empty when opened (and the fetch works out of the
+    // box). Gemini/Claude endpoints are hardcoded, left untouched.
+    if (!settings.provider.hasFixedEndpoint &&
         _baseUrlController.text.trim().isEmpty) {
       _baseUrlController.text = settings.provider.defaultBaseUrl;
     }
     _apiKeyFocusNode = FocusNode()..addListener(_onApiKeyFocusChanged);
   }
 
+  void _onModelTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  List<String> _previewFallbacks() {
+    final answer = _answerModelController.text.trim();
+    if (answer.isEmpty) return const [];
+    final tool = _toolModelController.text.trim();
+    if (_availableModels.isNotEmpty) {
+      return resolveAnswerFallbacks(
+        answerModel: answer,
+        toolModel: tool,
+        availableModels: _availableModels,
+      );
+    }
+    final saved = ref.read(aiQaSettingsProvider);
+    if (answer == saved.answerModel.trim() &&
+        tool == saved.toolModel.trim() &&
+        saved.answerFallbacks.isNotEmpty) {
+      return saved.answerFallbacks;
+    }
+    return resolveAnswerFallbacks(
+      answerModel: answer,
+      toolModel: tool,
+      availableModels: const [],
+    );
+  }
+
   @override
   void dispose() {
+    _toolModelController.removeListener(_onModelTextChanged);
+    _answerModelController.removeListener(_onModelTextChanged);
     _apiKeyController.dispose();
     _toolModelController.dispose();
     _answerModelController.dispose();
@@ -164,6 +197,28 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
     final key = _apiKeyController.text.trim();
     if (key.isEmpty || key == _lastValidatedKey) return;
     await _fetchModels();
+  }
+
+  /// Reload the text fields from the (possibly just-switched) provider
+  /// settings: api key, base URL and models now show the selected
+  /// provider's own saved values. Validation state is reset because the
+  /// key belongs to a different provider.
+  void _refreshControllersFromSettings() {
+    final settings = ref.read(aiQaSettingsProvider);
+    _apiKeyController.text = settings.apiKey;
+    _baseUrlController.text = settings.baseUrl.isNotEmpty
+        ? settings.baseUrl
+        : (settings.provider.hasFixedEndpoint
+              ? ''
+              : settings.provider.defaultBaseUrl);
+    _toolModelController.text = settings.toolModel;
+    _answerModelController.text = settings.answerModel;
+    _availableModels = [];
+    _freeModels = [];
+    _modelsError = null;
+    _lastValidatedKey = '';
+    _keyIsValid = false;
+    _keyCheckFailed = false;
   }
 
   /// If the tool/answer model fields are empty or no longer in the fetched
@@ -264,8 +319,17 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       await notifier.setApiKey(_apiKeyController.text.trim());
       await notifier.setProvider(_selectedProvider);
       await notifier.setBaseUrl(_baseUrlController.text.trim());
-      await notifier.setToolModel(_toolModelController.text.trim());
-      await notifier.setAnswerModel(_answerModelController.text.trim());
+      final toolText = _toolModelController.text.trim();
+      final answerText = _answerModelController.text.trim();
+      await notifier.setToolModel(toolText);
+      await notifier.setAnswerModel(answerText);
+      await notifier.setAnswerFallbacks(
+        resolveAnswerFallbacks(
+          answerModel: answerText,
+          toolModel: toolText,
+          availableModels: _availableModels,
+        ),
+      );
       await notifier.setCustomSystemPrompt(_systemPromptController.text.trim());
       final maxCharsText = _maxResultCharsController.text.trim();
       final maxChars = maxCharsText.isEmpty
@@ -393,20 +457,27 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                       ),
                     )
                     .toList(),
-                onChanged: (value) {
-                  if (value != null) {
+                onChanged: (value) async {
+                  if (value != null && value != _selectedProvider) {
+                    // Stash the current fields under the old provider,
+                    // then restore the newly-selected provider's saved
+                    // key/URL/models (anx-reader per-provider history).
+                    final notifier = ref.read(aiQaSettingsProvider.notifier);
+                    final current = ref.read(aiQaSettingsProvider);
+                    await notifier.updateAll(
+                      current.copyWith(
+                        provider: _selectedProvider,
+                        apiKey: _apiKeyController.text.trim(),
+                        baseUrl: _baseUrlController.text.trim(),
+                        toolModel: _toolModelController.text.trim(),
+                        answerModel: _answerModelController.text.trim(),
+                      ),
+                    );
+                    await notifier.setProvider(value);
+                    if (!mounted) return;
                     setState(() {
                       _selectedProvider = value;
-                      _availableModels = [];
-                      _freeModels = [];
-                      _modelsError = null;
-                      // Provider default base URL is the sensible start
-                      // unless the user already customised one. Gemini's
-                      // endpoint is hardcoded, so skip it.
-                      if (value != AiProvider.gemini &&
-                          _baseUrlController.text.trim().isEmpty) {
-                        _baseUrlController.text = value.defaultBaseUrl;
-                      }
+                      _refreshControllersFromSettings();
                     });
                   }
                 },
@@ -440,6 +511,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                     AiProvider.gemini => 'AIza...',
                     AiProvider.openrouter => 'sk-or-...',
                     AiProvider.openai => 'sk-...',
+                    AiProvider.claude => 'sk-ant-...',
+                    AiProvider.deepseek => 'sk-...',
                   },
                   hintStyle: TextStyle(
                     color: colors.onSurfaceVariant.withValues(alpha: 0.5),
@@ -500,9 +573,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               _HelpLinks(provider: _selectedProvider),
               const SizedBox(height: 20),
 
-              // ── Base URL (OpenAI-compatible providers) ─────────
-              if (_selectedProvider == AiProvider.openai ||
-                  _selectedProvider == AiProvider.openrouter) ...[
+              // ── Base URL (providers without a fixed endpoint) ──
+              if (!_selectedProvider.hasFixedEndpoint) ...[
                 _sectionLabel(colors, loc.baseUrl),
                 const SizedBox(height: 6),
                 TextField(
@@ -637,6 +709,8 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                   fontSize: 10,
                 ),
               ),
+              const SizedBox(height: 8),
+              _buildFallbackChainCard(colors),
               const SizedBox(height: 20),
 
               // ── Max Tool Result Chars ──────────────────────────
@@ -914,7 +988,9 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       text = switch (_selectedProvider) {
         AiProvider.gemini => loc.apiKeyRequiredGemini,
         AiProvider.openrouter => loc.apiKeyRequiredOpenRouter,
-        AiProvider.openai => loc.apiKeyRequired,
+        AiProvider.openai ||
+        AiProvider.claude ||
+        AiProvider.deepseek => loc.apiKeyRequired,
       };
     } else if (_loadingModels) {
       icon = Icons.sync;
@@ -955,6 +1031,113 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Shows the saved answer-model attempt order: primary first, then the
+  /// two automatic fallbacks (lower flash version + flash-lite). Recomputed
+  /// live as the user edits the model fields; persisted on Save.
+  Widget _buildFallbackChainCard(ColorScheme colors) {
+    final loc = AppLocalizations.of(context);
+    final answer = _answerModelController.text.trim();
+    final fallbacks = _previewFallbacks();
+    final chain = [if (answer.isNotEmpty) answer, ...fallbacks];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.low_priority, size: 16, color: colors.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  loc.answerFallbackTitle,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            loc.answerFallbackDesc,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (chain.isEmpty)
+            Text(
+              loc.answerFallbackEmpty,
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                fontSize: 11,
+              ),
+            )
+          else
+            for (var i = 0; i < chain.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i == chain.length - 1 ? 0 : 6),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: i == 0
+                            ? colors.primary
+                            : colors.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${i + 1}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: i == 0 ? colors.onPrimary : colors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        chain[i],
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.onSurface,
+                          fontFamily: 'monospace',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      i == 0
+                          ? loc.answerFallbackPrimary
+                          : loc.answerFallbackBackup,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
         ],
       ),
     );

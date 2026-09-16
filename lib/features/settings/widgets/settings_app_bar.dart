@@ -40,7 +40,13 @@ class SettingsAppBar extends StatelessWidget implements PreferredSizeWidget {
           IconButton(
             icon: const Icon(Icons.arrow_back),
             color: colors.primary,
-            onPressed: () => context.pop(),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/');
+              }
+            },
           ),
       title: Text(
         'ePitaka',

@@ -778,64 +778,116 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
       );
     }
 
-    // Flattened rows (book headers + expanded items + load-more), driven by
-    // the keyboard navigator; j/k move the selection, Enter activates.
     final rows = _searchNav.rows;
+    int rowIndexOf(SearchRowKind kind, int summaryIndex, [int? paraId]) {
+      return rows.indexWhere(
+        (r) =>
+            r.kind == kind &&
+            r.summaryIndex == summaryIndex &&
+            (paraId == null || r.item?.paraId == paraId),
+      );
+    }
+
     return ListView.builder(
       controller: _resultsScrollController,
-      padding: const EdgeInsets.all(AppDimensions.sm),
-      itemCount: rows.length,
-      itemBuilder: (context, index) {
-        final row = rows[index];
-        final isSelected = index == _searchNav.selected;
-        final Widget child = switch (row.kind) {
-          SearchRowKind.headingCard => const SizedBox.shrink(),
-          SearchRowKind.bookHeader => _BookResultHeader(
-            summary: row.summary!,
-            colors: colors,
-            query: query,
-            onToggleExpanded: () {
-              final notifier = ref.read(searchProvider.notifier);
-              if (row.summary!.isExpanded) {
-                notifier.collapseBook(row.summaryIndex);
-              } else {
-                notifier.expandBook(row.summaryIndex);
-              }
-            },
-          ),
-          SearchRowKind.resultItem => _ResultItemTile(
-            item: row.item!,
-            colors: colors,
-            query: query,
-            onTap: () => _onResultTap(row.summary!, row.item!),
-          ),
-          SearchRowKind.loadMore => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: () => ref
-                    .read(searchProvider.notifier)
-                    .loadMoreForBook(row.summaryIndex),
-                icon: Icon(Icons.expand_more, size: 14),
-                label: Text(
-                  loc.showNMore(
-                    row.summary!.totalCount - row.summary!.loadedCount,
-                  ),
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.primary,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 24),
+      itemCount: summaries.length,
+      itemBuilder: (context, summaryIndex) {
+        final summary = summaries[summaryIndex];
+        final headerIndex = rowIndexOf(SearchRowKind.bookHeader, summaryIndex);
+        final loadMoreIndex = rowIndexOf(SearchRowKind.loadMore, summaryIndex);
+        final items = summary.loadedPages.expand((p) => p).toList();
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          elevation: 0,
+          color: colors.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+            side: BorderSide(
+              color: colors.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
-        };
-        return _SearchRowHighlight(
-          key: isSelected ? _selectedRowKey : null,
-          selected: isSelected,
-          colors: colors,
-          child: child,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _GroupRowHighlight(
+                key: headerIndex == _searchNav.selected
+                    ? _selectedRowKey
+                    : null,
+                selected: headerIndex == _searchNav.selected,
+                colors: colors,
+                child: _BookResultHeader(
+                  summary: summary,
+                  colors: colors,
+                  query: query,
+                  onToggleExpanded: () {
+                    final notifier = ref.read(searchProvider.notifier);
+                    if (summary.isExpanded) {
+                      notifier.collapseBook(summaryIndex);
+                    } else {
+                      notifier.expandBook(summaryIndex);
+                    }
+                  },
+                ),
+              ),
+              if (summary.isExpanded) ...[
+                const Divider(height: 1, indent: 8, endIndent: 8),
+                for (final item in items)
+                  Builder(
+                    builder: (context) {
+                      final itemIndex = rowIndexOf(
+                        SearchRowKind.resultItem,
+                        summaryIndex,
+                        item.paraId,
+                      );
+                      final isSelected = itemIndex == _searchNav.selected;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _GroupRowHighlight(
+                            key: isSelected ? _selectedRowKey : null,
+                            selected: isSelected,
+                            colors: colors,
+                            child: _ResultItemTile(
+                              item: item,
+                              colors: colors,
+                              query: query,
+                              onTap: () => _onResultTap(summary, item),
+                            ),
+                          ),
+                          const Divider(height: 1, indent: 8, endIndent: 8),
+                        ],
+                      );
+                    },
+                  ),
+                if (loadMoreIndex >= 0)
+                  _GroupRowHighlight(
+                    selected: loadMoreIndex == _searchNav.selected,
+                    colors: colors,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () => ref
+                            .read(searchProvider.notifier)
+                            .loadMoreForBook(summaryIndex),
+                        icon: const Icon(Icons.expand_more, size: 14),
+                        label: Text(
+                          loc.showNMore(
+                            summary.totalCount - summary.loadedCount,
+                          ),
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.primary,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -907,86 +959,74 @@ class _BookResultHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final displayName = summary.book.displayName;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onToggleExpanded,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.sm,
-            vertical: 8,
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.import_contacts, size: 14, color: colors.primary),
-              const SizedBox(width: 6),
-              Expanded(
-                // Book names are Pāli — render in the user's script
-                // with the script font, like the library.
-                child: PaliTextStatic(
-                  displayName,
-                  script,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: onToggleExpanded,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          children: [
+            Icon(Icons.import_contacts, size: 14, color: colors.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              // Book names are Pāli — render in the user's script
+              // with the script font, like the library.
+              child: PaliTextStatic(
+                displayName,
+                script,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w600,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: summary.isExpanded
+                    ? colors.primaryContainer
+                    : colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${summary.totalCount}',
+                style: AppTypography.labelSmall.copyWith(
                   color: summary.isExpanded
-                      ? colors.primaryContainer
-                      : colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '${summary.totalCount}',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: summary.isExpanded
-                        ? colors.primary
-                        : colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 10,
-                  ),
+                      ? colors.primary
+                      : colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
                 ),
               ),
-              const SizedBox(width: 4),
-              AnimatedRotation(
-                turns: summary.isExpanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  Icons.expand_more,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
-                ),
+            ),
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              turns: summary.isExpanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                Icons.expand_more,
+                size: 16,
+                color: colors.onSurfaceVariant,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Wraps a keyboard-navigable result row with the selection highlight.
-class _SearchRowHighlight extends StatelessWidget {
+/// Inner highlight for a row inside a grouped book card — no outer margin
+/// so every row spans the full card width consistently.
+class _GroupRowHighlight extends StatelessWidget {
   final bool selected;
   final ColorScheme colors;
   final Widget child;
 
-  const _SearchRowHighlight({
+  const _GroupRowHighlight({
     super.key,
     required this.selected,
     required this.colors,
@@ -997,13 +1037,12 @@ class _SearchRowHighlight extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
-      margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
       decoration: BoxDecoration(
         color: selected
             ? colors.primary.withValues(alpha: 0.10)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: selected
               ? colors.primary.withValues(alpha: 0.6)
@@ -1082,12 +1121,9 @@ class _ResultItemTile extends ConsumerWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppDimensions.sm + 10,
-          vertical: 4,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Para heading
             Row(
@@ -1166,7 +1202,8 @@ class _PanelLineTile extends StatelessWidget {
     final highlightColor = colors.primary.withValues(alpha: 0.25);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(2),
@@ -1176,7 +1213,7 @@ class _PanelLineTile extends StatelessWidget {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (line.pali.isNotEmpty)
             _buildHighlightedPaliText(
@@ -1184,7 +1221,7 @@ class _PanelLineTile extends StatelessWidget {
               searchTerms: searchTerms,
               script: script,
               style: paliTextStyle.copyWith(
-                fontSize: (paliTextStyle.fontSize ?? 14) - 2,
+                fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
                 height: paliTextStyle.height ?? 1.3,
               ),
               highlightColor: highlightColor,
@@ -1225,7 +1262,7 @@ class _PanelLineTile extends StatelessWidget {
       return HtmlTextParser.richText(
         converted,
         effStyle,
-        maxLines: 2,
+        maxLines: 3,
         overflow: TextOverflow.ellipsis,
       );
     }
@@ -1242,7 +1279,7 @@ class _PanelLineTile extends StatelessWidget {
 
     return Text.rich(
       TextSpan(style: effStyle, children: spans),
-      maxLines: 2,
+      maxLines: 3,
       overflow: TextOverflow.ellipsis,
     );
   }
@@ -1260,7 +1297,7 @@ class _PanelLineTile extends StatelessWidget {
       return HtmlTextParser.richText(
         text,
         style,
-        maxLines: 1,
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
       );
     }
@@ -1277,7 +1314,7 @@ class _PanelLineTile extends StatelessWidget {
 
     return Text.rich(
       TextSpan(style: style, children: spans),
-      maxLines: 1,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
   }

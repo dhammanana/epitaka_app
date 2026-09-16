@@ -39,7 +39,13 @@ class AiModelService {
       switch (provider) {
         case AiProvider.gemini:
           return _fetchGeminiModels(apiKey);
+        case AiProvider.claude:
+          return _fetchClaudeModels(
+            apiKey,
+            baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
+          );
         case AiProvider.openai:
+        case AiProvider.deepseek:
           return _fetchOpenAiModels(
             apiKey,
             baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
@@ -58,9 +64,7 @@ class AiModelService {
     }
   }
 
-  static Future<AiModelFetchResult> _fetchGeminiModels(
-    String apiKey,
-  ) async {
+  static Future<AiModelFetchResult> _fetchGeminiModels(String apiKey) async {
     final url = Uri.parse(
       'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
     );
@@ -70,7 +74,8 @@ class AiModelService {
     if (response.statusCode != 200) {
       return AiModelFetchResult(
         models: [],
-        error: 'API error ${response.statusCode}: ${_parseError(response.body)}',
+        error:
+            'API error ${response.statusCode}: ${_parseError(response.body)}',
       );
     }
 
@@ -79,28 +84,78 @@ class AiModelService {
 
     // Gemini model names are like "models/gemini-2.0-flash"
     // We extract the short name and filter for generateContent-capable models
-    final models = modelsList
-        .where((m) {
-          final model = m as Map<String, dynamic>;
-          final supportedMethods =
-              model['supportedGenerationMethods'] as List<dynamic>?;
-          return supportedMethods?.contains('generateContent') ?? false;
-        })
-        .map((m) {
-          final name = (m as Map<String, dynamic>)['name'] as String? ?? '';
-          // Strip "models/" prefix
-          return name.startsWith('models/') ? name.substring(7) : name;
-        })
-        .where((n) => n.isNotEmpty)
-        // Only include gemini-NNN models (skip embedding, aqa, imagen, etc.)
-        .where((n) => RegExp(r'^gemini-\d+').hasMatch(n))
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
+    final models =
+        modelsList
+            .where((m) {
+              final model = m as Map<String, dynamic>;
+              final supportedMethods =
+                  model['supportedGenerationMethods'] as List<dynamic>?;
+              return supportedMethods?.contains('generateContent') ?? false;
+            })
+            .map((m) {
+              final name = (m as Map<String, dynamic>)['name'] as String? ?? '';
+              // Strip "models/" prefix
+              return name.startsWith('models/') ? name.substring(7) : name;
+            })
+            .where((n) => n.isNotEmpty)
+            // Only include gemini-NNN models (skip embedding, aqa, imagen, etc.)
+            .where((n) => RegExp(r'^gemini-\d+').hasMatch(n))
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
 
     if (models.isEmpty) {
       return AiModelFetchResult(
         models: [],
         error: 'No chat-capable models found for this API key.',
+      );
+    }
+
+    return AiModelFetchResult(models: models);
+  }
+
+  /// Fetch models from Anthropic (`GET {base}/models` with the
+  /// `x-api-key` + `anthropic-version` headers).
+  static Future<AiModelFetchResult> _fetchClaudeModels(
+    String apiKey,
+    String baseUrl,
+  ) async {
+    var base = baseUrl.trim();
+    if (base.isEmpty) base = AiProvider.claude.defaultBaseUrl;
+    while (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    if (base.toLowerCase().endsWith('/messages')) {
+      base = base.substring(0, base.length - '/messages'.length);
+    }
+    final url = Uri.parse('$base/models');
+
+    final response = await http.get(
+      url,
+      headers: {'x-api-key': apiKey, 'anthropic-version': '2023-06-01'},
+    );
+
+    if (response.statusCode != 200) {
+      return AiModelFetchResult(
+        models: [],
+        error:
+            'API error ${response.statusCode}: ${_parseError(response.body)}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final modelsList = data['data'] as List<dynamic>? ?? [];
+
+    final models =
+        modelsList
+            .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
+
+    if (models.isEmpty) {
+      return AiModelFetchResult(
+        models: [],
+        error: 'No models found for this API key.',
       );
     }
 
@@ -115,26 +170,26 @@ class AiModelService {
 
     final response = await http.get(
       url,
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-      },
+      headers: {'Authorization': 'Bearer $apiKey'},
     );
 
     if (response.statusCode != 200) {
       return AiModelFetchResult(
         models: [],
-        error: 'API error ${response.statusCode}: ${_parseError(response.body)}',
+        error:
+            'API error ${response.statusCode}: ${_parseError(response.body)}',
       );
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final modelsList = data['data'] as List<dynamic>? ?? [];
 
-    final models = modelsList
-        .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
-        .where((n) => n.isNotEmpty)
-        .toList()
-      ..sort();
+    final models =
+        modelsList
+            .map((m) => (m as Map<String, dynamic>)['id'] as String? ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList()
+          ..sort();
 
     if (models.isEmpty) {
       return AiModelFetchResult(
@@ -159,15 +214,14 @@ class AiModelService {
 
     final response = await http.get(
       url,
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-      },
+      headers: {'Authorization': 'Bearer $apiKey'},
     );
 
     if (response.statusCode != 200) {
       return AiModelFetchResult(
         models: [],
-        error: 'API error ${response.statusCode}: ${_parseError(response.body)}',
+        error:
+            'API error ${response.statusCode}: ${_parseError(response.body)}',
       );
     }
 
@@ -189,8 +243,9 @@ class AiModelService {
       // data is absent).
       final pricing = m['pricing'] as Map<String, dynamic>?;
       final prompt = pricing == null ? -1 : _parsePrice(pricing['prompt']);
-      final completion =
-          pricing == null ? -1 : _parsePrice(pricing['completion']);
+      final completion = pricing == null
+          ? -1
+          : _parsePrice(pricing['completion']);
       if ((prompt == 0 && completion == 0) ||
           id.toLowerCase().endsWith(':free')) {
         freeModels.add(id);

@@ -41,8 +41,8 @@ class AttachmentsNotifier extends StateNotifier<List<HeadingAttachment>> {
 /// Provider for the list of attached headings in the current message.
 final attachmentsProvider =
     StateNotifierProvider<AttachmentsNotifier, List<HeadingAttachment>>((ref) {
-  return AttachmentsNotifier();
-});
+      return AttachmentsNotifier();
+    });
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  MENTION SEARCH
@@ -65,6 +65,15 @@ class MentionSearchState {
   /// Index of the currently highlighted item (for keyboard navigation).
   final int selectedIndex;
 
+  /// The `@query` token (e.g. "@test") that was consumed by the last
+  /// [MentionSearchNotifier.attachSelected] call. The chat screen listens
+  /// for [stripEpoch] bumps and removes this token from the input field so
+  /// the user doesn't have to delete "@test" by hand after attaching.
+  final String? stripToken;
+
+  /// Bumped every time an item is attached via `attachSelected`.
+  final int stripEpoch;
+
   /// Error message, if any.
   final String? error;
 
@@ -74,6 +83,8 @@ class MentionSearchState {
     this.results = const [],
     this.isLoading = false,
     this.selectedIndex = 0,
+    this.stripToken,
+    this.stripEpoch = 0,
     this.error,
   });
 
@@ -83,6 +94,8 @@ class MentionSearchState {
     List<MentionSearchResult>? results,
     bool? isLoading,
     int? selectedIndex,
+    String? stripToken,
+    int? stripEpoch,
     String? error,
     bool clearError = false,
   }) {
@@ -92,6 +105,8 @@ class MentionSearchState {
       results: results ?? this.results,
       isLoading: isLoading ?? this.isLoading,
       selectedIndex: selectedIndex ?? this.selectedIndex,
+      stripToken: stripToken ?? this.stripToken,
+      stripEpoch: stripEpoch ?? this.stripEpoch,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -101,6 +116,10 @@ class MentionSearchState {
 class MentionSearchNotifier extends StateNotifier<MentionSearchState> {
   final Ref _ref;
   Timer? _debounceTimer;
+
+  /// Epoch counter for [MentionSearchState.stripEpoch]. Kept outside the
+  /// state so [deactivate] (which resets the state) never loses the count.
+  int _stripEpoch = 0;
 
   MentionSearchNotifier(this._ref) : super(const MentionSearchState());
 
@@ -178,7 +197,10 @@ class MentionSearchNotifier extends StateNotifier<MentionSearchState> {
   /// Navigate selection up/down.
   void moveSelection(int delta) {
     if (!state.isActive || state.results.isEmpty) return;
-    final newIndex = (state.selectedIndex + delta).clamp(0, state.results.length - 1);
+    final newIndex = (state.selectedIndex + delta).clamp(
+      0,
+      state.results.length - 1,
+    );
     state = state.copyWith(selectedIndex: newIndex);
   }
 
@@ -187,6 +209,32 @@ class MentionSearchNotifier extends StateNotifier<MentionSearchState> {
     if (!state.isActive || state.results.isEmpty) return null;
     if (state.selectedIndex >= state.results.length) return null;
     return state.results[state.selectedIndex];
+  }
+
+  /// Attach the currently-selected result and close the overlay.
+  ///
+  /// Records the consumed `@query` token in [MentionSearchState.stripToken]
+  /// (bumping [MentionSearchState.stripEpoch]) so the chat screen can strip
+  /// it from the input field. Returns the attached result, or null when
+  /// nothing is selected. Single entry point for both tap (overlay) and
+  /// keyboard (enter/tab) selection.
+  MentionSearchResult? attachSelected(AttachmentsNotifier attachments) =>
+      attachAt(state.selectedIndex, attachments);
+
+  /// Attach the result at [index] and close the overlay. Used by overlay
+  /// taps, which may hit a non-highlighted row.
+  MentionSearchResult? attachAt(int index, AttachmentsNotifier attachments) {
+    if (!state.isActive || index < 0 || index >= state.results.length) {
+      return null;
+    }
+    final selected = state.results[index];
+    attachments.add(selected.toAttachment());
+    _stripEpoch++;
+    state = MentionSearchState(
+      stripToken: '@${state.query}',
+      stripEpoch: _stripEpoch,
+    );
+    return selected;
   }
 
   /// Debounced search.
@@ -210,19 +258,17 @@ class MentionSearchNotifier extends StateNotifier<MentionSearchState> {
       );
     } catch (e) {
       if (state.isActive) {
-        state = state.copyWith(
-          isLoading: false,
-          error: 'Search error: $e',
-        );
+        state = state.copyWith(isLoading: false, error: 'Search error: $e');
       }
     }
   }
 }
 
 /// Provider for the @ mention search state.
-final mentionSearchProvider = StateNotifierProvider<MentionSearchNotifier, MentionSearchState>((ref) {
-  return MentionSearchNotifier(ref);
-});
+final mentionSearchProvider =
+    StateNotifierProvider<MentionSearchNotifier, MentionSearchState>((ref) {
+      return MentionSearchNotifier(ref);
+    });
 
 /// Provider that checks whether the heading @ mention index has been built.
 /// Used by the chat screen to show a "build index" prompt if needed.

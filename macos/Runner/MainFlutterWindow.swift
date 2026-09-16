@@ -19,6 +19,7 @@ class MainFlutterWindow: NSWindow {
   private var speechChannel: FlutterMethodChannel?
   private var utteranceGen = 0
   private var completionWatchdog: Timer?
+  private var defaultSpeechRate: Float?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -136,10 +137,20 @@ class MainFlutterWindow: NSWindow {
         }
 
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Dart sends 0.5 = normal (1x). NSSpeech rate is in wpm, so scale
+        // the default rate by rate/0.5 (2x -> double speed, 3x -> triple).
+        let requestedRate = (args["rate"] as? NSNumber)?.doubleValue ?? 0.5
+        let speedFactor = max(0.2, min(requestedRate / 0.5, 16.0))
         DispatchQueue.main.async {
           let gen = self.beginUtterance()
           if self.speechSynthesizer.isSpeaking {
             self.speechSynthesizer.stopSpeaking()
+          }
+          if self.defaultSpeechRate == nil {
+            self.defaultSpeechRate = self.speechSynthesizer.rate
+          }
+          if let base = self.defaultSpeechRate, base > 0 {
+            self.speechSynthesizer.rate = base * Float(speedFactor)
           }
           // NEVER call setVoice here — not even with nil. The pristine
           // synthesizer follows the system default voice (the user's Siri

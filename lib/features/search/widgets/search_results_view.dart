@@ -25,16 +25,6 @@ import '../providers/search_provider.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
 
-/// Phone-only horizontal padding budget for one search result line.
-///
-/// On phones the Pāli snippet must end up exactly 5px from each screen
-/// edge (10px total), split across the nested layers as
-/// 0 (list) + 2 (tile) + 3 (line). Desktop/tablet keep their own wider
-/// margins and ignore these.
-const double _phoneListHPad = 10;
-const double _phoneTileHPad = 3;
-const double _phoneLineHPad = 10;
-
 /// The shared results list for a completed [SearchResults] state.
 ///
 /// Used by both the full-page Search screen and the Gavesana AI search
@@ -63,8 +53,7 @@ class SearchResultsView extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<SearchResultsView> createState() =>
-      _SearchResultsViewState();
+  ConsumerState<SearchResultsView> createState() => _SearchResultsViewState();
 }
 
 class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
@@ -185,66 +174,140 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
       ),
       child: ListView.builder(
         padding: EdgeInsets.fromLTRB(
-          isPhone ? _phoneListHPad : AppDimensions.marginMobile,
-          AppDimensions.sm,
-          isPhone ? _phoneListHPad : AppDimensions.marginMobile,
+          isPhone ? 6 : AppDimensions.marginMobile,
+          6,
+          isPhone ? 6 : AppDimensions.marginMobile,
           AppDimensions.bottomToolbarHeight + AppDimensions.lg,
         ),
-        itemCount: rows.length,
+        itemCount:
+            (state.headings.isNotEmpty ? 1 : 0) + state.bookSummaries.length,
         itemBuilder: (context, index) {
-          final row = rows[index];
-          final isSelected = index == _searchNav.selected;
-          final Widget child = switch (row.kind) {
-            SearchRowKind.headingCard => _HeadingResultsCard(
-              headings: row.headings!,
-              colors: colors,
-              onTap: (heading) =>
-                  _onHeadingResultTap(context, ref, heading),
-            ),
-            SearchRowKind.bookHeader => _BookResultHeader(
-              summary: row.summary!,
-              colors: colors,
-              onToggleExpanded: () {
-                final notifier = ref.read(searchProvider.notifier);
-                if (row.summary!.isExpanded) {
-                  notifier.collapseBook(row.summaryIndex);
-                } else {
-                  notifier.expandBook(row.summaryIndex);
-                }
-              },
-            ),
-            SearchRowKind.resultItem => _SearchResultItemTile(
-              item: row.item!,
-              colors: colors,
-              onTap: () => _onResultTap(context, ref, row.summary!, row.item!),
-              onLongPress: () => _onResultLongPress(
-                context,
-                ref,
-                row.summary!,
-                row.item!,
+          var offset = 0;
+          if (state.headings.isNotEmpty) {
+            if (index == 0) {
+              final headingRow = rows.indexWhere(
+                (r) => r.kind == SearchRowKind.headingCard,
+              );
+              return _SearchRowHighlight(
+                key: headingRow == _searchNav.selected ? _selectedRowKey : null,
+                selected: headingRow == _searchNav.selected,
+                colors: colors,
+                child: _HeadingResultsCard(
+                  headings: state.headings,
+                  colors: colors,
+                  onTap: (heading) =>
+                      _onHeadingResultTap(context, ref, heading),
+                ),
+              );
+            }
+            offset = 1;
+          }
+          final summaryIndex = index - offset;
+          final summary = state.bookSummaries[summaryIndex];
+          int rowIndexOf(SearchRowKind kind, [int? paraId]) {
+            return rows.indexWhere(
+              (r) =>
+                  r.kind == kind &&
+                  r.summaryIndex == summaryIndex &&
+                  (paraId == null || r.item?.paraId == paraId),
+            );
+          }
+
+          final headerIndex = rowIndexOf(SearchRowKind.bookHeader);
+          final loadMoreIndex = rowIndexOf(SearchRowKind.loadMore);
+          final items = summary.loadedPages.expand((p) => p).toList();
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            elevation: 0,
+            color: colors.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+              side: BorderSide(
+                color: colors.outlineVariant.withValues(alpha: 0.3),
               ),
             ),
-            SearchRowKind.loadMore => SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: () => ref
-                    .read(searchProvider.notifier)
-                    .loadMoreForBook(row.summaryIndex),
-                icon: const Icon(Icons.expand_more, size: 18),
-                label: Text(
-                  '${loc.showMore} (${row.summary!.totalCount - row.summary!.loadedCount} ${loc.remaining})',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.primary,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _GroupRowHighlight(
+                  key: headerIndex == _searchNav.selected
+                      ? _selectedRowKey
+                      : null,
+                  selected: headerIndex == _searchNav.selected,
+                  colors: colors,
+                  child: _BookResultHeader(
+                    summary: summary,
+                    colors: colors,
+                    onToggleExpanded: () {
+                      final notifier = ref.read(searchProvider.notifier);
+                      if (summary.isExpanded) {
+                        notifier.collapseBook(summaryIndex);
+                      } else {
+                        notifier.expandBook(summaryIndex);
+                      }
+                    },
                   ),
                 ),
-              ),
+                if (summary.isExpanded) ...[
+                  const Divider(height: 1, indent: 8, endIndent: 8),
+                  for (final item in items)
+                    Builder(
+                      builder: (context) {
+                        final itemIndex = rowIndexOf(
+                          SearchRowKind.resultItem,
+                          item.paraId,
+                        );
+                        final isSelected = itemIndex == _searchNav.selected;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _GroupRowHighlight(
+                              key: isSelected ? _selectedRowKey : null,
+                              selected: isSelected,
+                              colors: colors,
+                              child: _SearchResultItemTile(
+                                item: item,
+                                colors: colors,
+                                onTap: () =>
+                                    _onResultTap(context, ref, summary, item),
+                                onLongPress: () => _onResultLongPress(
+                                  context,
+                                  ref,
+                                  summary,
+                                  item,
+                                ),
+                              ),
+                            ),
+                            const Divider(height: 1, indent: 8, endIndent: 8),
+                          ],
+                        );
+                      },
+                    ),
+                  if (loadMoreIndex >= 0)
+                    _GroupRowHighlight(
+                      selected: loadMoreIndex == _searchNav.selected,
+                      colors: colors,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          onPressed: () => ref
+                              .read(searchProvider.notifier)
+                              .loadMoreForBook(summaryIndex),
+                          icon: const Icon(Icons.expand_more, size: 18),
+                          label: Text(
+                            '${loc.showMore} (${summary.totalCount - summary.loadedCount} ${loc.remaining})',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ],
             ),
-          };
-          return _SearchRowHighlight(
-            key: isSelected ? _selectedRowKey : null,
-            selected: isSelected,
-            colors: colors,
-            child: child,
           );
         },
       ),
@@ -273,7 +336,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
       initialLineId = null;
     }
 
-    ref.read(readerTabsProvider.notifier).openTab(
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
           ReaderTabInfo(
             bookId: item.bookId,
             bookName: summary.book.bookName ?? item.bookId,
@@ -290,7 +355,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
     WidgetRef ref,
     HeadingResult heading,
   ) {
-    ref.read(readerTabsProvider.notifier).openTab(
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
           ReaderTabInfo(
             bookId: heading.bookId,
             bookName: heading.bookName ?? heading.bookId,
@@ -470,7 +537,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
         // not the original match line.
         onAction: (currentParaId, currentLineId) {
           // Open the reader tab
-          ref.read(readerTabsProvider.notifier).openTab(
+          ref
+              .read(readerTabsProvider.notifier)
+              .openTab(
                 ReaderTabInfo(
                   bookId: item.bookId,
                   bookName: summary.book.bookName ?? item.bookId,
@@ -508,147 +577,129 @@ class _BookResultHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final displayName = _displayBookName(summary.book);
     final subtitleStyle = AppTypography.labelSmall.copyWith(
       color: colors.onSurfaceVariant,
       fontSize: 10,
     );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppDimensions.sm),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-            onTap: onToggleExpanded,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.md,
-                vertical: 12,
+    return InkWell(
+      onTap: onToggleExpanded,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: Icon(
+                Icons.import_contacts,
+                size: 16,
+                color: colors.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
+                  // Book names are Pāli — render them in the user's
+                  // script with the script font, like the library.
+                  PaliTextStatic(
+                    displayName,
+                    script,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
                     ),
-                    child: Icon(
-                      Icons.import_contacts,
-                      size: 16,
-                      color: colors.primary,
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Book names are Pāli — render them in the user's
-                        // script with the script font, like the library.
-                        PaliTextStatic(
-                          displayName,
-                          script,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        // Convert each Pāli name separately so the '·'
-                        // separator stays plain text (it has no glyph in the
-                        // script fonts and must not be run through the
-                        // converter).
-                        if (summary.book.nikaya != null ||
-                            summary.book.category != null)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (summary.book.nikaya != null)
-                                PaliTextStatic(
-                                  summary.book.nikaya!,
-                                  script,
-                                  style: subtitleStyle,
-                                  maxLines: 1,
-                                ),
-                              if (summary.book.nikaya != null &&
-                                  summary.book.category != null)
-                                Text(' · ', style: subtitleStyle),
-                              if (summary.book.category != null)
-                                PaliTextStatic(
-                                  summary.book.category!,
-                                  script,
-                                  style: subtitleStyle,
-                                  maxLines: 1,
-                                ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: summary.isExpanded
-                          ? colors.primaryContainer
-                          : colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
+                  // Convert each Pāli name separately so the '·'
+                  // separator stays plain text (it has no glyph in the
+                  // script fonts and must not be run through the
+                  // converter).
+                  if (summary.book.nikaya != null ||
+                      summary.book.category != null)
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '${summary.totalCount}',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: summary.isExpanded
-                                ? colors.primary
-                                : colors.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 11,
+                        if (summary.book.nikaya != null)
+                          PaliTextStatic(
+                            summary.book.nikaya!,
+                            script,
+                            style: subtitleStyle,
+                            maxLines: 1,
                           ),
-                        ),
-                        if (summary.isExpanded &&
-                            summary.loadedCount < summary.totalCount)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 2),
-                            child: Text(
-                              '/${summary.loadedCount}',
-                              style: AppTypography.labelSmall.copyWith(
-                                color: colors.onSurfaceVariant.withValues(
-                                  alpha: 0.5,
-                                ),
-                                fontSize: 9,
-                              ),
-                            ),
+                        if (summary.book.nikaya != null &&
+                            summary.book.category != null)
+                          Text(' · ', style: subtitleStyle),
+                        if (summary.book.category != null)
+                          PaliTextStatic(
+                            summary.book.category!,
+                            script,
+                            style: subtitleStyle,
+                            maxLines: 1,
                           ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: summary.isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.expand_more,
-                      size: 20,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
                 ],
               ),
             ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: summary.isExpanded
+                    ? colors.primaryContainer
+                    : colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${summary.totalCount}',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: summary.isExpanded
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                  if (summary.isExpanded &&
+                      summary.loadedCount < summary.totalCount)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 2),
+                      child: Text(
+                        '/${summary.loadedCount}',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                          fontSize: 9,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            AnimatedRotation(
+              turns: summary.isExpanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                Icons.expand_more,
+                size: 20,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -693,6 +744,42 @@ class _SearchRowHighlight extends StatelessWidget {
   }
 }
 
+/// Inner highlight for a row inside a grouped book card — no outer margin
+/// so header and results span the full card width consistently.
+class _GroupRowHighlight extends StatelessWidget {
+  final bool selected;
+  final ColorScheme colors;
+  final Widget child;
+
+  const _GroupRowHighlight({
+    super.key,
+    required this.selected,
+    required this.colors,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        border: Border.all(
+          color: selected
+              ? colors.primary.withValues(alpha: 0.6)
+              : Colors.transparent,
+          width: 1.2,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
 // ── Heading Results Card ──────────────────────────────────────────────────
 
 class _HeadingResultsCard extends ConsumerWidget {
@@ -708,7 +795,7 @@ class _HeadingResultsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final loc = AppLocalizations.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: AppDimensions.sm),
@@ -898,15 +985,9 @@ class _SearchResultItemTile extends ConsumerWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        // 5px per side on phones: 0 (list) + 2 (tile) + 3 (line).
-        padding: EdgeInsets.fromLTRB(
-          isPhone ? _phoneTileHPad : AppDimensions.md,
-          8,
-          isPhone ? _phoneTileHPad : AppDimensions.md,
-          8,
-        ),
+        padding: EdgeInsets.fromLTRB(isPhone ? 4 : 8, 5, isPhone ? 4 : 8, 5),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── Para heading badge (tap to open) ──────────────────────
             Padding(
@@ -1001,13 +1082,10 @@ class _LineTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final highlightColor = colors.primary.withValues(alpha: 0.25);
 
-    // 5px per side on phones: 0 (list) + 2 (tile) + 3 (this line).
     final isPhone = ResponsiveBreakpoint.isPhone(context);
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isPhone ? _phoneLineHPad : 8,
-        vertical: 3,
-      ),
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: isPhone ? 6 : 8, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(4),
@@ -1017,7 +1095,7 @@ class _LineTile extends StatelessWidget {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Pali text — with search term highlighting and script conversion
           if (line.pali.isNotEmpty)
@@ -1027,7 +1105,7 @@ class _LineTile extends StatelessWidget {
               query: query,
               script: script,
               style: paliTextStyle.copyWith(
-                fontSize: paliTextStyle.fontSize ?? 14,
+                fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
                 height: paliTextStyle.height ?? 1.4,
               ),
               highlightColor: highlightColor,

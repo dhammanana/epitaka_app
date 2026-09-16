@@ -4,7 +4,9 @@
 enum AiProvider {
   gemini,
   openai,
-  openrouter;
+  openrouter,
+  claude,
+  deepseek;
 
   String get displayName {
     switch (this) {
@@ -14,6 +16,37 @@ enum AiProvider {
         return 'OpenAI-compatible';
       case AiProvider.openrouter:
         return 'OpenRouter';
+      case AiProvider.claude:
+        return 'Anthropic Claude';
+      case AiProvider.deepseek:
+        return 'DeepSeek';
+    }
+  }
+
+  /// True for providers speaking the OpenAI chat-completions protocol
+  /// (same request shape, only the base URL differs).
+  bool get isOpenAiCompatible {
+    switch (this) {
+      case AiProvider.openai:
+      case AiProvider.openrouter:
+      case AiProvider.deepseek:
+        return true;
+      case AiProvider.gemini:
+      case AiProvider.claude:
+        return false;
+    }
+  }
+
+  /// True for providers with a fixed endpoint (no base-URL field needed).
+  bool get hasFixedEndpoint {
+    switch (this) {
+      case AiProvider.gemini:
+      case AiProvider.claude:
+        return true;
+      case AiProvider.openai:
+      case AiProvider.openrouter:
+      case AiProvider.deepseek:
+        return false;
     }
   }
 
@@ -25,6 +58,10 @@ enum AiProvider {
         return 'https://api.openai.com/v1';
       case AiProvider.openrouter:
         return 'https://openrouter.ai/api/v1';
+      case AiProvider.claude:
+        return 'https://api.anthropic.com/v1';
+      case AiProvider.deepseek:
+        return 'https://api.deepseek.com/v1';
     }
   }
 
@@ -37,6 +74,10 @@ enum AiProvider {
         return 'https://platform.openai.com/api-keys';
       case AiProvider.openrouter:
         return 'https://openrouter.ai/docs/quickstart';
+      case AiProvider.claude:
+        return 'https://docs.anthropic.com/en/api/getting-started';
+      case AiProvider.deepseek:
+        return 'https://platform.deepseek.com/api_keys';
     }
   }
 
@@ -49,6 +90,10 @@ enum AiProvider {
         return 'Get an OpenAI API key';
       case AiProvider.openrouter:
         return 'Get an OpenRouter API key';
+      case AiProvider.claude:
+        return 'Get an Anthropic API key';
+      case AiProvider.deepseek:
+        return 'Get a DeepSeek API key';
     }
   }
 
@@ -62,6 +107,10 @@ enum AiProvider {
         return 'https://platform.openai.com/api-keys';
       case AiProvider.openrouter:
         return 'https://openrouter.ai/keys';
+      case AiProvider.claude:
+        return 'https://console.anthropic.com/settings/keys';
+      case AiProvider.deepseek:
+        return 'https://platform.deepseek.com/api_keys';
     }
   }
 
@@ -74,10 +123,7 @@ enum AiProvider {
             label: 'OpenRouter (many models)',
             url: 'https://openrouter.ai/keys',
           ),
-          (
-            label: 'DeepSeek',
-            url: 'https://platform.deepseek.com/api_keys',
-          ),
+          (label: 'DeepSeek', url: 'https://platform.deepseek.com/api_keys'),
         ];
       case AiProvider.openai:
         return [
@@ -85,10 +131,7 @@ enum AiProvider {
             label: 'OpenRouter (many models)',
             url: 'https://openrouter.ai/keys',
           ),
-          (
-            label: 'DeepSeek',
-            url: 'https://platform.deepseek.com/api_keys',
-          ),
+          (label: 'DeepSeek', url: 'https://platform.deepseek.com/api_keys'),
           (
             label: 'Google Gemini',
             url: 'https://ai.google.dev/gemini-api/docs/api-key',
@@ -96,21 +139,37 @@ enum AiProvider {
         ];
       case AiProvider.openrouter:
         return [
-          (
-            label: 'OpenRouter models',
-            url: 'https://openrouter.ai/models',
-          ),
+          (label: 'OpenRouter models', url: 'https://openrouter.ai/models'),
           (
             label: 'Free models',
             url: 'https://openrouter.ai/collections/free-models',
           ),
-          (
-            label: 'DeepSeek',
-            url: 'https://platform.deepseek.com/api_keys',
-          ),
+          (label: 'DeepSeek', url: 'https://platform.deepseek.com/api_keys'),
           (
             label: 'Google Gemini',
             url: 'https://ai.google.dev/gemini-api/docs/api-key',
+          ),
+        ];
+      case AiProvider.claude:
+        return [
+          (
+            label: 'Anthropic docs',
+            url: 'https://docs.anthropic.com/en/api/getting-started',
+          ),
+          (
+            label: 'OpenRouter (Claude via OpenRouter)',
+            url: 'https://openrouter.ai/keys',
+          ),
+        ];
+      case AiProvider.deepseek:
+        return [
+          (
+            label: 'DeepSeek docs',
+            url: 'https://platform.deepseek.com/api_keys',
+          ),
+          (
+            label: 'OpenRouter (many models)',
+            url: 'https://openrouter.ai/keys',
           ),
         ];
     }
@@ -125,6 +184,11 @@ enum AiProvider {
         return AiProvider.openai;
       case 'openrouter':
         return AiProvider.openrouter;
+      case 'claude':
+      case 'anthropic':
+        return AiProvider.claude;
+      case 'deepseek':
+        return AiProvider.deepseek;
       default:
         return AiProvider.gemini;
     }

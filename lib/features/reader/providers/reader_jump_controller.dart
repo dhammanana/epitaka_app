@@ -113,7 +113,10 @@ class ReaderJumpController {
           final para = state.paragraphs[index];
           final lineIndex = para.lines.indexWhere((l) => l.lineId == lineId);
           if (lineIndex >= 0 && para.lines.length > 1) {
-            return ((lineIndex / (para.lines.length - 1)) * 0.3).clamp(0.0, 0.3);
+            return ((lineIndex / (para.lines.length - 1)) * 0.1).clamp(
+              0.0,
+              0.1,
+            );
           }
         }
       }
@@ -177,7 +180,7 @@ class ReaderJumpController {
         );
         Scrollable.ensureVisible(
           lineContext,
-          alignment: 0.3,
+          alignment: 0.1,
           duration: const Duration(milliseconds: 100),
           curve: Curves.easeOut,
         ).then((_) {

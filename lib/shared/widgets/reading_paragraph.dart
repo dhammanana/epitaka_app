@@ -56,6 +56,10 @@ class ReadingParagraph extends StatelessWidget {
   /// incorrectly highlight the same line number in other paragraphs.
   final int? ttsHighlightParaId;
 
+  /// True when the TTS item being spoken is Pali, false for translation.
+  /// Null highlights the translation (legacy behavior).
+  final bool? ttsHighlightIsPali;
+
   /// Line ID to highlight after a jump (TOC, search, dictionary, etc.).
   /// The highlight fades out after a few seconds.
   final int? jumpHighlightLineId;
@@ -143,6 +147,7 @@ class ReadingParagraph extends StatelessWidget {
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
+    this.ttsHighlightIsPali,
     this.jumpHighlightLineId,
     this.jumpHighlightParaId,
     this.lineKeys,
@@ -476,11 +481,15 @@ class ReadingParagraph extends StatelessWidget {
         final startsNewPage = linePage != null && linePage != runningPage;
         if (linePage != null) runningPage = linePage;
 
-        final isHighlighted =
+        final isTtsLine =
             ttsHighlightLineId != null &&
             ttsHighlightParaId != null &&
             paragraph.paraId == ttsHighlightParaId &&
             lineId == ttsHighlightLineId;
+        final isPaliHighlighted = isTtsLine && ttsHighlightIsPali == true;
+        final isTranslationHighlighted =
+            isTtsLine && ttsHighlightIsPali != true;
+        final isHighlighted = isTtsLine;
 
         final isJumpHighlighted =
             jumpHighlightLineId != null &&
@@ -520,12 +529,26 @@ class ReadingParagraph extends StatelessWidget {
                   segment: 'pali',
                 ),
                 behavior: HitTestBehavior.translucent,
-                child: _buildPaliLine(
-                  context,
-                  line.paliText!,
-                  colors,
-                  lineId: lineId,
-                ),
+                child: isPaliHighlighted
+                    ? Container(
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _buildPaliLine(
+                          context,
+                          line.paliText!,
+                          colors,
+                          lineId: lineId,
+                        ),
+                      )
+                    : _buildPaliLine(
+                        context,
+                        line.paliText!,
+                        colors,
+                        lineId: lineId,
+                      ),
               ),
             if (displayMode == ParagraphDisplayMode.lineByLine &&
                 showTranslation)
@@ -533,7 +556,7 @@ class ReadingParagraph extends StatelessWidget {
                 context,
                 line.translations,
                 colors,
-                isHighlighted,
+                isTranslationHighlighted,
                 lineId: lineId,
                 remarks: line.remarks,
               ),

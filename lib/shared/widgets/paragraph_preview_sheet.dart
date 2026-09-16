@@ -1,5 +1,7 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent, SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +14,16 @@ import '../../features/dictionary/widgets/dictionary_open.dart';
 import 'pali_text.dart';
 import 'preview_content.dart';
 import 'wide_bottom_sheet.dart';
+
+/// True when [s] carries no real title text — only digits and number
+/// punctuation (e.g. a bare paragraph number like "150."). Such headings
+/// are hidden instead of shown as a meaningless numeric title.
+bool isNumericOnlyTitle(String s) {
+  final t = s.trim();
+  return t.isNotEmpty &&
+      RegExp(r'^[\d\s.,:;\-–—]+$').hasMatch(t) &&
+      RegExp(r'\d').hasMatch(t);
+}
 
 Future<void> showParagraphPreviewSheet(
   BuildContext context, {
@@ -114,17 +126,18 @@ class _ParagraphPreviewSheet extends ConsumerStatefulWidget {
       _ParagraphPreviewSheetState();
 }
 
-class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> {
+class _ParagraphPreviewSheetState
+    extends ConsumerState<_ParagraphPreviewSheet> {
   final ScrollController _scrollController = ScrollController();
 
   /// Key on the scroll viewport, used to resolve the currently-visible line
   /// when the action button is tapped.
   final GlobalKey _viewportKey = GlobalKey();
 
-  /// One GlobalKey per rendered line (indexed by position in
-  /// [widget.lines]): used to scroll the target line into view on open and
-  /// to resolve which line the user is currently reading.
-  final Map<int, GlobalKey> _lineKeys = {};
+  /// The single [GlobalKey] in the sheet, attached to the target line (see
+  /// [_targetLineIndex]). Used to scroll that line into view on open. Every
+  /// other line gets a lightweight [ValueKey].
+  final GlobalKey _targetKey = GlobalKey();
 
   bool _didScrollToTarget = false;
   int _scrollRetries = 0;
@@ -133,20 +146,36 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
   SelectedContent? _lastSelectedContent;
 
   /// Index into [widget.lines] the sheet lands on when it opens — the exact
-  /// scrollTo line, or the first line of the target paragraph when the exact
-  /// line isn't in the rendered range.
+  /// scrollTo line, or the closest line of the target paragraph when the
+  /// exact line isn't in the rendered range (e.g. a cited line number
+  /// beyond the paragraph's last line).
   int? _targetLineIndex;
 
-  /// Max attempts to locate the target line before giving up (the cited
-  /// line may be absent from the rendered lines, e.g. hallucinated IDs).
-  static const int _maxScrollRetries = 8;
+  /// Max forward-page attempts before giving up on reaching the target row.
+  static const int _maxScrollRetries = 20;
+
+  /// Rows cached around the viewport (each side). Short previews (book-link
+  /// / citation sheets, capped at ~61 lines) build every row on the first
+  /// frame so the target row exists immediately; very long ones (search
+  /// previews) page forward in [_scrollToTarget] instead.
+  static const int _eagerCacheLineLimit = 80;
+
+  /// Per-side pixel cache for very long lists (see [_eagerCacheLineLimit]).
+  static const double _largeListCacheExtent = 8000.0;
+
+  /// Cache extent for the lines list: eager for short previews, bounded
+  /// for very long ones. Used both by the [ListView] and by the paging
+  /// step in [_scrollToTarget] (step = viewport + cache, so pages always
+  /// overlap and the target row can never be skipped over).
+  double get _cacheExtent {
+    final n = widget.lines.length;
+    if (n <= _eagerCacheLineLimit) return n * 250.0;
+    return _largeListCacheExtent;
+  }
 
   @override
   void initState() {
     super.initState();
-    for (var i = 0; i < widget.lines.length; i++) {
-      _lineKeys[i] = GlobalKey();
-    }
     _targetLineIndex = _resolveTargetLineIndex();
     // Scroll the exact target line into view once the sheet is laid out.
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToTarget());
@@ -170,49 +199,73 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
       if (exact >= 0) return exact;
     }
     if (para != null) {
-      final first = lines.indexWhere((l) => l.paraId == para);
-      if (first >= 0) return first;
+      // Exact line absent (e.g. a cited line number beyond the paragraph):
+      // land on the closest line of the paragraph instead of its first.
+      var best = -1;
+      var bestDist = 1 << 30;
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].paraId != para) continue;
+        final d = line == null ? 0 : (lines[i].lineId - line).abs();
+        if (d < bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      }
+      if (best >= 0) return best;
     }
     return null;
   }
 
   void _scrollToTarget() {
-    if (_didScrollToTarget) return;
-    final targetIndex = _targetLineIndex;
-    if (targetIndex == null) return;
-    final key = _lineKeys[targetIndex];
-    if (key == null) return;
+    if (_didScrollToTarget || !mounted) return;
+    if (_targetLineIndex == null) return;
 
-    final ctx = key.currentContext;
-    if (ctx == null) {
-      // Not laid out yet (sheet is still animating in) — retry a few times.
-      if (_scrollRetries >= _maxScrollRetries) return;
-      _scrollRetries++;
-      Future.delayed(const Duration(milliseconds: 120), () {
-        if (!mounted) return;
-        _scrollToTarget();
-      });
+    final ctx = _targetKey.currentContext;
+    if (ctx != null) {
+      _didScrollToTarget = true;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.25,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
       return;
     }
-    _didScrollToTarget = true;
-    Scrollable.ensureVisible(
-      ctx,
-      alignment: 0.25,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
-    );
+    // No context for the target row yet: the sheet is still animating in,
+    // or the target sits deep in a lazily-built list whose rows outside
+    // the viewport were never built. Page monotonically forward — never
+    // backwards — so every page gets built and the target row must appear;
+    // a fixed offset estimate would undershoot on tall rows and retry the
+    // same offset forever, then give up at the wrong position.
+    if (_scrollRetries >= _maxScrollRetries) return;
+    _scrollRetries++;
+    if (_scrollController.hasClients) {
+      final pos = _scrollController.position;
+      final max = pos.maxScrollExtent;
+      if (max > 0) {
+        // Step (viewport + cache) always overlaps the previously built
+        // range, so the target row can never be skipped over.
+        final step = pos.viewportDimension + _cacheExtent;
+        _scrollController.jumpTo(min(pos.pixels + step, max));
+      }
+    }
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      _scrollToTarget();
+    });
   }
 
-  /// Resolve which line the user is currently reading: the first line whose
-  /// top is at or below the top edge of the scroll viewport (i.e. not yet
-  /// scrolled past). When the sheet has no layout yet, falls back to the
-  /// target line so opening immediately still lands on the match.
+  /// Resolve which line the user is currently reading. Without per-line keys
+  /// this is approximate: while the sheet sits at the top the target (or
+  /// first) line is reported; once the user scrolls past the target line the
+  /// end of the preview range is reported. When the sheet has no layout yet,
+  /// falls back to the target line so opening immediately still lands on
+  /// the match.
   (int, int?) _currentAnchor() {
     final lines = widget.lines;
     if (lines.isEmpty) return (0, null);
 
-    final viewportTop = _viewportTop();
-    if (viewportTop == null) {
+    (int, int?) targetOrFirst() {
       final target = _targetLineIndex;
       if (target != null && target < lines.length) {
         final t = lines[target];
@@ -221,16 +274,25 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
       return (lines.first.paraId, lines.first.lineId);
     }
 
-    for (var i = 0; i < lines.length; i++) {
-      final ctx = _lineKeys[i]?.currentContext;
-      if (ctx == null || !ctx.mounted) continue;
-      final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null || !box.attached) continue;
-      if (box.localToGlobal(Offset.zero).dy >= viewportTop - 1) {
-        final l = lines[i];
-        return (l.paraId, l.lineId);
-      }
+    if (!_scrollController.hasClients || _scrollController.offset <= 1.0) {
+      return targetOrFirst();
     }
+
+    // Single-key check: if the target line is still at/below the viewport
+    // top the user hasn't scrolled past it.
+    final targetCtx = _targetKey.currentContext;
+    final viewportTop = _viewportTop();
+    if (targetCtx != null && targetCtx.mounted && viewportTop != null) {
+      final box = targetCtx.findRenderObject() as RenderBox?;
+      if (box != null && box.attached) {
+        if (box.localToGlobal(Offset.zero).dy >= viewportTop - 1) {
+          return targetOrFirst();
+        }
+      }
+    } else {
+      return targetOrFirst();
+    }
+
     final last = lines.last;
     return (last.paraId, last.lineId);
   }
@@ -282,12 +344,7 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
               // Stack the dictionary on top of this sheet (forceSheet) so
               // closing it returns to the preview/book-link content instead
               // of dumping the user back on the reader.
-              openDictionaryInPanel(
-                context,
-                ref,
-                searchable,
-                forceSheet: true,
-              );
+              openDictionaryInPanel(context, ref, searchable, forceSheet: true);
             },
           ),
         if (searchable != null && NativeLookupService.isSupported)
@@ -323,9 +380,25 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final brightness = Theme.of(context).brightness;
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final paliTypo = ref.watch(
+      settingsProvider.select((s) => s.typography.pali),
+    );
+    final paliColor = ref
+        .watch(settingsProvider.select((s) => s.paliColorPair))
+        .resolve(brightness);
+    final transColor = ref
+        .watch(settingsProvider.select((s) => s.translationColorPair))
+        .resolve(brightness);
+    final typography = ref.watch(settingsProvider.select((s) => s.typography));
     final w = widget;
+    final hasHeading =
+        w.heading != null &&
+        w.heading!.isNotEmpty &&
+        !isNumericOnlyTitle(w.heading!);
+    final hasFooter = w.footer != null && w.footer!.isNotEmpty;
 
     return Container(
       height: MediaQuery.sizeOf(context).height * 0.78,
@@ -395,10 +468,16 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                     TextButton.icon(
                       onPressed: _handleAction,
                       icon: const Icon(Icons.open_in_new, size: 14),
-                      label: Text(w.actionLabel!, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        w.actionLabel!,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: colors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -408,6 +487,36 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
             ),
             const SizedBox(height: 4),
             const Divider(height: 1),
+            // ── Optional heading (e.g. book-link section title), pinned
+            // above the scrollable lines so target indices map 1:1. ──
+            if (hasHeading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    PaliTextStatic(
+                      w.heading!,
+                      script,
+                      style: AppTypography.bodyPali.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
             Expanded(
               child: w.lines.isEmpty
                   ? Center(
@@ -419,95 +528,139 @@ class _ParagraphPreviewSheetState extends ConsumerState<_ParagraphPreviewSheet> 
                         ),
                       ),
                     )
-                  : SingleChildScrollView(
-                      key: _viewportKey,
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(
-                        AppDimensions.marginMobile,
-                        AppDimensions.sm,
-                        AppDimensions.marginMobile,
-                        32,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Optional heading (e.g. book-link section title) ─
-                          if (w.heading != null && w.heading!.isNotEmpty) ...[
-                            Container(
-                              width: 32,
-                              height: 2,
-                              decoration: BoxDecoration(
-                                color: colors.primary.withValues(alpha: 0.4),
-                                borderRadius: BorderRadius.circular(1),
+                  : SelectionArea(
+                      onSelectionChanged: (content) {
+                        _lastSelectedContent = content;
+                      },
+                      contextMenuBuilder: (context, selectableRegionState) =>
+                          _selectionContextMenu(context, selectableRegionState),
+                      child: ListView.builder(
+                        key: _viewportKey,
+                        controller: _scrollController,
+                        scrollCacheExtent: ScrollCacheExtent.pixels(
+                          _cacheExtent,
+                        ),
+                        padding: const EdgeInsets.all(10),
+                        itemCount: w.lines.length,
+                        itemBuilder: (context, index) {
+                          final line = w.lines[index];
+                          final isTargetPara = line.paraId == w.highlightParaId;
+                          final isMatch =
+                              isTargetPara &&
+                              (w.highlightLineId == null ||
+                                  line.lineId == w.highlightLineId);
+                          final isFirstSnippetLine =
+                              isTargetPara &&
+                              w.firstSnippetIndex != null &&
+                              index == w.firstSnippetIndex;
+                          final isFirstInPara =
+                              index == 0 ||
+                              line.paraId != w.lines[index - 1].paraId;
+                          final isLastInPara =
+                              index == w.lines.length - 1 ||
+                              line.paraId != w.lines[index + 1].paraId;
+                          final isTargetParaGroup =
+                              (w.scrollToParaId ?? w.highlightParaId) ==
+                              line.paraId;
+                          return RepaintBoundary(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                top: isFirstInPara && index > 0 ? 12 : 0,
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            PaliTextStatic(
-                              w.heading!,
-                              script,
-                              style: AppTypography.bodyPali.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: colors.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                          ],
-
-                          SelectionArea(
-                            onSelectionChanged: (content) {
-                              _lastSelectedContent = content;
-                            },
-                            contextMenuBuilder: (context, selectableRegionState) =>
-                                _selectionContextMenu(context, selectableRegionState),
-                            child: PreviewContent(
-                              lines: w.lines,
-                              highlightParaId: w.highlightParaId,
-                              highlightLineId: w.highlightLineId,
-                              firstSnippetIndex: w.firstSnippetIndex,
-                              paliSnippet: w.paliSnippet,
-                              lineKeys: _lineKeys,
-                              onPaliWordTap: (word) {
-                                // Open the dictionary as a NEW sheet on top of
-                                // this one (forceSheet) instead of closing the
-                                // preview — closing the dictionary returns to
-                                // the commentary being read here.
-                                openDictionaryInPanel(
-                                  context,
-                                  ref,
-                                  word,
-                                  forceSheet: true,
-                                );
-                              },
-                            ),
-                          ),
-
-                          // ── Optional footer (e.g. para/line ref badge) ─
-                          if (w.footer != null && w.footer!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 20),
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colors.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    w.footer!,
-                                    style: AppTypography.labelSmall.copyWith(
-                                      color: colors.onSurfaceVariant,
+                              child: IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Container(
+                                      width: 3,
+                                      margin: const EdgeInsets.only(left: 4),
+                                      decoration: BoxDecoration(
+                                        color: isTargetParaGroup
+                                            ? colors.primary
+                                            : colors.outlineVariant.withValues(
+                                                alpha: 0.6,
+                                              ),
+                                        borderRadius: BorderRadius.vertical(
+                                          top: isFirstInPara
+                                              ? const Radius.circular(2)
+                                              : Radius.zero,
+                                          bottom: isLastInPara
+                                              ? const Radius.circular(2)
+                                              : Radius.zero,
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                    Expanded(
+                                      child: PreviewLine(
+                                        key: index == _targetLineIndex
+                                            ? _targetKey
+                                            : ValueKey(
+                                                '${line.paraId}_${line.lineId}_$index',
+                                              ),
+                                        line: line,
+                                        isMatch: isMatch,
+                                        isNewPara: false,
+                                        paliSnippet: isFirstSnippetLine
+                                            ? w.paliSnippet
+                                            : null,
+                                        script: script,
+                                        colors: colors,
+                                        paliColor: paliColor,
+                                        transColor: transColor,
+                                        paliTypo: paliTypo,
+                                        typography: typography,
+                                        onPaliWordTap: (word) {
+                                          // Open the dictionary as a NEW sheet on top of
+                                          // this one (forceSheet) instead of closing the
+                                          // preview — closing the dictionary returns to
+                                          // the commentary being read here.
+                                          openDictionaryInPanel(
+                                            context,
+                                            ref,
+                                            word,
+                                            forceSheet: true,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                        ],
+                          );
+                        },
                       ),
                     ),
             ),
+            // ── Optional footer (e.g. para/line ref badge), pinned below ──
+            if (hasFooter)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.marginMobile,
+                  8,
+                  AppDimensions.marginMobile,
+                  12,
+                ),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      w.footer!,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

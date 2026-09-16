@@ -253,8 +253,9 @@ class _TranslatorSettingsScreenState
                     _availableModels = [];
                     _modelsError = null;
                     // Prefill the provider's default base URL for
-                    // OpenAI-compatible providers (Gemini's is hardcoded).
-                    if (p != AiProvider.gemini &&
+                    // providers without a fixed endpoint (Gemini/Claude
+                    // endpoints are hardcoded).
+                    if (!p.hasFixedEndpoint &&
                         _baseUrlController.text.trim().isEmpty) {
                       _baseUrlController.text = p.defaultBaseUrl;
                     }
@@ -282,7 +283,7 @@ class _TranslatorSettingsScreenState
               onCheckKey: _checkKeyAndLoadModels,
               onChanged: (_) => _saveFields(),
             ),
-            if (settings.provider != AiProvider.gemini)
+            if (!settings.provider.hasFixedEndpoint)
               _TextFieldTile(
                 colors: colors,
                 icon: Icons.link,

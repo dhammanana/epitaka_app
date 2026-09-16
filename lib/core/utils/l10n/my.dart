@@ -39,7 +39,6 @@ const Map<String, String> my = {
   'sentences': 'ဝါကျများ',
   'results': 'ရလဒ်များ',
   'Loading…': 'တင်နေသည်…',
-  'files': 'ဖိုင်များ',
   'Manage translation databases: download, update, and delete.':
       'ဘာသာပြန်ဒေတာဘေ့စ်များကို စီမံပါ - ဒေါင်းလုဒ်လုပ်ခြင်း၊ အပ်ဒိတ်လုပ်ခြင်း၊ ဖျက်ခြင်း။',
   'Pāli': 'ပါဠိ',
@@ -245,23 +244,8 @@ const Map<String, String> my = {
   'Update check complete.': 'အပ်ဒိတ်စစ်ဆေးမှု ပြီးစီးပါပြီ။',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'TTS အင်ဂျင်',
-  'Voice': 'အသံ',
   'Speed': 'အမြန်နှုန်း',
   'Pitch': 'အသံအနိမ့်အမြင့်',
-  'Engine': 'အင်ဂျင်',
-  'System TTS': 'စနစ် TTS',
-  'Platform-native text-to-speech (fast, no download)':
-      'ပလက်ဖောင်းပင်ကိုစာသားမှအသံ (မြန်၊ ဒေါင်းလုဒ်မလိုအပ်)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'ဘာသာစကား ၃၁ ခုပါ Neural TTS (မော်ဒယ် ~400 MB ဒေါင်းလုဒ်)',
-  'Model Download': 'မော်ဒယ်ဒေါင်းလုဒ်',
-  'Models Installed': 'မော်ဒယ်များ တပ်ဆင်ပြီး',
-  'TTS Models': 'TTS မော်ဒယ်များ',
-  'All models are ready for use': 'မော်ဒယ်အားလုံး အသုံးပြုရန် အသင့်ဖြစ်ပါပြီ',
-  'Requires ~400 MB download for neural TTS':
-      'Neural TTS အတွက် ~400 MB ဒေါင်းလုဒ်လိုအပ်သည်',
   'Speaking Rate': 'ပြောဆိုနှုန်း',
   'Low': 'နိမ့်',
   'High': 'မြင့်',
@@ -275,16 +259,8 @@ const Map<String, String> my = {
   'Paused': 'ခေတ္တရပ်ထားသည်',
   'Tap resume to continue': 'ဆက်လုပ်ရန် ပြန်ဆက်ကိုနှိပ်ပါ',
   'Preparing audio…': 'အသံပြင်ဆင်နေသည်…',
-  'Voice Style': 'အသံစတိုင်',
   'System Default': 'စနစ်ပုံမှန်',
   'Config': 'ချိန်ညှိချက်',
-  'TTS Language': 'TTS ဘာသာစကား',
-  'Quality': 'အရည်အသွေး',
-  'Synthesis quality — higher sounds better but is slower':
-      'ဖန်တီးမှုအရည်အသွေး — မြင့်လေ အသံကောင်းလေ၊ သို့သော် နှေးလေဖြစ်သည်',
-  'Medium': 'အလယ်အလတ်',
-  'Follows the reading language (first enabled translation)':
-      'ဖတ်ရှုမှုဘာသာစကားအတိုင်း လိုက်နာသည် (ပထမဖွင့်ထားသောဘာသာပြန်)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

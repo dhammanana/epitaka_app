@@ -4,6 +4,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../settings/services/system_tts_availability.dart';
 
 /// Fixed width of the TTS controls card. The dialog caps its content at this
 /// width too, so the card can never be stretched wider by a long fallback
@@ -205,23 +206,21 @@ class TtsControlsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.sm),
           // Pāli voice picker for the chosen Pāli TTS script.
-          if (settings.ttsEngine == 'system') ...[
-            _CompactVoicePicker(
-              label: loc.ttsPaliVoice,
+          _CompactVoicePicker(
+            label: loc.ttsPaliVoice,
+            selectedVoice: settings.ttsPaliVoice,
+            voices: filterVoicesForLanguage(
+              voices,
+              settings.ttsScript,
               selectedVoice: settings.ttsPaliVoice,
-              voices: filterVoicesForLanguage(
-                voices,
-                settings.ttsScript,
-                selectedVoice: settings.ttsPaliVoice,
-                showAllIfEmpty: false,
-              ),
-              colors: colors,
-              onChanged: onPaliVoiceChanged,
-              showInstallHint: true,
-              langCode: settings.ttsScript,
+              showAllIfEmpty: false,
             ),
-            const SizedBox(height: AppDimensions.sm),
-          ],
+            colors: colors,
+            onChanged: onPaliVoiceChanged,
+            showInstallHint: true,
+            langCode: settings.ttsScript,
+          ),
+          const SizedBox(height: AppDimensions.sm),
           _ControlSlider(
             icon: Icons.menu_book,
             label: loc.ttsPaliSpeed,
@@ -234,22 +233,20 @@ class TtsControlsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppDimensions.sm),
           // Translation voice before speed.
-          if (settings.ttsEngine == 'system') ...[
-            _CompactVoicePicker(
-              label: loc.ttsTranslationVoice,
+          _CompactVoicePicker(
+            label: loc.ttsTranslationVoice,
+            selectedVoice: settings.ttsVoice,
+            voices: filterVoicesForLanguage(
+              voices,
+              settings.visibleTranslationLangs.isNotEmpty
+                  ? settings.visibleTranslationLangs.first
+                  : 'en',
               selectedVoice: settings.ttsVoice,
-              voices: filterVoicesForLanguage(
-                voices,
-                settings.visibleTranslationLangs.isNotEmpty
-                    ? settings.visibleTranslationLangs.first
-                    : 'en',
-                selectedVoice: settings.ttsVoice,
-              ),
-              colors: colors,
-              onChanged: onVoiceChanged,
             ),
-            const SizedBox(height: AppDimensions.sm),
-          ],
+            colors: colors,
+            onChanged: onVoiceChanged,
+          ),
+          const SizedBox(height: AppDimensions.sm),
           _ControlSlider(
             icon: Icons.speed,
             label: loc.ttsTranslationSpeed,
@@ -671,7 +668,13 @@ List<Map<String, String>> filterVoicesForLanguage(
     final loc = (v['locale'] ?? '').toLowerCase();
     return loc == lc || loc.startsWith('$lc-') || loc.startsWith('${lc}_');
   }).toList();
-  if (matched.isEmpty) return showAllIfEmpty ? voices : <Map<String, String>>[];
+  if (matched.isEmpty) {
+    if (!showAllIfEmpty) return <Map<String, String>>[];
+    final all = List<Map<String, String>>.from(voices);
+    SystemTtsAvailability.sortVoices(all);
+    return all;
+  }
+  SystemTtsAvailability.sortVoices(matched);
   if (selectedVoice.isNotEmpty &&
       selectedVoice != 'default' &&
       !matched.any((v) => v['name'] == selectedVoice)) {

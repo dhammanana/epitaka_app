@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -78,12 +79,20 @@ class ReaderKeyboardNavState {
   /// Index of the selected book-link chip on the focused line (-1 = none).
   final int chipIndex;
 
+  /// Per-line [GlobalKey]s registered for the focused paragraph so the
+  /// navigation layer can fine-scroll the focus line to viewport center
+  /// with `Scrollable.ensureVisible`. Created by the reader content for the
+  /// focused paragraph (see [ReaderHighlightSlice.lineKeys]), consumed by
+  /// `_moveLine` after the focus state lands, then cleared.
+  final Map<int, GlobalKey> lineKeys;
+
   const ReaderKeyboardNavState({
     this.engaged = false,
     this.bookId,
     this.paraId,
     this.lineId,
     this.chipIndex = -1,
+    this.lineKeys = const {},
   });
 
   bool matches(String bookId, int paraId, int lineId) =>
@@ -95,6 +104,18 @@ class ReaderKeyboardNavState {
 
 class ReaderKeyboardNavNotifier extends StateNotifier<ReaderKeyboardNavState> {
   ReaderKeyboardNavNotifier() : super(const ReaderKeyboardNavState());
+
+  /// Drop the per-line keys after the centering fine-scroll consumed them.
+  void clearLineKeys() {
+    if (state.lineKeys.isEmpty) return;
+    state = ReaderKeyboardNavState(
+      engaged: state.engaged,
+      bookId: state.bookId,
+      paraId: state.paraId,
+      lineId: state.lineId,
+      chipIndex: state.chipIndex,
+    );
+  }
 
   /// Hide the focus line (Esc, or leaving the reader).
   void disengage() {
@@ -110,12 +131,22 @@ class ReaderKeyboardNavNotifier extends StateNotifier<ReaderKeyboardNavState> {
   }
 
   /// Move the reading cursor to [paraId]/[lineId] (engaging it if needed).
-  void focus(String bookId, int paraId, int lineId) {
+  ///
+  /// [lineKeys] carries the per-line [GlobalKey]s for the focused paragraph
+  /// when the caller wants the line centering fine-scroll (see
+  /// [ReaderKeyboardNavState.lineKeys]); empty for engage-only focus.
+  void focus(
+    String bookId,
+    int paraId,
+    int lineId, {
+    Map<int, GlobalKey> lineKeys = const {},
+  }) {
     state = ReaderKeyboardNavState(
       engaged: true,
       bookId: bookId,
       paraId: paraId,
       lineId: lineId,
+      lineKeys: lineKeys,
     );
   }
 
@@ -128,6 +159,8 @@ class ReaderKeyboardNavNotifier extends StateNotifier<ReaderKeyboardNavState> {
       paraId: state.paraId,
       lineId: state.lineId,
       chipIndex: index,
+      // Keep any in-flight centering keys — the focus line didn't move.
+      lineKeys: state.lineKeys,
     );
   }
 }

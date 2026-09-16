@@ -470,13 +470,11 @@ class AppSettings {
 
   final String pageNumberingSystem;
   final bool keepScreenOn;
-  final double autoScrollSpeed;
-  final String ttsEngine;
 
-  /// Voice for translation lines (system TTS only).
+  /// Voice for translation lines.
   final String ttsVoice;
 
-  /// Voice for Pāli lines (Hindi/Devanagari system TTS only).
+  /// Voice for Pāli lines.
   /// Separated from [ttsVoice] so users can pick a different Hindi voice
   /// for Pāli pronunciation vs. the translation language voice.
   final String ttsPaliVoice;
@@ -487,15 +485,6 @@ class AppSettings {
   /// Devanagari (Hindi) — a slower rate often reads Pāli more clearly.
   final double ttsPaliSpeed;
   final double ttsPitch;
-  final String ttsSupertonicVoice;
-  final String ttsSupertonicLanguage;
-
-  /// Supertonic synthesis quality preset: 'low' | 'medium' | 'high'.
-  /// Maps to the neural model's denoising steps (2 / 4 / 8). Lower
-  /// values synthesize faster on slower devices; higher values sound
-  /// better but take longer.
-  final String ttsSupertonicQuality;
-  final bool ttsSupertonicDownloaded;
 
   /// What the reader TTS reads for each line: the translation, the Pāli
   /// (converted to Devanagari/Hindi — the best voice for Pāli), or both.
@@ -613,17 +602,11 @@ class AppSettings {
     this.translationColorPair = ColorPair.translation,
     this.pageNumberingSystem = 'vri',
     this.keepScreenOn = false,
-    this.autoScrollSpeed = 60.0,
-    this.ttsEngine = 'system',
     this.ttsVoice = 'default',
     this.ttsPaliVoice = 'default',
     this.ttsSpeed = 1.0,
     this.ttsPaliSpeed = 1.0,
     this.ttsPitch = 1.0,
-    this.ttsSupertonicVoice = 'M1',
-    this.ttsSupertonicLanguage = 'en',
-    this.ttsSupertonicQuality = 'medium',
-    this.ttsSupertonicDownloaded = false,
     this.ttsSpeakMode = TtsSpeakMode.translation,
     this.ttsScript = 'hi',
     this.copyQuoteFormat = CopyQuoteFormat.none,
@@ -667,17 +650,11 @@ class AppSettings {
     ColorPair? translationColorPair,
     String? pageNumberingSystem,
     bool? keepScreenOn,
-    double? autoScrollSpeed,
-    String? ttsEngine,
     String? ttsVoice,
     String? ttsPaliVoice,
     double? ttsSpeed,
     double? ttsPaliSpeed,
     double? ttsPitch,
-    String? ttsSupertonicVoice,
-    String? ttsSupertonicLanguage,
-    String? ttsSupertonicQuality,
-    bool? ttsSupertonicDownloaded,
     TtsSpeakMode? ttsSpeakMode,
     String? ttsScript,
     CopyQuoteFormat? copyQuoteFormat,
@@ -723,19 +700,11 @@ class AppSettings {
       translationColorPair: translationColorPair ?? this.translationColorPair,
       pageNumberingSystem: pageNumberingSystem ?? this.pageNumberingSystem,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
-      autoScrollSpeed: autoScrollSpeed ?? this.autoScrollSpeed,
-      ttsEngine: ttsEngine ?? this.ttsEngine,
       ttsVoice: ttsVoice ?? this.ttsVoice,
       ttsPaliVoice: ttsPaliVoice ?? this.ttsPaliVoice,
       ttsSpeed: ttsSpeed ?? this.ttsSpeed,
       ttsPaliSpeed: ttsPaliSpeed ?? this.ttsPaliSpeed,
       ttsPitch: ttsPitch ?? this.ttsPitch,
-      ttsSupertonicVoice: ttsSupertonicVoice ?? this.ttsSupertonicVoice,
-      ttsSupertonicLanguage:
-          ttsSupertonicLanguage ?? this.ttsSupertonicLanguage,
-      ttsSupertonicQuality: ttsSupertonicQuality ?? this.ttsSupertonicQuality,
-      ttsSupertonicDownloaded:
-          ttsSupertonicDownloaded ?? this.ttsSupertonicDownloaded,
       ttsSpeakMode: ttsSpeakMode ?? this.ttsSpeakMode,
       ttsScript: ttsScript ?? this.ttsScript,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
@@ -938,8 +907,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // A saved list from an older app version won't contain built-ins that
       // were added later. Append the missing ones (enabled, in default
       // order) so they show up in the toolbar and in Settings without
-      // wiping the user's custom order/toggles.
-      return _mergeMissingToolbarItems(items);
+      // wiping the user's custom order/toggles. Legacy ids (e.g. the old
+      // one-shot "summarize") are migrated to their replacement first.
+      return _mergeMissingToolbarItems(_migrateToolbarItems(items));
     } catch (_) {
       return defaultToolbarItems();
     }
@@ -948,7 +918,24 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   /// Append any built-in toolbar actions from [ToolbarBuiltins.defaults]
   /// that are missing from [items], preserving the user's existing order
   /// and only touching the tail of the list. Missing items use their
-  /// default enabled state (bookmark/summarize start off).
+  /// default enabled state (bookmark starts off).
+  ///
+  /// Legacy ids are migrated via [ToolbarBuiltins.migrateId] first so an
+  /// old "summarize" entry becomes "aiAsk" in place (keeping the user's
+  /// position/toggle), and unknown ids are dropped.
+  List<ToolbarItem> _migrateToolbarItems(List<ToolbarItem> items) {
+    final seen = <String>{};
+    final migrated = <ToolbarItem>[];
+    for (final item in items) {
+      final id = ToolbarBuiltins.migrateId(item.id);
+      if (id == null || !seen.add(id)) continue;
+      migrated.add(
+        id == item.id ? item : ToolbarItem(id: id, enabled: item.enabled),
+      );
+    }
+    return migrated;
+  }
+
   List<ToolbarItem> _mergeMissingToolbarItems(List<ToolbarItem> items) {
     final present = items.map((i) => i.id).toSet();
     final missing = [
@@ -1041,19 +1028,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ),
       pageNumberingSystem: prefs.getString('page_numbering') ?? 'vri',
       keepScreenOn: prefs.getBool('keep_screen_on') ?? false,
-      autoScrollSpeed: prefs.getDouble('auto_scroll_speed') ?? 60.0,
-      ttsEngine: prefs.getString('tts_engine') ?? 'system',
       ttsVoice: prefs.getString('tts_voice') ?? 'default',
       ttsPaliVoice: prefs.getString('tts_pali_voice') ?? 'default',
       ttsSpeed: prefs.getDouble('tts_speed') ?? 1.0,
       ttsPaliSpeed: prefs.getDouble('tts_pali_speed') ?? 1.0,
       ttsPitch: prefs.getDouble('tts_pitch') ?? 1.0,
-      ttsSupertonicVoice: prefs.getString('tts_supertonic_voice') ?? 'M1',
-      ttsSupertonicLanguage: prefs.getString('tts_supertonic_language') ?? 'en',
-      ttsSupertonicQuality:
-          prefs.getString('tts_supertonic_quality') ?? 'medium',
-      ttsSupertonicDownloaded:
-          prefs.getBool('tts_supertonic_downloaded') ?? false,
       ttsSpeakMode: _parseTtsSpeakMode(prefs.getString('tts_speak_mode')),
       ttsScript: prefs.getString('tts_script') ?? 'hi',
       copyQuoteFormat: _parseCopyQuoteFormat(
@@ -1297,16 +1276,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setBool('keep_screen_on', value);
   }
 
-  Future<void> setAutoScrollSpeed(double speed) async {
-    state = state.copyWith(autoScrollSpeed: speed);
-    await _prefs?.setDouble('auto_scroll_speed', speed);
-  }
-
-  Future<void> setTtsEngine(String engine) async {
-    state = state.copyWith(ttsEngine: engine);
-    await _prefs?.setString('tts_engine', engine);
-  }
-
   Future<void> setTtsVoice(String voice) async {
     state = state.copyWith(ttsVoice: voice);
     await _prefs?.setString('tts_voice', voice);
@@ -1330,26 +1299,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> setTtsPitch(double pitch) async {
     state = state.copyWith(ttsPitch: pitch);
     await _prefs?.setDouble('tts_pitch', pitch);
-  }
-
-  Future<void> setTtsSupertonicVoice(String voice) async {
-    state = state.copyWith(ttsSupertonicVoice: voice);
-    await _prefs?.setString('tts_supertonic_voice', voice);
-  }
-
-  Future<void> setTtsSupertonicLanguage(String language) async {
-    state = state.copyWith(ttsSupertonicLanguage: language);
-    await _prefs?.setString('tts_supertonic_language', language);
-  }
-
-  Future<void> setTtsSupertonicQuality(String quality) async {
-    state = state.copyWith(ttsSupertonicQuality: quality);
-    await _prefs?.setString('tts_supertonic_quality', quality);
-  }
-
-  Future<void> setTtsSupertonicDownloaded(bool downloaded) async {
-    state = state.copyWith(ttsSupertonicDownloaded: downloaded);
-    await _prefs?.setBool('tts_supertonic_downloaded', downloaded);
   }
 
   /// Set what the reader TTS speaks for each line (translation / Pāli / both).

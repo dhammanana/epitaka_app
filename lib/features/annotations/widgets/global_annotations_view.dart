@@ -189,7 +189,9 @@ class _SearchField extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         border: Border(
-          bottom: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.4)),
+          bottom: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: 0.4),
+          ),
         ),
       ),
       child: TextField(
@@ -206,18 +208,29 @@ class _SearchField extends StatelessWidget {
             fontSize: 13.5,
             color: colors.onSurfaceVariant.withValues(alpha: 0.7),
           ),
-          prefixIcon: Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
+          prefixIcon: Icon(
+            Icons.search,
+            size: 18,
+            color: colors.onSurfaceVariant,
+          ),
           suffixIcon: query.isEmpty
               ? null
               : IconButton(
                   onPressed: onClear,
                   tooltip: loc.clearSearch,
-                  icon: Icon(Icons.clear, size: 16, color: colors.onSurfaceVariant),
+                  icon: Icon(
+                    Icons.clear,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
           isDense: true,
           filled: true,
           fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
             borderSide: BorderSide.none,
@@ -264,7 +277,9 @@ class _SummaryHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         border: Border(
-          bottom: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.4)),
+          bottom: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: 0.4),
+          ),
         ),
       ),
       child: SingleChildScrollView(
@@ -314,12 +329,17 @@ class _SummaryHeader extends StatelessWidget {
                 onTap: onToggleBookFilters,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: showBookFilters || selectedBookCount > 0
                         ? colors.secondaryContainer
                         : colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                    borderRadius: BorderRadius.circular(
+                      AppDimensions.radiusFull,
+                    ),
                     border: Border.all(
                       color: showBookFilters || selectedBookCount > 0
                           ? colors.secondary.withValues(alpha: 0.5)
@@ -632,9 +652,8 @@ class _AnnotationsListState extends ConsumerState<_AnnotationsList> {
     final allAsync = ref.watch(allAnnotationsProvider);
 
     return allAsync.when(
-      loading: () => const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      loading: () =>
+          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
       error: (e, _) => Center(
         child: Text(
           '${loc.errorLoadingAnnotations} $e',
@@ -678,7 +697,7 @@ class _AnnotationsListState extends ConsumerState<_AnnotationsList> {
           (byBookMap[a.bookId] ??= []).add(a);
         }
 
-        final script = ref.watch(settingsProvider).paliScript;
+        final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
         return ListView(
           padding: const EdgeInsets.only(bottom: AppDimensions.xl),
@@ -703,7 +722,9 @@ class _AnnotationsListState extends ConsumerState<_AnnotationsList> {
   void _openInReader(BuildContext context, WidgetRef ref, Annotation a) {
     final paraId = a.paraId;
     if (paraId == null) return;
-    ref.read(readerTabsProvider.notifier).openTab(
+    ref
+        .read(readerTabsProvider.notifier)
+        .openTab(
           ReaderTabInfo(
             bookId: a.bookId,
             bookName: a.bookName ?? a.bookId,
@@ -1280,7 +1301,10 @@ class _AnnotationCard extends StatelessWidget {
         : (a.color?.color(context) ?? colors.tertiary);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: 4),
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: 4,
+      ),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
@@ -1392,7 +1416,11 @@ class _AnnotationCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.sticky_note_2_outlined, size: 13, color: colors.tertiary),
+              Icon(
+                Icons.sticky_note_2_outlined,
+                size: 13,
+                color: colors.tertiary,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -1500,7 +1528,10 @@ class _DeleteBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: 4),
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: 4,
+      ),
       decoration: BoxDecoration(
         color: colors.errorContainer,
         borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
@@ -1553,31 +1584,35 @@ class _EmptyState extends StatelessWidget {
     final isSearch = q.isNotEmpty;
 
     final (icon, title, hint) = isSearch
-        ? (Icons.search_off, loc.noResultsForQuery(q), loc.tryDifferentSearchTerm)
+        ? (
+            Icons.search_off,
+            loc.noResultsForQuery(q),
+            loc.tryDifferentSearchTerm,
+          )
         : isBookFiltered
-            ? (Icons.filter_alt_off, loc.noAnnotationsInBooks, '')
-            : switch (filter) {
-                AnnotationType.highlight => (
-                  Icons.edit_note,
-                  loc.noHighlightsYet,
-                  loc.highlightDesc,
-                ),
-                AnnotationType.note => (
-                  Icons.sticky_note_2_outlined,
-                  loc.noNotesYet,
-                  loc.noteDesc,
-                ),
-                AnnotationType.bookmark => (
-                  Icons.bookmark_border,
-                  loc.noBookmarksShort,
-                  loc.addBookmark,
-                ),
-                _ => (
-                  Icons.edit_note,
-                  loc.noAnnotations,
-                  loc.highlightsNotesBookmarks,
-                ),
-              };
+        ? (Icons.filter_alt_off, loc.noAnnotationsInBooks, '')
+        : switch (filter) {
+            AnnotationType.highlight => (
+              Icons.edit_note,
+              loc.noHighlightsYet,
+              loc.highlightDesc,
+            ),
+            AnnotationType.note => (
+              Icons.sticky_note_2_outlined,
+              loc.noNotesYet,
+              loc.noteDesc,
+            ),
+            AnnotationType.bookmark => (
+              Icons.bookmark_border,
+              loc.noBookmarksShort,
+              loc.addBookmark,
+            ),
+            _ => (
+              Icons.edit_note,
+              loc.noAnnotations,
+              loc.highlightsNotesBookmarks,
+            ),
+          };
 
     return Center(
       child: Padding(

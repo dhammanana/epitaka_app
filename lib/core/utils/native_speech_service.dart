@@ -63,6 +63,7 @@ class NativeSpeechService {
     String text, {
     String? language,
     String? voiceIdentifier,
+    double? rate,
     VoidCallback? onCompletion,
   }) async {
     final clean = text.trim();
@@ -77,6 +78,7 @@ class NativeSpeechService {
         if (language != null && language.isNotEmpty) 'language': language,
         if (voiceIdentifier != null && voiceIdentifier.isNotEmpty)
           'voiceIdentifier': voiceIdentifier,
+        if (rate != null && rate.isFinite && rate > 0) 'rate': rate,
         // When a completion callback is expected, the native side must use
         // a path that can report it (AVSpeechSynthesizer), not the
         // fire-and-forget system accessibility "Speak Selection" engine.

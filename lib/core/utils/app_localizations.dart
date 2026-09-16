@@ -393,6 +393,11 @@ class AppLocalizations {
       _t('Use {selectedText} as a placeholder for the selected text.');
   String get editPrompt => _t('Edit Prompt');
   String get installedApps => _t('Installed Apps');
+  String get noCompatibleApps => _t('No compatible apps found on this device.');
+  String get noCompatibleAppsHint => _t(
+    'Install a dictionary or translator app that supports text sharing, '
+    'then tap Add App again.',
+  );
   String get noContextMenuActions =>
       _t('No context menu actions yet. Add apps or prompts below.');
   String get externalApp => _t('External app');
@@ -434,6 +439,12 @@ class AppLocalizations {
   String get summarizeChapter => _t('Summarize Ch.');
   String get summarizeChapterDesc =>
       _t('Summarize the current chapter with AI');
+  String get askAi => _t('Ask AI');
+  String get askAiDesc => _t('Ask Vīmaṃsā AI about this section');
+  String get keyPoints => _t('Key points');
+  String get summarizeTheChapter => _t('Summarize the chapter');
+  String get analyzeGrammar => _t('Analyze grammar');
+  String get mindmap => _t('Mindmap');
   String get share => _t('Share');
   String get shareDesc => _t('Share the selected text');
 
@@ -470,8 +481,6 @@ class AppLocalizations {
   //  TTS SETTINGS SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
-  String get ttsEngine => _t('TTS Engine');
-  String get ttsVoiceLabel => _t('Voice');
   String get ttsSpeed => _t('Speed');
 
   /// Short label for the translation speed slider (full "Translation
@@ -479,19 +488,6 @@ class AppLocalizations {
   String get ttsTranslationSpeed => _t('Trans. speed');
   String get ttsPaliSpeed => _t('Pāli speed');
   String get ttPitch => _t('Pitch');
-  String get ttsLanguageLabel => _t('Language');
-  String get engine => _t('Engine');
-  String get systemTts => _t('System TTS');
-  String get systemTtsDesc =>
-      _t('Platform-native text-to-speech (fast, no download)');
-  String get supertonic => _t('SuperTonic');
-  String get supertonicDesc =>
-      _t('Neural TTS with 31 languages (~400 MB model download)');
-  String get modelDownload => _t('Model Download');
-  String get modelsInstalled => _t('Models Installed');
-  String get ttsModels => _t('TTS Models');
-  String get allModelsReady => _t('All models are ready for use');
-  String get requiresDownload => _t('Requires ~400 MB download for neural TTS');
   String get speakingRate => _t('Speaking Rate');
   String get low => _t('Low');
   String get high => _t('High');
@@ -504,16 +500,8 @@ class AppLocalizations {
   String get paused => _t('Paused');
   String get tapResume => _t('Tap resume to continue');
   String get loadingAudio => _t('Preparing audio…');
-  String get voiceStyle => _t('Voice Style');
   String get systemDefault => _t('System Default');
   String get config => _t('Config');
-  String get ttsLanguageLabel2 => _t('TTS Language');
-  String get quality => _t('Quality');
-  String get qualitySubtitle =>
-      _t('Synthesis quality — higher sounds better but is slower');
-  String get medium => _t('Medium');
-  String get ttsLanguageAutoNote =>
-      _t('Follows the reading language (first enabled translation)');
   String get ttsSpeakMode => _t('Speak');
   String get ttsSpeakTranslation => _t('Translation');
   String get ttsSpeakTranslationDesc => _t('Reads the translation aloud');
@@ -946,6 +934,17 @@ class AppLocalizations {
     'Capable model for final answers (e.g. gemini-2.0-flash, '
     'gemini-2.5-flash)',
   );
+  String get answerFallbackTitle =>
+      _t('Answer fallback chain (tried in order)');
+  String get answerFallbackDesc => _t(
+    'If the primary answer model fails (e.g. unknown version or quota), '
+    'Vīmaṃsā retries with fallback 1 (same Flash, lower version) then '
+    'fallback 2 (Flash-Lite). Saved automatically when you tap Save.',
+  );
+  String get answerFallbackEmpty =>
+      _t('Enter an answer model to preview fallbacks.');
+  String get answerFallbackPrimary => _t('primary');
+  String get answerFallbackBackup => _t('fallback');
   String get maxCharsPerToolResultDesc => _t(
     'Max characters per tool result sent to the model. Set to 0 for no '
     'truncation (full content). Large values may increase API usage.',
@@ -1011,6 +1010,7 @@ class AppLocalizations {
   );
   String get viewPastConversations => _t('View past conversations');
   String get orthodox => _t('Orthodox');
+  String get strict => _t('Strict');
   String get orthodoxDesc =>
       _t('Answers use only the passages found in the Tipitaka.');
   String get unorthodoxDesc =>
@@ -1172,7 +1172,6 @@ class AppLocalizations {
   String get resettingAndRebuilding => _t('Resetting & Rebuilding');
   String get loadingDots => _t('Loading…');
   String get sentences => _t('sentences');
-  String get filesLabel => _t('files');
   String get manageTranslationsSubtitle =>
       _t('Manage translation databases: download, update, and delete.');
   String get pali => _t('Pāli');

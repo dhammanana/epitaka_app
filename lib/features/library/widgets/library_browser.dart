@@ -86,7 +86,10 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   ///   again, restoring the clean layout.
   ///
   /// Desktop keeps the field permanently visible, so this is a no-op there.
-  bool _handleScrollNotification(ScrollNotification notification, bool isDesktop) {
+  bool _handleScrollNotification(
+    ScrollNotification notification,
+    bool isDesktop,
+  ) {
     if (!mounted || isDesktop) return false;
 
     if (notification is OverscrollNotification &&
@@ -144,9 +147,9 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   bool _matches(BookItem book) {
     final query = _query;
     if (query.isEmpty) return true;
-    return normalizePaliFuzzy(book.book.displayName)
-            .toLowerCase()
-            .contains(query) ||
+    return normalizePaliFuzzy(
+          book.book.displayName,
+        ).toLowerCase().contains(query) ||
         book.book.bookId.toLowerCase().contains(query);
   }
 
@@ -208,8 +211,9 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                           filled: true,
                           fillColor: colors.surfaceContainerHighest,
                           border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(AppDimensions.radiusMd),
+                            borderRadius: BorderRadius.circular(
+                              AppDimensions.radiusMd,
+                            ),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
@@ -225,31 +229,29 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
             // ── Content: filtered flat list or the tabbed tree ─────
             Expanded(
               child: NotificationListener<ScrollNotification>(
-                onNotification: (n) =>
-                    _handleScrollNotification(n, isDesktop),
+                onNotification: (n) => _handleScrollNotification(n, isDesktop),
                 child: treeAsync.when(
-                loading: () => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-                error: (e, stack) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppDimensions.lg),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_off, size: 48, color: colors.error),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Could not load the Tipitaka library.\n$e',
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, stack) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppDimensions.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_off, size: 48, color: colors.error),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Could not load the Tipitaka library.\n$e',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                data: (categories) => _query.isEmpty
-                    ? _buildTabs(context, categories, colors)
-                    : _buildFilteredList(context, categories, colors, loc),
+                  data: (categories) => _query.isEmpty
+                      ? _buildTabs(context, categories, colors)
+                      : _buildFilteredList(context, categories, colors, loc),
                 ),
               ),
             ),
@@ -380,7 +382,7 @@ class _CategoryTabBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     // The tab labels are converted to the display script (see the `text:`
     // below), so they must be rendered with the script-specific font too —
     // otherwise scripts with a dedicated bundled font (Lao, Myanmar, …)
@@ -389,7 +391,9 @@ class _CategoryTabBar extends ConsumerWidget {
     final scriptFont = scriptFontFamily(script);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppDimensions.marginMobile),
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.marginMobile,
+      ),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHigh,
@@ -530,13 +534,16 @@ class _NikayaSectionState extends ConsumerState<_NikayaSection> {
     // Re-init expand state when setting changes
     ref.listen(settingsProvider, (prev, next) {
       if (prev?.libraryExpandLevel != next.libraryExpandLevel) {
-        setState(() => _expanded = next.libraryExpandLevel != LibraryExpandLevel.collapsed);
+        setState(
+          () => _expanded =
+              next.libraryExpandLevel != LibraryExpandLevel.collapsed,
+        );
       }
     });
 
     final nikaya = widget.nikaya;
     final colors = widget.colors;
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     // A sub-nikaya is "redundant" when it adds no information beyond the
     // nikaya itself — either it has no name of its own (an empty
@@ -648,13 +655,16 @@ class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
     // Re-init expand state when setting changes
     ref.listen(settingsProvider, (prev, next) {
       if (prev?.libraryExpandLevel != next.libraryExpandLevel) {
-        setState(() => _expanded = next.libraryExpandLevel == LibraryExpandLevel.expand);
+        setState(
+          () =>
+              _expanded = next.libraryExpandLevel == LibraryExpandLevel.expand,
+        );
       }
     });
 
     final sub = widget.subNikaya;
     final colors = widget.colors;
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     return Column(
       children: [
@@ -686,7 +696,9 @@ class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
                     sub.name,
                     script,
                     style: AppTypography.bodyTranslation.copyWith(
-                      color: _expanded ? colors.primary : colors.onSurfaceVariant,
+                      color: _expanded
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
                       fontWeight: _expanded ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
@@ -734,18 +746,20 @@ class _BookRowState extends ConsumerState<_BookRow> {
     final book = widget.book;
     final colors = widget.colors;
     final hasRelated = book.relatedBooks.isNotEmpty;
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     return Column(
       children: [
         InkWell(
           onTap: () {
-            ref.read(readerTabsProvider.notifier).openTab(
-              ReaderTabInfo(
-                bookId: book.book.bookId,
-                bookName: book.book.displayName,
-              ),
-            );
+            ref
+                .read(readerTabsProvider.notifier)
+                .openTab(
+                  ReaderTabInfo(
+                    bookId: book.book.bookId,
+                    bookName: book.book.displayName,
+                  ),
+                );
             openReaderRoute(context);
           },
           child: Padding(
@@ -754,7 +768,10 @@ class _BookRowState extends ConsumerState<_BookRow> {
               // never produce negative padding — that trips the framework's
               // 'padding.isNonNegative' assertion and crashes the whole
               // library screen.
-              left: (18.0 + (widget.depth - 1) * 24).clamp(0.0, double.infinity),
+              left: (18.0 + (widget.depth - 1) * 24).clamp(
+                0.0,
+                double.infinity,
+              ),
               right: AppDimensions.md,
               top: 10,
               bottom: 10,
@@ -807,7 +824,8 @@ class _BookRowState extends ConsumerState<_BookRow> {
         ),
         if (_relatedExpanded && hasRelated)
           ...book.relatedBooks.map(
-            (ref) => _RelatedBookRow(ref: ref, colors: colors, depth: widget.depth),
+            (ref) =>
+                _RelatedBookRow(ref: ref, colors: colors, depth: widget.depth),
           ),
       ],
     );
@@ -829,16 +847,15 @@ class _RelatedBookRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef widgetRef) {
-    final script = widgetRef.watch(settingsProvider).paliScript;
+    final script = widgetRef.watch(
+      settingsProvider.select((s) => s.paliScript),
+    );
 
     return InkWell(
       onTap: () {
-        widgetRef.read(readerTabsProvider.notifier).openTab(
-          ReaderTabInfo(
-            bookId: ref.bookId,
-            bookName: ref.bookName,
-          ),
-        );
+        widgetRef
+            .read(readerTabsProvider.notifier)
+            .openTab(ReaderTabInfo(bookId: ref.bookId, bookName: ref.bookName));
         openReaderRoute(context);
       },
       child: Padding(
@@ -852,10 +869,7 @@ class _RelatedBookRow extends ConsumerWidget {
           children: [
             // Type badge
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 2,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: _typeColor(colors).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
@@ -879,11 +893,7 @@ class _RelatedBookRow extends ConsumerWidget {
                 ),
               ),
             ),
-            Icon(
-              Icons.arrow_forward,
-              size: 14,
-              color: colors.outlineVariant,
-            ),
+            Icon(Icons.arrow_forward, size: 14, color: colors.outlineVariant),
           ],
         ),
       ),

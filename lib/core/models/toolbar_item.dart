@@ -19,6 +19,16 @@ class ToolbarBuiltins {
   static const listen = 'listen';
   static const bookmark = 'bookmark';
   static const annotations = 'annotations';
+
+  /// Ask Vīmaṃsā AI about the current section. Replaces the old one-shot
+  /// "summarize" action with a bottom sheet (mobile) / dialog (desktop)
+  /// where the user can ask free-form questions with the section attached
+  /// as context.
+  static const aiAsk = 'aiAsk';
+
+  /// Legacy id for the one-shot "summarize chapter" action. Kept so saved
+  /// toolbar configs containing it can be migrated to [aiAsk] on load.
+  @Deprecated('Use aiAsk instead')
   static const summarize = 'summarize';
 
   /// The built-ins in their default display order.
@@ -32,11 +42,18 @@ class ToolbarBuiltins {
     listen,
     bookmark,
     annotations,
-    summarize,
+    aiAsk,
   ];
 
   /// Built-ins that are off by default (user can enable in Settings → Toolbar).
-  static const Set<String> disabledByDefault = {bookmark, summarize};
+  static const Set<String> disabledByDefault = {bookmark};
+
+  /// Map a persisted [id] to its current equivalent. Returns null when the
+  /// id is unknown and should be dropped.
+  static String? migrateId(String id) {
+    if (id == summarize) return aiAsk;
+    return defaults.contains(id) ? id : null;
+  }
 
   /// Default enabled state for [id].
   static bool defaultEnabledFor(String id) => !disabledByDefault.contains(id);

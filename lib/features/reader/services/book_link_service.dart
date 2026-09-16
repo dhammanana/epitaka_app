@@ -98,11 +98,19 @@ class BookLinkService {
     }
   }
 
-  /// Lines loaded before the linked line when a section is large.
-  static const int previewWindowBefore = 60;
+  /// Lines kept before the linked line when a section is large.
+  static const int previewWindowBefore = 20;
 
-  /// Lines loaded after the linked line when a section is large.
-  static const int previewWindowAfter = 60;
+  /// Lines kept after the linked line when a section is large.
+  static const int previewWindowAfter = 30;
+
+  /// When either side of the linked line holds fewer lines than this, extra
+  /// neighbour lines are loaded beyond the section so a 1-line section
+  /// still shows context.
+  static const int minSideLines = 5;
+
+  /// Neighbour lines loaded per under-filled side (see [minSideLines]).
+  static const int extraLines = 10;
 
   /// Get the section containing [paraId] in a linked book, along with the
   /// nearest `level=10` heading (the section title) and optional
@@ -116,9 +124,13 @@ class BookLinkService {
   /// [previewWindowBefore] + [previewWindowAfter] lines, only a window of
   /// that many lines around the linked line ([paraId]/[lineId]) is loaded
   /// instead of the whole section — a section can run to 1300+ lines, and
-  /// rendering all of them made the sheet slow. [LinkedParagraphContent.totalLines]
-  /// still reports the real section size and [LinkedParagraphContent.isTrimmed]
-  /// is set when this cap was applied.
+  /// rendering all of them made the sheet slow. When either side of the
+  /// linked line then holds fewer than [minSideLines] lines, [extraLines]
+  /// neighbour lines are loaded beyond the section on that side, so a
+  /// 1-line section still shows context.
+  /// [LinkedParagraphContent.totalLines] still reports the real section size
+  /// and [LinkedParagraphContent.isTrimmed] is set when a cap or an
+  /// extension was applied.
   ///
   /// [translationDbs] provides translation databases keyed by language code
   /// (e.g. {'en': TranslationDatabase, 'th': TranslationDatabase}).
@@ -230,13 +242,14 @@ class BookLinkService {
       }
     }
 
-    // Large sections are trimmed to a window around the linked line: 60
-    // lines before it and 60 after, so the sheet renders at most ~121 lines
+    // Large sections are trimmed to a window around the linked line: 20
+    // lines before it and 30 after, so the sheet renders at most ~51 lines
     // no matter how big the section is. Small sections load in full.
     final bool trimSection =
         sectionTotal > previewWindowBefore + previewWindowAfter;
 
-    final List<QueryRow> sentenceRows;
+    List<QueryRow> sentenceRows;
+    var windowExtended = false;
     if (trimSection) {
       final windowStart = (targetRn - 1 - previewWindowBefore) < 0
           ? 0
@@ -267,6 +280,109 @@ class BookLinkService {
             variables: [Variable.withString(bookId), ...rangeVars],
           )
           .get();
+    }
+
+    // ── Line window around the linked line ───────────────────────────
+    // Trim over-long sides to the cap; extend under-filled sides (< 5
+    // lines) with neighbour lines from outside the section.
+    var trimmedToWindow = false;
+    var anchorIdx = lineId == null
+        ? -1
+        : sentenceRows.indexWhere(
+            (r) => r.data['para_id'] == paraId && r.data['line_id'] == lineId,
+          );
+    if (lineId != null && anchorIdx < 0) {
+      // Target not in the loaded rows (e.g. an unbounded tail section whose
+      // LIMIT window missed it): load the window around it directly.
+      final beforeAndTarget = await _db
+          .customSelect(
+            'SELECT para_id, line_id, pali FROM sentences '
+            'WHERE book_id = ? AND (para_id < ? OR (para_id = ? AND line_id <= ?)) '
+            'ORDER BY para_id DESC, line_id DESC LIMIT ?',
+            variables: [
+              Variable.withString(bookId),
+              Variable.withInt(paraId),
+              Variable.withInt(paraId),
+              Variable.withInt(lineId),
+              Variable.withInt(previewWindowBefore + 1),
+            ],
+          )
+          .get();
+      final after = await _db
+          .customSelect(
+            'SELECT para_id, line_id, pali FROM sentences '
+            'WHERE book_id = ? AND (para_id > ? OR (para_id = ? AND line_id > ?)) '
+            'ORDER BY para_id, line_id LIMIT ?',
+            variables: [
+              Variable.withString(bookId),
+              Variable.withInt(paraId),
+              Variable.withInt(paraId),
+              Variable.withInt(lineId),
+              Variable.withInt(previewWindowAfter),
+            ],
+          )
+          .get();
+      sentenceRows = [...beforeAndTarget.reversed, ...after];
+      if (sentenceRows.isEmpty) return null;
+      anchorIdx = sentenceRows.indexWhere(
+        (r) => r.data['para_id'] == paraId && r.data['line_id'] == lineId,
+      );
+      trimmedToWindow = true;
+    }
+    if (anchorIdx >= 0) {
+      var start = anchorIdx - previewWindowBefore;
+      if (start < 0) start = 0;
+      var stop = anchorIdx + 1 + previewWindowAfter;
+      if (stop > sentenceRows.length) stop = sentenceRows.length;
+      if (start > 0 || stop < sentenceRows.length) {
+        sentenceRows = sentenceRows.sublist(start, stop);
+        trimmedToWindow = true;
+      }
+      anchorIdx -= start;
+
+      if (anchorIdx < minSideLines) {
+        final first = sentenceRows.first.data;
+        final extraBefore = await _db
+            .customSelect(
+              'SELECT para_id, line_id, pali FROM sentences '
+              'WHERE book_id = ? AND (para_id < ? OR (para_id = ? AND line_id < ?)) '
+              'ORDER BY para_id DESC, line_id DESC LIMIT ?',
+              variables: [
+                Variable.withString(bookId),
+                Variable.withInt(first['para_id'] as int),
+                Variable.withInt(first['para_id'] as int),
+                Variable.withInt(first['line_id'] as int),
+                Variable.withInt(extraLines),
+              ],
+            )
+            .get();
+        if (extraBefore.isNotEmpty) {
+          sentenceRows = [...extraBefore.reversed, ...sentenceRows];
+          anchorIdx += extraBefore.length;
+          windowExtended = true;
+        }
+      }
+      if (sentenceRows.length - anchorIdx - 1 < minSideLines) {
+        final last = sentenceRows.last.data;
+        final extraAfter = await _db
+            .customSelect(
+              'SELECT para_id, line_id, pali FROM sentences '
+              'WHERE book_id = ? AND (para_id > ? OR (para_id = ? AND line_id > ?)) '
+              'ORDER BY para_id, line_id LIMIT ?',
+              variables: [
+                Variable.withString(bookId),
+                Variable.withInt(last['para_id'] as int),
+                Variable.withInt(last['para_id'] as int),
+                Variable.withInt(last['line_id'] as int),
+                Variable.withInt(extraLines),
+              ],
+            )
+            .get();
+        if (extraAfter.isNotEmpty) {
+          sentenceRows = [...sentenceRows, ...extraAfter];
+          windowExtended = true;
+        }
+      }
     }
 
     if (sentenceRows.isEmpty) return null;
@@ -357,7 +473,7 @@ class BookLinkService {
       headingLevel: headingLevel,
       translationLangs: transByLang.keys.toList(),
       totalLines: sectionTotal,
-      isTrimmed: trimSection,
+      isTrimmed: trimSection || trimmedToWindow || windowExtended,
     );
   }
 }

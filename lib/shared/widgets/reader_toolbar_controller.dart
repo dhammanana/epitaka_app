@@ -47,6 +47,7 @@ class ReaderToolbarController extends ChangeNotifier {
   VoidCallback? onListen;
   VoidCallback? onStop;
   VoidCallback? onBookmark;
+  VoidCallback? onAiAsk;
 
   /// Registers the current set of action handlers.
   ///
@@ -63,8 +64,10 @@ class ReaderToolbarController extends ChangeNotifier {
     VoidCallback? onListen,
     VoidCallback? onStop,
     VoidCallback? onBookmark,
+    VoidCallback? onAiAsk,
   }) {
-    final changed = enabled != this.enabled ||
+    final changed =
+        enabled != this.enabled ||
         onContents != this.onContents ||
         onSearch != this.onSearch ||
         onDictionary != this.onDictionary ||
@@ -72,7 +75,8 @@ class ReaderToolbarController extends ChangeNotifier {
         onDisplayLayout != this.onDisplayLayout ||
         onListen != this.onListen ||
         onStop != this.onStop ||
-        onBookmark != this.onBookmark;
+        onBookmark != this.onBookmark ||
+        onAiAsk != this.onAiAsk;
     this.enabled = enabled;
     this.onContents = onContents;
     this.onSearch = onSearch;
@@ -82,6 +86,7 @@ class ReaderToolbarController extends ChangeNotifier {
     this.onListen = onListen;
     this.onStop = onStop;
     this.onBookmark = onBookmark;
+    this.onAiAsk = onAiAsk;
     if (changed) notifyListeners();
   }
 

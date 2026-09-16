@@ -38,6 +38,7 @@ import '../../shared/models/ai_provider.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
 import '../services/ai_api_client.dart';
+import '../services/answer_fallbacks.dart';
 import 'ai_qa_settings_provider.dart';
 import 'chat_history_provider.dart';
 
@@ -100,6 +101,14 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
 
   static const int _maxToolIterations = 8;
 
+  /// Extra instruction appended on retry/regenerate so the answer model
+  /// reasons more carefully instead of repeating the previous answer.
+  static const String _thinkHarderInstruction =
+      'The previous answer was not satisfactory. Please think harder: '
+      're-examine the sources carefully, reason step by step, double-check '
+      'every factual claim against the tool results, and give a deeper, '
+      'more accurate answer with correct citations.';
+
   /// Connect timeout for opening the answer stream. Without this a stalled
   /// connection leaves the "Generating answer..." bubble spinning forever.
   static const Duration _streamConnectTimeout = Duration(seconds: 5 * 60);
@@ -143,7 +152,10 @@ class AiQaNotifier extends StateNotifier<AiQaState> {
   /// Orthodox mode (default): the answer may use ONLY the passages found by
   /// the tools.  Knowledge mode: the AI may supplement the found passages
   /// with its own knowledge of the Pāli Canon.
-  static String _buildAnswerSystemPrompt({required bool orthodoxMode}) {
+  static String _buildAnswerSystemPrompt({
+    required bool orthodoxMode,
+    bool thinkHarder = false,
+  }) {
     final grounding = orthodoxMode
         ? '''## Strict rules
 1. Every factual claim MUST be backed by an inline citation like [book_id:para_id:line_id].
@@ -177,7 +189,7 @@ For example:
 
 The citation format [book_id:para_id:line_id] will be rendered as an interactive button in the UI that opens the passage when clicked.
 
-$grounding''';
+$grounding${thinkHarder ? '\n\n## Retry instruction\n$_thinkHarderInstruction' : ''}''';
   }
 
   // ── Thread management ─────────────────────────────────────────────────
@@ -313,9 +325,13 @@ $grounding''';
   /// If [attachmentContext] is provided, it is injected as a system-level
   /// context message before the user's question so the AI is aware of
   /// any attached headings.
-  Future<void> sendMessage(String text, {String? attachmentContext}) async {
+  Future<void> sendMessage(
+    String text, {
+    String? attachmentContext,
+    bool thinkHarder = false,
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty || state.isLoading) return;
 
     await _streamSubscription?.cancel();
     _streamSubscription = null;
@@ -364,33 +380,6 @@ $grounding''';
       return;
     }
 
-    // Init debug log for this pipeline run
-    _debugLog = {
-      'user_query': trimmed,
-      'thread_id': threadId,
-      'thread_title': _ref.read(currentThreadTitleProvider),
-      'timestamp': DateTime.now().toIso8601String(),
-      'settings': {
-        'tool_model': _ref.read(aiQaSettingsProvider).toolModel,
-        'answer_model': _ref.read(aiQaSettingsProvider).answerModel,
-        'orthodox_mode': _ref.read(aiQaSettingsProvider).orthodoxMode,
-      },
-      'tool_loop': [],
-      'answer_model_prompt': '',
-      'final_answer': '',
-    };
-
-    debugPrint('');
-    debugPrint('╔══════════════════════════════════════════════════════════');
-    debugPrint('║  Vīmaṃsā PIPELINE START');
-    debugPrint('╠══════════════════════════════════════════════════════════');
-    debugPrint(
-      '║  Thread: ${_ref.read(currentThreadTitleProvider)} ($threadId)',
-    );
-    debugPrint('║  User: ${trimmed.substring(0, min(120, trimmed.length))}');
-    debugPrint('╚══════════════════════════════════════════════════════════');
-    _finalized = false;
-
     final userMessage = AiQaMessage.user(trimmed);
     state = state.copyWith(
       messages: [...state.messages, userMessage],
@@ -414,6 +403,186 @@ $grounding''';
       debugPrint('[Vīmaṃsā] Failed to save user message: $e');
     }
 
+    await _runPipeline(
+      threadId: threadId,
+      userText: trimmed,
+      attachmentContext: attachmentContext,
+      thinkHarder: thinkHarder,
+    );
+  }
+
+  /// Edit a past user message: drop it and every message after it (both
+  /// in-memory and in the DB), then resend the corrected text as a fresh
+  /// pipeline run. Later prompts/responses are cleared, not duplicated.
+  Future<void> editUserMessage(String messageId, String newText) async {
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty || state.isLoading) return;
+    final threadId = _ref.read(currentThreadIdProvider);
+    if (threadId == null) return;
+
+    final index = state.messages.indexWhere(
+      (m) => m.id == messageId && m.isUser,
+    );
+    if (index < 0) return;
+
+    await _streamSubscription?.cancel();
+    _streamSubscription = null;
+    _activeStreamClient?.close();
+    _activeStreamClient = null;
+    _completeStreamDone();
+    _cancelRequested = false;
+    _cancelSignal = Completer<void>();
+    _currentToolLogs = [];
+    _finalized = false;
+
+    // Keep everything before the edited message; drop it + all later
+    // prompts and responses.
+    final kept = state.messages.sublist(0, index);
+    state = state.copyWith(messages: kept, isLoading: true, error: null);
+    _ref.read(streamingTextProvider.notifier).state = '';
+    _ref.read(streamingMessageIdProvider.notifier).state = null;
+
+    try {
+      await _ref
+          .read(chatHistoryNotifierProvider)
+          .truncateMessages(threadId, kept.length);
+    } catch (e) {
+      debugPrint('[Vīmaṃsā] Failed to truncate for edit: $e');
+    }
+
+    final notifier = _ref.read(chatHistoryNotifierProvider);
+    final userMessage = AiQaMessage.user(trimmed);
+    state = state.copyWith(
+      messages: [...state.messages, userMessage],
+      isLoading: true,
+    );
+    try {
+      await notifier.saveUserMessage(threadId: threadId, content: trimmed);
+    } catch (e) {
+      debugPrint('[Vīmaṃsā] Failed to save edited message: $e');
+    }
+
+    await _runPipeline(threadId: threadId, userText: trimmed);
+  }
+
+  /// Regenerate the last assistant response in place: drop the previous
+  /// answer (in-memory + DB) and re-run the pipeline against the same
+  /// user question with a "think harder" instruction. No duplicate user
+  /// prompt is appended.
+  Future<void> regenerateLastResponse() async {
+    if (state.isLoading) return;
+    final threadId = _ref.read(currentThreadIdProvider);
+    if (threadId == null || state.messages.isEmpty) return;
+
+    // Keep everything up to and including the last user message; drop
+    // the assistant answer(s) after it.
+    var lastUserIndex = -1;
+    for (var i = state.messages.length - 1; i >= 0; i--) {
+      if (state.messages[i].isUser &&
+          !state.messages[i].isThinking &&
+          !state.messages[i].isStreaming) {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex < 0) return;
+    if (lastUserIndex == state.messages.length - 1) {
+      // No assistant answer yet (e.g. previous run failed) — just rerun.
+    }
+    final userText = state.messages[lastUserIndex].text;
+    if (userText.trim().isEmpty) return;
+
+    await _streamSubscription?.cancel();
+    _streamSubscription = null;
+    _activeStreamClient?.close();
+    _activeStreamClient = null;
+    _completeStreamDone();
+    _cancelRequested = false;
+    _cancelSignal = Completer<void>();
+    _currentToolLogs = [];
+    _finalized = false;
+
+    final kept = state.messages.sublist(0, lastUserIndex + 1);
+    state = state.copyWith(messages: kept, isLoading: true, error: null);
+    _ref.read(streamingTextProvider.notifier).state = '';
+    _ref.read(streamingMessageIdProvider.notifier).state = null;
+
+    try {
+      // Drop trailing assistant answer(s) in the DB, keeping through the
+      // last user message so the retry reuses the same question.
+      final db = await _ref.read(appDbProvider.future);
+      final records = await db.getChatMessages(threadId);
+      var lastUserDbIndex = -1;
+      for (var i = records.length - 1; i >= 0; i--) {
+        if (records[i].role == 'user') {
+          lastUserDbIndex = i;
+          break;
+        }
+      }
+      if (lastUserDbIndex >= 0 && records.length > lastUserDbIndex + 1) {
+        await _ref
+            .read(chatHistoryNotifierProvider)
+            .truncateMessages(threadId, lastUserDbIndex + 1);
+      }
+    } catch (e) {
+      debugPrint('[Vīmaṃsā] Failed to truncate for retry: $e');
+    }
+
+    await _runPipeline(
+      threadId: threadId,
+      userText: userText,
+      thinkHarder: true,
+    );
+  }
+
+  /// Core tool-loop + answer-streaming pipeline. Caller is responsible
+  /// for placing the user message in [state.messages] and in the DB;
+  /// the conversation history is always rebuilt from the DB so edits
+  /// and retries see the truncated history.
+  Future<void> _runPipeline({
+    required String threadId,
+    required String userText,
+    String? attachmentContext,
+    bool thinkHarder = false,
+  }) async {
+    final trimmed = userText.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(isLoading: false);
+      return;
+    }
+
+    // Init debug log for this pipeline run
+    _debugLog = {
+      'user_query': trimmed,
+      'thread_id': threadId,
+      'thread_title': _ref.read(currentThreadTitleProvider),
+      'timestamp': DateTime.now().toIso8601String(),
+      'think_harder': thinkHarder,
+      'settings': {
+        'tool_model': _ref.read(aiQaSettingsProvider).toolModel,
+        'answer_model': _ref.read(aiQaSettingsProvider).answerModel,
+        'orthodox_mode': _ref.read(aiQaSettingsProvider).orthodoxMode,
+      },
+      'tool_loop': [],
+      'answer_model_prompt': '',
+      'final_answer': '',
+    };
+
+    debugPrint('');
+    debugPrint('╔══════════════════════════════════════════════════════════');
+    debugPrint('║  Vīmaṃsā PIPELINE START');
+    debugPrint('╠══════════════════════════════════════════════════════════');
+    debugPrint(
+      '║  Thread: ${_ref.read(currentThreadTitleProvider)} ($threadId)',
+    );
+    debugPrint('║  User: ${trimmed.substring(0, min(120, trimmed.length))}');
+    if (thinkHarder) debugPrint('║  Mode: RETRY (think harder)');
+    debugPrint('╚══════════════════════════════════════════════════════════');
+    _finalized = false;
+    if (!state.isLoading) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
+
     try {
       // ── 1. Validate settings ────────────────────────────────────
       var settings = _ref.read(aiQaSettingsProvider);
@@ -435,6 +604,9 @@ $grounding''';
       debugPrint('╠══════════════════════════════════════════════════════════');
       debugPrint('║  Tool model:  ${settings.toolModel}');
       debugPrint('║  Answer model: ${settings.answerModel}');
+      if (settings.answerFallbacks.isNotEmpty) {
+        debugPrint('║  Fallbacks: ${settings.answerFallbacks.join(' → ')}');
+      }
       debugPrint(
         '║  Custom prompt: ${settings.customSystemPrompt.isNotEmpty ? "YES (${settings.customSystemPrompt.length} chars)" : "NO (using default)"}',
       );
@@ -472,13 +644,10 @@ $grounding''';
         _debugLog['attachment_context'] = attachmentContext;
       }
 
-      // Add current user message to conversation
-      conversation.add({
-        'role': 'user',
-        'parts': [
-          {'text': userMessage.text},
-        ],
-      });
+      // pastMessages (from DB) already ends with the current user
+      // message — the caller saves it before invoking the pipeline —
+      // so no extra append here (appending again would send the
+      // question to the tool model twice).
 
       final toolLogs = <ToolCallLog>[];
 
@@ -531,17 +700,23 @@ $grounding''';
       // ── 3. Generate final answer ──────────────────────────────────
       if (_cancelRequested) return;
       final answerSystemPrompt = settings.customSystemPrompt.isNotEmpty
-          ? settings.customSystemPrompt
-          : _buildAnswerSystemPrompt(orthodoxMode: settings.orthodoxMode);
+          ? (thinkHarder
+                ? '${settings.customSystemPrompt}\n\n$_thinkHarderInstruction'
+                : settings.customSystemPrompt)
+          : _buildAnswerSystemPrompt(
+              orthodoxMode: settings.orthodoxMode,
+              thinkHarder: thinkHarder,
+            );
 
       final contextBlock = _buildContextBlock(loopResult.allToolResults);
+      final retrySuffix = thinkHarder ? '\n\n$_thinkHarderInstruction' : '';
 
       final answerPrompt = settings.orthodoxMode
           ? '''
 ═══════════════════════════════════════════
 USER'S ORIGINAL QUESTION:
 ═══════════════════════════════════════════
-${userMessage.text}
+$trimmed
 
 ═══════════════════════════════════════════
 TOOL RESULTS (sources from the database):
@@ -550,13 +725,13 @@ $contextBlock
 
 Please answer the user's question using ONLY the sources above.
 If the sources do not cover the question, say so honestly instead of guessing.
-Format every citation as [book_id:para_id:line_id] so users can click to open the passage.
+Format every citation as [book_id:para_id:line_id] so users can click to open the passage.$retrySuffix
 '''
           : '''
 ═══════════════════════════════════════════
 USER'S ORIGINAL QUESTION:
 ═══════════════════════════════════════════
-${userMessage.text}
+$trimmed
 
 ═══════════════════════════════════════════
 TOOL RESULTS (sources from the database):
@@ -565,7 +740,7 @@ $contextBlock
 
 Please answer the user's question using the sources above as the primary reference.
 You may supplement with your own knowledge of the Pāli Canon where the sources are insufficient.
-Format every citation as [book_id:para_id:line_id] so users can click to open the passage.
+Format every citation as [book_id:para_id:line_id] so users can click to open the passage.$retrySuffix
 ''';
 
       final streamingMessageId = _uuid.v4();
@@ -590,8 +765,9 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
       _ref.read(streamingMessageIdProvider.notifier).state = streamingMessageId;
 
       // Save a placeholder assistant message to DB so we can update it
+      final historyNotifier = _ref.read(chatHistoryNotifierProvider);
       try {
-        _dbMessageId = await notifier.saveAssistantMessage(
+        _dbMessageId = await historyNotifier.saveAssistantMessage(
           threadId: threadId,
           content: '',
           metadata: '{}',
@@ -601,102 +777,160 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
         _dbMessageId = null;
       }
 
-      // Stream final answer, with one automatic retry when the connection
-      // drops before the first token (e.g. "Connection closed before full
-      // header was received"). The retry is cheap: tool results are already
-      // collected, only the answer call is repeated.
+      // Stream final answer, trying the saved fallback chain in order:
+      // primary first, then lower flash version, then flash-lite. A model
+      // is only skipped when it fails before producing any token — a
+      // partial answer is kept as-is. Each model also gets one automatic
+      // retry when the connection drops before the first token (e.g.
+      // "Connection closed before full header was received"). Retries are
+      // cheap: tool results are already collected, only the answer call
+      // is repeated.
+      var answerChain = settings.answerChain;
+      if (answerChain.length == 1) {
+        final computed = resolveAnswerFallbacks(
+          answerModel: settings.answerModel,
+          toolModel: settings.toolModel,
+        );
+        if (computed.isNotEmpty) {
+          answerChain = [settings.answerModel.trim(), ...computed];
+        }
+      }
+      _debugLog['answer_chain'] = answerChain;
+      if (answerChain.isEmpty) {
+        _finalizeMessage(
+          '',
+          error: 'Please configure the answer model in the Vīmaṃsā settings.',
+        );
+        return;
+      }
       String accumulatedText = '';
       String? streamError;
+      String usedModel = answerChain.first;
+      final triedModels = <String>[];
       var attempt = 0;
-      while (true) {
-        attempt++;
-        final streamDone = Completer<void>();
-        _activeStreamDone = streamDone;
-        var retry = false;
-        final stream = _streamAnswer(
-          provider: settings.provider,
-          baseUrl: settings.baseUrl,
-          systemPrompt: answerSystemPrompt,
-          userPrompt: answerPrompt,
-          apiKey: settings.apiKey,
-          model: settings.answerModel,
-          maxTokens: settings.answerMaxTokens,
-        );
-
-        _streamSubscription = stream.listen(
-          (token) {
-            if (_cancelRequested) return;
-            accumulatedText += token;
-            _ref.read(streamingTextProvider.notifier).state = accumulatedText;
-          },
-          onError: (error) {
-            if (_cancelRequested || error is AiCallCancelledException) {
-              _finalizeMessage(accumulatedText);
-              if (!streamDone.isCompleted) streamDone.complete();
-              _activeStreamDone = null;
-              return;
-            }
-            if (accumulatedText.isEmpty &&
-                attempt == 1 &&
-                _isTransientStreamError(error)) {
-              debugPrint(
-                '[Vīmaṃsā] Answer stream dropped before first token, '
-                'retrying once: ${_redactKey('$error')}',
-              );
-              retry = true;
-              if (!streamDone.isCompleted) streamDone.complete();
-              _activeStreamDone = null;
-              return;
-            }
-            debugPrint('[Vīmaṃsā] Stream error: ${_redactKey('$error')}');
-            streamError = AiApiClient.friendlyErrorMessage(error);
-            _finalizeMessage(accumulatedText, error: streamError);
-            if (!streamDone.isCompleted) streamDone.complete();
-            _activeStreamDone = null;
-          },
-          onDone: () {
-            if (_cancelRequested) {
-              _finalizeMessage(accumulatedText);
-              if (!streamDone.isCompleted) streamDone.complete();
-              _activeStreamDone = null;
-              return;
-            }
-            if (accumulatedText.trim().isEmpty && streamError == null) {
-              streamError =
-                  'The model returned an empty response. This can happen when '
-                  'the AI blocks the output or the question is too long. '
-                  'Try asking again or check the model name in Settings.';
-            }
-            _finalizeMessage(accumulatedText, error: streamError);
-            if (!streamDone.isCompleted) streamDone.complete();
-            _activeStreamDone = null;
-          },
-          cancelOnError: false,
-        );
-
-        try {
-          await streamDone.future.timeout(_answerTotalTimeout);
-        } on TimeoutException catch (_) {
-          await _streamSubscription?.cancel();
-          _streamSubscription = null;
-          _activeStreamClient?.close();
-          _activeStreamClient = null;
-          _activeStreamDone = null;
-          if (!streamDone.isCompleted) streamDone.complete();
-          throw TimeoutException(
-            'AI answer streaming timed out after $_answerTotalTimeout',
+      var chainExhausted = false;
+      for (var mi = 0; mi < answerChain.length; mi++) {
+        final model = answerChain[mi];
+        usedModel = model;
+        triedModels.add(model);
+        accumulatedText = '';
+        streamError = null;
+        _ref.read(streamingTextProvider.notifier).state = '';
+        var retriedTransient = false;
+        while (true) {
+          attempt++;
+          final streamDone = Completer<void>();
+          _activeStreamDone = streamDone;
+          var retry = false;
+          final stream = _streamAnswer(
+            provider: settings.provider,
+            baseUrl: settings.baseUrl,
+            systemPrompt: answerSystemPrompt,
+            userPrompt: answerPrompt,
+            apiKey: settings.apiKey,
+            model: model,
+            maxTokens: settings.answerMaxTokens,
           );
+
+          _streamSubscription = stream.listen(
+            (token) {
+              if (_cancelRequested) return;
+              accumulatedText += token;
+              _ref.read(streamingTextProvider.notifier).state = accumulatedText;
+            },
+            onError: (error) {
+              if (_cancelRequested || error is AiCallCancelledException) {
+                if (!streamDone.isCompleted) streamDone.complete();
+                _activeStreamDone = null;
+                return;
+              }
+              if (accumulatedText.isEmpty &&
+                  !retriedTransient &&
+                  _isTransientStreamError(error)) {
+                debugPrint(
+                  '[Vīmaṃsā] Answer stream ($model) dropped before first '
+                  'token, retrying once: ${_redactKey('$error')}',
+                );
+                retriedTransient = true;
+                retry = true;
+                if (!streamDone.isCompleted) streamDone.complete();
+                _activeStreamDone = null;
+                return;
+              }
+              debugPrint(
+                '[Vīmaṃsā] Stream error ($model): ${_redactKey('$error')}',
+              );
+              streamError = AiApiClient.friendlyErrorMessage(error);
+              if (!streamDone.isCompleted) streamDone.complete();
+              _activeStreamDone = null;
+            },
+            onDone: () {
+              if (_cancelRequested) {
+                if (!streamDone.isCompleted) streamDone.complete();
+                _activeStreamDone = null;
+                return;
+              }
+              if (accumulatedText.trim().isEmpty && streamError == null) {
+                streamError =
+                    'The model returned an empty response. This can happen when '
+                    'the AI blocks the output or the question is too long. '
+                    'Try asking again or check the model name in Settings.';
+              }
+              if (!streamDone.isCompleted) streamDone.complete();
+              _activeStreamDone = null;
+            },
+            cancelOnError: false,
+          );
+
+          try {
+            await streamDone.future.timeout(_answerTotalTimeout);
+          } on TimeoutException catch (_) {
+            await _streamSubscription?.cancel();
+            _streamSubscription = null;
+            _activeStreamClient?.close();
+            _activeStreamClient = null;
+            _activeStreamDone = null;
+            if (!streamDone.isCompleted) streamDone.complete();
+            throw TimeoutException(
+              'AI answer streaming timed out after $_answerTotalTimeout',
+            );
+          }
+          _activeStreamDone = null;
+          if (retry) {
+            await _streamSubscription?.cancel();
+            _streamSubscription = null;
+            if (_cancelRequested) return;
+            continue;
+          }
+          break;
         }
-        _activeStreamDone = null;
-        if (retry) {
+        if (_cancelRequested) return;
+        // Success — or a partial answer — stops the chain; only an empty
+        // failure moves on to the next fallback model.
+        if (streamError == null && accumulatedText.trim().isNotEmpty) break;
+        if (accumulatedText.isNotEmpty) break;
+        if (mi < answerChain.length - 1) {
+          debugPrint(
+            '[Vīmaṃsā] Answer model $model failed, '
+            'trying fallback ${answerChain[mi + 1]}',
+          );
           await _streamSubscription?.cancel();
           _streamSubscription = null;
-          if (_cancelRequested) return;
           continue;
         }
+        chainExhausted = true;
         break;
       }
+      _debugLog['answer_models_tried'] = triedModels;
+      _debugLog['answer_model_used'] = usedModel;
+      _finalizeMessage(accumulatedText, error: streamError);
       if (_cancelRequested) return;
+      if (chainExhausted && streamError != null) {
+        debugPrint(
+          '[Vīmaṃsā] Answer failed after ${triedModels.length} model(s): '
+          '${_redactKey(streamError!)}',
+        );
+      }
 
       // Update the assistant message in DB with the final content
       if (_dbMessageId != null && accumulatedText.isNotEmpty) {
@@ -706,7 +940,7 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
           'toolCalls': toolLogs.map((t) => t.toJson()).toList(),
         });
         try {
-          await notifier.updateAssistantMessage(
+          await historyNotifier.updateAssistantMessage(
             threadId: threadId,
             messageId: _dbMessageId!,
             content: accumulatedText,
@@ -788,10 +1022,20 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
           userPrompt: userPrompt,
           maxTokens: maxTokens,
         );
+      case AiProvider.claude:
+        yield* _claudeStreamAnswer(
+          model: model,
+          apiKey: apiKey,
+          baseUrl: baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
+          systemPrompt: systemPrompt,
+          userPrompt: userPrompt,
+          maxTokens: maxTokens,
+        );
       case AiProvider.openai:
       case AiProvider.openrouter:
-        // OpenRouter speaks the OpenAI chat-completions protocol, so both
-        // providers share the same streaming code path.
+      case AiProvider.deepseek:
+        // OpenRouter and DeepSeek speak the OpenAI chat-completions
+        // protocol, so all three share the same streaming code path.
         yield* _openaiStreamAnswer(
           model: model,
           apiKey: apiKey,
@@ -881,6 +1125,87 @@ Format every citation as [book_id:para_id:line_id] so users can click to open th
             yield text;
           }
         } catch (e) {
+          // Skip malformed chunks
+        }
+      }
+    } finally {
+      httpClient.close();
+      if (identical(_activeStreamClient, httpClient)) {
+        _activeStreamClient = null;
+      }
+    }
+  }
+
+  /// Anthropic Messages API streaming answer. Parses SSE
+  /// `content_block_delta` events (`delta.text`) into text tokens.
+  Stream<String> _claudeStreamAnswer({
+    required String model,
+    required String apiKey,
+    required String baseUrl,
+    required String systemPrompt,
+    required String userPrompt,
+    required int maxTokens,
+  }) async* {
+    final payload = {
+      'model': model,
+      'max_tokens': maxTokens,
+      'system': systemPrompt,
+      'messages': [
+        {'role': 'user', 'content': userPrompt},
+      ],
+      'stream': true,
+    };
+
+    final url = AiApiClient.claudeMessagesUri(baseUrl);
+
+    final request = http.Request('POST', url)
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['x-api-key'] = apiKey
+      ..headers['anthropic-version'] = '2023-06-01'
+      ..body = jsonEncode(payload);
+
+    final httpClient = http.Client();
+    _activeStreamClient = httpClient;
+    try {
+      final httpResponse = await AiApiClient.raceAiCancel(
+        httpClient.send(request).timeout(_streamConnectTimeout),
+        _cancelSignal.future,
+      );
+
+      if (httpResponse.statusCode != 200) {
+        final errorBody = await httpResponse.stream.bytesToString();
+        throw Exception(
+          'API error ${httpResponse.statusCode}: ${AiApiClient.parseApiError(errorBody)}',
+        );
+      }
+
+      await for (final line
+          in httpResponse.stream
+              .timeout(_streamIdleTimeout)
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        if (_cancelRequested) break;
+        final trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        final data = trimmed.substring(6).trim();
+        if (data == '[DONE]' || data.isEmpty) continue;
+
+        try {
+          final json = jsonDecode(data) as Map<String, dynamic>;
+          final type = json['type'] as String? ?? '';
+          if (type == 'content_block_delta') {
+            final delta = json['delta'] as Map<String, dynamic>?;
+            final text = delta?['text'] as String?;
+            if (text != null && text.isNotEmpty) yield text;
+          } else if (type == 'error') {
+            final error = json['error'] as Map<String, dynamic>?;
+            throw Exception('API error: ${error?['message'] ?? data}');
+          }
+        } catch (e) {
+          if (e is Exception &&
+              e.toString().startsWith('Exception: API error')) {
+            rethrow;
+          }
           // Skip malformed chunks
         }
       }

@@ -48,7 +48,7 @@ class ReaderBottomToolbar extends StatelessWidget {
   final VoidCallback? onSearchTap;
   final VoidCallback? onJumpTap;
   final VoidCallback? onAnnotationsTap;
-  final VoidCallback? onSummarizeTap;
+  final VoidCallback? onAiAskTap;
 
   /// The ordered toolbar configuration (Settings → Toolbar). Disabled items
   /// are skipped, and items with no wired handler for this surface are
@@ -75,7 +75,7 @@ class ReaderBottomToolbar extends StatelessWidget {
     this.onSearchTap,
     this.onJumpTap,
     this.onAnnotationsTap,
-    this.onSummarizeTap,
+    this.onAiAskTap,
   });
 
   @override
@@ -253,18 +253,33 @@ class ReaderBottomToolbar extends StatelessWidget {
                   )
                 : null,
           );
-        case ToolbarBuiltins.summarize:
-          // Summarize the current chapter with AI (Vīmaṃsā). Rendered
-          // wherever a handler is provided — the mobile pill and the
-          // desktop status bar.
+        case ToolbarBuiltins.aiAsk:
+          // Ask Vīmaṃsā AI about the current section. Rendered wherever a
+          // handler is provided — the mobile pill and the desktop status bar.
           add(
-            onSummarizeTap != null
+            onAiAskTap != null
                 ? ToolbarButton(
-                    icon: Icons.summarize_outlined,
-                    label: loc.summarizeChapter,
+                    icon: Icons.auto_awesome,
+                    label: loc.askAi,
+                    tooltip: loc.askAiDesc,
                     compact: compact,
                     enabled: enabled,
-                    onTap: onSummarizeTap,
+                    onTap: onAiAskTap,
+                  )
+                : null,
+          );
+        // Legacy id from older saved configs (migrated to aiAsk on load,
+        // but still rendered the same way if one slips through).
+        case ToolbarBuiltins.summarize:
+          add(
+            onAiAskTap != null
+                ? ToolbarButton(
+                    icon: Icons.auto_awesome,
+                    label: loc.askAi,
+                    tooltip: loc.askAiDesc,
+                    compact: compact,
+                    enabled: enabled,
+                    onTap: onAiAskTap,
                   )
                 : null,
           );

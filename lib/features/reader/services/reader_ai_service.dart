@@ -49,19 +49,22 @@ class ReaderAiService {
     if (currentParaId != null) {
       try {
         final db = await ref.read(epitakaDbProvider.future);
-        final rows = await db.customSelect(
-          'SELECT title FROM headings '
-          'WHERE book_id = ? AND para_id <= ? AND level = 10 '
-          'ORDER BY para_id DESC LIMIT 1',
-          variables: [
-            Variable.withString(activeTab.bookId),
-            Variable.withInt(currentParaId),
-          ],
-        ).get();
+        final rows = await db
+            .customSelect(
+              'SELECT title FROM headings '
+              'WHERE book_id = ? AND para_id <= ? AND level = 10 '
+              'ORDER BY para_id DESC LIMIT 1',
+              variables: [
+                Variable.withString(activeTab.bookId),
+                Variable.withInt(currentParaId),
+              ],
+            )
+            .get();
         if (rows.isNotEmpty) {
           final title = rows.first.data['title'] as String?;
           if (title != null && title.isNotEmpty) {
-            headingContext = 'Section heading: "$title" (para_id=$currentParaId)\n';
+            headingContext =
+                'Section heading: "$title" (para_id=$currentParaId)\n';
           }
         }
       } catch (_) {
@@ -80,6 +83,57 @@ class ReaderAiService {
         '$selectedText';
 
     if (context.mounted) stageCustomPrompt(context, ref, prompt);
+  }
+
+  /// Lightweight section info for the AI ask sheet: the nearest heading at
+  /// or before the current position. The sheet attaches this as a
+  /// [HeadingAttachment] so Vīmaṃsā fetches the content via its tools —
+  /// no large prompt text is built up-front (keeps sheet opens cheap).
+  static ({String? title, int? paraId}) getCurrentSectionInfo({
+    required ReaderDataState readerState,
+    required ReaderTabInfo activeTab,
+  }) {
+    final paragraphs = readerState.paragraphs;
+    final currentParaId = activeTab.currentParaId;
+    if (paragraphs.isEmpty || currentParaId == null) {
+      return (title: null, paraId: currentParaId);
+    }
+    for (int i = paragraphs.length - 1; i >= 0; i--) {
+      final p = paragraphs[i];
+      if (p.paraId <= currentParaId && p.heading != null) {
+        return (title: p.heading!.title, paraId: p.paraId);
+      }
+    }
+    return (title: null, paraId: currentParaId);
+  }
+
+  /// Short user-facing prompt used by the AI ask sheet's quick chips. The
+  /// section itself travels as an attachment (see above), so this stays
+  /// small — [headingTitle]/[bookName] are only naming hints.
+  static String buildSectionQuestion({
+    required String kind,
+    required String bookName,
+    String? headingTitle,
+  }) {
+    final where = headingTitle != null && headingTitle.isNotEmpty
+        ? ' in "$headingTitle" ($bookName)'
+        : ' in $bookName';
+    switch (kind) {
+      case 'explain':
+        return 'Please explain this section$where in clear, simple terms. '
+            'Unpack the key ideas and any difficult words or phrases.';
+      case 'grammar':
+        return 'Please analyze the Pāli grammar of this section$where. '
+            'Explain the key words, cases, verb forms, and sentence '
+            'structure.';
+      case 'mindmap':
+        return 'Please create a mindmap of this section$where as a '
+            'hierarchical bullet outline I can visualize: central theme, '
+            'main branches, and sub-points.';
+      default:
+        return 'Please summarize this section$where. '
+            'Include the key teachings, main points, and structure.';
+    }
   }
 
   /// Stage a "Summarize chapter" prompt for the current section and open

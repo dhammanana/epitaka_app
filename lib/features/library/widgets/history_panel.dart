@@ -76,20 +76,20 @@ class HistoryPanel extends ConsumerWidget {
               tab: entry.$2,
               colors: colors,
               onTap: () {
-                ref
-                    .read(readerTabsProvider.notifier)
-                    .switchTo(entry.$1);
+                ref.read(readerTabsProvider.notifier).switchTo(entry.$1);
               },
               onClose: () {
-                ref
-                    .read(readerTabsProvider.notifier)
-                    .closeTab(entry.$1);
+                ref.read(readerTabsProvider.notifier).closeTab(entry.$1);
               },
             ),
           ),
         const SizedBox(height: AppDimensions.sm),
         // ── Reading / Listening history ──────────────────────────
-        HistoryTabsSection(colors: colors, compact: true, openBookInPlace: true),
+        HistoryTabsSection(
+          colors: colors,
+          compact: true,
+          openBookInPlace: true,
+        ),
       ],
     );
   }
@@ -110,7 +110,7 @@ class _OpenTabCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       elevation: 0,
@@ -124,26 +124,28 @@ class _OpenTabCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(children: [
-            Expanded(
-              child: PaliTextStatic(
-                tab.bookName,
-                script,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w600,
+          child: Row(
+            children: [
+              Expanded(
+                child: PaliTextStatic(
+                  tab.bookName,
+                  script,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            IconButton(
-              onPressed: onClose,
-              icon: Icon(Icons.close, size: 14, color: colors.outline),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            ),
-          ]),
+              IconButton(
+                onPressed: onClose,
+                icon: Icon(Icons.close, size: 14, color: colors.outline),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ],
+          ),
         ),
       ),
     );

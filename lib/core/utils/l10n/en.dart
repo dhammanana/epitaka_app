@@ -44,7 +44,6 @@ const Map<String, String> en = {
   'sentences': 'sentences',
   'results': 'results',
   'Loading…': 'Loading…',
-  'files': 'files',
   'Manage translation databases: download, update, and delete.':
       'Manage translation databases: download, update, and delete.',
   'Pāli': 'Pāli',
@@ -372,24 +371,9 @@ const Map<String, String> en = {
   'Update check complete.': 'Update check complete.',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'TTS Engine',
-  'Voice': 'Voice',
   'Speed': 'Speed',
   'Trans. speed': 'Trans. speed',
   'Pitch': 'Pitch',
-  'Engine': 'Engine',
-  'System TTS': 'System TTS',
-  'Platform-native text-to-speech (fast, no download)':
-      'Platform-native text-to-speech (fast, no download)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'Neural TTS with 31 languages (~400 MB model download)',
-  'Model Download': 'Model Download',
-  'Models Installed': 'Models Installed',
-  'TTS Models': 'TTS Models',
-  'All models are ready for use': 'All models are ready for use',
-  'Requires ~400 MB download for neural TTS':
-      'Requires ~400 MB download for neural TTS',
   'Speaking Rate': 'Speaking Rate',
   'Low': 'Low',
   'High': 'High',
@@ -403,16 +387,8 @@ const Map<String, String> en = {
   'Paused': 'Paused',
   'Tap resume to continue': 'Tap resume to continue',
   'Preparing audio…': 'Preparing audio…',
-  'Voice Style': 'Voice Style',
   'System Default': 'System Default',
   'Config': 'Config',
-  'TTS Language': 'TTS Language',
-  'Quality': 'Quality',
-  'Synthesis quality — higher sounds better but is slower':
-      'Synthesis quality — higher sounds better but is slower',
-  'Medium': 'Medium',
-  'Follows the reading language (first enabled translation)':
-      'Follows the reading language (first enabled translation)',
   'Speak': 'Speak',
   'Reads the translation aloud': 'Reads the translation aloud',
   'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation':
@@ -950,6 +926,10 @@ const Map<String, String> en = {
       'Use {selectedText} as a placeholder for the selected text.',
   'Edit Prompt': 'Edit Prompt',
   'Installed Apps': 'Installed Apps',
+  'No compatible apps found on this device.':
+      'No compatible apps found on this device.',
+  'Install a dictionary or translator app that supports text sharing, then tap Add App again.':
+      'Install a dictionary or translator app that supports text sharing, then tap Add App again.',
   'No context menu actions yet. Add apps or prompts below.':
       'No context menu actions yet. Add apps or prompts below.',
   'External app': 'External app',

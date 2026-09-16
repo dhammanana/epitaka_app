@@ -52,7 +52,11 @@ class _HistoryTabsSectionState extends ConsumerState<HistoryTabsSection> {
         // ── Header ─────────────────────────────────────────────────
         Row(
           children: [
-            Icon(Icons.history, size: widget.compact ? 16 : 18, color: colors.tertiary),
+            Icon(
+              Icons.history,
+              size: widget.compact ? 16 : 18,
+              color: colors.tertiary,
+            ),
             const SizedBox(width: 8),
             Text(
               loc.history,
@@ -136,9 +140,7 @@ class _HistoryTabBar extends StatelessWidget {
                     color: i == selectedIndex
                         ? colors.surface
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.radiusSm,
-                    ),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                     boxShadow: i == selectedIndex
                         ? [
                             BoxShadow(
@@ -238,12 +240,15 @@ class _ReadingHistoryList extends ConsumerWidget {
                   icon: Icons.history,
                   colors: colors,
                   compact: compact,
-                  onTap: () => openBookInReader(context, ref,
-                      bookId: entry.bookId,
-                      bookName: entry.bookName,
-                      paraId: entry.paraId,
-                      lineId: entry.lineId,
-                      inPlace: openBookInPlace),
+                  onTap: () => openBookInReader(
+                    context,
+                    ref,
+                    bookId: entry.bookId,
+                    bookName: entry.bookName,
+                    paraId: entry.paraId,
+                    lineId: entry.lineId,
+                    inPlace: openBookInPlace,
+                  ),
                   onDelete: () => confirmDeleteHistoryEntry(
                     context,
                     ref,
@@ -315,12 +320,15 @@ class _ListeningHistoryList extends ConsumerWidget {
                   icon: Icons.headphones,
                   colors: colors,
                   compact: compact,
-                  onTap: () => openBookInReader(context, ref,
-                      bookId: entry.bookId,
-                      bookName: entry.bookName,
-                      paraId: entry.paraId,
-                      lineId: entry.lineId,
-                      inPlace: openBookInPlace),
+                  onTap: () => openBookInReader(
+                    context,
+                    ref,
+                    bookId: entry.bookId,
+                    bookName: entry.bookName,
+                    paraId: entry.paraId,
+                    lineId: entry.lineId,
+                    inPlace: openBookInPlace,
+                  ),
                   onDelete: () => confirmDeleteHistoryEntry(
                     context,
                     ref,
@@ -357,7 +365,8 @@ class _HistoryEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(          padding: EdgeInsets.symmetric(vertical: compact ? 12 : 24),
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: compact ? 12 : 24),
       child: Center(
         child: Column(
           children: [
@@ -410,14 +419,12 @@ class _HistoryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     // Look up the nearest heading title for a nicer main title.
     final headingAsync = paraId != null
         ? ref.watch(
-            headingTitleProvider(
-              HeadingQuery(bookId: bookId, paraId: paraId!),
-            ),
+            headingTitleProvider(HeadingQuery(bookId: bookId, paraId: paraId!)),
           )
         : null;
     final headingTitle = headingAsync?.when(
@@ -425,8 +432,7 @@ class _HistoryCard extends ConsumerWidget {
       loading: () => null,
       error: (_, _) => null,
     );
-    final mainTitle =
-        headingTitle ?? (paraId != null ? 'Para $paraId' : null);
+    final mainTitle = headingTitle ?? (paraId != null ? 'Para $paraId' : null);
 
     return Card(
       margin: EdgeInsets.only(bottom: compact ? 4 : 6),
@@ -564,7 +570,9 @@ void openBookInReader(
   int? lineId,
   bool inPlace = false,
 }) {
-  ref.read(readerTabsProvider.notifier).openTab(
+  ref
+      .read(readerTabsProvider.notifier)
+      .openTab(
         ReaderTabInfo(
           bookId: bookId,
           bookName: bookName ?? bookId,

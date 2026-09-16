@@ -6,25 +6,10 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../providers/tts_provider.dart';
-import '../providers/supertonic_download_provider.dart';
 import '../services/system_tts_availability.dart';
 import '../services/system_tts_settings.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
-
-/// Voice styles available in Supertonic TTS.
-const _supertonicVoices = [
-  ('M1', 'Male Voice 1'),
-  ('M2', 'Male Voice 2'),
-  ('M3', 'Male Voice 3'),
-  ('M4', 'Male Voice 4'),
-  ('M5', 'Male Voice 5'),
-  ('F1', 'Female Voice 1'),
-  ('F2', 'Female Voice 2'),
-  ('F3', 'Female Voice 3'),
-  ('F4', 'Female Voice 4'),
-  ('F5', 'Female Voice 5'),
-];
 
 /// Text-to-Speech settings with engine selection, voice, speed, and pitch.
 class TtsSettingsScreen extends StatelessWidget {
@@ -56,15 +41,7 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
   @override
   void initState() {
     super.initState();
-    // Check supertonic model status on load
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(supertonicDownloadProvider.notifier).areModelsReady().then((
-        ready,
-      ) {
-        if (ready) {
-          ref.read(settingsProvider.notifier).setTtsSupertonicDownloaded(true);
-        }
-      });
       _loadVoices();
     });
   }
@@ -86,10 +63,7 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
     final settings = ref.watch(settingsProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final downloadState = ref.watch(supertonicDownloadProvider);
     final ttsPlayback = ref.watch(ttsProvider);
-
-    final isSupertonic = settings.ttsEngine == 'supertonic';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -104,22 +78,6 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
           style: AppTypography.headlineLarge.copyWith(color: colors.onSurface),
         ),
         const SizedBox(height: AppDimensions.lg),
-
-        // ── Engine Selection ─────────────────────────────────────────
-        SettingsSection(
-          title: loc.engine,
-          colors: colors,
-          children: [
-            _EngineSelector(
-              currentEngine: settings.ttsEngine,
-              colors: colors,
-              onChanged: (engine) {
-                ref.read(settingsProvider.notifier).setTtsEngine(engine);
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: AppDimensions.md),
 
         // ── Speak mode (what to read aloud) ──────────────────────────
         SettingsSection(
@@ -246,165 +204,47 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
         ),
         const SizedBox(height: AppDimensions.md),
 
-        // ── Supertonic: Download & Setup ─────────────────────────────
-        if (isSupertonic) ...[
-          SettingsSection(
-            title: loc.modelDownload,
-            colors: colors,
-            children: [
-              _SupertonicDownloadTile(
-                downloadState: downloadState,
-                settings: settings,
-                colors: colors,
-                onDownload: () {
-                  ref
-                      .read(supertonicDownloadProvider.notifier)
-                      .downloadModels(ref);
-                },
-                onCancel: () {
-                  ref
-                      .read(supertonicDownloadProvider.notifier)
-                      .cancelDownload();
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: AppDimensions.md),
-
-          if (settings.ttsSupertonicDownloaded) ...[
-            // Language — now follows the reading language automatically.
-            SettingsSection(
-              title: loc.language,
-              colors: colors,
-              children: [
-                _InfoTile(
-                  icon: Icons.language,
-                  title: loc.ttsLanguageLabel2,
-                  subtitle: loc.ttsLanguageAutoNote,
-                  colors: colors,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimensions.md),
-
-            // Voice style selection
-            SettingsSection(
-              title: loc.voiceStyle,
-              colors: colors,
-              children: [
-                _DropdownTile(
-                  icon: Icons.record_voice_over,
-                  title: loc.ttsVoiceLabel,
-                  value: _supertonicVoices
-                      .firstWhere(
-                        (v) => v.$1 == settings.ttsSupertonicVoice,
-                        orElse: () => ('M1', 'Male Voice 1'),
-                      )
-                      .$2,
-                  options: _supertonicVoices.map((v) => v.$2).toList(),
-                  selectedValue: _supertonicVoices
-                      .firstWhere(
-                        (v) => v.$1 == settings.ttsSupertonicVoice,
-                        orElse: () => ('M1', 'Male Voice 1'),
-                      )
-                      .$2,
-                  onSelected: (label) {
-                    final entry = _supertonicVoices.firstWhere(
-                      (v) => v.$2 == label,
-                      orElse: () => ('M1', 'Male Voice 1'),
-                    );
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setTtsSupertonicVoice(entry.$1);
-                  },
-                  colors: colors,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimensions.md),
-
-            // Synthesis quality (denoising steps).
-            SettingsSection(
-              title: loc.quality,
-              colors: colors,
-              children: [
-                _DropdownTile(
-                  icon: Icons.tune,
-                  title: loc.quality,
-                  value: _qualityLabel(settings.ttsSupertonicQuality),
-                  options: const ['Low', 'Medium', 'High'],
-                  selectedValue: _qualityLabel(settings.ttsSupertonicQuality),
-                  onSelected: (label) {
-                    final code = label.toLowerCase();
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setTtsSupertonicQuality(code);
-                  },
-                  colors: colors,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppDimensions.md,
-                    0,
-                    AppDimensions.md,
-                    AppDimensions.md,
-                  ),
-                  child: Text(
-                    loc.qualitySubtitle,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimensions.md),
-          ],
-        ],
-
         // ── Pāli speed + voice ────────────────────────────────────────
-        if (!isSupertonic) ...[
-          SettingsSection(
-            title: loc.ttsPaliSpeed,
-            colors: colors,
-            children: [
-              _SpeedSlider(
-                value: settings.ttsPaliSpeed,
-                min: 0.1,
-                max: 3.0,
-                // 29 divisions → clean 0.1 steps across the 0.1–3.0 range.
-                divisions: 29,
-                label: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
-                colors: colors,
-                onChanged: (v) {
-                  ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
-                },
-              ),
-              const Divider(
-                height: 1,
-                indent: AppDimensions.md,
-                endIndent: AppDimensions.md,
-              ),
-              // Pāli voice for the chosen Pāli TTS script — separate
-              // from the translation voice so users can pick the best
-              // voice for Pāli pronunciation.
-              _RealVoiceTile(
-                icon: Icons.record_voice_over,
-                title: loc.ttsPaliVoice,
-                selectedVoice: settings.ttsPaliVoice,
-                langCode: settings.ttsScript,
-                allVoices: _cachedVoices ?? const [],
-                loading: _voicesLoading,
-                colors: colors,
-                showNoVoiceHint: true,
-                onVoiceChanged: (name) {
-                  ref.read(settingsProvider.notifier).setTtsPaliVoice(name);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: AppDimensions.md),
-        ],
+        SettingsSection(
+          title: loc.ttsPaliSpeed,
+          colors: colors,
+          children: [
+            _SpeedSlider(
+              value: settings.ttsPaliSpeed,
+              min: 0.1,
+              max: 3.0,
+              // 29 divisions → clean 0.1 steps across the 0.1–3.0 range.
+              divisions: 29,
+              label: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
+              colors: colors,
+              onChanged: (v) {
+                ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
+              },
+            ),
+            const Divider(
+              height: 1,
+              indent: AppDimensions.md,
+              endIndent: AppDimensions.md,
+            ),
+            // Pāli voice for the chosen Pāli TTS script — separate
+            // from the translation voice so users can pick the best
+            // voice for Pāli pronunciation.
+            _RealVoiceTile(
+              icon: Icons.record_voice_over,
+              title: loc.ttsPaliVoice,
+              selectedVoice: settings.ttsPaliVoice,
+              langCode: settings.ttsScript,
+              allVoices: _cachedVoices ?? const [],
+              loading: _voicesLoading,
+              colors: colors,
+              showNoVoiceHint: true,
+              onVoiceChanged: (name) {
+                ref.read(settingsProvider.notifier).setTtsPaliVoice(name);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: AppDimensions.md),
 
         // ── Translation speed + voice ────────────────────────────────
         SettingsSection(
@@ -422,27 +262,25 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
                 ref.read(settingsProvider.notifier).setTtsSpeed(v);
               },
             ),
-            if (!isSupertonic) ...[
-              const Divider(
-                height: 1,
-                indent: AppDimensions.md,
-                endIndent: AppDimensions.md,
-              ),
-              _RealVoiceTile(
-                icon: Icons.record_voice_over,
-                title: loc.ttsTranslationVoice,
-                selectedVoice: settings.ttsVoice,
-                langCode: settings.visibleTranslationLangs.isNotEmpty
-                    ? settings.visibleTranslationLangs.first
-                    : 'en',
-                allVoices: _cachedVoices ?? const [],
-                loading: _voicesLoading,
-                colors: colors,
-                onVoiceChanged: (name) {
-                  ref.read(settingsProvider.notifier).setTtsVoice(name);
-                },
-              ),
-            ],
+            const Divider(
+              height: 1,
+              indent: AppDimensions.md,
+              endIndent: AppDimensions.md,
+            ),
+            _RealVoiceTile(
+              icon: Icons.record_voice_over,
+              title: loc.ttsTranslationVoice,
+              selectedVoice: settings.ttsVoice,
+              langCode: settings.visibleTranslationLangs.isNotEmpty
+                  ? settings.visibleTranslationLangs.first
+                  : 'en',
+              allVoices: _cachedVoices ?? const [],
+              loading: _voicesLoading,
+              colors: colors,
+              onVoiceChanged: (name) {
+                ref.read(settingsProvider.notifier).setTtsVoice(name);
+              },
+            ),
           ],
         ),
         const SizedBox(height: AppDimensions.md),
@@ -656,273 +494,6 @@ class _SpeakModeTile extends StatelessWidget {
   }
 }
 
-// ── Engine Selector ──────────────────────────────────────────────────────
-
-class _EngineSelector extends StatelessWidget {
-  final String currentEngine;
-  final ColorScheme colors;
-  final ValueChanged<String> onChanged;
-
-  const _EngineSelector({
-    required this.currentEngine,
-    required this.colors,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
-    return Column(
-      children: [
-        _EngineOption(
-          engine: 'system',
-          label: loc.systemTts,
-          description: loc.systemTtsDesc,
-          icon: Icons.phone_android,
-          isSelected: currentEngine == 'system',
-          colors: colors,
-          onTap: () => onChanged('system'),
-        ),
-        const Divider(
-          height: 1,
-          indent: AppDimensions.md,
-          endIndent: AppDimensions.md,
-        ),
-        _EngineOption(
-          engine: 'supertonic',
-          label: loc.supertonic,
-          description: loc.supertonicDesc,
-          icon: Icons.auto_awesome,
-          isSelected: currentEngine == 'supertonic',
-          colors: colors,
-          onTap: () => onChanged('supertonic'),
-        ),
-      ],
-    );
-  }
-}
-
-class _EngineOption extends StatelessWidget {
-  final String engine;
-  final String label;
-  final String description;
-  final IconData icon;
-  final bool isSelected;
-  final ColorScheme colors;
-  final VoidCallback onTap;
-
-  const _EngineOption({
-    required this.engine,
-    required this.label,
-    required this.description,
-    required this.icon,
-    required this.isSelected,
-    required this.colors,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppDimensions.md,
-          vertical: AppDimensions.md,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? colors.primary : colors.onSurfaceVariant,
-              size: 20,
-            ),
-            const SizedBox(width: AppDimensions.md),
-            Icon(icon, color: colors.primary, size: 20),
-            const SizedBox(width: AppDimensions.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: isSelected ? colors.primary : colors.onSurface,
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                    ),
-                  ),
-                  Text(
-                    description,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Supertonic Download Tile ─────────────────────────────────────────────
-
-class _SupertonicDownloadTile extends StatelessWidget {
-  final SupertonicDownloadState downloadState;
-  final AppSettings settings;
-  final ColorScheme colors;
-  final VoidCallback onDownload;
-  final VoidCallback onCancel;
-
-  const _SupertonicDownloadTile({
-    required this.downloadState,
-    required this.settings,
-    required this.colors,
-    required this.onDownload,
-    required this.onCancel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDownloaded = settings.ttsSupertonicDownloaded;
-    final status = downloadState.status;
-    final loc = AppLocalizations.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: AppDimensions.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isDownloaded ? Icons.check_circle : Icons.cloud_download,
-                color: isDownloaded ? Colors.green : colors.primary,
-                size: 20,
-              ),
-              const SizedBox(width: AppDimensions.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isDownloaded ? loc.modelsInstalled : loc.ttsModels,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    Text(
-                      isDownloaded ? loc.allModelsReady : loc.requiresDownload,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (status == SupertonicDownloadStatus.downloading)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        value: downloadState.progress > 0
-                            ? downloadState.progress
-                            : null,
-                        color: colors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: onCancel,
-                      borderRadius: BorderRadius.circular(9999),
-                      child: Icon(Icons.stop, color: colors.error, size: 20),
-                    ),
-                  ],
-                )
-              else if (!isDownloaded)
-                InkWell(
-                  onTap: status == SupertonicDownloadStatus.error
-                      ? onDownload
-                      : onDownload,
-                  borderRadius: BorderRadius.circular(9999),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(9999),
-                      color: colors.primary,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.download, size: 14, color: colors.onPrimary),
-                        const SizedBox(width: 4),
-                        Text(
-                          status == SupertonicDownloadStatus.error
-                              ? loc.retry
-                              : loc.download,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.onPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Icon(Icons.check_circle, color: Colors.green, size: 22),
-            ],
-          ),
-          if (status == SupertonicDownloadStatus.downloading) ...[
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: downloadState.progress > 0 ? downloadState.progress : null,
-              minHeight: 3,
-              borderRadius: BorderRadius.circular(2),
-              backgroundColor: colors.surfaceContainerHighest,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${downloadState.filesDone}/${downloadState.filesTotal} ${loc.filesLabel}',
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-                fontSize: 11,
-              ),
-            ),
-          ],
-          if (status == SupertonicDownloadStatus.error &&
-              downloadState.errorMessage != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              downloadState.errorMessage!,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.error,
-                fontSize: 11,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 // ── Speed / Pitch Slider ─────────────────────────────────────────────────
 
 class _SpeedSlider extends StatelessWidget {
@@ -934,10 +505,6 @@ class _SpeedSlider extends StatelessWidget {
   final ColorScheme colors;
   final ValueChanged<double> onChanged;
 
-  /// Optional override for the slider's title. When null, the title is
-  /// derived from the min/max range (speed vs pitch).
-  final String? caption;
-
   const _SpeedSlider({
     required this.value,
     required this.min,
@@ -946,7 +513,6 @@ class _SpeedSlider extends StatelessWidget {
     required this.label,
     required this.colors,
     required this.onChanged,
-    this.caption,
   });
 
   @override
@@ -1019,7 +585,6 @@ class _SpeedSlider extends StatelessWidget {
   }
 
   String _labelForSlider(BuildContext context) {
-    if (caption != null) return caption!;
     final loc = AppLocalizations.of(context);
     if (min == 0.5 && max == 4.0) return loc.speakingRate;
     return loc.ttPitch;
@@ -1038,86 +603,7 @@ class _SpeedSlider extends StatelessWidget {
   }
 }
 
-// ── Dropdown Tile ────────────────────────────────────────────────────────
-
-class _DropdownTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final List<String> options;
-  final String selectedValue;
-  final ValueChanged<String> onSelected;
-  final ColorScheme colors;
-
-  const _DropdownTile({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.options,
-    required this.selectedValue,
-    required this.onSelected,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: AppDimensions.md,
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: colors.primary),
-          const SizedBox(width: AppDimensions.md),
-          Expanded(
-            child: Text(
-              title,
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.onSurface,
-              ),
-            ),
-          ),
-          PopupMenuButton<String>(
-            initialValue: selectedValue,
-            onSelected: onSelected,
-            itemBuilder: (context) => [
-              for (final opt in options)
-                PopupMenuItem(value: opt, child: Text(opt)),
-            ],
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Voice options ────────────────────────────────────────────────────────
-
-/// Display label for a Supertonic quality preset ('low' | 'medium' | 'high').
-String _qualityLabel(String quality) {
-  switch (quality) {
-    case 'low':
-      return 'Low';
-    case 'high':
-      return 'High';
-    default:
-      return 'Medium';
-  }
-}
 
 // ── Real Voice Picker ────────────────────────────────────────────────────
 
@@ -1168,6 +654,7 @@ class _RealVoiceTile extends StatelessWidget {
       final vLoc = (v['locale'] ?? '').toLowerCase();
       return vLoc == lc || vLoc.startsWith('$lc-') || vLoc.startsWith('${lc}_');
     }).toList();
+    SystemTtsAvailability.sortVoices(filtered);
     // Always include the selected voice even if it doesn't match the
     // language filter (e.g. after switching languages).
     if (selectedVoice.isNotEmpty &&
@@ -1486,59 +973,6 @@ class _EngineTileState extends ConsumerState<_EngineTile> {
                 ],
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Info Tile ───────────────────────────────────────────────────────────
-
-/// A read-only settings tile (icon + title + subtitle, no interaction).
-class _InfoTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final ColorScheme colors;
-
-  const _InfoTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.md,
-        vertical: AppDimensions.md,
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: colors.primary),
-          const SizedBox(width: AppDimensions.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

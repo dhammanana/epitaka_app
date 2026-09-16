@@ -122,26 +122,27 @@ void main() {
   Future<List<MentionSearchResult>> search(String query, {int limit = 20}) =>
       service.search(query, limit: limit);
 
-  test('regression: later-ordered books are found (no LIMIT-200 bias)',
-      () async {
-    // 'dhp' never surfaced under the old code: the '%d%h%' pre-filter
-    // matched every dn1 heading, the LIMIT 200 was all dn1 rows, and none
-    // of them even contained a 'p' for the fuzzy pass.
-    final dhp = await search('dhp');
-    expect(dhp, isNotEmpty, reason: 'Dhammapada must be found');
-    expect(dhp.map((r) => r.bookId), contains('dhp'));
+  test(
+    'regression: later-ordered books are found (no LIMIT-200 bias)',
+    () async {
+      // 'dhp' never surfaced under the old code: the '%d%h%' pre-filter
+      // matched every dn1 heading, the LIMIT 200 was all dn1 rows, and none
+      // of them even contained a 'p' for the fuzzy pass.
+      final dhp = await search('dhp');
+      expect(dhp, isNotEmpty, reason: 'Dhammapada must be found');
+      expect(dhp.map((r) => r.bookId), contains('dhp'));
 
-    // Same for headings deep inside a later book.
-    final catukka = await search('catukka');
-    expect(catukka, isNotEmpty);
-    expect(catukka.map((r) => r.title), contains('Catukkanipātapāḷi'));
+      // Same for headings deep inside a later book.
+      final catukka = await search('catukka');
+      expect(catukka, isNotEmpty);
+      expect(catukka.map((r) => r.title), contains('Catukkanipātapāḷi'));
 
-    final dasaka = await search('dasaka');
-    expect(dasaka.map((r) => r.title), contains('Dasakanipātapāḷi'));
-  });
+      final dasaka = await search('dasaka');
+      expect(dasaka.map((r) => r.title), contains('Dasakanipātapāḷi'));
+    },
+  );
 
-  test('a book-id query surfaces the book and its headings together',
-      () async {
+  test('a book-id query surfaces the book and its headings together', () async {
     final results = await search('an1');
     expect(results, isNotEmpty);
     // Everything on top relates to an1.
@@ -150,8 +151,9 @@ void main() {
     // The whole-book entry is part of the results (ranked right alongside
     // the headings — fzf scores both highly for an exact id prefix).
     expect(
-      results.any((r) =>
-          r.entryType == AttachmentEntryType.book && r.paraId == 0),
+      results.any(
+        (r) => r.entryType == AttachmentEntryType.book && r.paraId == 0,
+      ),
       isTrue,
     );
   });
@@ -159,10 +161,7 @@ void main() {
   test('fzf-style subsequence matching works across books', () async {
     // 'dgsut' skips letters: d-i-g-h-a s-u-t-t-a → d,g,s,u,t.
     final results = await search('dgsut');
-    expect(
-      results.map((r) => r.title),
-      contains('Dīgha Sutta 1'),
-    );
+    expect(results.map((r) => r.title), contains('Dīgha Sutta 1'));
   });
 
   test('diacritic-insensitive fuzzy matching', () async {
@@ -175,8 +174,7 @@ void main() {
     expect(accented.map((r) => r.title), contains('Cankīsuttam'));
   });
 
-  test('results span multiple books when the query matches broadly',
-      () async {
+  test('results span multiple books when the query matches broadly', () async {
     // 'an' matches the Aṅguttara rows (an1/...) and Cankīsuttam (dn1).
     final results = await search('an');
     expect(results, isNotEmpty);
@@ -193,6 +191,23 @@ void main() {
     expect(await search(''), isEmpty);
     expect(await search('   '), isEmpty);
     expect(await search('zzzzqqq'), isEmpty);
+  });
+
+  test('title substring matches rank before fuzzy-only matches', () async {
+    // 'an' is a substring of five titles (Cankīsuttam, the Aṅguttara book
+    // entry, and the three an1 headings) but also fuzzy-matches other rows
+    // (e.g. the Dīgha Nikāya book entry). The title hits must fill the top
+    // slots first, in canonical index order.
+    final results = await search('an');
+    expect(results.length, greaterThan(5));
+    const titleHits = {
+      'Cankīsuttam',
+      'Aṅguttara Nikāya',
+      'Ekakanipātapāḷi',
+      'Catukkanipātapāḷi',
+      'Dasakanipātapāḷi',
+    };
+    expect(results.take(5).map((r) => r.title).toSet(), titleHits);
   });
 
   test('cache reloads after the index is rebuilt', () async {

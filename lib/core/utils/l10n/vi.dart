@@ -42,7 +42,6 @@ const Map<String, String> vi = {
   'sentences': 'câu',
   'results': 'kết quả',
   'Loading…': 'Đang tải…',
-  'files': 'tệp',
   'Manage translation databases: download, update, and delete.':
       'Quản lý cơ sở dữ liệu bản dịch: tải về, cập nhật và xóa.',
   'Pāli': 'Pāli',
@@ -281,22 +280,8 @@ const Map<String, String> vi = {
   'Update check complete.': 'Kiểm tra cập nhật hoàn tất.',
 
   // ── TTS Settings ────────────────────────────────────────────────────
-  'TTS Engine': 'Công cụ TTS',
-  'Voice': 'Giọng nói',
   'Speed': 'Tốc độ',
   'Pitch': 'Cao độ',
-  'Engine': 'Công cụ',
-  'System TTS': 'TTS Hệ thống',
-  'Platform-native text-to-speech (fast, no download)':
-      'TTS nền tảng gốc (nhanh, không cần tải)',
-  'SuperTonic': 'SuperTonic',
-  'Neural TTS with 31 languages (~400 MB model download)':
-      'TTS với 31 ngôn ngữ (tải xuống ~400 MB)',
-  'Model Download': 'Tải mô hình',
-  'Models Installed': 'Mô hình đã cài',
-  'TTS Models': 'Mô hình TTS',
-  'All models are ready for use': 'Tất cả mô hình đã sẵn sàng',
-  'Requires ~400 MB download for neural TTS': 'Cần tải ~400 MB cho TTS',
   'Speaking Rate': 'Tốc độ nói',
   'Low': 'Thấp',
   'High': 'Cao',
@@ -310,16 +295,8 @@ const Map<String, String> vi = {
   'Paused': 'Đã tạm dừng',
   'Tap resume to continue': 'Chạm tiếp tục để phát lại',
   'Preparing audio…': 'Đang chuẩn bị âm thanh…',
-  'Voice Style': 'Kiểu giọng',
   'System Default': 'Mặc định hệ thống',
   'Config': 'Cấu hình',
-  'TTS Language': 'Ngôn ngữ TTS',
-  'Quality': 'Chất lượng',
-  'Synthesis quality — higher sounds better but is slower':
-      'Chất lượng tổng hợp — cao hơn nghe hay hơn nhưng chậm hơn',
-  'Medium': 'Trung bình',
-  'Follows the reading language (first enabled translation)':
-      'Theo ngôn ngữ đang đọc (bản dịch được bật đầu tiên)',
 
   // ── TTS Replacements ────────────────────────────────────────────────
   'Replace text patterns before TTS reads them aloud.':

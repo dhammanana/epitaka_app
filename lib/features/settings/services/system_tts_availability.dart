@@ -38,18 +38,62 @@ class SystemTtsAvailability {
     List<Map<String, String>> voices,
     String langCode,
   ) {
-    return voices.where((v) {
+    final list = voices.where((v) {
       return localeMatches(v['locale'] ?? '', langCode) && isVoiceUsable(v);
     }).toList();
+    sortVoices(list);
+    return list;
   }
 
   static List<Map<String, String>> localVoicesFor(
     List<Map<String, String>> voices,
     String langCode,
   ) {
-    return voices.where((v) {
+    final list = voices.where((v) {
       return localeMatches(v['locale'] ?? '', langCode) && isVoiceLocal(v);
     }).toList();
+    sortVoices(list);
+    return list;
+  }
+
+  /// Sort voices in place, best first: usable before missing, higher
+  /// quality first, then local (on-device, works offline) before
+  /// network-required, then alphabetical for stability.
+  static void sortVoices(List<Map<String, String>> voices) {
+    final indexed = voices.indexed.toList();
+    indexed.sort((x, y) {
+      final a = x.$2;
+      final b = y.$2;
+      final usableA = isVoiceUsable(a) ? 0 : 1;
+      final usableB = isVoiceUsable(b) ? 0 : 1;
+      if (usableA != usableB) return usableA - usableB;
+      final q = _qualityScore(b) - _qualityScore(a);
+      if (q != 0) return q;
+      final localA = isVoiceLocal(a) ? 0 : 1;
+      final localB = isVoiceLocal(b) ? 0 : 1;
+      if (localA != localB) return localA - localB;
+      return x.$1 - y.$1;
+    });
+    for (var i = 0; i < voices.length; i++) {
+      voices[i] = indexed[i].$2;
+    }
+  }
+
+  static int _qualityScore(Map<String, String> voice) {
+    final q = (voice['quality'] ?? '').toLowerCase();
+    if (q.isNotEmpty) {
+      final numeric = int.tryParse(q);
+      if (numeric != null) return numeric;
+      if (q.contains('very_high') || q.contains('premium')) return 300;
+      if (q.contains('high') || q.contains('enhanced')) return 200;
+      if (q.contains('normal') || q.contains('default')) return 100;
+      if (q.contains('low') || q.contains('compact')) return 50;
+    }
+    final name = (voice['name'] ?? '').toLowerCase();
+    if (name.contains('premium') || name.contains('siri')) return 300;
+    if (name.contains('enhanced') || name.contains('high')) return 200;
+    if (name.contains('compact') || name.contains('low')) return 50;
+    return 100;
   }
 
   static Future<List<String>> getEngines(FlutterTts tts) async {

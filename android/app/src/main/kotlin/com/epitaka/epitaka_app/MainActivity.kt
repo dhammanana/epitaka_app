@@ -128,23 +128,42 @@ class MainActivity : FlutterActivity() {
      * Queries installed apps that handle [Intent.ACTION_PROCESS_TEXT] with a
      * `text/plain` type (dictionaries, translators, note apps, …) and returns
      * them as a list of `{packageName, label}` maps.
+     *
+     * Never throws — returns an empty list when the query fails so the
+     * method channel always resolves (the settings screen treats empty as
+     * "none found" and tells the user instead of hanging).
      */
     private fun queryProcessTextApps(): List<Map<String, String>> {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PackageManager.MATCH_ALL.toLong()
-        } else {
-            0L
+        return try {
+            val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
+                type = "text/plain"
+            }
+            val infos: List<ResolveInfo> =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.queryIntentActivities(
+                        intent,
+                        PackageManager.ResolveInfoFlags.of(
+                            PackageManager.MATCH_ALL.toLong(),
+                        ),
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.queryIntentActivities(
+                        intent,
+                        PackageManager.MATCH_ALL,
+                    )
+                }
+            val ownPackage = packageName
+            infos.mapNotNull { info ->
+                val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
+                if (pkg == ownPackage) return@mapNotNull null
+                val label = info.loadLabel(packageManager)?.toString() ?: pkg
+                mapOf("packageName" to pkg, "label" to label)
+            }.distinctBy { it["packageName"] }
+        } catch (e: Exception) {
+            Log.w(TAG, "queryProcessTextApps failed: $e")
+            emptyList()
         }
-        val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
-            type = "text/plain"
-        }
-        val infos: List<ResolveInfo> =
-            packageManager.queryIntentActivities(intent, flags.toInt())
-        return infos.mapNotNull { info ->
-            val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
-            val label = info.loadLabel(packageManager)?.toString() ?: pkg
-            mapOf("packageName" to pkg, "label" to label)
-        }.distinctBy { it["packageName"] }
     }
 
     /** Builds an ACTION_PROCESS_TEXT intent targeting [packageName]. */

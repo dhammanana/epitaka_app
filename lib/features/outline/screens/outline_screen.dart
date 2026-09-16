@@ -150,7 +150,7 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
           children: [
             PaliTextStatic(
               widget.bookName.isEmpty ? widget.bookId : widget.bookName,
-              ref.watch(settingsProvider).paliScript,
+              ref.watch(settingsProvider.select((s) => s.paliScript)),
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.primary,
               ),
@@ -308,7 +308,7 @@ class _OutlineHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final isPhone = Mobile.isPhone(context);
 
     final pad = isPhone ? AppDimensions.md : AppDimensions.lg;
@@ -514,7 +514,7 @@ class _ItemTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final script = ref.watch(settingsProvider).paliScript;
+    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
 
     return InkWell(
       onTap: onTap,

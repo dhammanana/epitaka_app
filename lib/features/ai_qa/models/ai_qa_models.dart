@@ -120,6 +120,12 @@ class AiQaSettings {
   /// The "answer" model used for generating the final answer (capable).
   final String answerModel;
 
+  /// Saved answer-model fallbacks, tried in order when the primary answer
+  /// model fails (e.g. unknown version or 404). Computed at save time from
+  /// the selected answer/tool models + fetched model list (see
+  /// `resolveAnswerFallbacks`), shown in settings, persisted here.
+  final List<String> answerFallbacks;
+
   /// Optional custom system prompt override.
   final String customSystemPrompt;
 
@@ -153,6 +159,7 @@ class AiQaSettings {
     this.baseUrl = '',
     this.toolModel = 'gemini-flash-lite-latest',
     this.answerModel = 'gemini-flash-latest',
+    this.answerFallbacks = const [],
     this.customSystemPrompt = '',
     this.maxToolResultChars = 200000,
     this.answerMaxTokens = 64000,
@@ -172,6 +179,7 @@ class AiQaSettings {
     String? baseUrl,
     String? toolModel,
     String? answerModel,
+    List<String>? answerFallbacks,
     String? customSystemPrompt,
     int? maxToolResultChars,
     int? answerMaxTokens,
@@ -185,6 +193,7 @@ class AiQaSettings {
       baseUrl: baseUrl ?? this.baseUrl,
       toolModel: toolModel ?? this.toolModel,
       answerModel: answerModel ?? this.answerModel,
+      answerFallbacks: answerFallbacks ?? this.answerFallbacks,
       customSystemPrompt: customSystemPrompt ?? this.customSystemPrompt,
       maxToolResultChars: maxToolResultChars ?? this.maxToolResultChars,
       answerMaxTokens: answerMaxTokens ?? this.answerMaxTokens,
@@ -194,12 +203,25 @@ class AiQaSettings {
     );
   }
 
+  /// Full answer attempt chain: primary + saved fallbacks (max 2).
+  List<String> get answerChain {
+    final primary = answerModel.trim();
+    if (primary.isEmpty) return const [];
+    final fallbacks = answerFallbacks
+        .map((m) => m.trim())
+        .where((m) => m.isNotEmpty && m != primary)
+        .take(2)
+        .toList();
+    return [primary, ...fallbacks];
+  }
+
   Map<String, dynamic> toJson() => {
     'apiKey': apiKey,
     'provider': provider.serialise,
     'baseUrl': baseUrl,
     'toolModel': toolModel,
     'answerModel': answerModel,
+    'answerFallbacks': answerFallbacks,
     'customSystemPrompt': customSystemPrompt,
     'maxToolResultChars': maxToolResultChars,
     'answerMaxTokens': answerMaxTokens,
@@ -215,6 +237,12 @@ class AiQaSettings {
       baseUrl: json['baseUrl'] as String? ?? '',
       toolModel: json['toolModel'] as String? ?? 'gemini-flash-lite-latest',
       answerModel: json['answerModel'] as String? ?? 'gemini-flash-latest',
+      answerFallbacks:
+          (json['answerFallbacks'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList() ??
+          const [],
       customSystemPrompt: json['customSystemPrompt'] as String? ?? '',
       maxToolResultChars:
           (json['maxToolResultChars'] as num?)?.toInt() ?? 200000,

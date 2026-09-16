@@ -29,6 +29,10 @@ class ReaderHighlightBundle {
   final int? ttsHighlightLineId;
   final int? ttsHighlightParaId;
 
+  /// True when the spoken item is a Pali line, false for translation.
+  /// Null = unknown/legacy (highlights translation).
+  final bool? ttsHighlightIsPali;
+
   /// Jump-flash highlight (fades out after a few seconds).
   final int? jumpHighlightLineId;
   final int? jumpHighlightParaId;
@@ -38,6 +42,14 @@ class ReaderHighlightBundle {
 
   /// Per-line GlobalKeys for [ttsTargetParaId].
   final Map<int, GlobalKey> ttsTargetLineKeys;
+
+  /// Paragraph that received per-line [GlobalKey]s for the keyboard
+  /// navigation centering fine-scroll (same mechanism as TTS, scoped to
+  /// the keyboard focus so it never touches TTS state).
+  final int? keyboardTargetParaId;
+
+  /// Per-line GlobalKeys for [keyboardTargetParaId].
+  final Map<int, GlobalKey> keyboardTargetLineKeys;
 
   /// Keyboard-reading cursor (focus line + selected chip).
   final int? keyboardFocusParaId;
@@ -56,6 +68,8 @@ class ReaderHighlightBundle {
       jumpHighlightParaId == null &&
       ttsTargetParaId == null &&
       ttsTargetLineKeys.isEmpty &&
+      keyboardTargetParaId == null &&
+      keyboardTargetLineKeys.isEmpty &&
       keyboardFocusParaId == null &&
       keyboardFocusLineId == null &&
       keyboardFocusChipIndex == null;
@@ -66,10 +80,13 @@ class ReaderHighlightBundle {
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
+    this.ttsHighlightIsPali,
     this.jumpHighlightLineId,
     this.jumpHighlightParaId,
     this.ttsTargetParaId,
     this.ttsTargetLineKeys = const {},
+    this.keyboardTargetParaId,
+    this.keyboardTargetLineKeys = const {},
     this.keyboardFocusParaId,
     this.keyboardFocusLineId,
     this.keyboardFocusChipIndex,
@@ -89,12 +106,13 @@ class ReaderHighlightBundle {
     final lookup = lookupHighlight;
     final lookupForPara =
         lookup != null &&
-        lookup.bookId == bookId &&
-        (lookup.paraId == null || lookup.paraId == paraId)
+            lookup.bookId == bookId &&
+            (lookup.paraId == null || lookup.paraId == paraId)
         ? lookup
         : null;
 
     final ttsLine = ttsHighlightParaId == paraId ? ttsHighlightLineId : null;
+    final ttsIsPali = ttsLine != null ? ttsHighlightIsPali : null;
     final jumpLine = jumpHighlightParaId == paraId ? jumpHighlightLineId : null;
     final kbPara = keyboardFocusParaId == paraId ? keyboardFocusParaId : null;
     final kbLine = keyboardFocusParaId == paraId ? keyboardFocusLineId : null;
@@ -102,15 +120,17 @@ class ReaderHighlightBundle {
         (keyboardFocusParaId == paraId && keyboardFocusLineId != null)
         ? keyboardFocusChipIndex
         : null;
-    final lineKeys =
-        (ttsTargetParaId == paraId && ttsTargetLineKeys.isNotEmpty)
+    final lineKeys = (ttsTargetParaId == paraId && ttsTargetLineKeys.isNotEmpty)
         ? ttsTargetLineKeys
+        : (keyboardTargetParaId == paraId && keyboardTargetLineKeys.isNotEmpty)
+        ? keyboardTargetLineKeys
         : const <int, GlobalKey>{};
 
     return ReaderHighlightSlice(
       searchQuery: searchQuery,
       lookupHighlight: lookupForPara,
       ttsHighlightLineId: ttsLine,
+      ttsHighlightIsPali: ttsIsPali,
       jumpHighlightLineId: jumpLine,
       lineKeys: lineKeys,
       keyboardFocusParaId: kbPara,
@@ -128,6 +148,7 @@ class ReaderHighlightSlice {
 
   /// Line ID highlighted by TTS *in this paragraph* (null otherwise).
   final int? ttsHighlightLineId;
+  final bool? ttsHighlightIsPali;
 
   /// Line ID flashed by a jump *in this paragraph* (null otherwise).
   final int? jumpHighlightLineId;
@@ -143,6 +164,7 @@ class ReaderHighlightSlice {
     this.searchQuery,
     this.lookupHighlight,
     this.ttsHighlightLineId,
+    this.ttsHighlightIsPali,
     this.jumpHighlightLineId,
     this.lineKeys = const {},
     this.keyboardFocusParaId,
@@ -168,6 +190,7 @@ class ReaderHighlightSlice {
         other.searchQuery == searchQuery &&
         identical(other.lookupHighlight, lookupHighlight) &&
         other.ttsHighlightLineId == ttsHighlightLineId &&
+        other.ttsHighlightIsPali == ttsHighlightIsPali &&
         other.jumpHighlightLineId == jumpHighlightLineId &&
         mapEquals(other.lineKeys, lineKeys) &&
         other.keyboardFocusParaId == keyboardFocusParaId &&
@@ -180,6 +203,7 @@ class ReaderHighlightSlice {
     searchQuery,
     lookupHighlight,
     ttsHighlightLineId,
+    ttsHighlightIsPali,
     jumpHighlightLineId,
     Object.hashAll(lineKeys.keys),
     keyboardFocusParaId,

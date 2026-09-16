@@ -7,9 +7,12 @@ import '../providers/reader_tabs_provider.dart';
 
 /// A horizontal tab strip for open reader books.
 ///
-/// Renders as a scrollable row of rounded-top chips below the app bar.
-/// Active tab uses a surface container with a primary-colour bottom border;
-/// inactive tabs use a slightly darker surface.
+/// Renders as a scrollable row of flat underline tabs below the app bar.
+/// The strip track uses [ColorScheme.surfaceContainer] so it reads apart
+/// from the reading surface; the active tab is an elevated
+/// [ColorScheme.surface] block with a primary-colour underline, while
+/// inactive tabs are borderless ghost tabs. No boxes: the three layers
+/// (track, active tab, inactive label) stay distinct without double lines.
 ///
 /// Supports:
 /// - Tap to switch tabs
@@ -90,7 +93,7 @@ class _TabStripState extends ConsumerState<TabStrip> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: colors.surfaceContainer,
         border: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
       child: LayoutBuilder(
@@ -199,8 +202,8 @@ class _TabStripState extends ConsumerState<TabStrip> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            colors.surface.withValues(alpha: 0.9),
-                            colors.surface.withValues(alpha: 0),
+                            colors.surfaceContainer.withValues(alpha: 0.9),
+                            colors.surfaceContainer.withValues(alpha: 0),
                           ],
                           stops: const [0.0, 1.0],
                         ),
@@ -221,8 +224,8 @@ class _TabStripState extends ConsumerState<TabStrip> {
                             begin: Alignment.centerRight,
                             end: Alignment.centerLeft,
                             colors: [
-                              colors.surface.withValues(alpha: 0.9),
-                              colors.surface.withValues(alpha: 0),
+                              colors.surfaceContainer.withValues(alpha: 0.9),
+                              colors.surfaceContainer.withValues(alpha: 0),
                             ],
                             stops: const [0.0, 1.0],
                           ),
@@ -261,38 +264,21 @@ class _TabChip extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.only(right: 4),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppDimensions.radiusMd),
-          ),
           child: Container(
-            height: 40,
+            height: 44,
             decoration: BoxDecoration(
-              color: isActive
-                  ? colors.surfaceContainerLowest
-                  : colors.surfaceContainerHigh,
+              color: isActive ? colors.surface : Colors.transparent,
               border: Border(
                 bottom: BorderSide(
                   color: isActive ? colors.primary : Colors.transparent,
-                  width: 2,
+                  width: 2.5,
                 ),
               ),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppDimensions.radiusMd),
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ]
-                  : null,
             ),
             child: Padding(
               padding: const EdgeInsets.only(left: 4),
@@ -319,9 +305,9 @@ class _TabChip extends StatelessWidget {
                     tab.bookId,
                     style: AppTypography.labelMedium.copyWith(
                       color: isActive
-                          ? colors.primary
+                          ? colors.onSurface
                           : colors.onSurfaceVariant,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                       fontSize: 13,
                     ),
                   ),

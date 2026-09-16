@@ -4,8 +4,6 @@ import 'dart:developer' as developer;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:supertonic_flutter/supertonic_flutter.dart';
-import 'package:audioplayers/audioplayers.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/native_speech_service.dart';
@@ -16,24 +14,16 @@ import '../services/tts_audio_handler.dart';
 /// TTS playback state.
 enum TtsPlaybackState { stopped, playing, paused, loading }
 
-/// TTS engine type.
-enum TtsEngineType { system, supertonic }
-
-/// TTS notifier managing playback state across both engines.
+/// TTS notifier managing playback state for the system TTS engine.
 ///
-/// - System TTS: Uses `flutter_tts` for platform-native TTS.
-/// - Supertonic: Uses `supertonic_flutter` for local neural TTS.
+/// Uses `flutter_tts` for platform-native TTS (plus `NativeSpeechService`
+/// on macOS/iOS).
 class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   final Ref _ref;
 
   // System TTS engine
   FlutterTts? _flutterTts;
 
-  // Supertonic TTS engine
-  SupertonicTTS? _supertonicTts;
-  TTSAudioPlayer? _player;
-  StreamSubscription<PlayerState>? _playerSubscription;
-  bool _supertonicInitialized = false;
   bool _disposed = false;
 
   // Speech completion tracking
@@ -93,9 +83,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   ({String script, String language})? _paliPlan;
 
   /// Set when the engine had to fall back because Sinhala isn't
-  /// speakable on this device/engine (supertonic has no Sinhala; most
-  /// system engines have no Sinhala voice installed). Read by the TTS UI
-  /// to tell the user once per session instead of silently skipping.
+  /// speakable on this device (most system engines have no Sinhala voice
+  /// installed). Read by the TTS UI to tell the user once per session
+  /// instead of silently skipping.
   String? paliFallbackNotice;
 
   String? translationIssueNotice;
@@ -103,14 +93,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   final Map<String, TtsLanguageCheck> _langChecks = {};
 
   TtsNotifier(this._ref) : super(TtsPlaybackState.stopped);
-
-  /// Get the currently configured engine type from settings.
-  TtsEngineType get _engineType {
-    final settings = _ref.read(settingsProvider);
-    return settings.ttsEngine == 'supertonic'
-        ? TtsEngineType.supertonic
-        : TtsEngineType.system;
-  }
 
   /// Complete the current speech completer if it is active.
   void _completeSpeech() {
@@ -176,11 +158,19 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         _speechCompleter = Completer<void>();
         await _speechCompleter!.future.timeout(timeout);
       } else {
+        // No onStart within 4s. Some OEM engines (Samsung, Xiaomi, …)
+        // never fire onStart even while speaking, so a missing start
+        // must NOT mean "done" — returning here would skip the line
+        // instantly and cascade through the whole chapter in silence.
+        // Give the engine the full budgeted time instead.
         developer.log(
-          '[TTS] _waitForCompletion STALL speechId=$speechId '
-          'no onStart in 4s text.length=${text?.length ?? 0}',
+          '[TTS] _waitForCompletion NO-START speechId=$speechId '
+          'waiting full timeout text.length=${text?.length ?? 0} '
+          'timeout=${timeout.inMilliseconds}ms',
           name: 'epitaka.tts',
         );
+        _speechCompleter = Completer<void>();
+        await _speechCompleter!.future.timeout(timeout);
       }
     } on TimeoutException {
       developer.log(
@@ -310,33 +300,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     return tts;
   }
 
-  /// Lazily initialize the Supertonic engine.
-  Future<void> _ensureSupertonicInitialized() async {
-    if (_supertonicInitialized) return;
-
-    state = TtsPlaybackState.loading;
-    try {
-      _supertonicTts = SupertonicTTS();
-      await _supertonicTts!.initialize();
-      _player = TTSAudioPlayer();
-
-      // Subscribe to Supertonic player state changes to detect completion
-      _playerSubscription = _player!.playerStateStream.listen((playerState) {
-        if (!_disposed && playerState == PlayerState.completed) {
-          state = TtsPlaybackState.stopped;
-          _completeSpeech();
-        }
-      });
-
-      _supertonicInitialized = true;
-      state = TtsPlaybackState.stopped;
-    } catch (e) {
-      state = TtsPlaybackState.stopped;
-      rethrow;
-    }
-  }
-
-  /// Speak the given [text] using the configured TTS engine and await completion.
+  /// Speak the given [text] using the system TTS engine and await completion.
   ///
   /// [language] optionally overrides the TTS language (e.g. 'si' for
   /// Sinhala-converted Pāli). When null, the language is derived from the
@@ -367,28 +331,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
     final start = DateTime.now();
     try {
-      switch (_engineType) {
-        case TtsEngineType.system:
-          await _speakSystem(text, language, paliRoman);
-        case TtsEngineType.supertonic:
-          try {
-            await _speakSupertonic(text, language, paliRoman);
-          } catch (e) {
-            if (NativeSpeechService.isSupported) {
-              // Supertonic isn't available on this platform — fall back to
-              // the native system speech synthesizer instead of skipping
-              // the line.
-              developer.log(
-                '[TTS] Supertonic failed on macOS/iOS ($e) — falling back '
-                'to native speech',
-                name: 'epitaka.tts',
-              );
-              await _speakSystem(text, language, paliRoman);
-            } else {
-              rethrow;
-            }
-          }
-      }
+      await _speakSystem(text, language, paliRoman);
       await _waitForCompletion(text);
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       developer.log(
@@ -430,8 +373,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       String speakText = text;
       String? effectiveLang = language ?? _ttsLanguageFromSettings(settings);
 
-      final isPaliLine =
-          language == 'si' && paliRoman != null && paliRoman.isNotEmpty;
+      final isPaliLine = paliRoman != null && paliRoman.isNotEmpty;
       if (isPaliLine) {
         // On macOS/iOS, use Roman Pāli with English voice for best results
         speakText = asciiRomanPali(paliRoman);
@@ -454,10 +396,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         language: effectiveLang,
       );
 
+      final userSpeed = isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed;
       final ok = await NativeSpeechService.speak(
         speakText,
         language: effectiveLang,
         voiceIdentifier: voiceId,
+        rate: _mapSpeedToNativeRate(userSpeed),
         onCompletion: () {
           if (!_disposed && speechId == _currentSpeechId) {
             developer.log(
@@ -512,8 +456,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     // it would speak the script with the wrong voice (mangled audio) or
     // complete instantly (a silent skip).
     final ttsLangCode = language ?? _ttsLanguageFromSettings(settings);
-    final isPaliLine =
-        language == 'si' && paliRoman != null && paliRoman.isNotEmpty;
+    final isPaliLine = paliRoman != null && paliRoman.isNotEmpty;
     String speakText = text;
     String effectiveLang = ttsLangCode;
     if (isPaliLine) {
@@ -577,7 +520,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         developer.log('[TTS] voice lookup failed: $e', name: 'epitaka.tts');
       }
     }
-    if (!isPaliLine) {
+    if (!isPaliLine && !_langChecks.containsKey(effectiveLang)) {
       try {
         final voices = await getVoices();
         final check = await SystemTtsAvailability.checkLanguage(
@@ -841,25 +784,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     return (script: 'roman', language: _ttsLanguageFromSettings(settings));
   }
 
-  /// Prepare a Pāli line for the Supertonic engine. Its 31 languages have
-  /// no Sinhala. For Hindi uses Devanagari conversion; for other scripts
-  /// falls back to Roman (ASCII) since Supertonic has no Kannada/Telugu/Sinhala voices.
-  ({String text, String language}) _paliForSupertonic(
-    String sinhalaText,
-    String romanText,
-  ) {
-    final script = _ref.read(settingsProvider).ttsScript;
-    // Supertonic only has Hindi among the Pāli-script options.
-    // For non-Hindi scripts, fall back to Roman (ASCII) for compatibility.
-    final useScript = script == 'hi' ? 'hi' : 'roman';
-    return paliSpeechText(
-      sinhalaText,
-      romanText,
-      script: useScript,
-      language: useScript == 'hi' ? 'hi' : 'en',
-    );
-  }
-
   /// Adjust Devanagari Pāli specifically for the Hindi TTS engine.
   ///
   /// Hindi TTS tends to pronounce short Pāli /i/ (इ) too close to
@@ -1096,132 +1020,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _ => 'Roman (English)',
   };
 
-  /// Whether the current engine supports look-ahead synthesis.
-  ///
-  /// Requires supertonic to actually be initialized: on macOS/iOS the
-  /// engine is unavailable, and reporting prefetch support there made the
-  /// reading loop take the prefetch path, whose synthesize calls throw and
-  /// silently skip every line instead of falling back to native speech.
-  bool get supportsPrefetch =>
-      _engineType == TtsEngineType.supertonic && _supertonicInitialized;
-
-  /// Map the quality preset to Supertonic denoising steps.
-  /// Lower steps = faster synthesis on slower devices; higher = better
-  /// quality but slower. 'low'=2, 'medium'=4, 'high'=8.
-  static int _denoisingStepsForQuality(String quality) {
-    switch (quality) {
-      case 'low':
-        return 2;
-      case 'high':
-        return 8;
-      default:
-        return 4;
-    }
-  }
-
-  /// Synthesize [text] via Supertonic WITHOUT playing it.
-  ///
-  /// [language] optionally overrides the TTS language (e.g. 'si' for
-  /// Sinhala-converted Pāli). When null, follows the reading language.
-  /// Pāli lines are re-encoded for a script Supertonic can speak (it has
-  /// no Sinhala voice).
-  Future<dynamic> synthesizePrepared(
-    String text, {
-    String? language,
-    String? paliRoman,
-  }) async {
-    await _ensureSupertonicInitialized();
-    if (_supertonicTts == null) {
-      throw Exception('Supertonic TTS not initialized');
-    }
-    final settings = _ref.read(settingsProvider);
-    var speakText = text;
-    var effectiveLanguage = language ?? _ttsLanguageFromSettings(settings);
-    var isPaliLine = false;
-    if (language == 'si' && paliRoman != null && paliRoman.isNotEmpty) {
-      final plan = _paliForSupertonic(text, paliRoman);
-      speakText = plan.text;
-      effectiveLanguage = plan.language;
-      isPaliLine = true;
-    }
-    return _supertonicTts!.synthesize(
-      speakText,
-      // Follow the reading language (first enabled translation) unless
-      // the line carries its own language (e.g. Pāli).
-      language: effectiveLanguage,
-      voiceStyle: settings.ttsSupertonicVoice,
-      config: TTSConfig(
-        denoisingSteps: _denoisingStepsForQuality(
-          settings.ttsSupertonicQuality,
-        ),
-        speechSpeed: isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
-      ),
-    );
-  }
-
-  /// Play an already-synthesized Supertonic result and await completion.
-  Future<void> playPrepared(dynamic result) async {
-    if (_player == null) {
-      throw Exception('Supertonic TTS not initialized');
-    }
-    await _configureAudioSession();
-    _currentText = null;
-    _currentSpeechId++;
-    state = TtsPlaybackState.playing;
-    await _player!.play(result);
-    await _waitForCompletion();
-  }
-
-  /// Speak using Supertonic TTS.
-  Future<void> _speakSupertonic(
-    String text,
-    String? language,
-    String? paliRoman,
-  ) async {
-    await _ensureSupertonicInitialized();
-    if (_supertonicTts == null || _player == null) {
-      throw Exception('Supertonic TTS not initialized');
-    }
-
-    final settings = _ref.read(settingsProvider);
-    final speechId = _currentSpeechId;
-
-    var speakText = text;
-    var effectiveLanguage = language ?? _ttsLanguageFromSettings(settings);
-    var isPaliLine = false;
-    if (language == 'si' && paliRoman != null && paliRoman.isNotEmpty) {
-      final plan = _paliForSupertonic(text, paliRoman);
-      speakText = plan.text;
-      effectiveLanguage = plan.language;
-      isPaliLine = true;
-    }
-
-    state = TtsPlaybackState.loading;
-
-    final result = await _supertonicTts!.synthesize(
-      speakText,
-      // Follow the reading language (first enabled translation) unless
-      // the line carries its own language (e.g. Pāli).
-      language: effectiveLanguage,
-      voiceStyle: settings.ttsSupertonicVoice,
-      config: TTSConfig(
-        denoisingSteps: _denoisingStepsForQuality(
-          settings.ttsSupertonicQuality,
-        ),
-        speechSpeed: isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed,
-      ),
-    );
-
-    await _configureAudioSession();
-    state = TtsPlaybackState.playing;
-    _broadcastToAudioService();
-    await _player!.play(result);
-    developer.log(
-      '[TTS] _speakSupertonic() speechId=$speechId',
-      name: 'epitaka.tts',
-    );
-  }
-
   /// Get available system voices reusing the existing flutter_tts instance.
   ///
   /// IMPORTANT: Do NOT create a second FlutterTts() just for getVoices —
@@ -1259,9 +1057,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         _flutterTts!.setCompletionHandler(() {});
         _flutterTts!.setErrorHandler((_) {});
       }
-      if (_player != null) {
-        await _player!.stop();
-      }
       if (NativeSpeechService.isSupported) {
         await NativeSpeechService.stop();
       }
@@ -1295,9 +1090,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     try {
       _flutterTts?.stop();
     } catch (_) {}
-    try {
-      _player?.stop();
-    } catch (_) {}
     if (NativeSpeechService.isSupported) {
       try {
         NativeSpeechService.stop();
@@ -1312,23 +1104,24 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Pause current TTS playback.
+  ///
+  /// Uses `stop()` on the system engine rather than flutter_tts `pause()`:
+  /// the native pause slices the utterance at the last onRangeStart
+  /// progress (often unsupported by OEM engines) and leaves the plugin's
+  /// `isPaused` flag set, so the next `speak()` of the same text resumes
+  /// mid-line instead of restarting it. [resume] re-speaks the full
+  /// current line, so stop-then-respeak is the correct primitive here
+  /// (same as anx-reader's SystemTts.pause).
   Future<void> pause() async {
     _currentSpeechId++; // Invalidate stale completion handlers
     try {
-      switch (_engineType) {
-        case TtsEngineType.system:
-          if (_flutterTts != null) {
-            await _flutterTts!.pause();
-          }
-          // Native speech has no pause — stop it; resume re-speaks the
-          // current line from the start.
-          if (NativeSpeechService.isSupported) {
-            await NativeSpeechService.stop();
-          }
-        case TtsEngineType.supertonic:
-          if (_player != null) {
-            await _player!.pause();
-          }
+      if (_flutterTts != null) {
+        await _flutterTts!.stop();
+      }
+      // Native speech has no pause — stop it; resume re-speaks the
+      // current line from the start.
+      if (NativeSpeechService.isSupported) {
+        await NativeSpeechService.stop();
       }
     } catch (_) {
       // Ignore errors when pausing
@@ -1341,28 +1134,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Resume paused TTS playback and await completion.
   Future<void> resume() async {
     try {
-      switch (_engineType) {
-        case TtsEngineType.system:
-          if (_currentText != null) {
-            await _speakSystem(
-              _currentText!,
-              _currentLanguage,
-              _currentPaliRoman,
-            );
-          } else {
-            state = TtsPlaybackState.stopped;
-            return;
-          }
-        case TtsEngineType.supertonic:
-          if (_player != null) {
-            state = TtsPlaybackState.playing;
-            await _player!.resume();
-          } else {
-            state = TtsPlaybackState.stopped;
-            return;
-          }
+      if (_currentText != null) {
+        await _speakSystem(_currentText!, _currentLanguage, _currentPaliRoman);
+      } else {
+        state = TtsPlaybackState.stopped;
+        return;
       }
-      await _waitForCompletion();
+      await _waitForCompletion(_currentText);
     } catch (e) {
       state = TtsPlaybackState.stopped;
       _completeSpeech();
@@ -1376,8 +1154,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       '[TTS_LIFECYCLE] TtsNotifier.dispose() called '
       'state=$state _disposed=$_disposed '
       'hasFlutterTts=${_flutterTts != null} '
-      'hasSupertonic=${_supertonicTts != null} '
-      'hasPlayer=${_player != null} '
       '_audioSessionConfigured=$_audioSessionConfigured',
       name: 'epitaka.tts',
     );
@@ -1388,9 +1164,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     try {
       _flutterTts?.stop();
     } catch (_) {}
-    try {
-      _player?.stop();
-    } catch (_) {}
     if (NativeSpeechService.isSupported) {
       try {
         NativeSpeechService.stop();
@@ -1399,17 +1172,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _completeSpeech();
     _noisySubscription?.cancel();
     _noisySubscription = null;
-    _playerSubscription?.cancel();
-    _playerSubscription = null;
     try {
       _flutterTts?.setCompletionHandler(() {});
       _flutterTts?.setErrorHandler((_) {});
     } catch (_) {}
     _flutterTts = null;
-    _supertonicTts?.dispose();
-    _supertonicTts = null;
-    _player = null;
-    _supertonicInitialized = false;
     _audioSessionConfigured = false;
     developer.log(
       '[TTS_LIFECYCLE] TtsNotifier.dispose() completed',
@@ -1418,21 +1185,24 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     super.dispose();
   }
 
-  /// Map user-facing speed (0.1–8.0) to flutter_tts speech rate (0.0–1.0).
-  /// flutter_tts rate ~0.5 is normal speech, 1.0 is max.
-  double _mapSpeedToSystemRate(double userSpeed) {
-    // Clamp to [0.1, 8.0]
-    final clamped = userSpeed.clamp(0.1, 8.0);
-    if (clamped >= 0.5) {
-      // Map 0.5→0.25, 1.0→0.35, 4.0→0.85, 8.0→1.0
-      final ratio = (clamped - 0.5) / (8.0 - 0.5);
-      return 0.25 + ratio * 0.75;
-    }
-    // 0.1–0.5: extend the curve downward (0.1→0.15, 0.5→0.25), continuous
-    // with the range above.
-    final lowRatio = (clamped - 0.1) / (0.5 - 0.1);
-    return 0.15 + lowRatio * (0.25 - 0.15);
-  }
+  /// Map user-facing speed (0.1–8.0, 1.0 = normal) to the flutter_tts
+  /// speech rate. 1.0x maps to 0.5 (the engine's normal rate) and scales
+  /// linearly, so 2x vs 3x is clearly audible (0.5 apart, not 0.1).
+  /// Values above 1.0 are passed through: Android honors >1.0 rates,
+  /// iOS clamps to its 1.0 max.
+  static double mapSpeedToSystemRate(double userSpeed) =>
+      (userSpeed.clamp(0.1, 8.0) * 0.5).clamp(0.05, 4.0);
+
+  double _mapSpeedToSystemRate(double userSpeed) =>
+      mapSpeedToSystemRate(userSpeed);
+
+  /// Rate passed over the native channel (macOS/iOS). Same scale as
+  /// [mapSpeedToSystemRate]: 1.0 = normal speech.
+  static double mapSpeedToNativeRate(double userSpeed) =>
+      mapSpeedToSystemRate(userSpeed);
+
+  double _mapSpeedToNativeRate(double userSpeed) =>
+      mapSpeedToNativeRate(userSpeed);
 
   /// Map app two-letter language codes to flutter_tts locale codes.
   static String _ttsLocaleForLanguage(String langCode) {

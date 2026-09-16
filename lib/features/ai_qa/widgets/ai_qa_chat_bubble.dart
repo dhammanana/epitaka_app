@@ -1,9 +1,11 @@
 library;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -12,6 +14,7 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/widgets/ai_markdown_view.dart';
 import '../models/ai_qa_models.dart';
 import '../providers/ai_qa_provider.dart';
+import '../services/ai_response_share_service.dart';
 import '../services/citation_quickview.dart';
 
 /// Renders a single message bubble in the AI Q&A chat.
@@ -100,6 +103,23 @@ class AiQaMessageBubble extends ConsumerWidget {
           // Citation buttons (only when streaming is complete)
           if (message.citations.isNotEmpty && !isCurrentlyStreaming)
             _buildCitationsBar(context, ref, colors),
+
+          // Response time at the end (assistant only, once complete)
+          if (!isUser &&
+              !isAssistantWithToolCalls &&
+              !isCurrentlyStreaming &&
+              !message.isThinking &&
+              message.text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                DateFormat.yMd().add_Hm().format(message.timestamp),
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                  fontSize: 10,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -130,7 +150,8 @@ class AiQaMessageBubble extends ConsumerWidget {
         maxWidth: isPhone
             ? MediaQuery.of(context).size.width * 0.97
             : MediaQuery.of(context).size.width * 0.85,
-      ),          child: Column(
+      ),
+      child: Column(
         crossAxisAlignment: isUser
             ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
@@ -150,70 +171,81 @@ class AiQaMessageBubble extends ConsumerWidget {
     );
   }
 
+  /// Research progress log (anx-reader style): collapsible thinking panel
+  /// with per-step status colours — green = ok, red = failed, orange =
+  /// still running. Keeps long tool chains readable.
   Widget _buildToolCallsLog(
     BuildContext context,
     WidgetRef ref,
     ColorScheme colors,
   ) {
     final loc = AppLocalizations.of(context);
+    final failed = message.toolCalls.any(
+      (c) => c.resultSummary.startsWith('❌'),
+    );
+    final statusColor = failed
+        ? colors.error
+        : colors.primary.withValues(alpha: 0.7);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: ExpansionTile(
+        dense: true,
+        initiallyExpanded: message.isThinking,
+        leading: Icon(Icons.psychology, size: 14, color: statusColor),
+        title: Text(
+          loc.researchingLabel,
+          style: AppTypography.labelSmall.copyWith(
+            color: statusColor,
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
+        ),
+        subtitle: Text(
+          '${message.toolCalls.length} steps',
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+            fontSize: 10,
+          ),
+        ),
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.psychology,
-                size: 14,
-                color: colors.primary.withValues(alpha: 0.7),
+          ...message.toolCalls.map((call) {
+            final isError = call.resultSummary.startsWith('❌');
+            final dot = isError
+                ? colors.error
+                : Colors.green.withValues(alpha: 0.8);
+            return ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 6),
-              Text(
-                loc.researchingLabel,
+              title: Text(
+                call.toolName,
                 style: AppTypography.labelSmall.copyWith(
-                  color: colors.primary.withValues(alpha: 0.7),
-                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
                   fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ...message.toolCalls.map(
-            (call) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.arrow_right,
-                    size: 14,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      call.resultSummary,
-                      style: AppTypography.labelSmall.copyWith(
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                        fontSize: 10,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              subtitle: Text(
+                call.resultSummary,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                  fontSize: 10,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );
@@ -310,7 +342,9 @@ class AiQaMessageBubble extends ConsumerWidget {
     // Parse [book_id:para_id:line_id] or [book_id:para_id:line1-line2] citations
     // Matches [book_id:para_id:line_id] or [book_id:para_id:line_from-line_to]
     // Range separator: hyphen (-) or en-dash (–, U+2013).
-    final citationRegex = RegExp(r'\[([a-zA-Z0-9_.-]+):(\d+):(\d+)(?:[-\u2013](\d+))?\]');
+    final citationRegex = RegExp(
+      r'\[([a-zA-Z0-9_.-]+):(\d+):(\d+)(?:[-\u2013](\d+))?\]',
+    );
     final spans = <InlineSpan>[];
     int lastEnd = 0;
 
@@ -435,9 +469,14 @@ class AiQaMessageBubble extends ConsumerWidget {
   ) {
     return AiMarkdownView(
       data: text,
-      onCitationTap: (bookId, paraId, lineId, {lineIdTo}) =>
-          _openCitation(context, ref, bookId, paraId, lineId,
-              lineIdTo: lineIdTo),
+      onCitationTap: (bookId, paraId, lineId, {lineIdTo}) => _openCitation(
+        context,
+        ref,
+        bookId,
+        paraId,
+        lineId,
+        lineIdTo: lineIdTo,
+      ),
     );
   }
 
@@ -467,7 +506,10 @@ class AiQaMessageBubble extends ConsumerWidget {
                   duration: const Duration(seconds: 1),
                   behavior: SnackBarBehavior.floating,
                   width: 100,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -482,27 +524,14 @@ class AiQaMessageBubble extends ConsumerWidget {
               tooltip: loc.editNote,
               onTap: onEdit!,
             ),
-          // Share button (assistant only)
+          // Share button (assistant only): export the response as a
+          // PDF document and open the system share sheet.
           if (!isUser)
             _ActionChip(
               icon: Icons.share,
               tooltip: loc.share,
               onTap: () {
-                // Share functionality — copy to clipboard as share fallback
-                Clipboard.setData(ClipboardData(text: displayText));
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(loc.copied),
-                    duration: const Duration(seconds: 1),
-                    behavior: SnackBarBehavior.floating,
-                    width: 100,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                );
+                AiResponseShareService.shareResponseAsPdf(text: displayText);
               },
             ),
           // Retry button (assistant only)

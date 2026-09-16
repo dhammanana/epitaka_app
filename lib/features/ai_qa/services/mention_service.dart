@@ -364,6 +364,12 @@ class MentionService {
   /// pure-Dart fuzzy matcher, then fetches the full rows for the top hits.
   /// The candidate list is cached in memory (fzf keeps all candidates in
   /// memory too), so search-as-you-type stays fast.
+  ///
+  /// Ranking is two-phase: entries whose **title** contains the query as a
+  /// substring surface first (in canonical index order), then fuzzy matches
+  /// over the full search text fill the remaining slots. A title hit is the
+  /// strongest "this is what you meant" signal, so it outranks a
+  /// higher-scoring fuzzy match elsewhere.
   Future<List<MentionSearchResult>> search(
     String query, {
     int limit = 20,
@@ -378,15 +384,34 @@ class MentionService {
       final entries = await _loadIndexEntries();
       if (entries.isEmpty) return [];
 
-      final matches = fuzzySearchWith(
-        query: normalized,
-        items: entries,
-        stringOf: (e) => e.searchText,
-        limit: limit,
-      );
-      if (matches.isEmpty) return [];
+      // Phase 1 — title substring hits, in canonical index order.
+      final seen = <int>{};
+      final rankedIds = <int>[];
+      for (final e in entries) {
+        if (rankedIds.length >= limit) break;
+        if (e.titleNorm.contains(normalized) && seen.add(e.id)) {
+          rankedIds.add(e.id);
+        }
+      }
 
-      final rankedIds = [for (final m in matches) entries[m.index].id];
+      // Phase 2 — fuzzy matches over the full search text (existing
+      // behavior), skipping ids already surfaced, up to [limit] total.
+      final remaining = limit - rankedIds.length;
+      if (remaining > 0) {
+        final matches = fuzzySearchWith(
+          query: normalized,
+          items: entries,
+          stringOf: (e) => e.searchText,
+          limit: limit + seen.length,
+        );
+        for (final m in matches) {
+          if (rankedIds.length >= limit) break;
+          final id = entries[m.index].id;
+          if (seen.add(id)) rankedIds.add(id);
+        }
+      }
+      if (rankedIds.isEmpty) return [];
+
       return _fetchRowsByIds(rankedIds);
     } catch (e) {
       debugPrint('[MENTION] Search error: $e');
@@ -409,16 +434,19 @@ class MentionService {
     final appDb = await _ref.read(appDbProvider.future);
     await _ensureIndexTable(appDb);
 
-    final rows = await appDb.customSelect(
-      'SELECT id, search_text FROM mention_index '
-      'ORDER BY is_mula DESC, book_order_id ASC, para_id ASC',
-    ).get();
+    final rows = await appDb
+        .customSelect(
+          'SELECT id, search_text, title FROM mention_index '
+          'ORDER BY is_mula DESC, book_order_id ASC, para_id ASC',
+        )
+        .get();
 
     final entries = [
       for (final r in rows)
         _IndexEntry(
           id: r.data['id'] as int,
           searchText: r.data['search_text'] as String? ?? '',
+          titleNorm: normalizeQuery(r.data['title'] as String? ?? ''),
         ),
     ];
 
@@ -439,20 +467,20 @@ class MentionService {
     if (ids.isEmpty) return [];
     final appDb = await _ref.read(appDbProvider.future);
     final placeholders = List.filled(ids.length, '?').join(',');
-    final rows = await appDb.customSelect(
-      '''
+    final rows = await appDb
+        .customSelect(
+          '''
       SELECT id, entry_type, book_id, para_id, title, book_name,
              hierarchy_json, path, search_text, is_mula, chapter_len,
              mula_ref, attha_ref, tika_ref
       FROM mention_index
       WHERE id IN ($placeholders)
       ''',
-      variables: [for (final id in ids) Variable.withInt(id)],
-    ).get();
+          variables: [for (final id in ids) Variable.withInt(id)],
+        )
+        .get();
 
-    final byId = <int, QueryRow>{
-      for (final r in rows) r.data['id'] as int: r,
-    };
+    final byId = <int, QueryRow>{for (final r in rows) r.data['id'] as int: r};
     return [
       for (final id in ids)
         if (byId[id] != null) _rowToResult(byId[id]!.data),
@@ -579,18 +607,25 @@ class MentionService {
       searchText: searchText,
     );
   }
-
 }
 
 /// A single mention-index entry held in the in-memory search cache.
 ///
-/// Only the primary key and the normalized search text are cached — the
-/// remaining columns are fetched from the DB for the top hits only.
+/// Only the primary key, the normalized search text, and the normalized
+/// title are cached — the remaining columns are fetched from the DB for
+/// the top hits only.
 class _IndexEntry {
   final int id;
   final String searchText;
 
-  const _IndexEntry({required this.id, required this.searchText});
+  /// Normalized heading/book title, for title-substring-first ranking.
+  final String titleNorm;
+
+  const _IndexEntry({
+    required this.id,
+    required this.searchText,
+    required this.titleNorm,
+  });
 }
 
 /// Riverpod provider for the MentionService.

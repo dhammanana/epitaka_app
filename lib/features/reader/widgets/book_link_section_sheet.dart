@@ -52,8 +52,9 @@ Future<void> showBookLinkSectionSheet(
       final transDbs = <String, TranslationDatabase>{};
       if (activeLang != null) {
         try {
-          final transDb = await container
-              .read(translationDbProvider(activeLang).future);
+          final transDb = await container.read(
+            translationDbProvider(activeLang).future,
+          );
           if (transDb != null) {
             transDbs[activeLang] = transDb;
           }
@@ -111,12 +112,16 @@ Future<void> showBookLinkSectionSheet(
       lines: previewLines,
       highlightParaId: content?.paraId,
       highlightLineId: hasExactLinkedLine ? link.linkedLineId : null,
-      heading: content?.headingTitle,
+      heading:
+          content?.headingTitle != null &&
+              !isNumericOnlyTitle(content!.headingTitle!)
+          ? content.headingTitle
+          : null,
       scrollToParaId: link.linkedParaId,
       scrollToLineId: link.linkedLineId,
       footer: content != null
           ? 'para ${content.paraId} · line ${link.linkedLineId}'
-              '${content.isTrimmed && content.lines.length < content.totalLines ? ' · ${content.lines.length} of ${content.totalLines} lines' : ''}'
+                '${content.isTrimmed && content.lines.length < content.totalLines ? ' · ${content.lines.length} of ${content.totalLines} lines' : ''}'
           : null,
       actionLabel: loc.open,
       // Open at the position the user stopped reading in the sheet, not the
@@ -129,7 +134,9 @@ Future<void> showBookLinkSectionSheet(
         // updates the shared tabs state, so closing the sheet is enough —
         // pushing '/reader' stacked a duplicate reader screen and forced
         // extra Back presses.
-        container.read(readerTabsProvider.notifier).openTab(
+        container
+            .read(readerTabsProvider.notifier)
+            .openTab(
               ReaderTabInfo(
                 bookId: link.linkedBookId,
                 bookName: c.bookName,

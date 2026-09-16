@@ -334,7 +334,7 @@ class _PaliDefinitionSectionState extends ConsumerState<PaliDefinitionSection> {
   }
 
   Widget _header() {
-    final pali = ref.watch(settingsProvider).typography.pali;
+    final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
     return Row(
       children: [
         Icon(

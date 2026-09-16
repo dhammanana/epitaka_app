@@ -61,127 +61,136 @@ class _ContextMenuSettingsBodyState
         120,
       ),
       children: [
-          Text(
-            loc.contextMenu,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.onSurface,
-            ),
+        Text(
+          loc.contextMenu,
+          style: AppTypography.headlineLarge.copyWith(color: colors.onSurface),
+        ),
+        const SizedBox(height: AppDimensions.sm),
+        Text(
+          loc.contextMenuDesc,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.onSurfaceVariant,
           ),
-          const SizedBox(height: AppDimensions.sm),
-          Text(
-            loc.contextMenuDesc,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.onSurfaceVariant,
+        ),
+        const SizedBox(height: AppDimensions.lg),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _showAddPromptDialog(context),
+                icon: const Icon(Icons.smart_toy_outlined, size: 18),
+                label: Text(loc.addPrompt),
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimensions.lg),
-          Row(
-            children: [
+            const SizedBox(width: AppDimensions.sm),
+            if (ProcessTextService.isSupported) ...[
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed: () => _showAddPromptDialog(context),
-                  icon: const Icon(Icons.smart_toy_outlined, size: 18),
-                  label: Text(loc.addPrompt),
+                  onPressed: _loadingApps ? null : _loadInstalledApps,
+                  icon: _loadingApps
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.apps, size: 18),
+                  label: Text(loc.addApp),
                 ),
               ),
               const SizedBox(width: AppDimensions.sm),
-              if (ProcessTextService.isSupported) ...[
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: _loadInstalledApps,
-                    icon: _loadingApps
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.apps, size: 18),
-                    label: Text(loc.addApp),
-                  ),
-                ),
-                const SizedBox(width: AppDimensions.sm),
-              ],
-              IconButton.outlined(
-                tooltip: loc.resetToDefault,
-                icon: const Icon(Icons.restart_alt, size: 20),
-                onPressed: () => _confirmReset(context),
-              ),
             ],
+            IconButton.outlined(
+              tooltip: loc.resetToDefault,
+              icon: const Icon(Icons.restart_alt, size: 20),
+              onPressed: () => _confirmReset(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppDimensions.md),
+        if (_actions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(AppDimensions.xl),
+            child: Center(
+              child: Text(
+                loc.noContextMenuActions,
+                textAlign: TextAlign.center,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          )
+        else
+          ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _actions.length,
+            onReorder: (oldIndex, newIndex) {
+              final actions = List<ContextMenuAction>.from(_actions);
+              if (newIndex > oldIndex) newIndex--;
+              final item = actions.removeAt(oldIndex);
+              actions.insert(newIndex, item);
+              ref
+                  .read(settingsProvider.notifier)
+                  .setContextMenuActions(actions);
+            },
+            itemBuilder: (context, index) {
+              final action = _actions[index];
+              return _ActionRow(
+                key: ValueKey(action.id),
+                index: index,
+                action: action,
+                colors: colors,
+                loc: loc,
+                onToggle: (enabled) => ref
+                    .read(settingsProvider.notifier)
+                    .setContextMenuActionEnabled(action.id, enabled),
+                onEditPrompt: action.kind == ContextMenuActionKind.aiPrompt
+                    ? () => _showAddPromptDialog(context, existing: action)
+                    : null,
+                onRemove: action.kind == ContextMenuActionKind.builtin
+                    ? null
+                    : () => ref
+                          .read(settingsProvider.notifier)
+                          .removeContextMenuAction(action.id),
+              );
+            },
           ),
-          const SizedBox(height: AppDimensions.md),
-          if (_actions.isEmpty)
+        const SizedBox(height: AppDimensions.md),
+        if (_installedApps != null) ...[
+          Text(
+            loc.installedApps,
+            style: AppTypography.labelSmall.copyWith(
+              color: colors.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.sm),
+          if (_installedApps!.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(AppDimensions.xl),
-              child: Center(
-                child: Text(
-                  loc.noContextMenuActions,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+              padding: const EdgeInsets.symmetric(vertical: AppDimensions.sm),
+              child: Text(
+                '${loc.noCompatibleApps}\n${loc.noCompatibleAppsHint}',
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.onSurfaceVariant,
                 ),
               ),
             )
           else
-            ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _actions.length,
-              onReorder: (oldIndex, newIndex) {
-                final actions = List<ContextMenuAction>.from(_actions);
-                if (newIndex > oldIndex) newIndex--;
-                final item = actions.removeAt(oldIndex);
-                actions.insert(newIndex, item);
-                ref
-                    .read(settingsProvider.notifier)
-                    .setContextMenuActions(actions);
-              },
-              itemBuilder: (context, index) {
-                final action = _actions[index];
-                return _ActionRow(
-                  key: ValueKey(action.id),
-                  index: index,
-                  action: action,
-                  colors: colors,
-                  loc: loc,
-                  onToggle: (enabled) => ref
-                      .read(settingsProvider.notifier)
-                      .setContextMenuActionEnabled(action.id, enabled),
-                  onEditPrompt: action.kind == ContextMenuActionKind.aiPrompt
-                      ? () => _showAddPromptDialog(context, existing: action)
-                      : null,
-                  onRemove: action.kind == ContextMenuActionKind.builtin
-                      ? null
-                      : () => ref
-                          .read(settingsProvider.notifier)
-                          .removeContextMenuAction(action.id),
-                );
-              },
-            ),
-          const SizedBox(height: AppDimensions.md),
-          if (_installedApps != null && _installedApps!.isNotEmpty) ...[
-            Text(
-              loc.installedApps,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: AppDimensions.sm),
             for (final app in _installedApps!) _buildInstalledAppRow(app),
-          ],
         ],
+      ],
     );
   }
 
   Widget _buildInstalledAppRow(ProcessTextApp app) {
     final colors = Theme.of(context).colorScheme;
-    final added =
-        _actions.any(
-          (a) => a.kind == ContextMenuActionKind.externalApp &&
-              a.appPackage == app.packageName,
-        );
+    final added = _actions.any(
+      (a) =>
+          a.kind == ContextMenuActionKind.externalApp &&
+          a.appPackage == app.packageName,
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: AppDimensions.xs),
       child: Material(
@@ -210,17 +219,15 @@ class _ContextMenuSettingsBodyState
                   icon: const Icon(Icons.add, size: 20),
                   color: colors.primary,
                   onPressed: () {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setContextMenuActions([
-                          ..._actions,
-                          ContextMenuAction(
-                            id: 'app:${app.packageName}',
-                            kind: ContextMenuActionKind.externalApp,
-                            appPackage: app.packageName,
-                            appLabel: app.label,
-                          ),
-                        ]);
+                    ref.read(settingsProvider.notifier).setContextMenuActions([
+                      ..._actions,
+                      ContextMenuAction(
+                        id: 'app:${app.packageName}',
+                        kind: ContextMenuActionKind.externalApp,
+                        appPackage: app.packageName,
+                        appLabel: app.label,
+                      ),
+                    ]);
                   },
                 ),
         ),
@@ -229,13 +236,26 @@ class _ContextMenuSettingsBodyState
   }
 
   Future<void> _loadInstalledApps() async {
+    if (_loadingApps) return;
     setState(() => _loadingApps = true);
-    final apps = await ProcessTextService.queryApps();
-    if (!mounted) return;
-    setState(() {
-      _loadingApps = false;
-      _installedApps = apps;
-    });
+    try {
+      // Never hangs the spinner: the service never throws, but guard
+      // anyway so a platform hiccup can't leave the button stuck loading.
+      final apps = await ProcessTextService.queryApps().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => const <ProcessTextApp>[],
+      );
+      if (!mounted) return;
+      setState(() => _installedApps = apps);
+      if (apps.isEmpty && mounted) {
+        final loc = AppLocalizations.of(context);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(loc.noCompatibleApps)));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingApps = false);
+    }
   }
 
   Future<void> _confirmReset(BuildContext context) async {

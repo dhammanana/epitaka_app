@@ -14,6 +14,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
+import '../../shared/services/ai_model_service.dart';
 import '../../shared/widgets/ai_error_card.dart';
 import '../models/ai_qa_models.dart';
 import '../models/heading_attachment.dart';
@@ -38,14 +39,39 @@ class VimamsaScreen extends ConsumerStatefulWidget {
   /// header row + the chat body. Reuses the exact same chat state/logic.
   final bool panelMode;
 
+  /// Hides the slim panel header (used by the reader AI sheet, which shows
+  /// its own chapter row instead). Only applies with [panelMode].
+  final bool hidePanelHeader;
+
+  /// Quick-ask buttons shown centered in the empty state (used by the
+  /// reader AI sheet: Summarize / Explain / Grammar / Mindmap). Tapping one
+  /// sends its prompt with the current attachments. Null keeps the default
+  /// empty state (logo + history).
+  final List<VimamsaQuickAction>? quickActions;
+
   const VimamsaScreen({
     super.key,
     this.initialThreadId,
     this.panelMode = false,
+    this.hidePanelHeader = false,
+    this.quickActions,
   });
 
   @override
   ConsumerState<VimamsaScreen> createState() => _VimamsaScreenState();
+}
+
+/// One centered quick-ask button in the empty chat state.
+class VimamsaQuickAction {
+  final IconData icon;
+  final String label;
+  final String prompt;
+
+  const VimamsaQuickAction({
+    required this.icon,
+    required this.label,
+    required this.prompt,
+  });
 }
 
 class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
@@ -145,6 +171,31 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       ref.read(mentionSearchProvider.notifier).deactivate();
       setState(() => _mentionActive = false);
     }
+  }
+
+  /// Remove the consumed `@query` token (e.g. "@test") from the input field
+  /// after a mention item was attached, so the user doesn't have to delete
+  /// it by hand. Keeps the caret where the token was.
+  void _stripMentionToken(String token) {
+    final text = _textController.text;
+    final idx = text.lastIndexOf(token);
+    if (idx < 0) return;
+    var next = text.substring(0, idx) + text.substring(idx + token.length);
+    // "@test hello" → "hello" (no leading-space artifact); "a @test b" →
+    // "a b" (no double space).
+    if (idx == 0) {
+      next = next.replaceFirst(RegExp(r'^ +'), '');
+    } else {
+      next = next.replaceAll(RegExp(r' {2,}'), ' ');
+    }
+    // Guarded: don't re-trigger the mention search for this edit.
+    _isConverting = true;
+    _textController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: idx.clamp(0, next.length)),
+      composing: TextRange.empty,
+    );
+    _isConverting = false;
   }
 
   Future<void> _checkMentionIndex() async {
@@ -346,6 +397,54 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     _focusNode.requestFocus();
   }
 
+  /// Send a quick-action prompt (empty-state buttons). Goes through the
+  /// same [_sendMessage] path so current attachments travel along.
+  void _runQuickAction(String prompt) {
+    if (ref.read(aiQaProvider).isLoading) return;
+    _textController.text = prompt;
+    _sendMessage();
+  }
+
+  /// Edit a past user prompt: show an edit dialog, then truncate that
+  /// prompt and every later prompt/response and resend the corrected
+  /// text as a fresh response.
+  Future<void> _showEditDialog(AiQaMessage message) async {
+    if (ref.read(aiQaProvider).isLoading) return;
+    final controller = TextEditingController(text: message.text);
+    final loc = AppLocalizations.of(context);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(loc.editNote),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 1,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Text(loc.save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result.isEmpty || result == message.text) return;
+    await ref.read(aiQaProvider.notifier).editUserMessage(message.id, result);
+    Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+  }
+
   /// Handle keyboard events for the mention overlay.
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (!_mentionActive) return KeyEventResult.ignored;
@@ -363,14 +462,10 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       }
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.tab) {
-        final selected = notifier.selectedResult;
-        if (selected != null) {
-          final attachmentsNotifier = ref.read(attachmentsProvider.notifier);
-          attachmentsNotifier.add(selected.toAttachment());
-          notifier.deactivate();
-          setState(() => _mentionActive = false);
-          return KeyEventResult.handled;
-        }
+        final attached = notifier.attachSelected(
+          ref.read(attachmentsProvider.notifier),
+        );
+        if (attached != null) return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.escape) {
         notifier.deactivate();
@@ -403,6 +498,22 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 error: (_, __) => false,
               )
         : false;
+
+    ref.listen<int>(mentionSearchProvider.select((s) => s.stripEpoch), (
+      prev,
+      next,
+    ) {
+      if (next == 0) return;
+      // A mention item was just attached (tap or enter/tab): strip the
+      // consumed "@query" token from the input and hide the overlay.
+      final token = ref.read(mentionSearchProvider).stripToken;
+      if (token != null && token.isNotEmpty && mounted) {
+        _stripMentionToken(token);
+      }
+      if (_mentionActive && mounted) {
+        setState(() => _mentionActive = false);
+      }
+    });
 
     ref.listen(aiQaProvider, (prev, next) {
       // A streamed response just finished rendering — jump to the START of
@@ -437,15 +548,19 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
 
     if (widget.panelMode) {
       // Compact dockable panel: slim header + chat body (no Scaffold).
+      // [hidePanelHeader] (reader AI sheet) replaces the header with its
+      // own chapter row, so skip it here.
       return Column(
         children: [
-          _buildPanelHeader(
-            colors: colors,
-            currentThreadTitle: currentThreadTitle,
-            messages: messages,
-            settings: settings,
-          ),
-          const Divider(height: 1),
+          if (!widget.hidePanelHeader) ...[
+            _buildPanelHeader(
+              colors: colors,
+              currentThreadTitle: currentThreadTitle,
+              messages: messages,
+              settings: settings,
+            ),
+            const Divider(height: 1),
+          ],
           Expanded(child: body),
         ],
       );
@@ -790,26 +905,17 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                         scrollController: _scrollController,
                         messages: messages,
                         latestResponseKey: _latestResponseKey,
-                        onEditMessage: (text) {
-                          _textController.text = text;
-                          _focusNode.requestFocus();
-                        },
+                        onEditMessage: (message) => _showEditDialog(message),
                         onRetryMessage: () {
-                          // Re-send the last user message
-                          final lastUserMsg = messages
-                              .where((m) => m.isUser)
-                              .lastOrNull;
-                          if (lastUserMsg != null) {
-                            ref
-                                .read(aiQaProvider.notifier)
-                                .sendMessage(lastUserMsg.text);
-                          }
+                          // Regenerate the last answer in place with a
+                          // "think harder" instruction — no duplicate
+                          // user prompt is appended.
+                          ref
+                              .read(aiQaProvider.notifier)
+                              .regenerateLastResponse();
                         },
                       ),
               ),
-
-              // ── Answer mode (orthodox / knowledge) ────────────────────
-              _AnswerModeToggle(colors: colors),
 
               // ── Attachment chips bar ──────────────────────────────────
               if (attachments.isNotEmpty) const AttachmentBar(),
@@ -824,6 +930,10 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
                 layerLink: _mentionLayerLink,
                 onKeyEvent: _handleKeyEvent,
               ),
+
+              // ── Compact meta row below the textbox: orthodox toggle ───
+              // plus quick tool/answer model switchers.
+              _InputMetaRow(colors: colors),
             ],
           ),
 
@@ -1072,6 +1182,46 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     AiQaSettings settings,
     ColorScheme colors,
   ) {
+    final quickActions = widget.quickActions;
+    // Reader AI sheet mode: just the quick-ask buttons, centered — no
+    // logo/title/history chrome (the sheet header already names the
+    // chapter). Falls through to the default empty state otherwise.
+    if (quickActions != null && quickActions.isNotEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!settings.isValid) ...[
+                FilledButton.tonalIcon(
+                  onPressed: () => showAiQaSettingsSheet(context),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: Text(AppLocalizations.of(context).configureApiKey),
+                ),
+                const SizedBox(height: 24),
+              ],
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final action in quickActions)
+                    FilledButton.tonalIcon(
+                      onPressed: isLoading
+                          ? null
+                          : () => _runQuickAction(action.prompt),
+                      icon: Icon(action.icon, size: 18),
+                      label: Text(action.label),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Center(
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1747,7 +1897,7 @@ class AiQaMessageListView extends ConsumerWidget {
   final GlobalKey? latestResponseKey;
 
   /// Callback when user taps "edit" on a user message.
-  final void Function(String text)? onEditMessage;
+  final void Function(AiQaMessage message)? onEditMessage;
 
   /// Callback when user taps "retry" on an assistant message.
   final VoidCallback? onRetryMessage;
@@ -1782,7 +1932,7 @@ class AiQaMessageListView extends ConsumerWidget {
           key: ValueKey(message.id),
           message: message,
           onEdit: message.isUser && onEditMessage != null
-              ? () => onEditMessage!(message.text)
+              ? () => onEditMessage!(message)
               : null,
           onRetry: !message.isUser && onRetryMessage != null
               ? onRetryMessage
@@ -1806,79 +1956,282 @@ class AiQaMessageListView extends ConsumerWidget {
 //  ANSWER MODE TOGGLE
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Compact toggle for the answer mode.
+/// Compact single-line meta row below the textbox: an orthodox text
+/// button plus two quick model switchers (tool / answer).
 ///
-/// Orthodox (default, ticked): answers are based ONLY on the passages found
-/// in the Tipitaka.  Unticking allows the AI to also use its own knowledge.
-class _AnswerModeToggle extends ConsumerWidget {
+/// Orthodox on = text lit in the primary colour; off = dimmed/disabled
+/// look. Model buttons open a small edit dialog to swap the model name.
+class _InputMetaRow extends ConsumerWidget {
   final ColorScheme colors;
 
-  const _AnswerModeToggle({required this.colors});
+  const _InputMetaRow({required this.colors});
+
+  /// Shorten long model ids for the button label: drop the org prefix
+  /// (`google/...`), `:free` / `-latest` noise, and the `gemini-` prefix
+  /// only when still too long — e.g. `google/gemini-2.5-flash-lite:free`
+  /// becomes `2.5-flash-lite`.
+  static String _shortModel(String model) {
+    var s = model.trim();
+    final slash = s.lastIndexOf('/');
+    if (slash >= 0) s = s.substring(slash + 1);
+    final lower = s.toLowerCase();
+    if (lower.endsWith(':free')) s = s.substring(0, s.length - 5);
+    if (s.toLowerCase().endsWith('-latest')) {
+      s = s.substring(0, s.length - 7);
+    }
+    const max = 16;
+    if (s.length > max && s.toLowerCase().startsWith('gemini-')) {
+      s = s.substring(7);
+    }
+    if (s.length > max) s = '…${s.substring(s.length - max)}';
+    return s;
+  }
+
+  static Future<void> _pickModel(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool isTool,
+  }) async {
+    final settings = ref.read(aiQaSettingsProvider);
+    final current = isTool ? settings.toolModel : settings.answerModel;
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) => _ModelPickerSheet(isTool: isTool, current: current),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(aiQaSettingsProvider);
-
-    void toggle() {
-      ref
-          .read(aiQaSettingsProvider.notifier)
-          .setOrthodoxMode(!settings.orthodoxMode);
-    }
+    final loc = AppLocalizations.of(context);
+    final orthodox = settings.orthodoxMode;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        0,
-        AppDimensions.marginMobile,
-        2,
-      ),
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
       child: Row(
         children: [
-          SizedBox(
-            width: 40,
-            height: 40,
-            child: Checkbox(
-              value: settings.orthodoxMode,
-              onChanged: (v) {
-                ref
-                    .read(aiQaSettingsProvider.notifier)
-                    .setOrthodoxMode(v ?? true);
-              },
+          // Strict toggle button: filled-tonal when on, outlined when
+          // off — both obviously tappable. Tooltips explain the mode.
+          Tooltip(
+            message: orthodox ? loc.orthodoxDesc : loc.unorthodoxDesc,
+            child: orthodox
+                ? FilledButton.tonalIcon(
+                    onPressed: () => ref
+                        .read(aiQaSettingsProvider.notifier)
+                        .setOrthodoxMode(false),
+                    icon: const Icon(Icons.verified_outlined, size: 14),
+                    label: Text(
+                      loc.strict,
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: () => ref
+                        .read(aiQaSettingsProvider.notifier)
+                        .setOrthodoxMode(true),
+                    icon: Icon(
+                      Icons.verified_outlined,
+                      size: 14,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    label: Text(
+                      loc.strict,
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+          ),
+          const Spacer(),
+          // Tool model switcher.
+          TextButton.icon(
+            onPressed: () => _pickModel(context, ref, isTool: true),
+            icon: Icon(
+              Icons.build_outlined,
+              size: 12,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+            label: Text(
+              _shortModel(settings.toolModel),
+              style: AppTypography.labelSmall.copyWith(
+                fontSize: 10,
+                fontFamily: 'monospace',
+                color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
-          const SizedBox(width: 2),
-          Expanded(
-            child: GestureDetector(
-              onTap: toggle,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    AppLocalizations.of(context).orthodox,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurface,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                    ),
-                  ),
-                  Text(
-                    settings.orthodoxMode
-                        ? AppLocalizations.of(context).orthodoxDesc
-                        : AppLocalizations.of(context).unorthodoxDesc,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+          // Answer model switcher.
+          TextButton.icon(
+            onPressed: () => _pickModel(context, ref, isTool: false),
+            icon: Icon(
+              Icons.auto_awesome_outlined,
+              size: 12,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+            label: Text(
+              _shortModel(settings.answerModel),
+              style: AppTypography.labelSmall.copyWith(
+                fontSize: 10,
+                fontFamily: 'monospace',
+                color: colors.onSurfaceVariant.withValues(alpha: 0.7),
               ),
+            ),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet model picker for the quick switchers: lists the models
+/// reported by the current provider and saves the tapped one. No typing.
+class _ModelPickerSheet extends ConsumerStatefulWidget {
+  final bool isTool;
+  final String current;
+
+  const _ModelPickerSheet({required this.isTool, required this.current});
+
+  @override
+  ConsumerState<_ModelPickerSheet> createState() => _ModelPickerSheetState();
+}
+
+class _ModelPickerSheetState extends ConsumerState<_ModelPickerSheet> {
+  late final Future<AiModelFetchResult> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = ref.read(aiQaSettingsProvider);
+    _future = AiModelService.fetchModels(
+      provider: settings.provider,
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.isTool ? loc.toolModelLabel : loc.answerModelLabel,
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: FutureBuilder<AiModelFetchResult>(
+                future: _future,
+                builder: (ctx, snap) {
+                  if (!snap.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final result = snap.data!;
+                  if (!result.isSuccess) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        result.error ?? '',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.error,
+                        ),
+                      ),
+                    );
+                  }
+                  final models = List<String>.from(result.models);
+                  if (!models.contains(widget.current)) {
+                    models.insert(0, widget.current);
+                  }
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: models.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (c, i) {
+                      final m = models[i];
+                      final selected = m == widget.current;
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          m,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                        ),
+                        trailing: selected
+                            ? Icon(Icons.check, size: 18, color: colors.primary)
+                            : null,
+                        onTap: () async {
+                          final notifier = ref.read(
+                            aiQaSettingsProvider.notifier,
+                          );
+                          if (widget.isTool) {
+                            await notifier.setToolModel(m);
+                          } else {
+                            await notifier.setAnswerModel(m);
+                          }
+                          if (context.mounted) Navigator.of(context).pop();
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1931,7 +2284,7 @@ class _AiQaInputBar extends ConsumerWidget {
         AppDimensions.marginMobile,
         AppDimensions.sm,
         AppDimensions.marginMobile,
-        MediaQuery.of(context).padding.bottom + AppDimensions.sm,
+        MediaQuery.of(context).padding.bottom + 2,
       ),
       decoration: BoxDecoration(
         color: colors.surface,

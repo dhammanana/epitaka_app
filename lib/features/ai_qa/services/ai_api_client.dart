@@ -249,10 +249,22 @@ class AiApiClient {
           cancelSignal: cancelSignal,
         );
         return jsonDecode(response) as Map<String, dynamic>;
+      case AiProvider.claude:
+        final response = await _callClaudeApiRaw(
+          model: toolModel,
+          apiKey: apiKey,
+          baseUrl: baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
+          payload: {...payload, 'model': toolModel},
+          logTag: logTag,
+          cancelSignal: cancelSignal,
+        );
+        return jsonDecode(response) as Map<String, dynamic>;
       case AiProvider.openai:
       case AiProvider.openrouter:
-        // OpenRouter speaks the OpenAI chat-completions protocol, so both
-        // providers share the same code path (only the base URL differs).
+      case AiProvider.deepseek:
+        // OpenRouter and DeepSeek speak the OpenAI chat-completions
+        // protocol, so all three share the same code path (only the
+        // base URL differs).
         final response = await _callOpenAiApiRaw(
           model: toolModel,
           apiKey: apiKey,
@@ -323,8 +335,29 @@ class AiApiClient {
         );
         final data = jsonDecode(response) as Map<String, dynamic>;
         return _extractGeminiText(data);
+      case AiProvider.claude:
+        final claudePayload = {
+          'model': model,
+          'max_tokens': maxOutputTokens,
+          'system': systemPrompt,
+          'messages': [
+            {'role': 'user', 'content': userPrompt},
+          ],
+        };
+        final claudeResponse = await _callClaudeApiRaw(
+          model: model,
+          apiKey: apiKey,
+          baseUrl: baseUrl.isNotEmpty ? baseUrl : provider.defaultBaseUrl,
+          payload: claudePayload,
+          logTag: logTag,
+          cancelSignal: cancelSignal,
+          timeout: timeout,
+        );
+        final claudeData = jsonDecode(claudeResponse) as Map<String, dynamic>;
+        return _extractGeminiText(claudeData);
       case AiProvider.openai:
       case AiProvider.openrouter:
+      case AiProvider.deepseek:
         final payload = {
           'model': model,
           'messages': [
@@ -480,8 +513,59 @@ class AiApiClient {
           ],
           'generationConfig': {'maxOutputTokens': 2048, 'temperature': 0.3},
         };
+      case AiProvider.claude:
+        // Convert Gemini-style conversation to Anthropic messages format.
+        // Tool results are flattened to text (same simplification as the
+        // OpenAI path) so the tool loop stays provider-agnostic.
+        final claudeMessages = <Map<String, dynamic>>[];
+        for (final msg in conversation) {
+          final role = msg['role'] as String? ?? 'user';
+          final parts = msg['parts'] as List<dynamic>? ?? [];
+          final text = parts
+              .map((p) {
+                if (p is Map && p['text'] is String) return p['text'] as String;
+                if (p is Map && p['functionResponse'] is Map) {
+                  final fr = p['functionResponse'] as Map;
+                  final resp = fr['response'];
+                  var content = '';
+                  if (resp is Map && resp['content'] is String) {
+                    content = resp['content'] as String;
+                  }
+                  return '[Tool result: ${fr['name']}]\n$content';
+                }
+                return '';
+              })
+              .join('\n')
+              .trim();
+          if (text.isNotEmpty) {
+            claudeMessages.add({
+              'role': role == 'model' ? 'assistant' : 'user',
+              'content': text,
+            });
+          }
+        }
+        // Convert Gemini function declarations to Anthropic tools format.
+        final claudeTools = toolDeclarations
+            .where((d) => (d['name'] as String? ?? '') != 'final_answer')
+            .map((d) {
+              return {
+                'name': d['name'],
+                'description': d['description'],
+                'input_schema': d['parameters'] ?? {'type': 'object'},
+              };
+            })
+            .toList();
+
+        return {
+          'model': '',
+          'max_tokens': 2048,
+          'system': systemPrompt,
+          'messages': claudeMessages,
+          'tools': claudeTools,
+        };
       case AiProvider.openai:
       case AiProvider.openrouter:
+      case AiProvider.deepseek:
         // Convert Gemini-style conversation to OpenAI messages format
         final messages = <Map<String, dynamic>>[];
         messages.add({'role': 'system', 'content': systemPrompt});
@@ -724,30 +808,178 @@ class AiApiClient {
     throw Exception('API call failed after $kAiMaxRetries retries');
   }
 
-  /// Resolve a provider base URL to its chat-completions endpoint.
-  /// Accept both `https://host/v1` and a URL already ending in
-  /// `/chat/completions`; this avoids producing `/chat/completions/chat/completions`
-  /// when users paste a full DeepSeek endpoint.
-  static Uri _chatCompletionsUri(String baseUrl) {
+  /// Anthropic Messages API non-streaming call (raw response for the tool
+  /// pipeline). The response is adapted to the Gemini shape the tool loop
+  /// expects (`candidates[0].content.parts` with `text` / `functionCall`).
+  static Future<String> _callClaudeApiRaw({
+    required String model,
+    required String apiKey,
+    required String baseUrl,
+    required Map<String, dynamic> payload,
+    String logTag = 'AI',
+    Future<void>? cancelSignal,
+    Duration timeout = const Duration(minutes: 10),
+  }) async {
+    final url = _claudeMessagesUri(baseUrl);
+    final body = {...payload, 'model': model};
+
+    for (int attempt = 0; attempt <= kAiMaxRetries; attempt++) {
+      try {
+        final apiStopwatch = Stopwatch()..start();
+        final httpResponse = await _raceCancel(
+          http.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+            },
+            body: jsonEncode(body),
+          ),
+          cancelSignal,
+        ).timeout(timeout);
+        final apiDuration = apiStopwatch.elapsedMilliseconds;
+
+        if (httpResponse.statusCode == 200) {
+          debugPrint(
+            '[$logTag] API $model: 200 OK (${apiDuration}ms, '
+            '${(httpResponse.body.length / 1024).toStringAsFixed(1)}KB)',
+          );
+          final data = jsonDecode(httpResponse.body) as Map<String, dynamic>;
+          final content = data['content'] as List<dynamic>? ?? [];
+          final parts = <Map<String, dynamic>>[];
+          for (final block in content) {
+            final b = block as Map<String, dynamic>? ?? {};
+            final type = b['type'] as String? ?? '';
+            if (type == 'text') {
+              final text = b['text'] as String? ?? '';
+              if (text.isNotEmpty) parts.add({'text': text});
+            } else if (type == 'tool_use') {
+              parts.add({
+                'functionCall': {
+                  'name': b['name'],
+                  'args': (b['input'] as Map<String, dynamic>?) ?? {},
+                },
+              });
+            }
+          }
+          final adaptedResponse = {
+            'candidates': [
+              {
+                'content': {'parts': parts, 'role': 'model'},
+                'finishReason': data['stop_reason'] ?? 'STOP',
+              },
+            ],
+          };
+          return jsonEncode(adaptedResponse);
+        } else if (httpResponse.statusCode == 429) {
+          if (attempt < kAiMaxRetries) {
+            final wait = Duration(seconds: (pow(2, attempt + 1) * 2).toInt());
+            await _raceCancel(Future.delayed(wait), cancelSignal);
+            continue;
+          }
+          throw Exception('Rate limit exceeded. Try again later.');
+        } else {
+          if (attempt < kAiMaxRetries) {
+            await _raceCancel(
+              Future.delayed(const Duration(seconds: 2)),
+              cancelSignal,
+            );
+            continue;
+          }
+          final apiMessage = parseApiError(httpResponse.body);
+          throw Exception('API error ${httpResponse.statusCode}: $apiMessage');
+        }
+      } on AiCallCancelledException {
+        rethrow;
+      } on http.ClientException {
+        if (attempt < kAiMaxRetries) {
+          await _raceCancel(
+            Future.delayed(const Duration(seconds: 2)),
+            cancelSignal,
+          );
+          continue;
+        }
+        rethrow;
+      } on TimeoutException {
+        if (attempt < kAiMaxRetries) {
+          await _raceCancel(
+            Future.delayed(const Duration(seconds: 2)),
+            cancelSignal,
+          );
+          continue;
+        }
+        throw Exception('API request timed out after $timeout');
+      }
+    }
+
+    throw Exception('API call failed after $kAiMaxRetries retries');
+  }
+
+  /// Normalise a user-pasted base URL: strip trailing slashes and any
+  /// endpoint suffix (`/chat/completions`, `/messages`, …) so callers can
+  /// safely append the endpoint they need. Copied from anx-reader's
+  /// `_deriveBaseUrl` idea.
+  static String _normalizeBaseUrl(String baseUrl, String fallback) {
     var value = baseUrl.trim();
-    if (value.isEmpty) value = 'https://api.openai.com/v1';
+    if (value.isEmpty) value = fallback;
     while (value.endsWith('/')) {
       value = value.substring(0, value.length - 1);
     }
-    if (value.endsWith('/chat/completions')) return Uri.parse(value);
+    const removable = {
+      '/chat/completions',
+      '/chat/completion',
+      '/completions',
+      '/messages',
+      '/responses',
+    };
+    for (final suffix in removable) {
+      if (value.toLowerCase().endsWith(suffix)) {
+        value = value.substring(0, value.length - suffix.length);
+        break;
+      }
+    }
+    while (value.endsWith('/')) {
+      value = value.substring(0, value.length - 1);
+    }
+    return value;
+  }
+
+  /// Resolve a provider base URL to its chat-completions endpoint.
+  /// Accept both `https://host/v1` and a URL already ending in
+  /// `/chat/completions`; this avoids producing `/chat/completions/chat/completions`
+  /// when users paste a full endpoint.
+  static Uri _chatCompletionsUri(String baseUrl) {
+    final value = _normalizeBaseUrl(baseUrl, 'https://api.openai.com/v1');
     return Uri.parse('$value/chat/completions');
   }
 
+  /// Resolve a base URL to the Anthropic `/messages` endpoint.
+  static Uri _claudeMessagesUri(String baseUrl) {
+    final value = _normalizeBaseUrl(baseUrl, 'https://api.anthropic.com/v1');
+    return Uri.parse('$value/messages');
+  }
+
+  /// Public helper for streaming callers (answer phase) to resolve the
+  /// Anthropic endpoint without duplicating normalisation logic.
+  static Uri claudeMessagesUri(String baseUrl) => _claudeMessagesUri(baseUrl);
+
   /// Extract a human-readable error message from an API error body.
+  /// Handles OpenAI (`{error: {message}}`) and Anthropic
+  /// (`{type: 'error', error: {message}}` / `{message: ...}`) shapes.
   static String parseApiError(String body) {
     try {
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final error = data['error'] as Map<String, dynamic>?;
-      if (error != null) {
+      final error = data['error'];
+      if (error is Map<String, dynamic>) {
         return error['message'] as String? ??
             error['status'] as String? ??
+            error['type'] as String? ??
             body;
       }
+      if (error is String && error.isNotEmpty) return error;
+      final message = data['message'];
+      if (message is String && message.isNotEmpty) return message;
       return body;
     } on FormatException {
       return body;

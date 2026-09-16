@@ -404,6 +404,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
         ttsHighlightParaId: slice.ttsHighlightLineId != null
             ? paragraph.paraId
             : null,
+        ttsHighlightIsPali: slice.ttsHighlightIsPali,
         jumpHighlightLineId: slice.jumpHighlightLineId,
         jumpHighlightParaId: slice.jumpHighlightLineId != null
             ? paragraph.paraId

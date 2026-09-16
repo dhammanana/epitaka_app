@@ -10,7 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'default toolbar items: built-ins in order, bookmark/summarize off',
+    'default toolbar items: built-ins in order, bookmark off, aiAsk on',
     () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
@@ -34,10 +34,36 @@ void main() {
       );
       expect(
         notifier.state.toolbarItems
-            .firstWhere((i) => i.id == ToolbarBuiltins.summarize)
+            .firstWhere((i) => i.id == ToolbarBuiltins.aiAsk)
             .enabled,
-        isFalse,
+        isTrue,
       );
+    },
+  );
+
+  test(
+    'saved toolbar with legacy summarize migrates to aiAsk in place',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'toolbar_items': jsonEncode(
+          [
+            // ignore: deprecated_member_use_from_same_package
+            ToolbarItem(id: ToolbarBuiltins.summarize, enabled: false),
+            ToolbarItem(id: ToolbarBuiltins.bookmark),
+          ].map((i) => i.toJson()).toList(),
+        ),
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs);
+      notifier.init(prefs);
+
+      final ids = notifier.state.toolbarItems.map((i) => i.id).toList();
+      expect(ids, contains(ToolbarBuiltins.aiAsk));
+      expect(ids, isNot(contains(ToolbarBuiltins.summarize)));
+      // Migrated entry keeps its position and toggle.
+      expect(ids.first, ToolbarBuiltins.aiAsk);
+      expect(notifier.state.toolbarItems.first.enabled, isFalse);
     },
   );
 

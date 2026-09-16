@@ -231,17 +231,28 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       _checkForDesktopUpdate();
     });
 
-    final settings = ref.watch(settingsProvider);
+    final themePreference = ref.watch(
+      settingsProvider.select((s) => s.themePreference),
+    );
+    final accentColor = ref.watch(
+      settingsProvider.select((s) => s.accentColor),
+    );
+    final appLanguage = ref.watch(
+      settingsProvider.select((s) => s.appLanguage),
+    );
+    final uiFontFamily = ref.watch(
+      settingsProvider.select((s) => s.uiFontFamily),
+    );
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
     // Update the UI font whenever settings change
-    AppTypography.setUiFontFamily(settings.uiFontFamily);
+    AppTypography.setUiFontFamily(uiFontFamily);
     // Build the exact theme the user chose (System resolves against the
     // platform brightness).  The resolved theme is applied as the single
     // active theme so every preference maps to its own color scheme.
     final theme = AppTheme.forPreference(
-      settings.themePreference,
+      themePreference,
       platformBrightness: platformBrightness,
-      accentColor: settings.accentColor,
+      accentColor: accentColor,
     );
 
     return SyncLifecycleObserver(
@@ -260,7 +271,7 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
                     // every brightness, so the chosen scheme is always applied.
                     theme: theme,
                     routerConfig: _router,
-                    locale: _resolveLocale(settings.appLanguage),
+                    locale: _resolveLocale(appLanguage),
                     supportedLocales: AppLocalizationsDelegate.supportedLocales,
                     localizationsDelegates: [
                       const AppLocalizationsDelegate(),
