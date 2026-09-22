@@ -92,16 +92,12 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
         builder: (ctx, watchRef, _) {
           final settings = watchRef.watch(settingsProvider);
           // The TTS language = the language of the first enabled
-          // translation. Only show voices that can actually speak it, so
-          // the voice picker isn't flooded with irrelevant voices.
-          final lang = settings.visibleTranslationLangs.isNotEmpty
-              ? settings.visibleTranslationLangs.first
-              : 'en';
-          final voices = filterVoicesForLanguage(
-            _cachedVoices ?? [],
-            lang,
-            selectedVoice: settings.ttsVoice,
-          );
+          // translation. Pass the FULL voice list down to the card: the
+          // Pāli picker inside the card filters for the Pāli script
+          // itself (kn/te/si/hi), so pre-filtering to the translation
+          // language here made the Pāli picker see an English-only list
+          // and wrongly claim "Kannada voice not installed".
+          final voices = _cachedVoices ?? const [];
           // Set when the engine can't speak Sinhala and is reading Pāli
           // in a fallback script — tell the user instead of silently
           // skipping the Pāli lines.

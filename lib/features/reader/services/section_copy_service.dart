@@ -22,6 +22,12 @@ import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScriptPreservingHtml;
 import '../../../shared/utils/reading_clipboard.dart';
 import '../providers/reader_provider.dart';
+import '../utils/commentary_quote_match.dart'
+    show
+        quoteMatchKey,
+        quoteMatchMinKeyLen,
+        quoteMatchScore,
+        quoteMatchThreshold;
 import '../utils/reader_quote_utils.dart'
     show buildCitationFromTemplate, firstAvailablePageNumbers;
 import 'jump_service.dart';
@@ -95,16 +101,15 @@ class SectionCopyService {
 
   static const int _maxCommentarySections = 30;
 
-  /// Rich copy sends plain text + HTML (~3-4x the plain bytes) in one
-  /// platform-channel transaction. The Android binder limit (~1MB) silently
-  /// truncates larger payloads mid-sentence, so rich copy is only used for
-  /// small content; anything bigger goes as plain text.
-  static const int _richCopyMaxChars = 50000;
+  /// Android truncates clipboard writes above ~20k chars (observed with
+  /// Vietnamese UTF text), so anything bigger goes straight to the system
+  /// share sheet as a file instead of the clipboard.
+  static const int _richCopyMaxChars = 20000;
 
-  /// Above this plain-text size even a plain clipboard write risks binder
-  /// truncation, so the content goes straight to the system share sheet
-  /// (full text, user picks the target app) instead of the clipboard.
-  static const int _plainCopyMaxChars = 300000;
+  /// Above this plain-text size the content goes straight to the system
+  /// share sheet (full text, user picks the target app) instead of the
+  /// clipboard.
+  static const int _plainCopyMaxChars = 20000;
 
   static ({int start, int endExclusive}) sectionRange(
     List<ParagraphData> paragraphs,
@@ -113,6 +118,25 @@ class SectionCopyService {
     final start = heading.paraId;
     final len = heading.chapterLen ?? 0;
     if (len > 0) return (start: start, endExclusive: start + len);
+    // A level-10 heading spans to the next level-10 marker.
+    if (heading.level >= 10) {
+      var end = start + 1;
+      var foundStart = false;
+      for (final p in paragraphs) {
+        if (p.paraId == start) {
+          foundStart = true;
+          continue;
+        }
+        if (!foundStart) continue;
+        final h = p.heading;
+        if (h != null && h.level == 10) {
+          end = p.paraId;
+          break;
+        }
+        end = p.paraId + 1;
+      }
+      return (start: start, endExclusive: end);
+    }
     var end = start + 1;
     var foundStart = false;
     for (final p in paragraphs) {
@@ -218,6 +242,7 @@ class SectionCopyService {
         return;
       }
 
+      final verseKeys = _verseKeysForCommentaryMatch(paras);
       final commentaries = await _fetchCommentariesFull(
         ref,
         db,
@@ -225,6 +250,8 @@ class SectionCopyService {
         range.start,
         range.endExclusive,
         enabledLangs,
+        firstVerseText: verseKeys.first,
+        lastVerseText: verseKeys.last,
       );
       if (!context.mounted) return;
       final outcome = await _copyWithCommentaries(
@@ -354,20 +381,40 @@ class SectionCopyService {
       }
     } catch (_) {}
     try {
-      final rows = await db
-          .customSelect(
-            'SELECT para_id FROM headings '
-            'WHERE book_id = ? AND para_id > ? AND level <= ? AND level < 10 '
-            'ORDER BY para_id ASC LIMIT 1',
-            variables: [
-              Variable.withString(bookId),
-              Variable.withInt(start),
-              Variable.withInt(heading.level),
-            ],
-          )
-          .get();
-      if (rows.isNotEmpty) {
-        return (start: start, endExclusive: rows.first.data['para_id'] as int);
+      if (heading.level >= 10) {
+        final rows = await db
+            .customSelect(
+              'SELECT para_id FROM headings '
+              'WHERE book_id = ? AND para_id > ? AND level = 10 '
+              'ORDER BY para_id ASC LIMIT 1',
+              variables: [Variable.withString(bookId), Variable.withInt(start)],
+            )
+            .get();
+        if (rows.isNotEmpty) {
+          return (
+            start: start,
+            endExclusive: rows.first.data['para_id'] as int,
+          );
+        }
+      } else {
+        final rows = await db
+            .customSelect(
+              'SELECT para_id FROM headings '
+              'WHERE book_id = ? AND para_id > ? AND level <= ? AND level < 10 '
+              'ORDER BY para_id ASC LIMIT 1',
+              variables: [
+                Variable.withString(bookId),
+                Variable.withInt(start),
+                Variable.withInt(heading.level),
+              ],
+            )
+            .get();
+        if (rows.isNotEmpty) {
+          return (
+            start: start,
+            endExclusive: rows.first.data['para_id'] as int,
+          );
+        }
       }
     } catch (_) {}
     try {
@@ -547,8 +594,10 @@ class SectionCopyService {
     String bookId,
     int start,
     int endExclusive,
-    List<String> enabledLangs,
-  ) async {
+    List<String> enabledLangs, {
+    String? firstVerseText,
+    String? lastVerseText,
+  }) async {
     try {
       final jump = JumpService(db);
       final l10rows = await db
@@ -577,32 +626,100 @@ class SectionCopyService {
       final linkedBooks = await jump.getLinkedBooks(bookId);
       if (linkedBooks.isEmpty) return [];
 
+      // One spanning block per linked book: from the level-10 marker
+      // matching the FIRST section in the copied range to the end of the
+      // section matching the LAST one (first para of the next section,
+      // or end of book when there is no next section).
       final out = <_CommentaryBlock>[];
-      final seen = <String>{};
-      for (final sectionNumber in sectionNumbers) {
-        for (final link in linkedBooks) {
-          if (out.length >= _maxCommentarySections) break;
-          try {
-            final match = await jump.findHeadingInBook(
-              link.bookId,
-              sectionNumber,
-              type: link.type,
-            );
-            if (match == null) continue;
-            final key = '${match.bookId}:${match.paraId}';
-            if (!seen.add(key)) continue;
-            final block = await _fetchFullSection(
-              ref,
-              db,
-              match.bookId,
-              match.paraId,
-              link.type,
-              enabledLangs,
-            );
-            if (block != null && block.lines.isNotEmpty) out.add(block);
-          } catch (_) {}
-        }
+      final seenBooks = <String>{};
+      for (final link in linkedBooks) {
         if (out.length >= _maxCommentarySections) break;
+        if (!seenBooks.add(link.bookId)) continue;
+        try {
+          final firstMatch = await jump.findHeadingInBook(
+            link.bookId,
+            sectionNumbers.first,
+            type: link.type,
+          );
+          final lastMatch = await jump.findHeadingInBook(
+            link.bookId,
+            sectionNumbers.last,
+            type: link.type,
+          );
+          if (firstMatch == null || lastMatch == null) continue;
+          var sectionStart = await _l10AtOrBefore(
+            db,
+            link.bookId,
+            firstMatch.paraId,
+          );
+          if (sectionStart == null) continue;
+          var lastSectionStart = await _l10AtOrBefore(
+            db,
+            link.bookId,
+            lastMatch.paraId,
+          );
+          if (lastSectionStart == null) continue;
+          // Commentary books may number sections differently from the
+          // mūla (e.g. Sn 786–793 vs Pj-ii 787–794). Re-anchor to the
+          // sections that actually quote the first/last verse.
+          final adjustedFirst = await _adjustAnchorByQuote(
+            db,
+            link.bookId,
+            sectionStart.paraId,
+            firstVerseText,
+          );
+          if (adjustedFirst != null) {
+            sectionStart = adjustedFirst;
+          }
+          if (sectionNumbers.length > 1) {
+            final adjustedLast = await _adjustAnchorByQuote(
+              db,
+              link.bookId,
+              lastSectionStart.paraId,
+              lastVerseText,
+            );
+            if (adjustedLast != null) {
+              lastSectionStart = adjustedLast;
+            }
+          } else {
+            lastSectionStart = sectionStart;
+          }
+          if (lastSectionStart.paraId < sectionStart.paraId) {
+            // Quote adjustment crossed the anchors: fall back to the
+            // number-matched span rather than an inverted range.
+            continue;
+          }
+          final nextAfterLast = await _nextL10After(
+            db,
+            link.bookId,
+            lastSectionStart.paraId,
+          );
+          final int sectionEnd;
+          if (nextAfterLast != null) {
+            sectionEnd = nextAfterLast;
+          } else {
+            final maxPlusOne = await _maxParaPlusOne(db, link.bookId);
+            if (maxPlusOne == null) continue;
+            sectionEnd = maxPlusOne;
+          }
+          if (sectionEnd <= sectionStart.paraId) continue;
+          final firstTitle = (sectionStart.title ?? '').trim();
+          final lastTitle = (lastSectionStart.title ?? '').trim();
+          final rangeTitle = firstTitle.isEmpty || firstTitle == lastTitle
+              ? sectionStart.title
+              : '$firstTitle–$lastTitle';
+          final block = await _fetchRange(
+            ref,
+            db,
+            link.bookId,
+            sectionStart.paraId,
+            sectionEnd,
+            link.type,
+            rangeTitle,
+            enabledLangs,
+          );
+          if (block != null && block.lines.isNotEmpty) out.add(block);
+        } catch (_) {}
       }
       return out;
     } catch (_) {
@@ -610,54 +727,199 @@ class SectionCopyService {
     }
   }
 
-  static Future<_CommentaryBlock?> _fetchFullSection(
-    WidgetRef ref,
+  static Future<({int paraId, String? title})?> _l10AtOrBefore(
     dynamic db,
     String bookId,
     int paraId,
-    String type,
-    List<String> enabledLangs,
   ) async {
-    final secRows = await db
+    final rows = await db
         .customSelect(
-          'SELECT para_id, title, level FROM headings '
+          'SELECT para_id, title FROM headings '
           'WHERE book_id = ? AND para_id <= ? AND level = 10 '
           'ORDER BY para_id DESC LIMIT 1',
           variables: [Variable.withString(bookId), Variable.withInt(paraId)],
         )
         .get();
-    final int sectionStart;
-    String? headingTitle;
-    if (secRows.isNotEmpty) {
-      sectionStart = secRows.first.data['para_id'] as int;
-      headingTitle = secRows.first.data['title'] as String?;
-    } else {
-      sectionStart = paraId;
-    }
+    if (rows.isEmpty) return null;
+    return (
+      paraId: rows.first.data['para_id'] as int,
+      title: rows.first.data['title'] as String?,
+    );
+  }
 
-    int? sectionEnd;
-    if (sectionStart != paraId) {
+  static Future<int?> _nextL10After(
+    dynamic db,
+    String bookId,
+    int paraId,
+  ) async {
+    final rows = await db
+        .customSelect(
+          'SELECT para_id FROM headings '
+          'WHERE book_id = ? AND para_id > ? AND level = 10 '
+          'ORDER BY para_id ASC LIMIT 1',
+          variables: [Variable.withString(bookId), Variable.withInt(paraId)],
+        )
+        .get();
+    if (rows.isEmpty) return null;
+    return rows.first.data['para_id'] as int;
+  }
+
+  static Future<int?> _maxParaPlusOne(dynamic db, String bookId) async {
+    final rows = await db
+        .customSelect(
+          'SELECT MAX(para_id) AS m FROM sentences WHERE book_id = ?',
+          variables: [Variable.withString(bookId)],
+        )
+        .get();
+    if (rows.isEmpty || rows.first.data['m'] == null) return null;
+    return (rows.first.data['m'] as int) + 1;
+  }
+
+  /// First/last verse text of the copied main range, used to re-anchor
+  /// commentary sections by quoted text (see [_adjustAnchorByQuote]).
+  /// The last key prefers the last numbered verse line so trailing
+  /// colophons (`…niṭṭhitaṃ`) don't become the anchor.
+  static ({String? first, String? last}) _verseKeysForCommentaryMatch(
+    List<_CopyPara> paras,
+  ) {
+    String? first;
+    String? last;
+    String? lastNumbered;
+    final numRe = RegExp(r'^\s*\d+\s*[\.\)]');
+    for (final p in paras) {
+      for (final l in p.lines) {
+        final t = l.pali.trim();
+        if (t.isEmpty) continue;
+        first ??= t;
+        last = t;
+        if (numRe.hasMatch(_stripTags(t))) lastNumbered = t;
+      }
+    }
+    return (first: first, last: lastNumbered ?? last);
+  }
+
+  /// Neighbouring level-10 sections around [anchorParaId], nearest first
+  /// (anchor itself, then ±1, ±2, ±3). Used to find the section that
+  /// actually quotes a verse when editions number sections differently.
+  static Future<List<int>> _l10Neighbors(
+    dynamic db,
+    String bookId,
+    int anchorParaId,
+  ) async {
+    const radius = 3;
+    final self = await _l10AtOrBefore(db, bookId, anchorParaId);
+    final base = self?.paraId ?? anchorParaId;
+    var prev = <int>[];
+    var next = <int>[];
+    try {
+      final prevRows = await db
+          .customSelect(
+            'SELECT para_id FROM headings '
+            'WHERE book_id = ? AND para_id < ? AND level = 10 '
+            'ORDER BY para_id DESC LIMIT $radius',
+            variables: [Variable.withString(bookId), Variable.withInt(base)],
+          )
+          .get();
+      prev = [for (final r in prevRows) r.data['para_id'] as int];
+    } catch (_) {}
+    try {
       final nextRows = await db
           .customSelect(
             'SELECT para_id FROM headings '
-            'WHERE book_id = ? AND para_id > ? '
-            'ORDER BY para_id ASC LIMIT 1',
-            variables: [
-              Variable.withString(bookId),
-              Variable.withInt(sectionStart),
-            ],
+            'WHERE book_id = ? AND para_id > ? AND level = 10 '
+            'ORDER BY para_id ASC LIMIT $radius',
+            variables: [Variable.withString(bookId), Variable.withInt(base)],
           )
           .get();
-      if (nextRows.isNotEmpty) {
-        sectionEnd = nextRows.first.data['para_id'] as int;
+      next = [for (final r in nextRows) r.data['para_id'] as int];
+    } catch (_) {}
+    final out = <int>[base];
+    for (var i = 0; i < radius; i++) {
+      if (i < prev.length) out.add(prev[i]);
+      if (i < next.length) out.add(next[i]);
+    }
+    return out.toSet().toList();
+  }
+
+  /// Opening lines of the section starting at [sectionStartPara], as the
+  /// raw text window in which a verse quote is looked for. Bounded by the
+  /// next level-10 marker so a neighbour's quote can't leak in and win.
+  static Future<String> _sectionQuoteWindow(
+    dynamic db,
+    String bookId,
+    int sectionStartPara,
+  ) async {
+    try {
+      final next = await _nextL10After(db, bookId, sectionStartPara);
+      final rangeSql = next != null
+          ? 'AND para_id >= ? AND para_id < ?'
+          : 'AND para_id >= ?';
+      final rangeVars = next != null
+          ? [Variable.withInt(sectionStartPara), Variable.withInt(next)]
+          : [Variable.withInt(sectionStartPara)];
+      final rows = await db
+          .customSelect(
+            'SELECT pali FROM sentences '
+            'WHERE book_id = ? $rangeSql '
+            'ORDER BY para_id, line_id LIMIT 8',
+            variables: [Variable.withString(bookId), ...rangeVars],
+          )
+          .get();
+      return rows
+          .map((r) => (r.data['pali'] as String?) ?? '')
+          .where((t) => t.trim().isNotEmpty)
+          .join('\n');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Re-anchor a number-matched commentary section to the neighbour whose
+  /// opening lines quote [verseText]. Returns null when nothing quotes
+  /// the verse well enough — the caller then keeps the number anchor.
+  static Future<({int paraId, String? title})?> _adjustAnchorByQuote(
+    dynamic db,
+    String bookId,
+    int anchorParaId,
+    String? verseText,
+  ) async {
+    if (verseText == null || verseText.trim().isEmpty) return null;
+    final key = quoteMatchKey(verseText);
+    if (key.length < quoteMatchMinKeyLen) return null;
+    final cands = await _l10Neighbors(db, bookId, anchorParaId);
+    var bestPara = -1;
+    var bestScore = 0;
+    for (final c in cands) {
+      final window = await _sectionQuoteWindow(db, bookId, c);
+      if (window.isEmpty) continue;
+      final s = quoteMatchScore(key, window);
+      if (s > bestScore) {
+        bestScore = s;
+        bestPara = c;
       }
     }
-    final rangeSql = sectionEnd != null
-        ? 'AND para_id >= ? AND para_id < ?'
-        : 'AND para_id >= ?';
-    final rangeVars = sectionEnd != null
-        ? [Variable.withInt(sectionStart), Variable.withInt(sectionEnd)]
-        : [Variable.withInt(sectionStart)];
+    if (bestPara < 0 || bestScore < quoteMatchThreshold) return null;
+    if (bestPara == anchorParaId) {
+      return _l10AtOrBefore(db, bookId, anchorParaId);
+    }
+    return _l10AtOrBefore(db, bookId, bestPara);
+  }
+
+  static Future<_CommentaryBlock?> _fetchRange(
+    WidgetRef ref,
+    dynamic db,
+    String bookId,
+    int sectionStart,
+    int sectionEndExclusive,
+    String type,
+    String? headingTitle,
+    List<String> enabledLangs,
+  ) async {
+    final rangeSql = 'AND para_id >= ? AND para_id < ?';
+    final rangeVars = [
+      Variable.withInt(sectionStart),
+      Variable.withInt(sectionEndExclusive),
+    ];
 
     final sentenceRows = await db
         .customSelect(
@@ -1107,10 +1369,9 @@ class SectionCopyService {
     }
   }
 
-  /// Writes to the clipboard. On Android the size caps apply (styled copy
-  /// for small content, plain text when styling no longer fits, share sheet
-  /// when even plain text no longer fits); other platforms always get the
-  /// full styled copy with no stripping.
+  /// Writes to the clipboard. On Android content up to 20k chars goes as
+  /// styled copy and anything bigger goes to the share sheet as a file;
+  /// other platforms always get the full styled copy with no stripping.
   static Future<_CopyOutcome> _writeClipboard({
     required String plainText,
     required String htmlBody,

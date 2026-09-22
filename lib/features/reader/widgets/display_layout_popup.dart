@@ -25,6 +25,71 @@ class DisplayLayoutPopup extends ConsumerWidget {
     final showPali = settings.showPali;
     final showTrans = settings.showTranslation;
 
+    // The four layout modes with their selection state and tap actions,
+    // shared by the segmented control and its caption below.
+    final layoutModes = [
+      _LayoutMode(
+        icon: Icons.visibility_off,
+        tooltip: loc.displayNoTranslation,
+        caption: loc.displayNoTranslationSubtitle,
+        isSelected: !showTrans,
+        onSelect: () {
+          final notifier = ref.read(settingsProvider.notifier);
+          notifier.setShowPali(true);
+          notifier.setShowTranslation(false);
+          Navigator.of(context).pop();
+        },
+      ),
+      _LayoutMode(
+        icon: Icons.view_headline,
+        tooltip: loc.displayLineByLine,
+        caption: loc.displayLineByLineSubtitle,
+        isSelected:
+            showPali &&
+            showTrans &&
+            currentMode == TranslationDisplayMode.lineByLine,
+        onSelect: () {
+          final notifier = ref.read(settingsProvider.notifier);
+          notifier.setShowPali(true);
+          notifier.setShowTranslation(true);
+          notifier.setTranslationDisplayMode(
+            TranslationDisplayMode.lineByLine,
+          );
+          Navigator.of(context).pop();
+        },
+      ),
+      _LayoutMode(
+        icon: Icons.view_column,
+        tooltip: loc.displaySideBySide,
+        caption: loc.displaySideBySideSubtitle,
+        isSelected:
+            showPali &&
+            showTrans &&
+            currentMode == TranslationDisplayMode.sideBySide,
+        onSelect: () {
+          final notifier = ref.read(settingsProvider.notifier);
+          notifier.setShowPali(true);
+          notifier.setShowTranslation(true);
+          notifier.setTranslationDisplayMode(
+            TranslationDisplayMode.sideBySide,
+          );
+          Navigator.of(context).pop();
+        },
+      ),
+      _LayoutMode(
+        icon: Icons.article_outlined,
+        tooltip: loc.displayOnlyTranslation,
+        caption: loc.displayOnlyTranslationSubtitle,
+        isSelected: showTrans && !showPali,
+        onSelect: () {
+          final notifier = ref.read(settingsProvider.notifier);
+          notifier.setShowPali(false);
+          notifier.setShowTranslation(true);
+          Navigator.of(context).pop();
+        },
+      ),
+    ];
+
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -72,65 +137,17 @@ class DisplayLayoutPopup extends ConsumerWidget {
               const SizedBox(height: 4),
 
               // ── Layout options ───────────────────────────────────────────
-              _LayoutOptionTile(
-                icon: Icons.visibility_off,
-                title: loc.displayNoTranslation,
-                subtitle: loc.displayNoTranslationSubtitle,
-                isSelected: !showTrans,
-                onTap: () {
-                  final notifier = ref.read(settingsProvider.notifier);
-                  notifier.setShowPali(true);
-                  notifier.setShowTranslation(false);
-                  Navigator.of(context).pop();
-                },
+              // Four modes as icon segments on a single line; the caption
+              // below explains the selected one.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _LayoutModeSegment(modes: layoutModes),
               ),
-              _LayoutOptionTile(
-                icon: Icons.view_headline,
-                title: loc.displayLineByLine,
-                subtitle: loc.displayLineByLineSubtitle,
-                isSelected:
-                    showPali &&
-                    showTrans &&
-                    currentMode == TranslationDisplayMode.lineByLine,
-                onTap: () {
-                  final notifier = ref.read(settingsProvider.notifier);
-                  notifier.setShowPali(true);
-                  notifier.setShowTranslation(true);
-                  notifier.setTranslationDisplayMode(
-                    TranslationDisplayMode.lineByLine,
-                  );
-                  Navigator.of(context).pop();
-                },
-              ),
-              _LayoutOptionTile(
-                icon: Icons.view_column,
-                title: loc.displaySideBySide,
-                subtitle: loc.displaySideBySideSubtitle,
-                isSelected:
-                    showPali &&
-                    showTrans &&
-                    currentMode == TranslationDisplayMode.sideBySide,
-                onTap: () {
-                  final notifier = ref.read(settingsProvider.notifier);
-                  notifier.setShowPali(true);
-                  notifier.setShowTranslation(true);
-                  notifier.setTranslationDisplayMode(
-                    TranslationDisplayMode.sideBySide,
-                  );
-                  Navigator.of(context).pop();
-                },
-              ),
-              _LayoutOptionTile(
-                icon: Icons.article_outlined,
-                title: loc.displayOnlyTranslation,
-                subtitle: loc.displayOnlyTranslationSubtitle,
-                isSelected: showTrans && !showPali,
-                onTap: () {
-                  final notifier = ref.read(settingsProvider.notifier);
-                  notifier.setShowPali(false);
-                  notifier.setShowTranslation(true);
-                  Navigator.of(context).pop();
-                },
+              const SizedBox(height: 8),
+              // Caption explaining the currently selected mode.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _LayoutModeCaption(modes: layoutModes),
               ),
 
               // ── Divider ──────────────────────────────────────────────────
@@ -610,93 +627,114 @@ class _CheckboxTile extends StatelessWidget {
   }
 }
 
-/// A single layout option row with radio-style indicator.
-class _LayoutOptionTile extends StatelessWidget {
+/// One selectable layout mode in the segmented control.
+class _LayoutMode {
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String tooltip;
+  final String caption;
   final bool isSelected;
-  final VoidCallback onTap;
+  final VoidCallback onSelect;
 
-  const _LayoutOptionTile({
+  const _LayoutMode({
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.tooltip,
+    required this.caption,
     required this.isSelected,
-    required this.onTap,
+    required this.onSelect,
   });
+}
+
+/// A single-line segmented control of the four layout modes. The selected
+/// segment is filled; every segment shows its label in a tooltip on
+/// long-press/hover.
+class _LayoutModeSegment extends StatelessWidget {
+  final List<_LayoutMode> modes;
+
+  const _LayoutModeSegment({required this.modes});
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            // Radio indicator
-            Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isSelected ? colors.primary : colors.outline,
-                  width: isSelected ? 2 : 1.5,
-                ),
-                color: isSelected
-                    ? colors.primary.withValues(alpha: 0.1)
-                    : Colors.transparent,
-              ),
-              child: isSelected
-                  ? Center(
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: colors.primary,
-                        ),
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            // Icon
-            Icon(icon, size: 20, color: colors.onSurfaceVariant),
-            const SizedBox(width: 10),
-            // Title + subtitle
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          for (final mode in modes) ...[
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                      color: colors.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+              child: _LayoutModeSegmentButton(mode: mode),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One icon button inside [_LayoutModeSegment].
+class _LayoutModeSegmentButton extends StatelessWidget {
+  final _LayoutMode mode;
+
+  const _LayoutModeSegmentButton({required this.mode});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: mode.tooltip,
+      triggerMode: TooltipTriggerMode.longPress,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: mode.onSelect,
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            margin: const EdgeInsets.all(3),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: mode.isSelected ? colors.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              mode.icon,
+              size: 20,
+              color: mode.isSelected
+                  ? colors.onPrimary
+                  : colors.onSurfaceVariant,
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// The caption under the segmented control explaining the selected mode.
+class _LayoutModeCaption extends StatelessWidget {
+  final List<_LayoutMode> modes;
+
+  const _LayoutModeCaption({required this.modes});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    _LayoutMode? selected;
+    for (final m in modes) {
+      if (m.isSelected) {
+        selected = m;
+        break;
+      }
+    }
+    return Text(
+      (selected ?? modes.first).caption,
+      textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
     );
   }
 }

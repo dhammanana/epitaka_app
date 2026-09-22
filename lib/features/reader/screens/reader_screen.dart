@@ -350,6 +350,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _tts.stopListening();
   }
 
+  /// Runs a TTS transport action (from the desktop status bar) only when a
+  /// reading session is active for the currently active tab — prevents the
+  /// status-bar transport from acting on a background tab's session.
+  void _handleTtsTransport(VoidCallback action) {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    final ttsState = ref.read(ttsReadingProvider);
+    if (ttsState.bookId != activeTab.bookId) return;
+    if (!ttsState.isActive && !ttsState.isPaused) return;
+    action();
+  }
+
   void _handleToolbarBookmark() {
     final activeTab = _toolbarActiveTab();
     if (activeTab == null) return;
@@ -1101,6 +1113,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // toolbar actions through this scope; the floating pill is hidden and
     // the handlers below are registered into the shell's controller.
     final toolbarScope = ReaderToolbarScope.maybeOf(context);
+    final ttsReadingState = ref.watch(ttsReadingProvider);
     toolbarScope?.controller.update(
       enabled: tabsState.isNotEmpty,
       onContents: _handleToolbarContents,
@@ -1112,6 +1125,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onStop: _handleToolbarStop,
       onBookmark: _handleToolbarBookmark,
       onAiAsk: _handleToolbarAiAsk,
+      onTtsPrev: () => _handleTtsTransport(() =>
+          ref.read(ttsReadingProvider.notifier).skipBackward()),
+      onTtsPlayPause: () => _handleTtsTransport(() {
+        final notifier = ref.read(ttsReadingProvider.notifier);
+        if (ttsReadingState.isPaused) {
+          notifier.resumeReading();
+        } else {
+          notifier.pauseReading();
+        }
+      }),
+      onTtsNext: () => _handleTtsTransport(() =>
+          ref.read(ttsReadingProvider.notifier).skipForward()),
+      onTtsFollow: () => _handleTtsTransport(() =>
+          _tts.follow(ttsReadingState.bookId ?? '')),
+      onTtsMore: () {
+        final activeTab = tabsState.activeTab;
+        if (activeTab == null) return;
+        _tts.showControls(context, activeTab.bookId);
+      },
     );
 
     // ── Detect tab switch and start timing ───────────────────────────
@@ -1307,7 +1339,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       });
     }
 
-    final ttsReadingState = ref.watch(ttsReadingProvider);
     final globalTtsState = ref.watch(ttsProvider);
     final isCurrentBookTts = ttsReadingState.bookId == activeTab.bookId;
     final ttsPlaybackStateForTab = isCurrentBookTts
@@ -1574,8 +1605,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       ),
                     ),
 
-                  // TTS floating controls chip
-                  if (isCurrentBookTts &&
+                  // TTS floating controls chip. Hidden inside the desktop
+                  // shell, where the attached status bar hosts the same
+                  // transport controls (via ReaderToolbarScope).
+                  if (toolbarScope == null &&
+                      isCurrentBookTts &&
                       !dictDockOpen &&
                       (globalTtsState == TtsPlaybackState.playing ||
                           globalTtsState == TtsPlaybackState.paused))

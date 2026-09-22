@@ -5,12 +5,14 @@ import '../../../shared/utils/copy_types.dart';
 import '../providers/reader_provider.dart';
 import '../services/section_copy_service.dart';
 
-/// Vertical `⋮` button shown on headings with `level < 10`.
+/// Vertical `⋮` button shown on headings with `level <= 10`.
 ///
 /// Opens a dropdown to copy the whole section (from the heading's
 /// `para_id` for `chapter_len` paragraphs) as Pāli only, translation
 /// only, or both — optionally with commentaries resolved from the
 /// `level = 10` headings under it via the linked (mula/attha/tika) books.
+/// On a `level = 10` heading itself, the commentary copied is the single
+/// directly-matching section with the same title.
 class SectionCopyMenuButton extends ConsumerWidget {
   final String bookId;
   final ParagraphHeading heading;

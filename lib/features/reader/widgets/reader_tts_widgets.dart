@@ -1,18 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/tts_speed_control.dart';
+import '../../settings/providers/tts_provider.dart';
 import '../../settings/services/system_tts_availability.dart';
+import '../providers/tts_reading_provider.dart';
 
 /// Fixed width of the TTS controls card. The dialog caps its content at this
 /// width too, so the card can never be stretched wider by a long fallback
 /// notice.
-const double kTtsControlsCardWidth = 280;
-
-class TtsFloatingChip extends StatelessWidget {
+const double kTtsControlsCardWidth = 280;/// Floating TTS control pill shown while a reading session is active.
+///
+/// Collapsed: a single tappable chip (with a "Follow" badge when the
+/// spoken line is off-screen). Tapping it expands into a transport bar:
+/// Prev · Stop · Pause/Play · Next · More. "More" opens the full TTS
+/// controls dialog (voice/speed/config — the previous behavior).
+class TtsFloatingChip extends ConsumerStatefulWidget {
   final ColorScheme colors;
+
   final bool isAutoScroll;
   final bool isJumpPending;
   final bool isTtsLineVisible;
@@ -30,42 +39,65 @@ class TtsFloatingChip extends StatelessWidget {
   });
 
   @override
+  ConsumerState<TtsFloatingChip> createState() => _TtsFloatingChipState();
+}
+
+class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
+  bool _expanded = false;
+
+  BoxDecoration get _pillDecoration => BoxDecoration(
+    color: widget.colors.primary,
+    borderRadius: BorderRadius.circular(9999),
+    boxShadow: [
+      BoxShadow(
+        color: widget.colors.primary.withValues(alpha: 0.3),
+        blurRadius: 8,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  );
+
+  @override
   Widget build(BuildContext context) {
-    final needsFollow = !isAutoScroll || (!isTtsLineVisible && !isJumpPending);
+    final needsFollow =
+        !widget.isAutoScroll ||
+        (!widget.isTtsLineVisible && !widget.isJumpPending);
     final loc = AppLocalizations.of(context);
+
+    return _expanded
+        ? _buildExpanded(loc)
+        : _buildCollapsed(needsFollow, loc);
+  }
+
+  /// Collapsed chip: tap to expand into the transport bar.
+  Widget _buildCollapsed(bool needsFollow, AppLocalizations loc) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => setState(() => _expanded = true),
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: needsFollow ? 14 : 10,
           vertical: needsFollow ? 8 : 10,
         ),
-        decoration: BoxDecoration(
-          color: colors.primary,
-          borderRadius: BorderRadius.circular(9999),
-          boxShadow: [
-            BoxShadow(
-              color: colors.primary.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        decoration: _pillDecoration,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.record_voice_over, size: 18, color: colors.onPrimary),
+            Icon(
+              Icons.record_voice_over,
+              size: 18,
+              color: widget.colors.onPrimary,
+            ),
             if (needsFollow) ...[
               const SizedBox(width: 6),
               GestureDetector(
-                onTap: onFollowTap,
+                onTap: widget.onFollowTap,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.onPrimary.withValues(alpha: 0.2),
+                    color: widget.colors.onPrimary.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(9999),
                   ),
                   child: Row(
@@ -74,13 +106,13 @@ class TtsFloatingChip extends StatelessWidget {
                       Icon(
                         Icons.my_location,
                         size: 14,
-                        color: colors.onPrimary,
+                        color: widget.colors.onPrimary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         loc.follow,
                         style: TextStyle(
-                          color: colors.onPrimary,
+                          color: widget.colors.onPrimary,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -91,9 +123,86 @@ class TtsFloatingChip extends StatelessWidget {
               ),
             ],
             const SizedBox(width: 4),
-            Icon(Icons.expand_less, size: 16, color: colors.onPrimary),
+            Icon(Icons.expand_less, size: 16, color: widget.colors.onPrimary),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Expanded transport bar: Prev · Stop · Play/Pause · Next · More.
+  Widget _buildExpanded(AppLocalizations loc) {
+    final ttsPlayback = ref.watch(ttsProvider);
+    final ttsReading = ref.watch(ttsReadingProvider);
+    final isPlaying = ttsPlayback == TtsPlaybackState.playing;
+    final isActive =
+        ttsReading.isActive || ttsReading.isPaused || isPlaying;
+    final iconColor = widget.colors.onPrimary;
+
+    Widget action({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback? onPressed,
+      double size = 20,
+    }) {
+      return IconButton(
+        icon: Icon(icon, size: size, color: iconColor),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        visualDensity: VisualDensity.compact,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: _pillDecoration,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          action(
+            icon: Icons.skip_previous,
+            tooltip: loc.ttsSkipPrevious,
+            onPressed: isActive
+                ? () => ref.read(ttsReadingProvider.notifier).skipBackward()
+                : null,
+          ),
+          action(
+            icon: Icons.stop,
+            tooltip: loc.stopLabel,
+            onPressed: isActive
+                ? () {
+                    setState(() => _expanded = false);
+                    ref.read(ttsReadingProvider.notifier).stopReading();
+                  }
+                : null,
+          ),
+          action(
+            icon: isPlaying ? Icons.pause : Icons.play_arrow,
+            tooltip: isPlaying ? loc.pause : loc.play,
+            onPressed: isActive
+                ? () => isPlaying
+                      ? ref.read(ttsReadingProvider.notifier).pauseReading()
+                      : ref.read(ttsReadingProvider.notifier).resumeReading()
+                : null,
+          ),
+          action(
+            icon: Icons.skip_next,
+            tooltip: loc.ttsSkipNext,
+            onPressed: isActive
+                ? () => ref.read(ttsReadingProvider.notifier).skipForward()
+                : null,
+          ),
+          action(
+            icon: Icons.tune,
+            tooltip: loc.ttsControls,
+            // "More settings" — opens the full controls dialog that the
+            // collapsed chip used to open directly.
+            onPressed: widget.onTap,
+            size: 18,
+          ),
+        ],
       ),
     );
   }
@@ -197,8 +306,9 @@ class TtsControlsCard extends StatelessWidget {
             ),
             const SizedBox(height: AppDimensions.md),
           ],
-          // Pāli comes first (the book shows Pāli above the translation):
-          // script, then voice, then speed.
+          // ── Pāli section (the book shows Pāli above the translation) ──
+          _SectionHeader(label: loc.pali),
+          const SizedBox(height: AppDimensions.sm),
           _TtsScriptDropdown(
             selectedScript: settings.ttsScript,
             onScriptChanged: onScriptChanged,
@@ -221,16 +331,21 @@ class TtsControlsCard extends StatelessWidget {
             langCode: settings.ttsScript,
           ),
           const SizedBox(height: AppDimensions.sm),
-          _ControlSlider(
+          TtsSpeedControl(
             icon: Icons.menu_book,
             label: loc.ttsPaliSpeed,
             value: settings.ttsPaliSpeed,
             min: 0.1,
-            max: 3.0,
-            displayValue: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
             colors: colors,
+            compact: true,
             onChanged: onPaliSpeedChanged,
           ),
+          const SizedBox(height: AppDimensions.sm),
+          // Visual split between the Pāli and translation configuration.
+          const Divider(height: 1, color: null),
+          const SizedBox(height: AppDimensions.sm),
+          // ── Translation section ──────────────────────────────────
+          _SectionHeader(label: loc.translationWord),
           const SizedBox(height: AppDimensions.sm),
           // Translation voice before speed.
           _CompactVoicePicker(
@@ -247,25 +362,24 @@ class TtsControlsCard extends StatelessWidget {
             onChanged: onVoiceChanged,
           ),
           const SizedBox(height: AppDimensions.sm),
-          _ControlSlider(
+          TtsSpeedControl(
             icon: Icons.speed,
             label: loc.ttsTranslationSpeed,
             value: settings.ttsSpeed,
             min: 0.5,
-            max: 8.0,
-            displayValue: '${settings.ttsSpeed.toStringAsFixed(1)}×',
             colors: colors,
+            compact: true,
             onChanged: onSpeedChanged,
           ),
           const SizedBox(height: AppDimensions.sm),
-          _ControlSlider(
+          TtsSpeedControl(
             icon: Icons.tune,
             label: loc.ttPitch,
             value: settings.ttsPitch,
             min: 0.5,
-            max: 2.0,
-            displayValue: '${settings.ttsPitch.toStringAsFixed(1)}×',
+            step: 0.1,
             colors: colors,
+            compact: true,
             onChanged: onPitchChanged,
           ),
           const SizedBox(height: AppDimensions.md),
@@ -327,34 +441,39 @@ class TtsControlsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppDimensions.md),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onSystemConfigTap,
-                  icon: Icon(
-                    Icons.settings,
-                    size: 14,
+          // Config entry point: quiet full-width row with a gear + chevron,
+          // reads as navigation rather than a button that looks equal in
+          // weight to the controls above.
+          InkWell(
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
+            onTap: onSystemConfigTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.settings_outlined,
+                    size: 16,
                     color: colors.onSurfaceVariant,
                   ),
-                  label: Text(
-                    loc.config,
-                    style: TextStyle(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 12,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      loc.config,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    minimumSize: Size.zero,
-                    visualDensity: VisualDensity.compact,
+                  Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -362,64 +481,22 @@ class TtsControlsCard extends StatelessWidget {
   }
 }
 
-class _ControlSlider extends StatelessWidget {
-  final IconData icon;
+/// Small uppercase section label used to group the Pāli and translation
+/// controls in the TTS card.
+class _SectionHeader extends StatelessWidget {
   final String label;
-  final double value;
-  final double min;
-  final double max;
-  final String displayValue;
-  final ColorScheme colors;
-  final ValueChanged<double> onChanged;
 
-  const _ControlSlider({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.displayValue,
-    required this.colors,
-    required this.onChanged,
-  });
+  const _SectionHeader({required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: colors.primary),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: AppTypography.labelSmall.copyWith(
-            color: colors.onSurface,
-            fontSize: 12,
-          ),
-        ),
-        Expanded(
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: (max - min) * 4 ~/ 0.5,
-            label: displayValue,
-            activeColor: colors.primary,
-            inactiveColor: colors.outlineVariant,
-            onChanged: onChanged,
-          ),
-        ),
-        SizedBox(
-          width: 36,
-          child: Text(
-            displayValue,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ],
+    return Text(
+      label.toUpperCase(),
+      style: AppTypography.labelSmall.copyWith(
+        fontSize: 10,
+        letterSpacing: 0.8,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 }
@@ -465,11 +542,13 @@ class _CompactVoicePicker extends StatelessWidget {
     final loc = AppLocalizations.of(context);
     final displayName = selectedVoice.isEmpty || selectedVoice == 'default'
         ? loc.systemDefault
-        : (voices.firstWhere(
-                (v) => v['name'] == selectedVoice,
-                orElse: () => const {},
-              )['name'] ??
-              loc.systemDefault);
+        : (() {
+            final matches = voices
+                .where((v) => v['name'] == selectedVoice)
+                .toList();
+            if (matches.isEmpty) return loc.systemDefault;
+            return SystemTtsAvailability.voiceDisplayName(matches.first);
+          })();
 
     // Show install hint when no voices match this language.
     if (voices.isEmpty && showInstallHint) {
@@ -507,9 +586,24 @@ class _CompactVoicePicker extends StatelessWidget {
         for (final v in voices)
           PopupMenuItem<String>(
             value: v['name'] ?? 'default',
-            child: Text(
-              v['name'] ?? loc.unknown,
-              overflow: TextOverflow.ellipsis,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              // Friendly label ("Iob (network)") plus the raw engine ID
+              // ("en-us-x-iob-network") as the subtitle, so users can
+              // still tell identical-looking names apart.
+              title: Text(
+                SystemTtsAvailability.voiceDisplayName(v),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                v['name'] ?? loc.unknown,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 10,
+                ),
+              ),
             ),
           ),
       ],
@@ -589,48 +683,61 @@ class _TtsScriptDropdown extends StatelessWidget {
             ),
           ),
         ),
-        PopupMenuButton<String>(
-          initialValue: selectedScript,
-          onSelected: onScriptChanged,
-          itemBuilder: (context) => [
-            for (final opt in _scriptOptions)
-              PopupMenuItem<String>(
-                value: opt.$1,
-                child: Row(
-                  children: [
-                    if (opt.$1 == selectedScript)
-                      Icon(Icons.check, size: 16, color: colors.primary),
-                    if (opt.$1 == selectedScript) const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(opt.$2, overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              border: Border.all(color: colors.outlineVariant),
-              borderRadius: BorderRadius.circular(9999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  selectedLabel,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 11,
+        // Flexible (loose): the pill keeps its natural width when there is
+        // room, but must be able to shrink when the card is narrow — a long
+        // selected label ("Hindi (Sanskrit)") used to overflow the row by
+        // ~2px because a plain flex child gets unbounded width.
+        Flexible(
+          child: PopupMenuButton<String>(
+            initialValue: selectedScript,
+            onSelected: onScriptChanged,
+            itemBuilder: (context) => [
+              for (final opt in _scriptOptions)
+                PopupMenuItem<String>(
+                  value: opt.$1,
+                  child: Row(
+                    children: [
+                      if (opt.$1 == selectedScript)
+                        Icon(Icons.check, size: 16, color: colors.primary),
+                      if (opt.$1 == selectedScript) const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(opt.$2, overflow: TextOverflow.ellipsis),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 14,
-                  color: colors.onSurfaceVariant,
-                ),
-              ],
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                border: Border.all(color: colors.outlineVariant),
+                borderRadius: BorderRadius.circular(9999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Flexible: the pill must never force its natural width
+                  // past the space left in the card row — a long selected
+                  // label ("Hindi (Sanskrit)") used to overflow by ~2px.
+                  Flexible(
+                    child: Text(
+                      selectedLabel,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

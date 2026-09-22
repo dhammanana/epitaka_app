@@ -1,11 +1,6 @@
-// Regression: DPD headwords carry a homograph number suffix ("añña 1.1").
-// The "Did you mean?" suggestion tiles show the full lemma, but TAPPING one
-// must fill the search field with the CLEANED word ("añña"), not the raw
-// "añña 1.1" — otherwise the re-search misses the lookup table.
-//
-// Drives the real [DictionaryPanel] against an in-memory DPD database seeded
-// with homograph-numbered headwords, types a prefix, taps the suggestion,
-// and asserts the search field got the number stripped.
+// Arrow Up/Down moves through the dictionary suggestion dropdown and Enter
+// accepts the highlighted row (desktop keyboard flow). Typing alone only
+// fills the draft; without a highlight Enter still submits the raw text.
 library;
 
 import 'package:drift/native.dart';
@@ -17,14 +12,13 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// In-memory DPD dictionary: lookup rows for homograph-numbered headwords so
-/// a prefix search for 'aññ' returns them as "Did you mean?" suggestions.
 DpdDictionaryDatabase _makeDpdDb() {
   final sqlite = sqlite3.openInMemory();
   sqlite.execute(
@@ -36,10 +30,9 @@ DpdDictionaryDatabase _makeDpdDb() {
     'id INTEGER PRIMARY KEY, lemma_1 TEXT, meaning_html TEXT, '
     'antonym TEXT, synonym TEXT, stem TEXT, pattern TEXT)',
   );
-  // The real DPD stores lookup keys WITH the homograph number; the headword
-  // lemma_1 also carries it ("añña 1.1", "aññā 2.1").
   sqlite.execute("INSERT INTO dpd_lookup VALUES ('añña 1.1', '[1]', '[]')");
   sqlite.execute("INSERT INTO dpd_lookup VALUES ('aññā 2.1', '[2]', '[]')");
+  sqlite.execute("INSERT INTO dpd_lookup VALUES ('amma 1.1', '[3]', '[]')");
   sqlite.execute(
     "INSERT INTO dpd_headwords VALUES "
     "(1, 'añña 1.1', '<p>another (indefinite)</p>', NULL, NULL, NULL, NULL)",
@@ -47,6 +40,10 @@ DpdDictionaryDatabase _makeDpdDb() {
   sqlite.execute(
     "INSERT INTO dpd_headwords VALUES "
     "(2, 'aññā 2.1', '<p>other</p>', NULL, NULL, NULL, NULL)",
+  );
+  sqlite.execute(
+    "INSERT INTO dpd_headwords VALUES "
+    "(3, 'amma 1.1', '<p>mother</p>', NULL, NULL, NULL, NULL)",
   );
   return DpdDictionaryDatabase(sqlite);
 }
@@ -109,51 +106,94 @@ void main() {
     await tester.pump();
   }
 
-  /// Advance the fake clock and flush the post-frame DB callbacks + debounce
-  /// timers the panel relies on.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 16; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
   }
 
-  testWidgets(
-    'tapping a homograph-numbered "Did you mean?" suggestion fills the '
-    'cleaned word without the number',
-    (tester) async {
-      final container = await makeContainer();
-      await pumpPanel(tester, container);
+  Future<void> typePrefix(WidgetTester tester) async {
+    await tester.enterText(find.byType(TextField), 'aññ');
+    await settle(tester);
+    expect(find.textContaining('añña 1.1', findRichText: true), findsOneWidget);
+  }
 
-      // Type a prefix that matches the numbered lookups exactly (no headword
-      // for the bare prefix itself, so suggestions show).
-      await tester.enterText(find.byType(TextField), 'aññ');
-      await settle(tester);
+  String fieldText(WidgetTester tester) =>
+      tester.widget<TextField>(find.byType(TextField)).controller!.text;
 
-      // The suggestions show the full lemma WITH the homograph number.
-      // (findRichText: tiles render the headword as highlighted RichText,
-      // so a plain find.text no longer matches the split spans.)
-      expect(
-        find.textContaining('añña 1.1', findRichText: true),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('aññā 2.1', findRichText: true),
-        findsOneWidget,
-      );
+  testWidgets('ArrowDown then Enter accepts the highlighted suggestion', (
+    tester,
+  ) async {
+    await pumpPanel(tester, await makeContainer());
+    await typePrefix(tester);
 
-      // Tap the first suggestion.
-      await tester.tap(find.textContaining('añña 1.1', findRichText: true));
-      await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
 
-      // The search field must hold the CLEANED word — the re-search would
-      // otherwise miss the lookup table.
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(
-        field.controller!.text,
-        'añña',
-        reason: 'the homograph number " 1.1" must be stripped on tap',
-      );
-      expect(field.controller!.text, isNot(contains('1.1')));
-    },
-  );
+    expect(
+      fieldText(tester),
+      'añña',
+      reason: 'Enter accepts the first (highlighted) suggestion, cleaned',
+    );
+  });
+
+  testWidgets('ArrowUp from the field wraps to the last suggestion', (
+    tester,
+  ) async {
+    await pumpPanel(tester, await makeContainer());
+    await typePrefix(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+
+    expect(
+      fieldText(tester),
+      'aññā',
+      reason: 'Up with nothing highlighted jumps to the last row',
+    );
+  });
+
+  testWidgets('Enter with no highlight submits the typed text', (tester) async {
+    await pumpPanel(tester, await makeContainer());
+    await typePrefix(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+
+    expect(
+      fieldText(tester),
+      'aññ',
+      reason: 'no highlight: Enter falls through to the normal submit',
+    );
+  });
+
+  testWidgets('ArrowDown right after typing selects once rows arrive', (
+    tester,
+  ) async {
+    await pumpPanel(tester, await makeContainer());
+
+    // Type without settling: the 300ms debounce has not fired yet, so the
+    // suggestion draft is stale when the arrow arrives (the real-world
+    // "type then immediately press Down" flow, no Tab needed).
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    tester.testTextInput.enterText('amm');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await settle(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+
+    expect(
+      fieldText(tester),
+      'amma',
+      reason:
+          'the flushed draft loads rows and the queued Down highlights '
+          'the first one, straight from the textbox',
+    );
+  });
 }

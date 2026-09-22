@@ -104,7 +104,8 @@ class _AudioServiceInitializerState
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.dn.epitaka.tts',
           androidNotificationChannelName: 'TTS Playback',
-          androidStopForegroundOnPause: false,
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
           androidNotificationIcon: 'mipmap/ic_launcher',
         ),
       );

@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -15,6 +16,7 @@ import 'core/config/supabase_config.dart';
 import 'core/services/app_analytics.dart';
 import 'core/utils/database_initializer.dart';
 import 'features/settings/services/download_notification_service.dart';
+import 'features/settings/services/tts_audio_handler.dart';
 
 /// Maximum number of identical errors to report in a 2-second window.
 /// Prevents the console from being flooded with thousands of repeated
@@ -84,6 +86,30 @@ Future<void> main() async {
   // and harmless on other platforms; must run before any download can start
   // a foreground service.
   FlutterForegroundTask.initCommunicationPort();
+
+  // Initialise the audio service BEFORE runApp (same as anx-reader's
+  // main()). The TTS notification / foreground service must exist before
+  // any reading session calls setMediaItem()/setPlaybackState() — the
+  // post-frame init in AudioServiceInitializer is only a fallback. Without
+  // this, the first play() broadcasts to an unattached handler and no
+  // notification appears, and the OS kills background TTS after ~60s.
+  try {
+    await AudioService.init(
+      builder: () => ttsAudioHandler,
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.dn.epitaka.tts',
+        androidNotificationChannelName: 'TTS Playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+      ),
+    );
+  } catch (e) {
+    developer.log(
+      '[AUDIO_SVC] AudioService.init() failed: $e',
+      name: 'epitaka.tts',
+    );
+  }
 
   // Paint the first frame immediately. Everything below is non-critical for
   // the first paint and runs in the background: the FTS gate shows a loading

@@ -54,6 +54,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   double _cachedPitch = -1.0;
   String _cachedLanguage = '';
 
+  /// Engine id this app has explicitly selected via [setEngine] (null =
+  /// the engine's default). `getDefaultEngine` on the platform channel
+  /// returns the SYSTEM-wide default engine, which is not the same thing —
+  /// the UI must show the app-selected one or the subtitle goes stale
+  /// after a switch.
+  String? currentEngine;
+
   /// Cached `getVoices()` result. In Translation+Pāli mode the language
   /// alternates every line, which used to re-fetch voices per line pair;
   /// `getVoices()` is a slow channel call (and the first one after a
@@ -61,7 +68,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// session in [stop] so a newly-installed voice shows up.
   List<Map<String, String>>? _voicesCache;
 
-  /// Key of the last voice configuration applied, "<lang>|<voiceName>"
+  /// Key of the last voice configuration applied, `<lang>|<voiceName>`
   /// Guards [setVoice]/[clearVoice] calls so they only happen when the
   /// language or chosen voice actually changed.
   String _cachedVoiceKey = '';
@@ -207,21 +214,27 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Configure the [AudioSession] for TTS playback and listen for
   /// audio route changes (Bluetooth disconnect / headphone jack removal).
   ///
-  /// When the audio route disconnects while TTS is playing, we auto-pause
-  /// so the user doesn't miss any content. Without this, TTS would
-  /// continue playing through the device speaker after unplugging
-  /// headphones, which is unwanted.
+  /// Mirrors anx-reader's TtsHandler._initAudioSession: explicit `playback`
+  /// category + `spokenAudio` mode (not the generic `speech()` recipe) so
+  /// Android treats TTS as media playback and keeps the foreground service
+  /// alive with the screen off.
   Future<void> _configureAudioSession() async {
     if (_audioSessionConfigured) return;
     _audioSessionConfigured = true;
 
-    // Configure the audio session for speech playback.
-    // Uses the built-in 'speech' recipe which sets:
-    //   - Android: speech content type, media usage, gain audio focus
-    //   - iOS:     playback category, spokenAudio mode
     try {
       final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.speech());
+      await session.configure(
+        const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.none,
+          avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+        ),
+      );
+      // Claim audio focus: without setActive(true) the OS never routes
+      // media buttons to our MediaSession and may duck/kill TTS when
+      // backgrounded (anx-reader calls setActive(true) in play()).
+      await session.setActive(true);
       developer.log(
         '[TTS_AUDIO_SESSION] AudioSession configured (speech recipe)',
         name: 'epitaka.tts',
@@ -460,14 +473,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     String speakText = text;
     String effectiveLang = ttsLangCode;
     if (isPaliLine) {
-      final requestedScript = settings.ttsScript;
       final plan = await _paliSpeechForSystem(tts, text, paliRoman);
       speakText = plan.text;
       effectiveLang = plan.language;
-      // Notice only when the requested script wasn't available and the
-      // engine fell back to something else — not on every intentional
-      // Telugu/Kannada/Sinhala choice.
-      if (plan.script != requestedScript) _notePaliFallback(plan.script);
+      // The chosen script is always spoken as-is — no availability
+      // probing, no fallback, so no misleading "voice not available"
+      // notice (it fired wrongly for working scripts like Kannada).
     }
 
     // Rate — only call platform if changed. Pāli lines have their own
@@ -695,6 +706,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     });
 
     await _configureAudioSession();
+    // Re-claim focus on every line: interruptions (calls, notifications)
+    // deactivate the session, and without this the next line plays with
+    // no focus and dies in background.
+    try {
+      await (await AudioSession.instance).setActive(true);
+    } catch (_) {}
     state = TtsPlaybackState.playing;
     _broadcastToAudioService();
     final speakRes = await tts.speak(speakText);
@@ -717,11 +734,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     );
   }
 
-  /// Decide how to speak a Pāli line with the system engine. Uses the
-  /// user's chosen script ([AppSettings.ttsScript]) when that voice is
-  /// installed, otherwise falls back to the probe chain (Hindi, Sinhala,
-  /// Roman). Resolved once per session ([_paliPlan]) and invalidated when
-  /// the setting changes or [stop] runs.
+  /// Decide how to speak a Pāli line with the system engine. Always uses
+  /// the user's chosen script ([AppSettings.ttsScript]) — no availability
+  /// probing: setLanguage() returning false does NOT reliably mean the
+  /// voice is missing (a stale voice binding or a network voice can make
+  /// it fail even though the voice speaks fine), and treating it as
+  /// "unavailable" wrongly demoted working scripts (e.g. Kannada) to the
+  /// Roman fallback. 'roman' just uses an English locale. Resolved once
+  /// per session ([_paliPlan]) and invalidated when the setting changes
+  /// or [stop] runs.
   Future<({String text, String language, String script})> _paliSpeechForSystem(
     FlutterTts tts,
     String sinhalaText,
@@ -732,13 +753,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       if (script == 'roman') {
         _paliPlan = await _resolvePaliScript(tts);
       } else {
-        final locale = _ttsLocaleForLanguage(script);
-        if (await _applyLanguage(tts, locale)) {
-          _cachedLanguage = locale;
-          _paliPlan = (script: script, language: script);
-        } else {
-          _paliPlan = await _resolvePaliScript(tts);
-        }
+        _paliPlan = (script: script, language: script);
       }
     }
     final plan = _paliPlan!;
@@ -751,36 +766,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     return (text: speech.text, language: speech.language, script: plan.script);
   }
 
-  /// Probe which Pāli script the system engine can actually speak:
-  /// Hindi (preferred), then Sinhala, then Roman. 'roman' always succeeds
-  /// — with an English voice, or the reading language as a last resort —
-  /// so this never returns null.
+  /// Resolve the language used for Roman Pāli: an English voice reads
+  /// Latin best. The language setting is only used if no English variant
+  /// is enabled. Pure decision — no engine probing.
   Future<({String script, String language})> _resolvePaliScript(
     FlutterTts tts,
   ) async {
     final settings = _ref.read(settingsProvider);
-    const candidates = ['hi', 'si', 'roman'];
-    for (final script in candidates) {
-      if (script == 'roman') {
-        // Latin reads best with an English voice.
-        if (await _applyLanguage(tts, 'en-US')) {
-          _cachedLanguage = 'en-US';
-          return (script: 'roman', language: 'en');
-        }
-        final fallback = _ttsLanguageFromSettings(settings);
-        final fallbackLocale = _ttsLocaleForLanguage(fallback);
-        if (await _applyLanguage(tts, fallbackLocale)) {
-          _cachedLanguage = fallbackLocale;
-        }
-        return (script: 'roman', language: fallback);
-      }
-      final locale = _ttsLocaleForLanguage(script);
-      if (await _applyLanguage(tts, locale)) {
-        _cachedLanguage = locale;
-        return (script: script, language: script);
-      }
-    }
-    // Unreachable — 'roman' always returns. Defensive fallback.
     return (script: 'roman', language: _ttsLanguageFromSettings(settings));
   }
 
@@ -917,20 +909,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
   }
 
-  /// Record (once per session) that the engine fell back from Hindi to
-  /// [script] (no Hindi voice installed), so the UI can tell the user
-  /// instead of silently skipping Pāli lines.
-  void _notePaliFallback(String script) {
-    if (paliFallbackNotice != null) return;
-    paliFallbackNotice =
-        'Reading Pāli in ${_paliScriptLabel(script)} '
-        '(Devanagari (Hindi) voice not available).';
-    developer.log(
-      '[TTS] Pāli fallback: $paliFallbackNotice',
-      name: 'epitaka.tts',
-    );
-  }
-
   void _noteTranslationIssue(String langCode, TtsVoiceStatus status) {
     if (translationIssueNotice != null) return;
     final label = _languageLabel(langCode);
@@ -979,6 +957,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   Future<String?> getDefaultEngine() async {
+    // Prefer the engine this app selected; only fall back to the system
+    // default when the user hasn't switched within the app.
+    if (currentEngine != null) return currentEngine;
     try {
       final tts = await _getFlutterTts();
       return SystemTtsAvailability.getDefaultEngine(tts);
@@ -991,6 +972,9 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     try {
       final tts = await _getFlutterTts();
       await tts.setEngine(name);
+      currentEngine = name;
+      _cachedRate = -1.0;
+      _cachedPitch = -1.0;
       _cachedLanguage = '';
       _cachedVoiceKey = '';
       _voicesCache = null;
@@ -1009,15 +993,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     'kn' => 'Kannada',
     'en' => 'English',
     _ => langCode,
-  };
-
-  /// Display name of a Pāli TTS script key.
-  static String _paliScriptLabel(String script) => switch (script) {
-    'kn' => 'Kannada',
-    'te' => 'Telugu',
-    'si' => 'Sinhala',
-    'hi' => 'Hindi (Sanskrit)',
-    _ => 'Roman (English)',
   };
 
   /// Get available system voices reusing the existing flutter_tts instance.

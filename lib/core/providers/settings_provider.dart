@@ -1191,6 +1191,69 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _adjustFontSize(-delta);
   }
 
+  /// Increase only the Pāli font size by [delta] (clamped to 12–40px).
+  Future<void> increasePaliFontSize([double delta = 1]) async {
+    await _adjustPaliFontSize(delta);
+  }
+
+  /// Decrease only the Pāli font size by [delta] (clamped to 12–40px).
+  Future<void> decreasePaliFontSize([double delta = 1]) async {
+    await _adjustPaliFontSize(-delta);
+  }
+
+  Future<void> _adjustPaliFontSize(double delta) async {
+    final typography = state.typography;
+    final newPali = typography.pali.copyWith(
+      fontSize: (typography.pali.fontSize + delta).clamp(12.0, 40.0),
+    );
+    final newTypo = typography.copyWith(pali: newPali);
+    state = state.copyWith(typography: newTypo);
+    await _prefs?.setString('pali_typography', jsonEncode(newPali.toJson()));
+  }
+
+  /// Increase only the translation font sizes by [delta] (clamped to
+  /// 12–40px). Scales every visible translation — and any previously
+  /// customized language — in lockstep, mirroring [_adjustFontSize] but
+  /// leaving the Pāli size untouched.
+  Future<void> increaseTranslationFontSize([double delta = 1]) async {
+    await _adjustTranslationFontSize(delta);
+  }
+
+  /// Decrease only the translation font sizes by [delta] (clamped to
+  /// 12–40px).
+  Future<void> decreaseTranslationFontSize([double delta = 1]) async {
+    await _adjustTranslationFontSize(-delta);
+  }
+
+  Future<void> _adjustTranslationFontSize(double delta) async {
+    final typography = state.typography;
+    final visibleLangs = state.visibleTranslationLangs;
+
+    // Scale EVERY visible translation, plus any previously customized
+    // language. Translations without an override get one created here
+    // (seeded from their current effective size) so they keep scaling on
+    // subsequent adjustments.
+    final langsToScale = <String>{
+      ...typography.languageOverrides.keys,
+      ...visibleLangs,
+    };
+    if (langsToScale.isEmpty) return;
+    final newOverrides = <String, LanguageTypography>{};
+    for (final lang in langsToScale) {
+      final effective = typography.typographyFor(lang);
+      newOverrides[lang] = effective.copyWith(
+        fontSize: (effective.fontSize + delta).clamp(12.0, 40.0),
+      );
+    }
+
+    final newTypo = typography.copyWith(languageOverrides: newOverrides);
+    state = state.copyWith(typography: newTypo);
+    await _prefs?.setString(
+      'lang_typography_overrides',
+      _saveLanguageOverrides(newOverrides),
+    );
+  }
+
   Future<void> _adjustFontSize(double delta) async {
     final typography = state.typography;
     final newPali = typography.pali.copyWith(

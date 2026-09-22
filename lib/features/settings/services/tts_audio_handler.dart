@@ -46,7 +46,14 @@ final TtsAudioHandler ttsAudioHandler = TtsAudioHandler();
 
 /// Custom [BaseAudioHandler] that bridges Android MediaSession controls
 /// to the app's TTS system without owning the TTS engine itself.
-class TtsAudioHandler extends BaseAudioHandler {
+///
+/// Mirrors anx-reader's `TtsHandler`: the handler publishes a queue +
+/// media item (with `duration: -1` so the system renders no progress bar)
+/// plus `queueIndex`/`updatePosition`, which is what makes the
+/// notification / lock-screen / control-center metadata actually appear
+/// on Samsung/Pixel devices. Without the queue, `playbackState` alone
+/// often shows nothing.
+class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   // ── Callbacks (registered by TtsReadingNotifier) ────────────────
 
   /// Called when the user taps Play in the notification or on lock screen.
@@ -129,21 +136,27 @@ class TtsAudioHandler extends BaseAudioHandler {
   // ── State broadcasting helpers ──────────────────────────────────
 
   /// Sets the media-item metadata displayed in the notification (title,
-  /// artist, artwork).
+  /// artist, artwork). Also publishes the queue so the OS control center
+  /// picks up the metadata (anx-reader does `queue.add([item])` +
+  /// `mediaItem.add(item)` together — both are required on some OEMs).
   void setMediaItem({
     required String id,
     required String title,
     String? artist,
     String? artUri,
   }) {
-    mediaItem.add(
-      MediaItem(
-        id: id,
-        title: title,
-        artist: artist ?? 'ePitaka',
-        artUri: artUri != null ? Uri.tryParse(artUri) : null,
-      ),
+    final item = MediaItem(
+      id: id,
+      title: title,
+      album: 'ePitaka',
+      artist: artist ?? 'ePitaka',
+      // -1 tells the system not to render a progress bar (TTS has no
+      // fixed duration).
+      duration: const Duration(milliseconds: -1),
+      artUri: artUri != null ? Uri.tryParse(artUri) : null,
     );
+    queue.add([item]);
+    mediaItem.add(item);
   }
 
   /// Dismiss the notification WITHOUT killing the audio service.
@@ -204,6 +217,9 @@ class TtsAudioHandler extends BaseAudioHandler {
           MediaAction.skipToNext,
           MediaAction.skipToPrevious,
         },
+        queueIndex: queue.value.isNotEmpty ? 0 : null,
+        updatePosition: Duration.zero,
+        bufferedPosition: Duration.zero,
       ),
     );
   }

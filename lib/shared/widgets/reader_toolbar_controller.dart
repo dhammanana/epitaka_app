@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Provides the [ReaderToolbarController] to the widget subtree inside the
@@ -49,6 +48,15 @@ class ReaderToolbarController extends ChangeNotifier {
   VoidCallback? onBookmark;
   VoidCallback? onAiAsk;
 
+  /// TTS transport actions while a reading session is active, so the
+  /// desktop status bar can host the transport controls (the floating
+  /// chip is hidden inside the desktop shell).
+  VoidCallback? onTtsPrev;
+  VoidCallback? onTtsPlayPause;
+  VoidCallback? onTtsNext;
+  VoidCallback? onTtsFollow;
+  VoidCallback? onTtsMore;
+
   /// Registers the current set of action handlers.
   ///
   /// Called by [ReaderScreen] during build. Only notifies listeners when the
@@ -65,6 +73,11 @@ class ReaderToolbarController extends ChangeNotifier {
     VoidCallback? onStop,
     VoidCallback? onBookmark,
     VoidCallback? onAiAsk,
+    VoidCallback? onTtsPrev,
+    VoidCallback? onTtsPlayPause,
+    VoidCallback? onTtsNext,
+    VoidCallback? onTtsFollow,
+    VoidCallback? onTtsMore,
   }) {
     final changed =
         enabled != this.enabled ||
@@ -76,7 +89,12 @@ class ReaderToolbarController extends ChangeNotifier {
         onListen != this.onListen ||
         onStop != this.onStop ||
         onBookmark != this.onBookmark ||
-        onAiAsk != this.onAiAsk;
+        onAiAsk != this.onAiAsk ||
+        onTtsPrev != this.onTtsPrev ||
+        onTtsPlayPause != this.onTtsPlayPause ||
+        onTtsNext != this.onTtsNext ||
+        onTtsFollow != this.onTtsFollow ||
+        onTtsMore != this.onTtsMore;
     this.enabled = enabled;
     this.onContents = onContents;
     this.onSearch = onSearch;
@@ -87,6 +105,11 @@ class ReaderToolbarController extends ChangeNotifier {
     this.onStop = onStop;
     this.onBookmark = onBookmark;
     this.onAiAsk = onAiAsk;
+    this.onTtsPrev = onTtsPrev;
+    this.onTtsPlayPause = onTtsPlayPause;
+    this.onTtsNext = onTtsNext;
+    this.onTtsFollow = onTtsFollow;
+    this.onTtsMore = onTtsMore;
     if (changed) notifyListeners();
   }
 

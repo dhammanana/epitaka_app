@@ -303,7 +303,7 @@ class ReadingParagraph extends StatelessWidget {
     );
 
     final showCopyMenu =
-        heading.level < 10 && bookId != null && bookId!.isNotEmpty;
+        heading.level <= 10 && bookId != null && bookId!.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8, left: 10),

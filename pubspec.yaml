@@ -46,6 +46,7 @@ dependencies:
   # Networking & file handling
   http: ^1.6.0
   archive: ^4.0.0
+  dict_reader: ^1.6.1
   # SHA-256 for verifying downloaded translation databases against the
   # manifest checksum (server computes the hash of the .db file)
   crypto: ^3.0.3

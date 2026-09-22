@@ -408,6 +408,7 @@ const Map<String, String> en = {
   'Translation voice': 'Translation voice',
   'Hindi voice not installed': 'Hindi voice not installed',
   'voice not installed': 'voice not installed',
+  'Enter any speed up to': 'Enter any speed up to',
   'Hindi voice missing desc':
       'A Hindi (Devanagari) voice is needed to read Pāli aloud. '
       'Install one in your device Text-to-Speech settings.',
@@ -865,6 +866,10 @@ const Map<String, String> en = {
   'Line/L': 'Line/L',
   'Side/S': 'Side/S',
   'Stop': 'Stop',
+  'Play': 'Play',
+  'Pause': 'Pause',
+  'Previous paragraph': 'Previous paragraph',
+  'Next paragraph': 'Next paragraph',
   'Less': 'Less',
   'Library': 'Library',
   'Reset layout': 'Reset layout',

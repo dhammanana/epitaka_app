@@ -496,12 +496,20 @@ class AppLocalizations {
   String get testHearSample =>
       _t('Hear a sample of the current voice & settings');
   String get playing => _t('Playing…');
+  String get play => _t('Play');
+  String get pause => _t('Pause');
+  String get ttsSkipPrevious => _t('Previous paragraph');
+  String get ttsSkipNext => _t('Next paragraph');
   String get tapPauseOrStop => _t('Tap pause or stop to control playback');
   String get paused => _t('Paused');
   String get tapResume => _t('Tap resume to continue');
   String get loadingAudio => _t('Preparing audio…');
   String get systemDefault => _t('System Default');
   String get config => _t('Config');
+
+  /// Hint under a typed TTS speed value: any number up to the cap.
+  String ttsSpeedRangeHint(double max) =>
+      '${_t('Enter any speed up to')} $max×';
   String get ttsSpeakMode => _t('Speak');
   String get ttsSpeakTranslation => _t('Translation');
   String get ttsSpeakTranslationDesc => _t('Reads the translation aloud');

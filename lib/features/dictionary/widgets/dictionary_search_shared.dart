@@ -545,12 +545,27 @@ class SuggestionTile extends ConsumerWidget {
   final VoidCallback onTap;
   final ColorScheme colors;
 
+  /// Typed query used to highlight the matching part of [word].
+  /// Null (or no match) renders the word in a single style.
+  final String? highlightQuery;
+
+  /// Exact-headword hit: tinted background + jump icon so it stands out
+  /// as "this entry exists, tap to open it".
+  final bool isExact;
+
+  /// Keyboard-selected row (arrow keys): primary border + tint so the
+  /// current position is visible before pressing Enter.
+  final bool selected;
+
   const SuggestionTile({
     super.key,
     required this.word,
     this.meaningPreview,
     required this.onTap,
     required this.colors,
+    this.highlightQuery,
+    this.isExact = false,
+    this.selected = false,
   });
 
   @override
@@ -561,39 +576,39 @@ class SuggestionTile extends ConsumerWidget {
     final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
     final previewSize = (pali.fontSize * 0.64).clamp(11.0, 20.0);
 
+    final highlight = selected || isExact;
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
-      color: colors.surfaceContainerLow,
+      color: selected
+          ? colors.primary.withValues(alpha: 0.12)
+          : isExact
+          ? colors.primaryContainer.withValues(alpha: 0.45)
+          : colors.surfaceContainerHighest,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: highlight
+              ? colors.primary.withValues(alpha: selected ? 0.7 : 0.45)
+              : colors.outlineVariant.withValues(alpha: 0.35),
+          width: selected ? 1.5 : 1,
+        ),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: EdgeInsets.all(
-            colors.brightness == Brightness.light ? 8 : 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      word,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: colors.primary,
-                        fontSize: paliSize,
-                        fontFamily: paliFontFamily,
-                      ),
-                    ),
+                    _buildTitle(paliSize, paliFontFamily),
                     if (meaningPreview != null && meaningPreview!.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.only(top: 1),
                         child: Text(
                           _stripHtml(meaningPreview!),
                           style: TextStyle(
@@ -610,13 +625,47 @@ class SuggestionTile extends ConsumerWidget {
                 ),
               ),
               Icon(
-                Icons.chevron_right,
+                isExact ? Icons.subdirectory_arrow_left : Icons.chevron_right,
                 size: 16,
-                color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                color: isExact
+                    ? colors.primary
+                    : colors.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// The headword with the typed query highlighted, so the user sees why
+  /// this row matched. Falls back to a single style when there is no match
+  /// (e.g. diacritic-folded hits).
+  Widget _buildTitle(double size, String? fontFamily) {
+    final base = TextStyle(
+      fontWeight: FontWeight.w600,
+      color: colors.onSurface,
+      fontSize: size,
+      fontFamily: fontFamily,
+    );
+    final q = highlightQuery?.trim().toLowerCase() ?? '';
+    final i = q.isEmpty ? -1 : word.toLowerCase().indexOf(q);
+    if (i < 0) return Text(word, style: base);
+    return RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        children: [
+          TextSpan(text: word.substring(0, i), style: base),
+          TextSpan(
+            text: word.substring(i, i + q.length),
+            style: base.copyWith(
+              color: colors.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          TextSpan(text: word.substring(i + q.length), style: base),
+        ],
       ),
     );
   }
