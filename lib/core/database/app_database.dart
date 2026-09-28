@@ -11,6 +11,7 @@ import 'drift_database_executor.dart';
 import '../utils/pali_search_utils.dart';
 import 'epitaka_database.dart';
 import 'translation_database.dart';
+import 'nissaya_database.dart';
 
 part 'app_database.g.dart';
 
@@ -2091,6 +2092,254 @@ class AppDatabase extends _$AppDatabase {
       return '"$safe"';
     }
     return safe;
+  }
+
+  /// Check and create all required indexes across all databases.
+  ///
+  /// This function verifies and creates missing indexes for:
+  /// - epitaka.db (main Tipitaka database): sentences table indexes
+  /// - Translation databases (epitaka_{lang}.db): sentences table indexes
+  /// - Nissaya database (epitaka_my_nissaya.db): sentences table indexes
+  /// - app_data.db: FTS indexes (handled by isSearchIndexBuilt/buildSearchIndex)
+  /// - mention_index: heading index (handled by MentionService)
+  ///
+  /// Returns a map of database name -> list of created indexes.
+  /// Call this during FTS rebuild to ensure all databases have optimal indexes.
+  Future<Map<String, List<String>>> ensureAllDatabaseIndexes({
+    EpitakaDatabase? epitakaDb,
+    Map<String, TranslationDatabase>? translationDbs,
+    NissayaDatabase? nissayaDb,
+  }) async {
+    final createdIndexes = <String, List<String>>{};
+
+    // Helper to create index if not exists
+    Future<void> createIndexIfNotExists(
+      GeneratedDatabase db,
+      String dbName,
+      String indexName,
+      String tableName,
+      String columns,
+    ) async {
+      try {
+        final exists = await db.customSelect(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+          variables: [Variable.withString(indexName)],
+        ).get();
+        if (exists.isEmpty) {
+          await db.customStatement(
+            'CREATE INDEX $indexName ON $tableName($columns)',
+          );
+          (createdIndexes[dbName] ??= []).add(indexName);
+          debugPrint('[INDEX] Created index $indexName on $dbName.$tableName');
+        }
+      } catch (e) {
+        debugPrint('[INDEX] Failed to create index $indexName on $dbName: $e');
+      }
+    }
+
+    // 1. epitaka.db indexes
+    if (epitakaDb != null) {
+      await createIndexIfNotExists(
+        epitakaDb,
+        'epitaka.db',
+        'idx_sentences_book_para_line',
+        'sentences',
+        'book_id, para_id, line_id',
+      );
+      await createIndexIfNotExists(
+        epitakaDb,
+        'epitaka.db',
+        'idx_sentences_book_para',
+        'sentences',
+        'book_id, para_id',
+      );
+      await createIndexIfNotExists(
+        epitakaDb,
+        'epitaka.db',
+        'idx_headings_book_level_para',
+        'headings',
+        'book_id, level, para_id',
+      );
+      await createIndexIfNotExists(
+        epitakaDb,
+        'epitaka.db',
+        'idx_books_book_id',
+        'books',
+        'book_id',
+      );
+    }
+
+    // 2. Translation databases indexes
+    if (translationDbs != null) {
+      for (final entry in translationDbs.entries) {
+        final langCode = entry.key;
+        final db = entry.value;
+        final dbName = 'epitaka_$langCode.db';
+        await createIndexIfNotExists(
+          db,
+          dbName,
+          'idx_sentences_book_para_line',
+          'sentences',
+          'book_id, para_id, line_id',
+        );
+        await createIndexIfNotExists(
+          db,
+          dbName,
+          'idx_sentences_book_para',
+          'sentences',
+          'book_id, para_id',
+        );
+        await createIndexIfNotExists(
+          db,
+          dbName,
+          'idx_translation_remarks_book_para_line',
+          'translation_remarks',
+          'book_id, para_id, line_id',
+        );
+      }
+    }
+
+    // 3. Nissaya database indexes
+    if (nissayaDb != null) {
+      await createIndexIfNotExists(
+        nissayaDb,
+        'epitaka_my_nissaya.db',
+        'idx_sentences_book_para_line',
+        'sentences',
+        'book_id, para_id, line_id',
+      );
+      await createIndexIfNotExists(
+        nissayaDb,
+        'epitaka_my_nissaya.db',
+        'idx_sentences_book_para',
+        'sentences',
+        'book_id, para_id',
+      );
+    }
+
+    return createdIndexes;
+  }
+
+  /// Cached result of index check to avoid re-checking on startup.
+  ///
+  /// The index check queries sqlite_master which is fast, but running it
+  /// multiple times during startup adds up. Cache the result for the session.
+  static final Map<String, bool> _indexCheckCache = <String, bool>{};
+
+  /// Check if all required FTS indexes exist, with caching.
+  ///
+  /// If [forceRefresh] is true, ignores the cache and re-checks.
+  /// Returns a map of index name -> whether it exists and is current.
+  Future<Map<String, bool>> checkAllIndexesCached({
+    bool forceRefresh = false,
+    EpitakaDatabase? epitakaDb,
+    Map<String, TranslationDatabase>? translationDbs,
+    NissayaDatabase? nissayaDb,
+  }) async {
+    final cacheKey = 'all_indexes';
+    if (!forceRefresh && _indexCheckCache.containsKey(cacheKey)) {
+      debugPrint('[INDEX_CHECK] Using cached index check result');
+      return _indexCheckCache;
+    }
+
+    final results = <String, bool>{};
+
+    // Check Pali FTS index
+    results['pali_fts'] = await isSearchIndexBuilt();
+    if (!results['pali_fts']!) {
+      _indexCheckCache.clear();
+      return results;
+    }
+
+    // Check translation FTS indexes
+    if (translationDbs != null) {
+      for (final langCode in translationDbs.keys) {
+        results['translation_fts_$langCode'] = await isTranslationIndexBuilt(langCode);
+      }
+    }
+
+    // Check mention index
+    try {
+      final countRows = await customSelect(
+        'SELECT COUNT(*) as cnt FROM mention_index',
+      ).get();
+      final count = countRows.first.data['cnt'] as int? ?? 0;
+      results['mention_index'] = count > 0;
+    } catch (_) {
+      results['mention_index'] = false;
+    }
+
+    // Check epitaka.db indexes
+    if (epitakaDb != null) {
+      results['epitaka_indexes'] = await _checkEpitakaIndexes(epitakaDb);
+    }
+
+    // Check translation DB indexes
+    if (translationDbs != null) {
+      for (final entry in translationDbs.entries) {
+        results['${entry.key}_indexes'] = await _checkTranslationIndexes(entry.value);
+      }
+    }
+
+    // Check nissaya DB indexes
+    if (nissayaDb != null) {
+      results['nissaya_indexes'] = await _checkNissayaIndexes(nissayaDb);
+    }
+
+    _indexCheckCache[cacheKey] = results.values.every((v) => v);
+    return results;
+  }
+
+  Future<bool> _checkEpitakaIndexes(EpitakaDatabase db) async {
+    const requiredIndexes = [
+      'idx_sentences_book_para_line',
+      'idx_sentences_book_para',
+      'idx_headings_book_level_para',
+    ];
+    for (final indexName in requiredIndexes) {
+      final rows = await db.customSelect(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+        variables: [Variable.withString(indexName)],
+      ).get();
+      if (rows.isEmpty) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _checkTranslationIndexes(TranslationDatabase db) async {
+    const requiredIndexes = [
+      'idx_sentences_book_para_line',
+      'idx_sentences_book_para',
+    ];
+    for (final indexName in requiredIndexes) {
+      final rows = await db.customSelect(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+        variables: [Variable.withString(indexName)],
+      ).get();
+      if (rows.isEmpty) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _checkNissayaIndexes(NissayaDatabase db) async {
+    const requiredIndexes = [
+      'idx_sentences_book_para_line',
+      'idx_sentences_book_para',
+    ];
+    for (final indexName in requiredIndexes) {
+      final rows = await db.customSelect(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+        variables: [Variable.withString(indexName)],
+      ).get();
+      if (rows.isEmpty) return false;
+    }
+    return true;
+  }
+
+  /// Clear the index check cache (call after rebuilding indexes).
+  static void clearIndexCheckCache() {
+    _indexCheckCache.clear();
+    debugPrint('[INDEX_CHECK] Cache cleared');
   }
 }
 

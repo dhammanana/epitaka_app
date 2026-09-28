@@ -18,7 +18,8 @@ enum AppLanguage {
   thai('th', 'ไทย'),
   burmese('my', 'မြန်မာ'),
   sinhala('si', 'සිංහල'),
-  vietnamese('vi', 'Tiếng Việt');
+  vietnamese('vi', 'Tiếng Việt'),
+  lao('lo', 'ລາວ');
 
   final String code;
   final String nativeName;
@@ -96,6 +97,24 @@ enum WordLookupGesture {
 
   /// Tapping reader text does not open the dictionary.
   disabled,
+}
+
+/// Text alignment options for reading content.
+///
+/// Values are appended (never reordered/removed) so the integer stored in
+/// SharedPreferences stays stable across app updates.
+enum TextAlignOption {
+  /// Align text to the start (left for LTR, right for RTL).
+  start,
+
+  /// Center the text.
+  center,
+
+  /// Align text to the end (right for LTR, left for RTL).
+  end,
+
+  /// Justify the text (default).
+  justify,
 }
 
 /// UI font family choices for the app interface (labels, menus, buttons).
@@ -524,12 +543,35 @@ class AppSettings {
   /// the reader. Defaults to true.
   final bool showBookLinks;
 
+  /// Whether the reader app bar + bottom toolbar auto-hide on scroll down
+  /// (and reappear on scroll up). Defaults to true (ticked).
+  final bool autoHideToolbar;
+
   /// How a tap on a word opens the dictionary from the reader: single-tap
   /// (default) or double-tap.
   final WordLookupGesture wordLookupGesture;
 
+  /// Text alignment for reading content (start, center, end, justify).
+  /// Defaults to justify for a book-like reading experience.
+  final TextAlignOption textAlign;
+
+  /// Line height for reading content in pixels.
+  /// Additional pixels added to the font's default line height.
+  /// Defaults to 0 (use font default).
+  final int lineHeight;
+
+  /// Paragraph spacing for reading content in pixels.
+  /// Extra space added between paragraphs.
+  /// Defaults to 8 pixels.
+  final int paragraphSpacing;
+
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
+
+  /// Whether MDX dictionary entries are collapsed by default (true) or
+  /// expanded (false) in the dictionary panel. Defaults to true (collapsed)
+  /// to prevent rendering heavy entries until the user expands them.
+  final bool mdxCollapseByDefault;
 
   /// Per-language selected translation version suffix (null/empty = default).
   final Map<String, String> translationVersionMap;
@@ -614,8 +656,13 @@ class AppSettings {
     this.paliScript = Script.roman,
     this.stripVariantAnnotations = true,
     this.showBookLinks = true,
+    this.autoHideToolbar = true,
     this.wordLookupGesture = WordLookupGesture.singleTap,
+    this.textAlign = TextAlignOption.justify,
+    this.lineHeight = 0,
+    this.paragraphSpacing = 8,
     this.libraryExpandLevel = LibraryExpandLevel.category,
+    this.mdxCollapseByDefault = true,
     this.translationVersionMap = const {},
     this.leftPanelWidth = 0,
     this.rightPanelWidth = 0,
@@ -661,8 +708,13 @@ class AppSettings {
     CopyScope? copyDefaultScope,
     Script? paliScript,
     LibraryExpandLevel? libraryExpandLevel,
+    TextAlignOption? textAlign,
+    int? lineHeight,
+    int? paragraphSpacing,
+    bool? mdxCollapseByDefault,
     bool? stripVariantAnnotations,
     bool? showBookLinks,
+    bool? autoHideToolbar,
     WordLookupGesture? wordLookupGesture,
     Map<String, String>? translationVersionMap,
     double? leftPanelWidth,
@@ -711,9 +763,14 @@ class AppSettings {
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
       libraryExpandLevel: libraryExpandLevel ?? this.libraryExpandLevel,
+      textAlign: textAlign ?? this.textAlign,
+      lineHeight: lineHeight ?? this.lineHeight,
+      paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
+      mdxCollapseByDefault: mdxCollapseByDefault ?? this.mdxCollapseByDefault,
       stripVariantAnnotations:
           stripVariantAnnotations ?? this.stripVariantAnnotations,
       showBookLinks: showBookLinks ?? this.showBookLinks,
+      autoHideToolbar: autoHideToolbar ?? this.autoHideToolbar,
       wordLookupGesture: wordLookupGesture ?? this.wordLookupGesture,
       translationVersionMap:
           translationVersionMap ?? this.translationVersionMap,
@@ -1045,12 +1102,22 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       libraryExpandLevel:
           LibraryExpandLevel.values[prefs.getInt('library_expand_level') ??
               LibraryExpandLevel.category.index],
+      mdxCollapseByDefault:
+          prefs.getBool('mdx_collapse_by_default') ?? true,
       stripVariantAnnotations:
           prefs.getBool('strip_variant_annotations') ?? true,
       showBookLinks: prefs.getBool('show_book_links') ?? true,
+      autoHideToolbar: prefs.getBool('auto_hide_toolbar') ?? true,
       wordLookupGesture: _safeWordLookupGesture(
         prefs.getInt('word_lookup_gesture'),
       ),
+      textAlign: TextAlignOption.values[
+          (prefs.getInt('text_align') ?? TextAlignOption.justify.index).clamp(
+            0,
+            TextAlignOption.values.length - 1,
+          )],
+      lineHeight: (prefs.getInt('line_height') ?? 0).clamp(0, 100),
+      paragraphSpacing: (prefs.getInt('paragraph_spacing') ?? 8).clamp(0, 100),
       translationVersionMap: _loadTranslationVersionMap(),
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
@@ -1403,6 +1470,26 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setInt('word_lookup_gesture', gesture.index);
   }
 
+  /// Set the text alignment for reading content.
+  Future<void> setTextAlign(TextAlignOption align) async {
+    state = state.copyWith(textAlign: align);
+    await _prefs?.setInt('text_align', align.index);
+  }
+
+  /// Set the line height for reading content in pixels.
+  Future<void> setLineHeight(int height) async {
+    final clamped = height.clamp(0, 100);
+    state = state.copyWith(lineHeight: clamped);
+    await _prefs?.setInt('line_height', clamped);
+  }
+
+  /// Set the paragraph spacing for reading content in pixels.
+  Future<void> setParagraphSpacing(int spacing) async {
+    final clamped = spacing.clamp(0, 100);
+    state = state.copyWith(paragraphSpacing: clamped);
+    await _prefs?.setInt('paragraph_spacing', clamped);
+  }
+
   /// Toggle the inlined book-link chips (commentary links) in the reader.
   Future<void> setShowBookLinks(bool value) async {
     state = state.copyWith(showBookLinks: value);
@@ -1417,9 +1504,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(showBookLinks: value);
   }
 
+  /// Toggle whether the reader app bar + bottom toolbar auto-hide on
+  /// scroll. Persisted; defaults to true.
+  Future<void> setAutoHideToolbar(bool value) async {
+    state = state.copyWith(autoHideToolbar: value);
+    await _prefs?.setBool('auto_hide_toolbar', value);
+  }
+
   Future<void> setLibraryExpandLevel(LibraryExpandLevel level) async {
     state = state.copyWith(libraryExpandLevel: level);
     await _prefs?.setInt('library_expand_level', level.index);
+  }
+
+  Future<void> setMdxCollapseByDefault(bool value) async {
+    state = state.copyWith(mdxCollapseByDefault: value);
+    await _prefs?.setBool('mdx_collapse_by_default', value);
   }
 
   Future<void> setQuoteTemplate(String template) async {

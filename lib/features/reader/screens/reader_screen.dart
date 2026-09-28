@@ -14,6 +14,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/startup_timing.dart';
 import '../../annotations/providers/annotations_provider.dart';
 import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -36,6 +37,7 @@ import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
+import '../providers/tts_speak_unit.dart';
 import '../utils/reader_word_hit_test.dart' show ReaderWordHitResult;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
@@ -464,6 +466,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [ReaderTtsController]; the screen only supplies scroll/rebuild hooks.
   late final ReaderTtsController _tts;
 
+  /// Read [MediaQuery] data WITHOUT subscribing the screen to it.
+  ///
+  /// The closures below run in scroll/position listeners, not in [build].
+  /// A subscribing read ([MediaQuery.of]/[sizeOf]/[widthOf]) there still
+  /// registers this [State]'s element as a dependent, so every keyboard
+  /// animation frame (~60 viewInsets/size updates over ~300ms on Android)
+  /// would rebuild the whole heavy book list and the visible text would
+  /// shift. This reads the current value with no dependency instead.
+  static MediaQueryData _mediaNoSubscribe(BuildContext context) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<MediaQuery>();
+    if (element != null) return (element.widget as MediaQuery).data;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    return MediaQueryData.fromView(view);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -472,8 +490,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _scroll = ReaderScrollController(
       ref: ref,
       isMounted: () => mounted,
-      isPhone: () => Mobile.isPhone(context),
-      viewInsetsBottom: () => MediaQuery.of(context).viewInsets.bottom,
+      // Same value as Mobile.isPhone, but without subscribing (see above).
+      isPhone: () {
+        if (PlatformInfo.isDesktop) return false;
+        return _mediaNoSubscribe(context).size.shortestSide < 700;
+      },
+      viewInsetsBottom: () => _mediaNoSubscribe(context).viewInsets.bottom,
       appBarCollapsed: _appBarCollapsed,
       onTtsManualScroll: (bookId, visible, paragraphs) =>
           _tts.handleManualScroll(bookId, visible, paragraphs),
@@ -486,6 +508,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             'topIndex=$topIndex paraId=$paraId',
             name: 'epitaka.reader.ui',
           );
+          StartupTiming.mark('book first visible: $bookId (paraId=$paraId)');
           _tabSwitchStartMs = null; // one-shot
         }
         developer.log(
@@ -536,6 +559,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     setState(() => _appLifecycleState = state);
   }
 
+  /// Full window height captured while the keyboard is closed. The reader
+  /// body is laid out at exactly this height (see the [OverflowBox] in
+  /// [build]) so the keyboard can never shrink the book viewport or move
+  /// the bottom toolbar / TTS chip. Refreshed in [build] and here whenever
+  /// the keyboard is closed; never touched while it is open.
+  double? _fixedBodyHeight;
+
+  @override
+  void didChangeMetrics() {
+    // Field sync only — deliberately no setState: metrics fire on every
+    // keyboard animation frame, and rebuilding here would put the heavy
+    // book list back on the per-frame path.
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    if (view.viewInsets.bottom == 0) {
+      _fixedBodyHeight = view.physicalSize.height / view.devicePixelRatio;
+    }
+  }
+
   // ── Scroll machinery ─────────────────────────────────────────────────
   // Per-book scroll controllers/listeners, position tracking (app-bar
   // collapse, tab scroll-offset updates, history, TTS auto-scroll
@@ -565,7 +606,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final tabs = ref.read(readerTabsProvider);
     if (tabs.tabs.length <= 1) return;
 
-    final width = MediaQuery.of(context).size.width;
+    // widthOf subscribes to the width aspect only, so keyboard-driven
+    // height/viewInsets changes never rebuild from here.
+    final width = MediaQuery.widthOf(context);
     final next = (_dragDxNotifier.value + details.delta.dx).clamp(
       -width,
       width,
@@ -585,7 +628,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _onDragEnd(DragEndDetails details) {
     _isDragging = false;
-    final width = MediaQuery.of(context).size.width;
+    // Width aspect only (see _onDragUpdate).
+    final width = MediaQuery.widthOf(context);
     final tabs = ref.read(readerTabsProvider);
     final active = tabs.activeIndex;
     final velocity = details.primaryVelocity ?? 0; // px/s, <0 = left
@@ -1125,8 +1169,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onStop: _handleToolbarStop,
       onBookmark: _handleToolbarBookmark,
       onAiAsk: _handleToolbarAiAsk,
-      onTtsPrev: () => _handleTtsTransport(() =>
-          ref.read(ttsReadingProvider.notifier).skipBackward()),
+      onTtsPrev: () => _handleTtsTransport(
+        () => ref.read(ttsReadingProvider.notifier).skipBackward(),
+      ),
       onTtsPlayPause: () => _handleTtsTransport(() {
         final notifier = ref.read(ttsReadingProvider.notifier);
         if (ttsReadingState.isPaused) {
@@ -1135,10 +1180,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           notifier.pauseReading();
         }
       }),
-      onTtsNext: () => _handleTtsTransport(() =>
-          ref.read(ttsReadingProvider.notifier).skipForward()),
-      onTtsFollow: () => _handleTtsTransport(() =>
-          _tts.follow(ttsReadingState.bookId ?? '')),
+      onTtsNext: () => _handleTtsTransport(
+        () => ref.read(ttsReadingProvider.notifier).skipForward(),
+      ),
+      onTtsFollow: () =>
+          _handleTtsTransport(() => _tts.follow(ttsReadingState.bookId ?? '')),
       onTtsMore: () {
         final activeTab = tabsState.activeTab;
         if (activeTab == null) return;
@@ -1162,7 +1208,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // value here (before the AnimatedBuilder reads it) means the incoming
     // tab is painted off-screen on its very first frame, then animates in.
     if (_pendingExternalAnim != null) {
-      final width = MediaQuery.of(context).size.width;
+      // Width aspect only: a full MediaQuery.of here would subscribe the
+      // entire reader to viewInsets/size and rebuild the heavy book list on
+      // every keyboard animation frame, shifting the visible text.
+      final width = MediaQuery.widthOf(context);
       final forward = _pendingExternalAnim!;
       _dragDxNotifier.value = forward ? width : -width;
       _pendingExternalAnim = null;
@@ -1358,6 +1407,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ? ttsReadingState.currentIsPali
         : null;
 
+    // WORD-HIGHLIGHT: spoken-word range for the current line only. Watching
+    // this provider rebuilds the screen per word, but the paragraph memo
+    // limits actual repaints to the active paragraph. Set
+    // [kTtsWordHighlightEnabled] to false to skip this entirely.
+    final ttsWord = kTtsWordHighlightEnabled && isCurrentBookTts
+        ? ref.watch(ttsWordHighlightProvider)
+        : null;
+    final ttsWordOnCurrentLine =
+        ttsWord != null &&
+            _appLifecycleState == AppLifecycleState.resumed &&
+            ttsWord.paraId == ttsCurrentParaId &&
+            ttsWord.lineId == ttsCurrentLineId
+        ? ttsWord
+        : null;
+
     // ── Keyboard-navigation cleanup on tab close ──────────────────
     // Drop the bridge registrations for books that are no longer open (the
     // reader may have disposed their ScrollablePositionedList) and clear the
@@ -1377,6 +1441,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ref
             .read(readerKeyboardNavProvider.notifier)
             .clearIfDifferentBook(next.activeTab?.bookId);
+      }
+
+      // ── Stop TTS if the tab doing TTS is closed ──────────────────
+      final ttsState = ref.read(ttsReadingProvider);
+      if (ttsState.isActive) {
+        for (final id in prevIds) {
+          if (!nextIds.contains(id) && ttsState.bookId == id) {
+            _tts.stopListening();
+            break;
+          }
+        }
       }
     });
 
@@ -1465,6 +1540,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return idx >= 0 ? idx : 0;
     }();
 
+    // Freeze the body height while the keyboard is open. This app is not
+    // edge-to-edge, so on Android adjustResize SHRINKS the window itself:
+    // resizeToAvoidBottomInset:false and viewInsets stripping cannot stop
+    // that — the whole Stack would get shorter and the book viewport, the
+    // bottom toolbar and the TTS chip would all ride up. The non-subscribing
+    // read keeps this off the per-frame rebuild path (same pattern as
+    // _mediaNoSubscribe); the cached full height is applied below, so while
+    // the keyboard is open nothing is rebuilt AND nothing is re-laid-out.
+    final mediaNoSub = _mediaNoSubscribe(context);
+    if (mediaNoSub.viewInsets.bottom == 0) {
+      _fixedBodyHeight = mediaNoSub.size.height;
+    }
+    final frozenHeight = _fixedBodyHeight ?? mediaNoSub.size.height;
+
     return Scaffold(
       // The on-screen keyboard (in-book search field) must NOT resize the
       // reader. The default resize re-lays-out the heavy book list on every
@@ -1473,208 +1562,233 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       // scroll). The keyboard overlays the bottom instead; the book keeps
       // its exact position and no per-frame relayout happens.
       resizeToAvoidBottomInset: false,
-      body: Padding(
-        padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
-        child: Column(
-          children: [
-            // ── Animated app bar (only this rebuilds on collapse) ──
-            // Hidden entirely on desktop: the shell's activity bar and
-            // status bar cover these actions, and the back button is the
-            // source of the "pop past the end → black screen" bug (books
-            // are never pushed onto the history stack on desktop).
-            if (!ResponsiveBreakpoint.isDesktop(context))
-              ValueListenableBuilder<bool>(
-                valueListenable: _appBarCollapsed,
-                builder: (context, collapsed, _) => ReaderAppBar(
-                  bookId: activeTab.bookId,
-                  bookName: readerState.bookName ?? activeTab.bookId,
-                  colors: colors,
-                  showCollapsed: collapsed,
-                  onSettingsTap: () {
-                    if (ResponsiveBreakpoint.isDesktop(context)) {
-                      showSettingsDialog(context);
-                    } else {
-                      context.push('/settings');
-                    }
-                  },
-                  actions: ResponsiveBreakpoint.isDesktop(context)
-                      ? [
-                          IconButton(
-                            icon: const Icon(Icons.menu_book_outlined),
-                            color: colors.onSurfaceVariant,
-                            tooltip: AppLocalizations.of(context).libraryLabel,
-                            onPressed: () => showLibraryDialog(context),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.search),
-                            color: colors.onSurfaceVariant,
-                            tooltip: AppLocalizations.of(context).search,
-                            onPressed: () => ref
-                                .read(sidePanelProvider.notifier)
-                                .toggle(SidePanelType.search),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.settings),
-                            color: colors.onSurfaceVariant,
-                            tooltip: AppLocalizations.of(context).settings,
-                            onPressed: () {
-                              if (ResponsiveBreakpoint.isDesktop(context)) {
-                                showSettingsDialog(context);
-                              } else {
-                                context.push('/settings');
-                              }
-                            },
-                          ),
-                        ]
-                      : null,
-                ),
-              ),
-            const TabStrip(),
-            Expanded(
-              child: Stack(
-                children: [
-                  // ── Swipeable tab content with finger-following slide ──
-                  CallbackShortcuts(
-                    bindings: {
-                      SingleActivator(
-                        LogicalKeyboardKey.keyC,
-                        control: true,
-                      ): () => ReaderContextMenuBuilder.copyShortcut(
-                        context: context,
-                        ref: ref,
-                      ),
-                      SingleActivator(
-                        LogicalKeyboardKey.keyC,
-                        meta: true,
-                      ): () => ReaderContextMenuBuilder.copyShortcut(
-                        context: context,
-                        ref: ref,
-                      ),
+      // Fixed-height box (top-aligned): while the keyboard is open the
+      // window is shorter, but the body keeps its full closed-keyboard
+      // height and simply extends behind the keyboard. The book list keeps
+      // its viewport, and the bottom toolbar / TTS chip stay exactly where
+      // they were (covered by the keyboard until it closes) instead of
+      // riding up. When the keyboard is closed the height equals the window
+      // height, so this is a no-op.
+      body: OverflowBox(
+        alignment: Alignment.topCenter,
+        minHeight: frozenHeight,
+        maxHeight: frozenHeight,
+        child: Padding(
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+          child: Column(
+            children: [
+              // ── Animated app bar (only this rebuilds on collapse) ──
+              // Hidden entirely on desktop: the shell's activity bar and
+              // status bar cover these actions, and the back button is the
+              // source of the "pop past the end → black screen" bug (books
+              // are never pushed onto the history stack on desktop).
+              if (!ResponsiveBreakpoint.isDesktop(context))
+                ValueListenableBuilder<bool>(
+                  valueListenable: _appBarCollapsed,
+                  builder: (context, collapsed, _) => ReaderAppBar(
+                    bookId: activeTab.bookId,
+                    bookName: readerState.bookName ?? activeTab.bookId,
+                    colors: colors,
+                    showCollapsed: collapsed,
+                    onSettingsTap: () {
+                      if (ResponsiveBreakpoint.isDesktop(context)) {
+                        showSettingsDialog(context);
+                      } else {
+                        context.push('/settings');
+                      }
                     },
-                    child: Focus(
-                      autofocus: true,
-                      child: _buildReaderContentWithSelection(
-                        context,
-                        readerState,
-                        settings,
-                        colors,
-                        activeTab,
-                        resolvedPaliColor,
-                        resolvedTransColor,
-                        enabledLangs,
-                        langTypographies,
-                        ttsCurrentLineId,
-                        ttsCurrentParaId,
-                        ttsCurrentIsPali,
-                        initialScrollIdx,
+                    actions: ResponsiveBreakpoint.isDesktop(context)
+                        ? [
+                            IconButton(
+                              icon: const Icon(Icons.menu_book_outlined),
+                              color: colors.onSurfaceVariant,
+                              tooltip: AppLocalizations.of(
+                                context,
+                              ).libraryLabel,
+                              onPressed: () => showLibraryDialog(context),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.search),
+                              color: colors.onSurfaceVariant,
+                              tooltip: AppLocalizations.of(context).search,
+                              onPressed: () => ref
+                                  .read(sidePanelProvider.notifier)
+                                  .toggle(SidePanelType.search),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.settings),
+                              color: colors.onSurfaceVariant,
+                              tooltip: AppLocalizations.of(context).settings,
+                              onPressed: () {
+                                if (ResponsiveBreakpoint.isDesktop(context)) {
+                                  showSettingsDialog(context);
+                                } else {
+                                  context.push('/settings');
+                                }
+                              },
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+              const TabStrip(),
+              Expanded(
+                child: Stack(
+                  children: [
+                    // ── Swipeable tab content with finger-following slide ──
+                    CallbackShortcuts(
+                      bindings: {
+                        SingleActivator(
+                          LogicalKeyboardKey.keyC,
+                          control: true,
+                        ): () => ReaderContextMenuBuilder.copyShortcut(
+                          context: context,
+                          ref: ref,
+                        ),
+                        SingleActivator(
+                          LogicalKeyboardKey.keyC,
+                          meta: true,
+                        ): () => ReaderContextMenuBuilder.copyShortcut(
+                          context: context,
+                          ref: ref,
+                        ),
+                      },
+                      child: Focus(
+                        autofocus: true,
+                        child: _buildReaderContentWithSelection(
+                          context,
+                          readerState,
+                          settings,
+                          colors,
+                          activeTab,
+                          resolvedPaliColor,
+                          resolvedTransColor,
+                          enabledLangs,
+                          langTypographies,
+                          ttsCurrentLineId,
+                          ttsCurrentParaId,
+                          ttsCurrentIsPali,
+                          ttsWordOnCurrentLine?.lineId,
+                          ttsWordOnCurrentLine?.wordIndex,
+                          ttsWordOnCurrentLine?.lineText,
+                          initialScrollIdx,
+                        ),
                       ),
                     ),
-                  ),
-                  // ── Overlays (only for the active tab) ─────────────────
-                  // Draggable scroll thumb
-                  Positioned(
-                    right: 2,
-                    top: 0,
-                    bottom: 0,
-                    width: 28,
-                    child:
-                        readerState.isLoaded &&
-                            readerState.paragraphs.isNotEmpty
-                        ? ReaderDragThumb(
-                            readerState: readerState,
-                            itemScrollController: _scroll
-                                .itemScrollControllerFor(activeTab.bookId),
-                            itemPositionsListener: _scroll
-                                .itemPositionsListenerFor(activeTab.bookId),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  // In-book search bar overlay
-                  if (ref.watch(inBookSearchProvider).showSearchBar)
+                    // ── Overlays (only for the active tab) ─────────────────
+                    // Draggable scroll thumb
                     Positioned(
+                      right: 2,
                       top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Material(
-                        elevation: 4,
-                        color: colors.surface,
-                        child: SafeArea(
-                          top: true,
-                          child: _buildInBookSearchBar(colors),
-                        ),
-                      ),
+                      bottom: 0,
+                      width: 28,
+                      child:
+                          readerState.isLoaded &&
+                              readerState.paragraphs.isNotEmpty
+                          ? ReaderDragThumb(
+                              readerState: readerState,
+                              itemScrollController: _scroll
+                                  .itemScrollControllerFor(activeTab.bookId),
+                              itemPositionsListener: _scroll
+                                  .itemPositionsListenerFor(activeTab.bookId),
+                            )
+                          : const SizedBox.shrink(),
                     ),
-
-                  // TTS floating controls chip. Hidden inside the desktop
-                  // shell, where the attached status bar hosts the same
-                  // transport controls (via ReaderToolbarScope).
-                  if (toolbarScope == null &&
-                      isCurrentBookTts &&
-                      !dictDockOpen &&
-                      (globalTtsState == TtsPlaybackState.playing ||
-                          globalTtsState == TtsPlaybackState.paused))
-                    Positioned(
-                      right: 16,
-                      bottom: 84,
-                      child: TtsFloatingChip(
-                        colors: colors,
-                        isAutoScroll: ref
-                            .read(ttsSyncProvider(activeTab.bookId))
-                            .ttsAutoScroll,
-                        isJumpPending: ref
-                            .read(ttsSyncProvider(activeTab.bookId))
-                            .ttsJumpInProgress,
-                        isTtsLineVisible: _tts.isTtsLineVisible(
-                          activeTab.bookId,
-                          ttsReadingState.currentParaId,
-                        ),
-                        onTap: () =>
-                            _tts.showControls(context, activeTab.bookId),
-                        onFollowTap: () => _tts.follow(activeTab.bookId),
-                      ),
-                    ),
-
-                  // Floating bottom toolbar (animated). Hidden inside the
-                  // desktop shell, where the attached status bar hosts the
-                  // same actions (via ReaderToolbarScope).
-                  if (toolbarScope == null && !dictDockOpen)
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _appBarCollapsed,
-                      builder: (context, collapsed, _) => AnimatedPositioned(
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                        bottom: collapsed ? -80.0 : 24.0,
+                    // In-book search bar overlay
+                    if (ref.watch(inBookSearchProvider).showSearchBar)
+                      Positioned(
+                        top: 0,
                         left: 0,
                         right: 0,
-                        child: Center(
-                          child: ReaderBottomToolbar(
-                            colors: colors,
-                            displayMode: settings.translationDisplayMode,
-                            showTranslation: settings.showTranslation,
-                            ttsPlayback: ttsPlaybackStateForTab,
-                            items: settings.toolbarItems,
-                            onJumpTap: _handleToolbarJump,
-                            onDisplayLayoutTap: _handleToolbarDisplayLayout,
-                            onContentsTap: _handleToolbarContents,
-                            onOutlineTap: _handleToolbarOutline,
-                            onDictionaryTap: _handleToolbarDictionary,
-                            onSearchTap: _handleToolbarSearch,
-                            onListenTap: _handleToolbarListen,
-                            onStopTap: _handleToolbarStop,
-                            onBookmarkTap: _handleToolbarBookmark,
-                            onAnnotationsTap: _handleToolbarAnnotations,
-                            onAiAskTap: _handleToolbarAiAsk,
+                        child: Material(
+                          elevation: 4,
+                          color: colors.surface,
+                          child: SafeArea(
+                            top: true,
+                            child: _buildInBookSearchBar(colors),
                           ),
                         ),
                       ),
-                    ),
 
-                  // (Mobile dictionary is a modal bottom sheet, opened via
-                  // showDictionarySheet — see _handleToolbarDictionary.)
-                ],
+                    // TTS floating controls chip. Hidden inside the desktop
+                    // shell, where the attached status bar hosts the same
+                    // transport controls (via ReaderToolbarScope).
+                    if (toolbarScope == null &&
+                        isCurrentBookTts &&
+                        !dictDockOpen &&
+                        (globalTtsState == TtsPlaybackState.playing ||
+                            globalTtsState == TtsPlaybackState.paused))
+                      Positioned(
+                        right: 16,
+                        bottom:
+                            AppDimensions.bottomToolbarBottomMargin +
+                            AppDimensions.bottomToolbarHeight +
+                            12,
+                        child: TtsFloatingChip(
+                          colors: colors,
+                          isAutoScroll: ref
+                              .read(ttsSyncProvider(activeTab.bookId))
+                              .ttsAutoScroll,
+                          isJumpPending: ref
+                              .read(ttsSyncProvider(activeTab.bookId))
+                              .ttsJumpInProgress,
+                          isTtsLineVisible: _tts.isTtsLineVisible(
+                            activeTab.bookId,
+                            ttsReadingState.currentParaId,
+                          ),
+                          onTap: () =>
+                              _tts.showControls(context, activeTab.bookId),
+                          onFollowTap: () => _tts.follow(activeTab.bookId),
+                          bookId: activeTab.bookId,
+                        ),
+                      ),
+
+                    // Floating bottom toolbar (animated). Hidden inside the
+                    // desktop shell, where the attached status bar hosts the
+                    // same actions (via ReaderToolbarScope).
+                    if (toolbarScope == null && !dictDockOpen)
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _appBarCollapsed,
+                        builder: (context, collapsed, _) => AnimatedPositioned(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          bottom: collapsed
+                              ? -(AppDimensions.bottomToolbarHeight +
+                                    AppDimensions.bottomToolbarBottomMargin +
+                                    14)
+                              : AppDimensions.bottomToolbarBottomMargin,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: ReaderBottomToolbar(
+                              colors: colors,
+                              displayMode: settings.translationDisplayMode,
+                              showTranslation: settings.showTranslation,
+                              ttsPlayback: ttsPlaybackStateForTab,
+                              items: settings.toolbarItems,
+                              onJumpTap: _handleToolbarJump,
+                              onDisplayLayoutTap: _handleToolbarDisplayLayout,
+                              onContentsTap: _handleToolbarContents,
+                              onOutlineTap: _handleToolbarOutline,
+                              onDictionaryTap: _handleToolbarDictionary,
+                              onSearchTap: _handleToolbarSearch,
+                              onListenTap: _handleToolbarListen,
+                              onStopTap: _handleToolbarStop,
+                              onBookmarkTap: _handleToolbarBookmark,
+                              onAnnotationsTap: _handleToolbarAnnotations,
+                              onAiAskTap: _handleToolbarAiAsk,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // (Mobile dictionary is a modal bottom sheet, opened via
+                    // showDictionarySheet — see _handleToolbarDictionary.)
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1697,6 +1811,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
     bool? ttsHighlightIsPali,
+    int? ttsWordLineId,
+    int? ttsWordIndex,
+    String? ttsWordLineText,
     int initialScrollIndex,
   ) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
@@ -1758,6 +1875,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
       ttsHighlightIsPali: ttsHighlightIsPali,
+      ttsWordLineId: ttsWordLineId,
+      ttsWordIndex: ttsWordIndex,
+      ttsWordLineText: ttsWordLineText,
       jumpHighlightLineId: _jumpHighlightLineId,
       jumpHighlightParaId: _jumpHighlightParaId,
       ttsTargetParaId: ref
@@ -1807,6 +1927,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       showBookLinks: settings.showBookLinks,
       annotations: ref.watch(paragraphAnnotationsProvider(activeTab.bookId)),
       appBarCollapsed: _appBarCollapsed,
+    );
+
+    // Isolate the book list from the on-screen keyboard: strip the bottom
+    // viewInsets so the keyboard's ~300ms animation (~60 viewInsets frames
+    // on Android) never reaches the heavy ScrollablePositionedList. Without
+    // this the list re-lays-out on every animation frame and the visible
+    // text shifts (yank/scroll). The keyboard overlays the bottom instead;
+    // the book keeps its exact position. Done unconditionally (not only
+    // while a sheet is open) so the in-book search field — the main
+    // keyboard source with a book tab open — is covered too.
+    content = MediaQuery.removeViewInsets(
+      context: context,
+      removeBottom: true,
+      child: content,
     );
 
     // When the dictionary sheet is open, Flutter adds bottom padding to the

@@ -87,7 +87,9 @@ class _TabStripState extends ConsumerState<TabStrip> {
     ref.listen(readerTabsProvider, _onTabsChanged);
 
     final colors = Theme.of(context).colorScheme;
-    final isDesktop = MediaQuery.sizeOf(context).width > 768;
+    // Width aspect only: the strip must not rebuild on keyboard-driven
+    // height/viewInsets changes (only the width matters here).
+    final isDesktop = MediaQuery.widthOf(context) > 768;
 
     if (_localTabs.isEmpty) return const SizedBox.shrink();
 

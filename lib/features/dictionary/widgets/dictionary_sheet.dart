@@ -19,12 +19,14 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
+import '../providers/dictionary_expanded_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart'
     show dictionarySheetOpenProvider;
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
 import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
+import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
@@ -164,6 +166,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   int _cachedDpdSectionCardIndex = -2;
   int _cachedDpdSectionTokenIndex = -2;
   int _cachedDpdSectionSubLookupVersion = -1;
+  bool? _cachedDpdSectionExpanded;
 
   /// Memoized *whole* results body (all dictionary sections + suggestions).
   ///
@@ -188,6 +191,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   int _cachedResultsCardIndex = -2;
   int _cachedResultsTokenIndex = -2;
   int _cachedResultsSubLookupVersion = -1;
+  String? _cachedResultsExpandedKey;
 
   // Search history
   late final List<String> _searchHistory = [];
@@ -348,6 +352,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _cachedResultsCardIndex = -2;
       _cachedResultsTokenIndex = -2;
       _cachedResultsSubLookupVersion = -1;
+      _cachedResultsExpandedKey = null;
     });
   }
 
@@ -1247,6 +1252,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       builder: (context, ref, _) {
         final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
         final mdxAsync = ref.watch(mdxDictionariesProvider);
+        // Expand/collapse state is part of the memo key: toggling a card
+        // must rebuild, while sheet drag frames reuse the cached tree.
+        final expandedMap = ref.watch(dictionaryExpandedProvider);
         // When DPD misses, the "Did you mean?" suggestions are a nested
         // provider; watch it here (instead of inside a cached subtree) so a
         // resolve invalidates the memoized results and rebuilds them.
@@ -1274,6 +1282,11 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       '${d.id}:${d.userOrder}:${d.entryCount}:${d.status.name}',
                 )
                 .join('|');
+            final expandedKey = [
+              'dpd:${expandedMap['dpd'] ?? true}',
+              for (final b in enabledBooks) 'book_${b.id}:${expandedMap['book_${b.id}'] ?? true}',
+              for (final m in mdxBooks) 'mdx_${m.id}:${expandedMap['mdx_${m.id}'] ?? true}',
+            ].join('|');
             // Suggestions value identity is part of the key: when it
             // transitions loading → data, the builder re-runs (watch above)
             // and this comparison fails, forcing a rebuild with fresh data.
@@ -1286,7 +1299,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 identical(_cachedResultsSuggestions, suggestionsAsync) &&
                 _cachedResultsCardIndex == _activeDeconCardIndex &&
                 _cachedResultsTokenIndex == _activeDeconTokenIndex &&
-                _cachedResultsSubLookupVersion == _subLookupVersion) {
+                _cachedResultsSubLookupVersion == _subLookupVersion &&
+                _cachedResultsExpandedKey == expandedKey) {
               return _cachedResultsWidget!;
             }
 
@@ -1341,6 +1355,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             _cachedResultsCardIndex = _activeDeconCardIndex;
             _cachedResultsTokenIndex = _activeDeconTokenIndex;
             _cachedResultsSubLookupVersion = _subLookupVersion;
+            _cachedResultsExpandedKey = expandedKey;
             return built;
           },
         );
@@ -1382,6 +1397,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           bookName: book.name,
           searchWord: searchWord,
           colors: colors,
+          onEntryTap: _selectWord,
         ),
       };
       if (child is SizedBox && child.child == null) {
@@ -1397,12 +1413,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// data or expand/collapse state actually changed. See the fields above
   /// for why this cache exists — it's what keeps sheet dragging smooth.
   Widget _buildDpdSectionMemoized(ColorScheme colors, DpdFullLookup lookup) {
+    final expanded = ref.read(dictionaryExpandedProvider)['dpd'] ?? true;
     final cached = _cachedDpdSectionWidget;
     if (cached != null &&
         identical(_cachedDpdSectionLookup, lookup) &&
         _cachedDpdSectionCardIndex == _activeDeconCardIndex &&
         _cachedDpdSectionTokenIndex == _activeDeconTokenIndex &&
-        _cachedDpdSectionSubLookupVersion == _subLookupVersion) {
+        _cachedDpdSectionSubLookupVersion == _subLookupVersion &&
+        _cachedDpdSectionExpanded == expanded) {
       return cached;
     }
     final built = _buildDpdSection(colors, lookup);
@@ -1411,70 +1429,57 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _cachedDpdSectionCardIndex = _activeDeconCardIndex;
     _cachedDpdSectionTokenIndex = _activeDeconTokenIndex;
     _cachedDpdSectionSubLookupVersion = _subLookupVersion;
+    _cachedDpdSectionExpanded = expanded;
     return built;
   }
 
   Widget _buildDpdSection(ColorScheme colors, DpdFullLookup lookup) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliFontFamily = pali.fontFamily.fontFamily;
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppDimensions.sm),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: colors.outlineVariant.withValues(alpha: 0.55),
-        ),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-      ),
-      child: Padding(
-        padding: EdgeInsetsGeometry.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Section label
-            Row(
-              children: [
-                Icon(Icons.auto_stories, size: 16, color: colors.primary),
-                const SizedBox(width: 6),
-                Text(
-                  AppLocalizations.of(context).dpdDictionary,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
-                    fontFamily: paliFontFamily,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
-            // Deconstructor cards (if available)
-            if (lookup.hasDeconstructor) ...[
-              _buildDeconstructorSection(colors, lookup),
-              const SizedBox(height: 12),
-            ],
-
-            // English meaning from lookup.epd (if available)
-            if (lookup.hasEpd) ...[
-              _buildEpdSection(colors, lookup.lookup!.epd!),
-              const SizedBox(height: 12),
-            ],
-
-            // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
-            // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
-            // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
-            // so no extra wrapping is needed here.
-            if (lookup.hasHeadwords)
-              ...lookup.headwords.map((hw) {
-                return DpdHeadwordCard(
-                  lemma: hw.lemma1,
-                  meaningHtml: hw.meaningHtml,
-                  colors: colors,
-                );
-              }),
+    // Collapsed: header only. The expensive headword HTML is only built
+    // while expanded (lazy), and the expand state persists across searches.
+    final expanded =
+        ref.watch(dictionaryExpandedFamilyProvider('dpd'));
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: 'dpd',
+        title: AppLocalizations.of(context).dpdDictionary,
+        icon: Icons.auto_stories,
+        colors: colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+    return DictionaryCollapsibleCard(
+      dictionaryKey: 'dpd',
+      title: AppLocalizations.of(context).dpdDictionary,
+      icon: Icons.auto_stories,
+      colors: colors,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Deconstructor cards (if available)
+          if (lookup.hasDeconstructor) ...[
+            _buildDeconstructorSection(colors, lookup),
+            const SizedBox(height: 12),
           ],
-        ),
+
+          // English meaning from lookup.epd (if available)
+          if (lookup.hasEpd) ...[
+            _buildEpdSection(colors, lookup.lookup!.epd!),
+            const SizedBox(height: 12),
+          ],
+
+          // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
+          // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
+          // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
+          // so no extra wrapping is needed here.
+          if (lookup.hasHeadwords)
+            ...lookup.headwords.map((hw) {
+              return DpdHeadwordCard(
+                lemma: hw.lemma1,
+                meaningHtml: hw.meaningHtml,
+                colors: colors,
+              );
+            }),
+        ],
       ),
     );
   }

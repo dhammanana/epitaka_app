@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/ai_provider.dart';
+import 'gemini_text_models.dart';
 
 /// Result of fetching models from an AI provider.
 class AiModelFetchResult {
@@ -83,34 +84,41 @@ class AiModelService {
     final modelsList = data['models'] as List<dynamic>? ?? [];
 
     // Gemini model names are like "models/gemini-2.0-flash"
-    // We extract the short name and filter for generateContent-capable models
-    final models =
-        modelsList
-            .where((m) {
-              final model = m as Map<String, dynamic>;
-              final supportedMethods =
-                  model['supportedGenerationMethods'] as List<dynamic>?;
-              return supportedMethods?.contains('generateContent') ?? false;
-            })
-            .map((m) {
-              final name = (m as Map<String, dynamic>)['name'] as String? ?? '';
-              // Strip "models/" prefix
-              return name.startsWith('models/') ? name.substring(7) : name;
-            })
-            .where((n) => n.isNotEmpty)
-            // Only include gemini-NNN models (skip embedding, aqa, imagen, etc.)
-            .where((n) => RegExp(r'^gemini-\d+').hasMatch(n))
-            .toList()
-          ..sort((a, b) => b.compareTo(a));
+    // We extract the short name and filter for generateContent-capable models.
+    // generateContent alone is not enough: specialized audio/video/image
+    // models (e.g. gemini-3.8-flash-tts) also support it but cannot do chat
+    // text, so [isGeminiTextModel] filters those out generally by modality
+    // marker instead of hardcoding each new release.
+    final models = modelsList
+        .where((m) {
+          final model = m as Map<String, dynamic>;
+          final supportedMethods =
+              model['supportedGenerationMethods'] as List<dynamic>?;
+          return supportedMethods?.contains('generateContent') ?? false;
+        })
+        .map((m) {
+          final name = (m as Map<String, dynamic>)['name'] as String? ?? '';
+          // Strip "models/" prefix
+          return name.startsWith('models/') ? name.substring(7) : name;
+        })
+        .where((n) => n.isNotEmpty)
+        // Only include gemini-NNN models (skip embedding, aqa, imagen, etc.)
+        .where((n) => RegExp(r'^gemini-\d+').hasMatch(n))
+        .toList();
+    final textModels = models.where(isGeminiTextModel).toList();
+    // If the modality filter ever drops everything (e.g. a future rename),
+    // fall back to the unfiltered list rather than reporting no models.
+    final usable = textModels.isNotEmpty ? textModels : models;
+    usable.sort(compareGeminiModelsDesc);
 
-    if (models.isEmpty) {
+    if (usable.isEmpty) {
       return AiModelFetchResult(
         models: [],
         error: 'No chat-capable models found for this API key.',
       );
     }
 
-    return AiModelFetchResult(models: models);
+    return AiModelFetchResult(models: usable);
   }
 
   /// Fetch models from Anthropic (`GET {base}/models` with the

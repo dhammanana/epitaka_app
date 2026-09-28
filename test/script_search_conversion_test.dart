@@ -130,6 +130,8 @@ void main() {
       Script.thai,
       Script.tamil,
       Script.devanagari,
+      Script.telugu,
+      Script.kannada,
     ];
 
     for (final script in scripts) {
@@ -166,6 +168,44 @@ void main() {
     });
   });
 
+  group('roman-target conversion pivots non-roman input back (TTS line)', () {
+    test('speak-line sinhala renders as roman, not sinhala', () {
+      // The listen highlight re-converts the spoken (Sinhala) line for
+      // display; with a Roman reading script it must come back as Roman.
+      expect(
+        convertPaliToScript('නමො තස්ස භගවතො', Script.roman),
+        'namo tassa bhagavato',
+      );
+      expect(convertPaliToScript('ධම්මං', Script.roman), 'dhammaṃ');
+    });
+
+    test('other speak scripts pivot back to roman too', () {
+      expect(convertPaliToScript('နမော', Script.roman), 'namo');
+      expect(convertPaliToScript('ธมฺม', Script.roman), 'dhamma');
+    });
+
+    test('pure roman input is unchanged', () {
+      expect(convertPaliToScript('namo tassa', Script.roman), 'namo tassa');
+      expect(convertPaliToScript('dhammaṃ', Script.roman), 'dhammaṃ');
+    });
+  });
+
+  group('display/speak word-split parity (TTS highlight)', () {
+    test('kannada merges space-before-punctuation like telugu', () {
+      // The speak text always gets beautifyCommon (space-before-punct
+      // cleanup) via the Sinhala pipeline; the display text must tokenize
+      // the same way or the word-index highlight lands on the wrong word.
+      const roman = 'dhamma , ti';
+      final kn = convertPaliToScript(roman, Script.kannada);
+      final te = convertPaliToScript(roman, Script.telugu);
+      expect(kn.contains(' ,'), isFalse);
+      expect(
+        kn.split(RegExp(r'\s+')).length,
+        te.split(RegExp(r'\s+')).length,
+      );
+    });
+  });
+
   group('search result highlighting in the display script', () {
     test('query converted to the display script appears in the text', () {
       // Thai uses the virama spelling the app itself renders (ธมฺม).
@@ -174,6 +214,8 @@ void main() {
         Script.myanmar,
         Script.sinhala,
         Script.thai,
+        Script.telugu,
+        Script.kannada,
       ]) {
         final display = convertPaliToScript('dhamma', script);
         final convertedQuery = convertSearchQueryForScript('dhamma', script);

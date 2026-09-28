@@ -47,9 +47,19 @@ class ReaderDragThumb extends StatefulWidget {
 
 class _ReaderDragThumbState extends State<ReaderDragThumb> {
   static const double _thumbHeight = 32.0;
-  static const double _trackWidth = 4.0;
+  static const double _trackWidth = 3.0;
   static const double _thumbWidth = 8.0;
   static const double _totalTrackWidth = 12.0; // hit area for gestures
+
+  /// Minimum vertical gap (as a fraction of the track) between two kept
+  /// section ticks. Books with hundreds of sections would otherwise render
+  /// a solid band of overlapping marks.
+  static const double _kMinMarkGapRatio = 0.006;
+
+  /// Scroll-ratio changes smaller than this never move the thumb a full
+  /// pixel, so they skip the rebuild (which would repaint the whole track
+  /// for an invisible movement).
+  static const double _kScrollRatioEpsilon = 0.002;
 
   /// Scroll position ratio 0.0–1.0 computed from ItemPositionsListener.
   double _scrollRatio = 0.0;
@@ -62,6 +72,10 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
 
   /// Cached heading marks computed from paragraphs.
   List<_HeadingMark>? _cachedMarks;
+
+  /// Last paragraph index issued during an active drag. Drag updates that
+  /// resolve to the same index skip the (expensive) list jump.
+  int? _lastDragJumpIndex;
 
   /// The heading currently shown in the tooltip during drag.
   String? _tooltipHeading;
@@ -130,15 +144,20 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     if (_dragOffset != null) return;
 
     final newRatio = topIndex / (total - 1);
-    // Skip identical updates: this listener fires on every scroll frame and
-    // a setState per frame (even with the same value) rebuilds the thumb.
-    if (newRatio == _scrollRatio) return;
+    // Skip sub-pixel updates: this listener fires on every scroll frame
+    // and a setState per frame rebuilds the whole track for an invisible
+    // (<1px) thumb movement.
+    if ((newRatio - _scrollRatio).abs() < _kScrollRatioEpsilon) return;
     setState(() {
       _scrollRatio = newRatio;
     });
   }
 
   /// Build heading marks from paragraphs (cached for performance).
+  ///
+  /// Chapters (level 1–2) always get a tick. Deeper section marks are only
+  /// kept when far enough below the previous kept mark — without this a
+  /// book with hundreds of sections renders as one solid band.
   List<_HeadingMark> _buildHeadingMarks() {
     if (_cachedMarks != null) return _cachedMarks!;
     final paragraphs = widget.readerState.paragraphs;
@@ -152,11 +171,17 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     for (int i = 0; i < total; i++) {
       final heading = paragraphs[i].heading;
       if (heading != null) {
+        final ratio = i / (total - 1);
+        if (heading.level > 2 &&
+            marks.isNotEmpty &&
+            ratio - marks.last.ratio < _kMinMarkGapRatio) {
+          continue;
+        }
         marks.add(
           _HeadingMark(
             title: heading.title,
             level: heading.level,
-            ratio: i / (total - 1),
+            ratio: ratio,
             paraIndex: i,
           ),
         );
@@ -185,6 +210,7 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
   }
 
   void _onDragStart(DragStartDetails details) {
+    _lastDragJumpIndex = null;
     setState(() {
       _dragOffset = details.localPosition.dy - _thumbHeight / 2;
       // Immediately update tooltip based on position
@@ -214,15 +240,19 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     if (total <= 1) return;
     final ratio = (_dragOffset! / _availableDragHeight).clamp(0.0, 1.0);
     _scrollRatio = ratio;
+    // Ratio is clamped above, so the rounded index is always in range.
     final targetIndex = (ratio * (total - 1)).round();
 
-    widget.itemScrollController?.jumpTo(
-      index: targetIndex.clamp(0, total - 1),
-      alignment: 0.0,
-    );
+    // Drag updates fire per pointer event; jumping the list is the most
+    // expensive part of the drag, so skip it when the index is unchanged.
+    if (targetIndex == _lastDragJumpIndex) return;
+    _lastDragJumpIndex = targetIndex;
+
+    widget.itemScrollController?.jumpTo(index: targetIndex, alignment: 0.0);
   }
 
   void _onDragEnd(DragEndDetails details) {
+    _lastDragJumpIndex = null;
     setState(() {
       _dragOffset = null;
       _tooltipHeading = null;
@@ -286,31 +316,21 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
                   ),
 
                   // ── Heading tick marks ───────────────────────────────
-                  ...marks.map((mark) {
-                    final tickTop =
-                        mark.ratio * _availableDragHeight + _thumbHeight / 2;
-                    // Deeper heading levels get slightly shorter/dimmer ticks
-                    final opacity = (0.5 - (mark.level - 1) * 0.08).clamp(
-                      0.2,
-                      0.5,
-                    );
-                    final height = (4.0 - (mark.level - 1) * 0.4).clamp(
-                      2.0,
-                      4.0,
-                    );
-                    return Positioned(
-                      left: trackLeft - 1,
-                      top: tickTop - height / 2,
-                      width: _trackWidth + 2,
-                      height: height,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: opacity),
-                          borderRadius: BorderRadius.circular(1),
-                        ),
+                  // One CustomPaint draw instead of hundreds of Positioned
+                  // widgets, and isolated from the per-frame thumb rebuilds
+                  // via shouldRepaint (repaints only when the marks change).
+                  Positioned(
+                    left: trackLeft,
+                    top: _thumbHeight / 2,
+                    bottom: _thumbHeight / 2,
+                    width: _trackWidth,
+                    child: CustomPaint(
+                      painter: _HeadingTicksPainter(
+                        marks: marks,
+                        color: colors.primary,
                       ),
-                    );
-                  }),
+                    ),
+                  ),
 
                   // ── Thumb ────────────────────────────────────────────
                   Positioned(
@@ -368,6 +388,43 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
       },
     );
   }
+}
+
+/// Paints the chapter/section tick marks onto the scrollbar track.
+///
+/// A single canvas draw for all marks (instead of one widget per mark), so
+/// books with many sections stay cheap to build and scroll. Deeper heading
+/// levels draw thinner/dimmer ticks.
+class _HeadingTicksPainter extends CustomPainter {
+  final List<_HeadingMark> marks;
+  final Color color;
+
+  const _HeadingTicksPainter({required this.marks, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.height <= 0) return;
+    for (final mark in marks) {
+      final h = (2.5 - (mark.level - 1) * 0.25).clamp(1.0, 2.5);
+      final opacity = (0.45 - (mark.level - 1) * 0.06).clamp(0.15, 0.45);
+      final y = (mark.ratio * size.height).clamp(0.0, size.height);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(size.width / 2, y),
+            width: size.width,
+            height: h,
+          ),
+          const Radius.circular(1),
+        ),
+        Paint()..color = color.withValues(alpha: opacity),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeadingTicksPainter oldDelegate) =>
+      !identical(oldDelegate.marks, marks) || oldDelegate.color != color;
 }
 
 /// A small floating card that displays the heading name during drag.

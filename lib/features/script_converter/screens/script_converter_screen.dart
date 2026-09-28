@@ -5,9 +5,10 @@
 // Responsive design:
 //   • Mobile / narrow — a vertical stack: intro, source card, swap button,
 //     target card (script chips in a horizontal scroll row).
-//   • Desktop / wide — a centered, max-width two-column layout: source on
-//     the left, target on the right, with the swap button between them and
-//     the script chips wrapped into a grid instead of scrolling.
+//   • Desktop / wide — a centered, max-width two-column layout inside a
+//     vertical scroll view: source on the left, target on the right, with
+//     the swap button between them and the target script in a compact
+//     dropdown (18 chips as a grid would push the output far down).
 //
 // The conversion itself uses the same Sinhala pivot as the reader, search
 // and dictionary, so output always matches what the app shows elsewhere.
@@ -157,40 +158,46 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
     );
   }
 
-  // ── Desktop: centered two-column layout ───────────────────────────────
+  // ── Desktop: centered, scrollable two-column layout ────────────────────
 
   Widget _buildDesktopBody(ColorScheme colors, AppLocalizations loc) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1120),
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimensions.lg),
+    // Scrollable (not Expanded): the target card holds all 18 script chips
+    // plus the output box, so a fixed-height Row overflows on short
+    // windows. Let the page scroll and top-align both columns.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppDimensions.lg),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildIntro(colors, loc),
               const SizedBox(height: AppDimensions.md),
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Source (left)
-                    Expanded(child: _buildSourceCard(colors, loc)),
-                    // Swap button (center)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppDimensions.md,
-                        ),
-                        child: _buildSwapButton(colors, loc),
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Source (left)
+                  Expanded(child: _buildSourceCard(colors, loc)),
+                  // Swap button (center, top-aligned like Google Translate)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: AppDimensions.md,
+                      right: AppDimensions.md,
+                      // Align with the card content below the card headers.
+                      top: 4,
                     ),
-                    // Target (right)
-                    Expanded(
-                      child: _buildTargetCard(colors, loc, wrapScripts: true),
+                    child: _buildSwapButton(
+                      colors,
+                      loc,
+                      horizontal: true,
                     ),
-                  ],
-                ),
+                  ),
+                  // Target (right)
+                  Expanded(
+                    child: _buildTargetCard(colors, loc, wrapScripts: true),
+                  ),
+                ],
               ),
             ],
           ),
@@ -346,21 +353,48 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Target script chips: horizontal scroll on mobile, Wrap grid on
-          // desktop.
+          // Target script selector: horizontal chip scroll on mobile,
+          // compact dropdown on desktop (18 scripts as a Wrap grid eats
+          // vertical space and pushes the output far down the page).
           if (wrapScripts)
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
+            DropdownButtonFormField<Script>(
+              initialValue: _target,
+              items: [
                 for (final info in listOfScripts)
-                  _ScriptChip(
-                    info: info,
-                    selected: info.script == _target,
-                    colors: colors,
-                    onTap: () => setState(() => _target = info.script),
+                  DropdownMenuItem(
+                    value: info.script,
+                    child: Text(
+                      info.nameInLocale,
+                      style: TextStyle(
+                        fontFamily: scriptFontFamily(info.script),
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
               ],
+              onChanged: (script) {
+                if (script != null) setState(() => _target = script);
+              },
+              decoration: InputDecoration(
+                filled: true,
+                fillColor:
+                    colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 15,
+                fontFamily: scriptFontFamily(_target),
+                fontWeight: FontWeight.w600,
+              ),
+              dropdownColor: colors.surfaceContainer,
             )
           else
             SizedBox(
@@ -437,11 +471,18 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
     );
   }
 
-  Widget _buildSwapButton(ColorScheme colors, AppLocalizations loc) {
+  Widget _buildSwapButton(
+    ColorScheme colors,
+    AppLocalizations loc, {
+    bool horizontal = false,
+  }) {
     return IconButton.filledTonal(
       onPressed: _swapToInput,
       tooltip: loc.useResultAsInput,
-      icon: const Icon(Icons.south, size: 20),
+      // Side-by-side columns swap horizontally; stacked cards swap
+      // vertically. Bidirectional icons avoid implying the wrong direction
+      // (result flows back into the input).
+      icon: Icon(horizontal ? Icons.swap_horiz : Icons.south, size: 20),
       style: IconButton.styleFrom(
         backgroundColor: colors.primaryContainer,
         foregroundColor: colors.onPrimaryContainer,

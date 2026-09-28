@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/app_localizations.dart';
+import '../../core/utils/startup_timing.dart';
 import '../../features/guide/widgets/feature_guide_while_waiting.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
 import '../../features/settings/widgets/color_picker_section.dart';
@@ -32,6 +33,9 @@ class _IndexGateState extends ConsumerState<IndexGate>
     with SingleTickerProviderStateMixin {
   /// Whether the controller has completed its initial check.
   bool _initialCheckDone = false;
+
+  /// Whether the "gate opened" startup milestone has been logged.
+  bool _gateOpenedLogged = false;
 
   /// Animation controller for step transitions.
   late final AnimationController _animCtrl;
@@ -86,28 +90,53 @@ class _IndexGateState extends ConsumerState<IndexGate>
     });
 
     if (state.isBuilt) {
+      if (!_gateOpenedLogged) {
+        _gateOpenedLogged = true;
+        StartupTiming.mark('index gate opened (app ready)');
+      }
       return widget.child;
     }
 
     // While the DB check hasn't finished, stay on loading — never show the
     // setup wizard optimistically (that was the startup flash).
     if (!_initialCheckDone || state.isChecking) {
-      return _buildLoadingScreen();
+      return _gateShell(_buildLoadingScreen());
     }
 
     if (state.isBuilding) {
-      return _buildBuildStep(state);
+      return _gateShell(_buildBuildStep(state));
     }
 
     if (state.status == IndexStatus.error) {
-      return _buildErrorScreen(state);
+      return _gateShell(_buildErrorScreen(state));
     }
 
     if (state.status == IndexStatus.notBuilt) {
-      return _buildSetupWizard(state);
+      return _gateShell(_buildSetupWizard(state));
     }
 
-    return _buildLoadingScreen();
+    return _gateShell(_buildLoadingScreen());
+  }
+
+  /// Wrap a gate page in a nested [Navigator] (which owns an [Overlay]).
+  ///
+  /// The gate is installed in `MaterialApp.router(builder: ...)` and replaces
+  /// the router [child] until the index is ready — so gate pages live above
+  /// MaterialApp but below any Navigator/Overlay the router would have
+  /// provided. Without this, [Tooltip], [DropdownButton], [PopupMenuButton]
+  /// and any `Navigator.of` call inside the wizard throw ("No Overlay widget
+  /// found" / "does not include a Navigator") on first run.
+  Widget _gateShell(Widget page) {
+    // Declarative `pages`, NOT `onGenerateRoute`: the gate swaps its page
+    // on every state change (loading → wizard → build progress → error).
+    // An imperative Navigator generates its initial route ONCE and keeps
+    // showing it across rebuilds, which froze the gate on the very first
+    // page ("Checking search index…") forever — the setup wizard was built
+    // but never displayed.
+    return Navigator(
+      pages: [MaterialPage(child: page)],
+      onDidRemovePage: (_) {},
+    );
   }
 
   Widget _buildLoadingScreen() {

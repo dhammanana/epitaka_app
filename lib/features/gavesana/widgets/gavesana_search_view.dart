@@ -338,7 +338,8 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
               _hPad,
               widget.dense
                   ? AppDimensions.lg
-                  : AppDimensions.bottomToolbarHeight + AppDimensions.lg,
+                  : AppDimensions.bottomToolbarHeight +
+                        AppDimensions.bottomToolbarBottomMargin,
             ),
             itemCount: toolLogs.length,
             itemBuilder: (context, index) {

@@ -10,6 +10,7 @@ import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
+import 'search_history_chips.dart';
 
 class SearchSheet extends ConsumerStatefulWidget {
   const SearchSheet({super.key});
@@ -47,6 +48,13 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
       if (trimmed.isNotEmpty && trimmed.length < 2) return;
       ref.read(searchProvider.notifier).search(query: query);
     });
+  }
+
+  void _onHistorySelected(String query) {
+    _debounce?.cancel();
+    _searchController.text = query;
+    setState(() {});
+    ref.read(searchProvider.notifier).search(query: query);
   }
 
   void _onResultTap(SearchResultItem result) {
@@ -177,6 +185,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
             ),
           ),
           const SizedBox(height: AppDimensions.sm),
+          if (searchState is SearchIdle)
+            SearchHistoryChips(onSelected: _onHistorySelected, compact: true),
           Expanded(child: _buildResults(searchState, colors, loc)),
         ],
       ),

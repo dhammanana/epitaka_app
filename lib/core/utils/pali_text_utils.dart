@@ -226,8 +226,11 @@ String _cacheConvert(
 /// first converts Roman → Sinhala (the internal intermediate format) and
 /// then Sinhala → the requested script.
 ///
-/// When [targetScript] is `null` or [Script.roman], the original text is
-/// returned unchanged (only beautifyCommon is applied).
+/// When [targetScript] is `null` or [Script.roman], Roman input is
+/// returned unchanged (only beautifyCommon is applied). Input in another
+/// script (e.g. the Sinhala line the TTS engine speaks, re-fed for the
+/// spoken-word highlight) is pivoted back to Roman first — otherwise the
+/// Roman reader would show the line in Sinhala.
 String convertPaliToScript(String text, Script? targetScript) {
   if (text.isEmpty) return text;
   // Strip variant annotations up front so they never reach the converter
@@ -235,8 +238,10 @@ String convertPaliToScript(String text, Script? targetScript) {
   text = _applyVariantStripping(text);
   if (text.isEmpty) return text;
   if (targetScript == null || targetScript == Script.roman) {
-    // For Roman, only apply common beautification (cleanup)
-    return TextProcessor.beautify(text, Script.roman);
+    // convertToRomanPali is a no-op for Roman input (same output as
+    // before) and converts non-Latin input back to Roman. It never throws
+    // (falls back to the input), so the beautify below always runs.
+    return TextProcessor.beautify(convertToRomanPali(text), Script.roman);
   }
 
   // Step 1: normalize to the Sinhala internal intermediate. Input is

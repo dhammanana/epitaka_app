@@ -1,11 +1,15 @@
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../models/mdx_dictionary_info.dart';
 import '../providers/mdx_dictionary_provider.dart';
 import '../services/mdx_errors.dart';
@@ -159,6 +163,33 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
   }
 
   Future<void> _pickFolder(BuildContext context, WidgetRef ref) async {
+    // Android follows Ciyue: request broad storage access, then use
+    // file_selector's native folder picker and scan with plain dart:io.
+    // iOS has no folder picker (sandbox), so it uses a SAF multi-file pick
+    // of the whole bundle (.mdx + .mdd/.css/.js).
+    if (Platform.isAndroid) {
+      final granted = await _ensureAndroidFolderAccess(context);
+      if (!granted) return;
+      String? dirPath;
+      try {
+        dirPath = await getDirectoryPath(confirmButtonText: 'Use folder');
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open picker: ${describeMdxError(e)}'),
+          ),
+        );
+        return;
+      }
+      if (dirPath == null) return;
+      await _saveLastFolder(dirPath);
+      await _importScannedFolder(context, ref, dirPath);
+      return;
+    }
+    if (Platform.isIOS) {
+      return _pickMobileFolderFiles(context, ref);
+    }
     String? dirPath;
     try {
       dirPath = await getDirectoryPath(confirmButtonText: 'Use folder');
@@ -173,6 +204,41 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     }
     if (dirPath == null) return;
     await _saveLastFolder(dirPath);
+    await _importScannedFolder(context, ref, dirPath);
+  }
+
+  /// Ciyue-style storage permission: MANAGE_EXTERNAL_STORAGE on Android 11+,
+  /// READ/WRITE storage below. Returns true when the folder can be listed.
+  Future<bool> _ensureAndroidFolderAccess(BuildContext context) async {
+    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    if (sdkInt >= 30) {
+      if (await Permission.manageExternalStorage.isGranted) return true;
+      final status = await Permission.manageExternalStorage.request();
+      if (status.isGranted) return true;
+    } else {
+      if (await Permission.storage.isGranted) return true;
+      final status = await Permission.storage.request();
+      if (status.isGranted) return true;
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Storage permission denied. Grant "All files access" in system '
+            'settings to import a folder, or use Files to pick .mdx directly.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    }
+    return false;
+  }
+
+  Future<void> _importScannedFolder(
+    BuildContext context,
+    WidgetRef ref,
+    String dirPath,
+  ) async {
     MdxScanResult scan;
     try {
       scan = await _findMdxUnder(dirPath);
@@ -203,8 +269,92 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     _showResult(context, added, failures);
   }
 
+  /// iOS folder import via SAF multi-select (the sandbox has no folder
+  /// picker). Accepts the whole dictionary bundle — `.mdx` plus companion
+  /// `.mdd` resources, `.css` stylesheets and `.js` — and copies the
+  /// companions next to each persisted `.mdx` so images/audio/styling
+  /// resolve.
+  Future<void> _pickMobileFolderFiles(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.pickFiles(
+        dialogTitle: 'Select all files in the dictionary folder',
+        allowMultiple: true,
+        type: FileType.custom,
+        allowedExtensions: const ['mdx', 'mdd', 'css', 'js'],
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open picker: ${describeMdxError(e)}'),
+        ),
+      );
+      return;
+    }
+    final paths = (result?.files ?? [])
+        .map((f) => f.path)
+        .whereType<String>()
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (paths.isEmpty) return;
+    final mdxPaths = paths
+        .where((p) => p.toLowerCase().endsWith('.mdx'))
+        .toList();
+    final companions = paths
+        .where((p) => !p.toLowerCase().endsWith('.mdx'))
+        .toList();
+    if (mdxPaths.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No .mdx file selected. Select the dictionary bundle '
+            '(.mdx + .mdd/.css/.js) together.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+    var added = 0;
+    final failures = <String>[];
+    for (final mdxSrc in mdxPaths) {
+      // Resolve the persisted copy first so companions land next to it.
+      String stable;
+      try {
+        stable = await ensurePersistentCopy(mdxSrc);
+      } catch (e) {
+        failures.add(describeMdxError(e, path: mdxSrc));
+        continue;
+      }
+      for (final c in companions) {
+        try {
+          await copyCompanionNextToMdx(
+            companionSrc: c,
+            stableMdxPath: stable,
+          );
+        } catch (_) {
+          // Non-fatal: the dictionary still imports, just without that file.
+        }
+      }
+      final before = ref.read(mdxDictionariesProvider).valueOrNull?.length ?? 0;
+      await _addOne(ref, mdxSrc, failures);
+      final after = ref.read(mdxDictionariesProvider).valueOrNull?.length ?? 0;
+      if (after > before) added++;
+    }
+    if (!context.mounted) return;
+    _showResult(context, added, failures);
+  }
+
   Future<void> _rescanFolder(BuildContext context, WidgetRef ref) async {
     if (_lastFolder == null) return;
+    if (Platform.isAndroid) {
+      if (!await _ensureAndroidFolderAccess(context)) return;
+    }
     final dirPath = _lastFolder!;
     final dir = Directory(dirPath);
     if (!await dir.exists()) {
@@ -268,27 +418,41 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(mdxDictionariesProvider);
+    final isDesktop = ResponsiveBreakpoint.isDesktop(context);
     return Card(
-      margin: const EdgeInsets.only(top: 16),
+      margin: EdgeInsets.only(top: isDesktop ? 16 : 8),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(isDesktop ? 12 : 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Text(
+              'MDX dictionaries',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Beta feature — please send feedback if you spot mistakes.',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 0,
+              runSpacing: 0,
               children: [
-                Expanded(
-                  child: Text(
-                    'MDX dictionaries',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
                 TextButton.icon(
                   onPressed: _busy
                       ? null
                       : () => _runBusy(() => _pickFiles(context, ref)),
                   icon: const Icon(Icons.file_open, size: 18),
                   label: const Text('Files'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: _busy
@@ -296,6 +460,11 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
                       : () => _runBusy(() => _pickFolder(context, ref)),
                   icon: const Icon(Icons.folder_open, size: 18),
                   label: const Text('Folder'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
                 if (_lastFolder != null)
                   Tooltip(
@@ -306,6 +475,11 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
                           : () => _runBusy(() => _rescanFolder(context, ref)),
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Rescan'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
                   ),
               ],
@@ -329,39 +503,70 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
                 final enabled = dicts.where((d) => d.enabled).toList();
                 final disabled = dicts.where((d) => !d.enabled).toList();
                 return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      onReorderItem: (oldI, newI) {
-                        final ids = enabled.map((d) => d.id).toList();
-                        final item = ids.removeAt(oldI);
-                        ids.insert(newI, item);
-                        ids.addAll(disabled.map((d) => d.id));
-                        ref.read(mdxDictionariesProvider.notifier).reorder(ids);
-                      },
-                      children: [
-                        for (var i = 0; i < enabled.length; i++)
-                          _tile(
-                            context,
-                            ref,
-                            enabled[i],
-                            true,
-                            i,
-                            key: ValueKey('mdx-enabled-${enabled[i].id}'),
-                          ),
-                      ],
-                    ),
-                    for (final d in disabled)
-                      _tile(
-                        context,
-                        ref,
-                        d,
-                        false,
-                        0,
-                        key: ValueKey('mdx-disabled-${d.id}'),
+                    if (enabled.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          'Enabled — drag the handle to re-arrange order',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
                       ),
+                      ReorderableListView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        onReorderItem: (oldI, newI) {
+                          final ids = enabled.map((d) => d.id).toList();
+                          final item = ids.removeAt(oldI);
+                          ids.insert(newI, item);
+                          ids.addAll(disabled.map((d) => d.id));
+                          ref
+                              .read(mdxDictionariesProvider.notifier)
+                              .reorder(ids);
+                        },
+                        children: [
+                          for (var i = 0; i < enabled.length; i++)
+                            _tile(
+                              context,
+                              ref,
+                              enabled[i],
+                              true,
+                              i,
+                              key: ValueKey('mdx-enabled-${enabled[i].id}'),
+                            ),
+                        ],
+                      ),
+                    ],
+                    if (disabled.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          'Disabled',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                      for (final d in disabled)
+                        _tile(
+                          context,
+                          ref,
+                          d,
+                          false,
+                          0,
+                          key: ValueKey('mdx-disabled-${d.id}'),
+                        ),
+                    ],
                     _DiagnosticsFooter(dicts: dicts),
                   ],
                 );
@@ -432,39 +637,77 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
               size: 20,
               color: Theme.of(context).colorScheme.error,
             ),
-          IconButton(
-            tooltip: 'Properties',
-            icon: const Icon(Icons.info_outline, size: 20),
-            onPressed: () => MdxPropertiesSheet.show(context, id),
-          ),
-          IconButton(
-            tooltip: enabled ? 'Disable' : 'Enable',
-            icon: Icon(
-              enabled ? Icons.check_box : Icons.check_box_outline_blank,
-            ),
-            onPressed: () => ref
-                .read(mdxDictionariesProvider.notifier)
-                .toggleEnabled(id, !enabled),
-          ),
-          IconButton(
-            tooltip: 'Rebuild index',
-            icon: const Icon(Icons.refresh, size: 20),
-            onPressed: () async {
-              try {
-                await ref.read(mdxDictionariesProvider.notifier).rebuild(id);
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(describeMdxError(e))));
+          PopupMenuButton<String>(
+            tooltip: 'More actions',
+            icon: const Icon(Icons.more_vert, size: 20),
+            onSelected: (value) async {
+              switch (value) {
+                case 'info':
+                  MdxPropertiesSheet.show(context, id);
+                case 'toggle':
+                  await ref
+                      .read(mdxDictionariesProvider.notifier)
+                      .toggleEnabled(id, !enabled);
+                case 'rebuild':
+                  try {
+                    await ref
+                        .read(mdxDictionariesProvider.notifier)
+                        .rebuild(id);
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(describeMdxError(e))),
+                    );
+                  }
+                case 'remove':
+                  await ref
+                      .read(mdxDictionariesProvider.notifier)
+                      .remove(id);
               }
             },
-          ),
-          IconButton(
-            tooltip: 'Remove',
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: () =>
-                ref.read(mdxDictionariesProvider.notifier).remove(id),
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'info',
+                child: ListTile(
+                  leading: Icon(Icons.info_outline, size: 20),
+                  title: Text('Properties'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'toggle',
+                child: ListTile(
+                  leading: Icon(
+                    enabled
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    size: 20,
+                  ),
+                  title: Text(enabled ? 'Disable' : 'Enable'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'rebuild',
+                child: ListTile(
+                  leading: Icon(Icons.refresh, size: 20),
+                  title: Text('Rebuild index'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'remove',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline, size: 20),
+                  title: Text('Remove'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -512,7 +755,7 @@ class _DiagnosticsFooter extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '${dicts.length} dictionaries, $_formatBytes(totalIndexSize) index',
+                      '${dicts.length} dictionaries, ${_formatBytes(totalIndexSize)} index',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
                     ),
                   ),

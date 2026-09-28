@@ -177,7 +177,8 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
           isPhone ? 6 : AppDimensions.marginMobile,
           6,
           isPhone ? 6 : AppDimensions.marginMobile,
-          AppDimensions.bottomToolbarHeight + AppDimensions.lg,
+          AppDimensions.bottomToolbarHeight +
+              AppDimensions.bottomToolbarBottomMargin,
         ),
         itemCount:
             (state.headings.isNotEmpty ? 1 : 0) + state.bookSummaries.length,
@@ -782,7 +783,7 @@ class _GroupRowHighlight extends StatelessWidget {
 
 // ── Heading Results Card ──────────────────────────────────────────────────
 
-class _HeadingResultsCard extends ConsumerWidget {
+class _HeadingResultsCard extends ConsumerStatefulWidget {
   final List<HeadingResult> headings;
   final ColorScheme colors;
   final void Function(HeadingResult heading) onTap;
@@ -794,7 +795,26 @@ class _HeadingResultsCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HeadingResultsCard> createState() =>
+      _HeadingResultsCardState();
+}
+
+class _HeadingResultsCardState extends ConsumerState<_HeadingResultsCard> {
+  bool _expanded = true;
+
+  @override
+  void didUpdateWidget(covariant _HeadingResultsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.headings, widget.headings)) {
+      _expanded = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final headings = widget.headings;
+    final colors = widget.colors;
+    final onTap = widget.onTap;
     final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final loc = AppLocalizations.of(context);
     return Card(
@@ -847,12 +867,33 @@ class _HeadingResultsCard extends ConsumerWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 18,
+                        color: colors.tertiary,
+                        semanticLabel: _expanded
+                            ? loc.collapseLabel
+                            : loc.expand,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          const Divider(height: 1, indent: 12, endIndent: 12),
-          // ── Heading items ─────────────────────────────────────────
-          ...headings.map(
+          if (_expanded) ...[
+            const Divider(height: 1, indent: 12, endIndent: 12),
+            // ── Heading items ─────────────────────────────────────────
+            ...headings.map(
             (heading) => InkWell(
               onTap: () => onTap(heading),
               child: Padding(
@@ -909,6 +950,7 @@ class _HeadingResultsCard extends ConsumerWidget {
               ),
             ),
           ),
+          ],
         ],
       ),
     );

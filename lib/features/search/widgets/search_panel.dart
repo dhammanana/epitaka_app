@@ -19,6 +19,7 @@ import '../../../shared/widgets/pali_text.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
+import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
 
@@ -247,6 +248,19 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     _executeSearch();
   }
 
+  /// Fill the search bar with a previous query from history and run it.
+  void _onHistorySelected(String query) {
+    _searchController.text = query;
+    final wordCount = query.trim().isEmpty
+        ? 0
+        : query.trim().split(RegExp(r'\s+')).length;
+    setState(() {
+      _isMultiWord = wordCount >= 2;
+      if (_isMultiWord && _wordDistance == 0) _wordDistance = 3;
+    });
+    _executeSearch();
+  }
+
   void _onResultTap(BookResultSummary summary, SearchResultItem item) {
     final currentState = ref.read(searchProvider);
     final query = currentState is SearchResults ? currentState.query : null;
@@ -347,6 +361,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             onSubmitted: (_) => _executeSearch(),
           ),
         ),
+
+        // Recent search history (visible until a search runs).
+        if (searchState is SearchIdle && !_showSuggestions)
+          SearchHistoryChips(onSelected: _onHistorySelected, compact: true),
 
         // Options bar
         Padding(

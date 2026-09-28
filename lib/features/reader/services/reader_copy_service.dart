@@ -32,6 +32,10 @@ import '../../dictionary/widgets/dictionary_open.dart';
 import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
+import '../../settings/providers/tts_replacements_provider.dart';
+import '../../settings/providers/tts_provider.dart';
+import '../providers/reader_tts_controller.dart';
+import '../providers/tts_reading_provider.dart';
 import '../utils/reader_quote_utils.dart'
     show buildCitationFromTemplate, firstAvailablePageNumbers;
 import '../utils/reader_word_hit_test.dart'
@@ -337,12 +341,10 @@ class ReaderCopyService {
       case ContextMenuBuiltins.dictionary:
         // ── Look up in Dictionary (same as double-tap) ────────────────
         //
-        // Mirrors the double-tap lookup: hit-test the render tree at the
-        // toolbar anchor (the point the menu appears at — the right-click
-        // / long-press position on desktop/mobile) and extract the exact
-        // word under it, converting any Pāli script to Roman. Falls back
-        // to the first word of the selected text (normalized the same
-        // way) when hit-testing can't resolve a word.
+        // Uses the full selected text (multi-word phrases preserved),
+        // converting any Pāli script to Roman. Falls back to hit-testing
+        // the render tree at the toolbar anchor (the point the menu
+        // appears at) for the word under it when there is no selection.
         return ContextMenuButton(
           icon: Icons.menu_book,
           label: loc.dictionary,
@@ -400,6 +402,68 @@ class ReaderCopyService {
                 _showSnackBar(context, 'Speech not available.');
               }
             }
+            selectableRegionState.clearSelection();
+          },
+          colors: colors,
+        );
+      case ContextMenuBuiltins.speakFromHere:
+        // ── Speak from here (start TTS from selected line) ────────────
+        return ContextMenuButton(
+          icon: Icons.record_voice_over,
+          label: loc.speakFromHere,
+          onTap: () async {
+            final activeTab = ref.read(readerTabsProvider).activeTab;
+            if (activeTab == null) return;
+            final readerState = ref.read(readerDataProvider(activeTab.bookId));
+            if (readerState.paragraphs.isEmpty) return;
+
+            final settings = ref.read(settingsProvider);
+            final enabledLangs = settings.visibleTranslationLangs;
+            final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
+            final mode = settings.ttsSpeakMode;
+
+            if (lang == null && mode == TtsSpeakMode.translation) return;
+
+            // Find the paragraph and line from the selection
+            int? startParaId = currentParaId;
+            int? startLineId = currentLineId;
+
+            // If we have a selection, try to get the first visible paragraph
+            if (lastSelectedContent != null &&
+                lastSelectedContent.plainText.trim().isNotEmpty) {
+              // Use visibleStartIndex to find the paragraph
+              if (visibleStartIndex >= 0 &&
+                  visibleStartIndex < readerState.paragraphs.length) {
+                startParaId = readerState.paragraphs[visibleStartIndex].paraId;
+                startLineId = 1;
+              }
+            }
+
+            if (startParaId == null) return;
+
+            // Build TTS lines from the selected paragraph onwards
+            final replaceAsyncState = ref.read(ttsReplacementsNotifierProvider);
+            if (replaceAsyncState is AsyncLoading || replaceAsyncState is AsyncError) {
+              await ref.read(ttsReplacementsNotifierProvider.notifier).load();
+            }
+            final activeReplacements = ref.read(activeTtsReplacementsProvider);
+
+            final lines = ReaderTtsController.buildTtsLines(
+              readerState.paragraphs
+                  .sublist(readerState.paragraphs.indexWhere((p) => p.paraId == startParaId)),
+              lang: lang,
+              mode: mode,
+              activeReplacements: activeReplacements,
+            );
+
+            if (lines.isNotEmpty) {
+              TtsReadingNotifier.cacheBookName(
+                activeTab.bookId,
+                readerState.bookName ?? activeTab.bookId,
+              );
+              ref.read(ttsReadingProvider.notifier).startReading(activeTab.bookId, lines);
+            }
+
             selectableRegionState.clearSelection();
           },
           colors: colors,
@@ -654,21 +718,26 @@ class ReaderCopyService {
     );
   }
 
-  /// Resolve the word to look up for the context-menu Dictionary item,
-  /// mirroring the reader's double-tap lookup.
+  /// Resolve the word or phrase to look up for the context-menu Dictionary
+  /// item, mirroring the reader's double-tap lookup.
   ///
-  /// 1. Hit-tests the render tree at the toolbar anchor (the position the
-  ///    menu is shown at — for a right-click / long-press that's the
-  ///    pointer position) to find the exact word under the menu, exactly
-  ///    like [_selectWordAt] does for double-tap.
-  /// 2. If hit-testing can't resolve a word (no hit-test key, zero anchor,
-  ///    or the point isn't over text), falls back to the first word of the
-  ///    selected text, normalized the same way.
+  /// 1. When text is selected, the FULL selection is used (whitespace
+  ///    collapsed, Pāli script converted to Roman) so multi-word phrases
+  ///    like "gone forth" are searched as-is instead of being truncated
+  ///    to the first word.
+  /// 2. Only when there is no selection, hit-tests the render tree at the
+  ///    toolbar anchor (the position the menu is shown at — for a
+  ///    right-click / long-press that's the pointer position) to find the
+  ///    exact word under the menu, exactly like [_selectWordAt] does for
+  ///    double-tap.
   static String? _dictionaryLookupWord({
     required GlobalKey? contentHitTestKey,
     required Offset? anchor,
     required SelectedContent? lastSelectedContent,
   }) {
+    final phrase = _extractLookupWord(lastSelectedContent);
+    if (phrase != null && phrase.isNotEmpty) return phrase;
+    // No selection — fall back to the word under the menu position.
     // [buildContextMenu] falls back to a zero anchor when Flutter's
     // contextMenuAnchors throws (a known SelectableRegion crash path) — a
     // zero anchor is not a real position, so skip hit-testing then.
@@ -677,31 +746,28 @@ class ReaderCopyService {
         final hit = selectWordAt(contentHitTestKey, anchor);
         if (hit != null && hit.isNotEmpty) return hit;
       } catch (_) {
-        // Hit-test can throw if the content isn't laid out; fall back to
-        // the selection text below.
+        // Hit-test can throw if the content isn't laid out; return null.
       }
     }
-    return _extractLookupWord(lastSelectedContent);
+    return null;
   }
 
-  /// Extract the first word from the selected text for dictionary lookup.
-  /// Returns null if no suitable word is found.
+  /// Extract the full selected text for dictionary lookup (multi-word
+  /// phrases preserved). Returns null if no suitable text is found.
   ///
   /// Language-agnostic: Pāli script conversion is a no-op for Latin text,
   /// and the Unicode-aware cleaner preserves diacritics of any language
-  /// (e.g. Vietnamese "được"), so the same path works for Pāli and
-  /// translation selections.
+  /// (e.g. Vietnamese "được") and inner spaces, so the same path works
+  /// for Pāli and translation selections.
   static String? _extractLookupWord(SelectedContent? lastSelectedContent) {
     if (lastSelectedContent == null) return null;
-    final raw = lastSelectedContent.plainText.trim();
+    final raw = lastSelectedContent.plainText
+        .replaceAll('\uFFFC', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (raw.isEmpty) return null;
-    // Take the first whitespace-delimited word
-    final word = raw
-        .split(RegExp(r'\s+'))
-        .firstWhere((w) => w.isNotEmpty, orElse: () => '');
-    if (word.isEmpty) return null;
-    final cleaned = cleanTranslationWord(convertToRomanPali(word));
-    if (cleaned.isEmpty || cleaned.length < 2 || cleaned.length > 50) {
+    final cleaned = cleanTranslationWord(convertToRomanPali(raw));
+    if (cleaned.isEmpty || cleaned.length < 2 || cleaned.length > 200) {
       return null;
     }
     return cleaned;

@@ -6,8 +6,11 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/utils/native_speech_service.dart';
+import '../../../core/utils/notification_permission.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/services/tts_audio_handler.dart';
+import 'tts_speak_unit.dart';
 
 /// A single line item to be spoken by TTS.
 class TtsLineItem {
@@ -40,10 +43,18 @@ class TtsLineItem {
 }
 
 /// State for line-by-line TTS reading.
+///
+/// Speaking is batched: [units] groups [lines] into single utterances (one
+/// paragraph per utterance in single-voice modes). [currentUnitIndex] drives
+/// the speak loop; [currentIndex] stays synced to the line being highlighted
+/// (advanced by progress callbacks inside a unit), so every existing
+/// consumer (highlight, auto-scroll, history) keeps working unchanged.
 class TtsReadingState {
   final String? bookId;
   final List<TtsLineItem> lines;
   final int currentIndex;
+  final List<TtsSpeakUnit> units;
+  final int currentUnitIndex;
   final bool isActive;
   final bool isPaused;
 
@@ -51,6 +62,8 @@ class TtsReadingState {
     this.bookId,
     this.lines = const [],
     this.currentIndex = 0,
+    this.units = const [],
+    this.currentUnitIndex = 0,
     this.isActive = false,
     this.isPaused = false,
   });
@@ -71,14 +84,17 @@ class TtsReadingState {
 
   bool get currentIsPali => currentLine?.isPali ?? false;
 
-  /// Progress: 0.0 to 1.0
-  double get progress =>
-      lines.isEmpty ? 0.0 : (currentIndex + 1) / lines.length;
+  /// Progress: 0.0 to 1.0 (unit-granular when batched).
+  double get progress => units.isNotEmpty
+      ? (currentUnitIndex + 1) / units.length
+      : (lines.isEmpty ? 0.0 : (currentIndex + 1) / lines.length);
 
   TtsReadingState copyWith({
     String? bookId,
     List<TtsLineItem>? lines,
     int? currentIndex,
+    List<TtsSpeakUnit>? units,
+    int? currentUnitIndex,
     bool? isActive,
     bool? isPaused,
   }) {
@@ -86,6 +102,8 @@ class TtsReadingState {
       bookId: bookId ?? this.bookId,
       lines: lines ?? this.lines,
       currentIndex: currentIndex ?? this.currentIndex,
+      units: units ?? this.units,
+      currentUnitIndex: currentUnitIndex ?? this.currentUnitIndex,
       isActive: isActive ?? this.isActive,
       isPaused: isPaused ?? this.isPaused,
     );
@@ -148,10 +166,34 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       return;
     }
 
+    final speakLines = _stripPaliNumbers(lines);
+    final units = _buildUnits(speakLines);
+    if (units.isEmpty) {
+      developer.log(
+        '[TTS_LIFECYCLE] startReading(): no speakable content, no-op',
+        name: 'epitaka.tts',
+      );
+      state = const TtsReadingState();
+      return;
+    }
+    // Map the requested line [startIndex] onto its unit (line indices ascend
+    // across units; empty lines were skipped during batching).
+    var unitIndex = 0;
+    for (var i = 0; i < units.length; i++) {
+      if (units[i].lineIndices.first <= startIndex) {
+        unitIndex = i;
+      } else {
+        break;
+      }
+    }
+    _clearUnitSpeechState();
+
     state = TtsReadingState(
       bookId: bookId,
-      lines: lines,
-      currentIndex: startIndex,
+      lines: speakLines,
+      currentIndex: units[unitIndex].lineIndices.first,
+      units: units,
+      currentUnitIndex: unitIndex,
       isActive: true,
     );
 
@@ -160,13 +202,31 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _saveListeningHistoryNow();
 
     // ── AudioService integration ───────────────────────────────────
-    // NOTE: AudioService.init() is intentionally NOT called here.
-    // It was already initialized at app startup by [AudioServiceInitializer]
-    // in app.dart. Calling init() again causes an assertion error:
-    //   '_cacheManager == null': is not true.
-    // The ttsAudioHandler singleton registered during that init is still
-    // active, so setMediaItem(), setPlaybackState(), and notification
-    // controls all work without re-initializing.
+    // NOTE: AudioService.init() is intentionally NOT called here directly.
+    // It runs once at app startup (main() before runApp, the audio_service
+    // README pattern); initAudioServiceOnce() below is a no-op when that
+    // succeeded and a foreground retry when it failed (some OEMs refuse
+    // the foreground service at cold start, which used to leave TTS with
+    // no notification — and a process the OS kills in background — for the
+    // whole session). Calling init() again directly would hit the
+    // '_cacheManager == null' assertion. The ttsAudioHandler singleton
+    // registered during that init stays active, so setMediaItem(),
+    // setPlaybackState(), and notification controls all work without
+    // re-initializing.
+    final audioReady = await initAudioServiceOnce();
+    if (!audioReady) {
+      developer.log(
+        '[TTS_LIFECYCLE] startReading(): audio service unavailable, '
+        'reading without notification',
+        name: 'epitaka.tts',
+      );
+    }
+    // Best-effort Android 13+ POST_NOTIFICATIONS grant BEFORE the first
+    // playback-state broadcast, so the media player can appear in the
+    // notification shade (several OEM skins hide it otherwise). Never
+    // blocks reading: when denied, the foreground-service notification is
+    // still posted (exempt on stock Android).
+    await ensureNotificationPermission();
 
     // Register notification-button callbacks so the lock screen /
     // notification controls work throughout this reading session.
@@ -311,6 +371,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _listeningSaveTimer = null;
     await _saveListeningHistoryNow();
     await _ref.read(ttsProvider.notifier).stop();
+    _clearUnitSpeechState();
     state = const TtsReadingState();
     // Keep notification callbacks registered: the audio service lives for
     // the whole process (init-once), so the next startReading() reuses it.
@@ -328,6 +389,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _listeningSaveTimer = null;
     _interruptionSubscription?.cancel();
     _interruptionSubscription = null;
+    _clearUnitSpeechState();
     try {
       _ref.read(ttsProvider.notifier).emergencyStop();
     } catch (_) {}
@@ -344,6 +406,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     if (!state.isActive && !state.isPaused) return;
     _currentSessionId++;
     await _ref.read(ttsProvider.notifier).pause();
+    _clearUnitSpeechState();
     state = state.copyWith(isPaused: true);
     // Notification shows Play button + paused state.
     ttsAudioHandler.setPlaybackState(
@@ -371,53 +434,200 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     await _speakCurrent(sessionId, isResume: true);
   }
 
-  /// Speak the current line and schedule the next.
+  /// Strip Pāli numbers up front so unit text matches what the engine
+  /// actually speaks (its own stripping then no-ops) and word counts align
+  /// for progress mapping. Translation numbers are spoken aloud, so those
+  /// lines are untouched. Line order/ids are unchanged, so every consumer
+  /// of `lines` keeps working.
+  List<TtsLineItem> _stripPaliNumbers(List<TtsLineItem> lines) => [
+    for (final l in lines)
+      if (l.isPali)
+        TtsLineItem(
+          paraId: l.paraId,
+          lineId: l.lineId,
+          text: TtsNotifier.stripPaliNumbers(l.text),
+          language: l.language,
+          paliRoman: TtsNotifier.stripPaliNumbers(l.paliRoman ?? ''),
+        )
+      else
+        l,
+  ];
+
+  /// Group [lines] into speakable units.
+  ///
+  /// Batching (one paragraph per utterance) needs progress callbacks to keep
+  /// the line highlight moving inside a unit. The Apple native channel has
+  /// no progress API, so there single-line units preserve today's per-line
+  /// highlight instead of freezing it on the paragraph's first line.
+  List<TtsSpeakUnit> _buildUnits(List<TtsLineItem> lines) {
+    String textOf(TtsLineItem l) => l.text;
+    int paraIdOf(TtsLineItem l) => l.paraId;
+    int lineIdOf(TtsLineItem l) => l.lineId;
+    String? languageOf(TtsLineItem l) => l.language;
+    String? paliRomanOf(TtsLineItem l) => l.paliRoman;
+    if (NativeSpeechService.isSupported) {
+      return [
+        for (var i = 0; i < lines.length; i++)
+          if (lines[i].text.trim().isNotEmpty)
+            singleLineUnit(
+              line: lines[i],
+              globalIndex: i,
+              textOf: textOf,
+              paraIdOf: paraIdOf,
+              lineIdOf: lineIdOf,
+              languageOf: languageOf,
+              paliRomanOf: paliRomanOf,
+            ),
+      ];
+    }
+    return buildSpeakUnits(
+      lines: lines,
+      textOf: textOf,
+      paraIdOf: paraIdOf,
+      lineIdOf: lineIdOf,
+      languageOf: languageOf,
+      paliRomanOf: paliRomanOf,
+    );
+  }
+
+  /// Progress inside the current unit: advance the line cursor when the
+  /// offset crosses a line boundary (existing highlight/auto-scroll
+  /// machinery follows `currentIndex`), and publish the line-local word
+  /// index. Offsets arrive in unit-text space (the engine layer translates
+  /// spoken-script offsets back); the word INDEX transfers across scripts.
+  void _handleUnitProgress(
+    int sessionId,
+    int unitIndex,
+    TtsSpeakUnit unit,
+    int start,
+    int end,
+    String word,
+  ) {
+    if (!kTtsWordHighlightEnabled) return;
+    if (sessionId != _currentSessionId) return;
+    if (!state.isActive || state.isPaused) return;
+    if (unitIndex != state.currentUnitIndex) return;
+    if (word.trim().isEmpty) return;
+
+    final slot = findLineSlotAtOffset(unit, start);
+    final range = unit.lineRanges[slot];
+    final global = unit.lineIndices[slot];
+    if (global != state.currentIndex) {
+      state = state.copyWith(currentIndex: global);
+      _scheduleListeningHistorySave();
+      // No explicit scroll call: the reader_screen TTS listener follows
+      // para/line changes (same-paragraph fine-scroll included).
+    }
+    final lineSub = unit.text.substring(range.start, range.end);
+    final highlight = TtsWordHighlight(
+      paraId: unit.paraId,
+      lineId: range.lineId,
+      isPali: unit.isPali,
+      // Offset-based guess, then self-healing re-anchor on the reported
+      // word text (some Indic voices segment words differently than
+      // whitespace splitting — without this one odd callback desyncs the
+      // rest of the unit).
+      wordIndex: ttsReconcileWordIndex(
+        lineText: lineSub,
+        expectedIndex: ttsWordIndexAtOffset(lineSub, toLocal(range, start)),
+        reportedWord: word,
+        isPali: unit.isPali,
+      ),
+      lineText: lineSub,
+    );
+    final wordNotifier = _ref.read(ttsWordHighlightProvider.notifier);
+    if (wordNotifier.state != highlight) wordNotifier.state = highlight;
+  }
+
+  /// Completion futures per unit index. A unit already spoken or queued
+  /// ahead has an entry; the loop awaits (never re-speaks) it. Pruned on
+  /// advance, cleared on stop/pause/skip/finish.
+  final Map<int, Future<void>> _unitFutures = {};
+
+  /// End timestamp of the last completed unit — GAP telemetry (idle time
+  /// before the next speak; near zero with prefetch on supported engines).
+  DateTime? _lastUnitDoneAt;
+
+  /// Drop all unit futures and word state. Called on every session
+  /// transition (stop/pause/skip/finish/start): a completed future left in
+  /// the map would make a later visit to that unit return instantly
+  /// without speaking.
+  void _clearUnitSpeechState() {
+    _unitFutures.clear();
+    _lastUnitDoneAt = null;
+    try {
+      _ref.read(ttsWordHighlightProvider.notifier).state = null;
+    } catch (_) {}
+  }
+
+  /// Speak the current unit and schedule the next.
   Future<void> _speakCurrent(int sessionId, {bool isResume = false}) async {
     if (sessionId != _currentSessionId ||
-        state.currentIndex >= state.lines.length) {
+        state.currentUnitIndex >= state.units.length) {
       if (sessionId == _currentSessionId) {
         _finishReading();
       }
       return;
     }
 
-    final index = state.currentIndex;
-    final line = state.lines[index];
+    final unitIndex = state.currentUnitIndex;
+    final unit = state.units[unitIndex];
     final ttsNotifier = _ref.read(ttsProvider.notifier);
 
+    // Sync the line cursor to the unit's first line; progress callbacks
+    // advance it from there. Stale word state is cleared per unit.
+    if (state.currentIndex != unit.lineIndices.first) {
+      state = state.copyWith(currentIndex: unit.lineIndices.first);
+    }
+    _ref.read(ttsWordHighlightProvider.notifier).state = null;
+
     developer.log(
-      '[TTS_PIPE] _speakCurrent line=$index/${state.lines.length} '
-      'paraId=${line.paraId} lineId=${line.lineId} isResume=$isResume',
+      '[TTS_PIPE] _speakCurrent unit=$unitIndex/${state.units.length} '
+      'paraId=${unit.paraId} lines=${unit.lineRanges.length} '
+      'chars=${unit.text.length} isResume=$isResume',
       name: 'epitaka.tts',
     );
 
-    if (line.text.trim().isEmpty) {
-      developer.log(
-        '[TTS_PIPE] line $index is empty, skipping',
-        name: 'epitaka.tts',
-      );
+    if (unit.isEmpty) {
       _advanceToNext(sessionId);
       return;
     }
 
-    final speakStart = DateTime.now();
-    // Speak or resume the current line and await completion
-    try {
-      if (isResume) {
-        await ttsNotifier.resume();
-      } else {
-        await ttsNotifier.speak(
-          line.text,
-          language: line.language,
-          paliRoman: line.paliRoman,
-        );
-      }
-    } catch (_) {
-      // Error speaking — continue to next line
+    final lastDone = _lastUnitDoneAt;
+    if (lastDone != null) {
+      developer.log(
+        '[TTS_PIPE] GAP ${DateTime.now().difference(lastDone).inMilliseconds}ms '
+        'before unit=$unitIndex',
+        name: 'epitaka.tts',
+      );
     }
+    final speakStart = DateTime.now();
+    // Pause used stop(); resume restarts the unit from its beginning —
+    // identical to the old line-restart behavior — so both paths speak.
+    // The wait is bounded per unit; a timeout aborts the engine (flush +
+    // drain) and the loop skips ahead, so one stuck utterance can never
+    // wedge the session.
+    try {
+      await _speakUnit(
+        sessionId,
+        unitIndex,
+        unit,
+      ).timeout(TtsNotifier.timeoutFor(unit.text));
+    } on TimeoutException {
+      developer.log(
+        '[TTS_PIPE] unit=$unitIndex TIMEOUT after '
+        '${TtsNotifier.timeoutFor(unit.text).inMilliseconds}ms — aborting',
+        name: 'epitaka.tts',
+      );
+      await ttsNotifier.stop();
+      _unitFutures.clear();
+    } catch (_) {
+      // Error speaking — continue to next unit
+    }
+    _lastUnitDoneAt = DateTime.now();
     final speakElapsed = DateTime.now().difference(speakStart).inMilliseconds;
     developer.log(
-      '[TTS_PIPE] _speakCurrent line=$index completed in ${speakElapsed}ms',
+      '[TTS_PIPE] _speakCurrent unit=$unitIndex completed in ${speakElapsed}ms',
       name: 'epitaka.tts',
     );
 
@@ -426,21 +636,81 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     }
   }
 
-  /// Skip forward one line (next/forward button on lock screen).
+  /// Completion future for [unitIndex]: speaks it now unless already spoken
+  /// or queued ahead (prefetch), in which case the existing future is
+  /// awaited instead of re-speaking.
+  Future<void> _speakUnit(int sessionId, int unitIndex, TtsSpeakUnit unit) {
+    final existing = _unitFutures[unitIndex];
+    if (existing != null) return existing;
+    final ttsNotifier = _ref.read(ttsProvider.notifier);
+    final prefetch = kTtsPrefetchEnabled && ttsNotifier.supportsPrefetch;
+    final future = ttsNotifier.speak(
+      unit.text,
+      language: unit.language,
+      paliRoman: unit.paliRoman,
+      watchdog: false,
+      onProgress: kTtsWordHighlightEnabled
+          ? (s, e, w) => _handleUnitProgress(sessionId, unitIndex, unit, s, e, w)
+          : null,
+      onStarted: prefetch ? () => _prefetchNext(sessionId, unitIndex) : null,
+    );
+    _unitFutures[unitIndex] = future;
+    return future;
+  }
+
+  /// Queue the unit after [unitIndex] while it plays (fire-and-forget, never
+  /// awaited here — the loop awaits it when it advances). The engine
+  /// pre-loads the next voice during current speech, which is what removes
+  /// the Pāli→translation switch delay. Only runs on queue-capable engines;
+  /// elsewhere each unit speaks strictly sequentially as before.
+  void _prefetchNext(int sessionId, int unitIndex) {
+    if (!kTtsPrefetchEnabled) return;
+    if (sessionId != _currentSessionId) return;
+    if (!state.isActive || state.isPaused) return;
+    final next = unitIndex + 1;
+    if (next >= state.units.length) return;
+    if (_unitFutures.containsKey(next)) return;
+    final ttsNotifier = _ref.read(ttsProvider.notifier);
+    if (!ttsNotifier.supportsPrefetch) return;
+    final u = state.units[next];
+    if (u.isEmpty) return;
+    _unitFutures[next] = ttsNotifier.speak(
+      u.text,
+      language: u.language,
+      paliRoman: u.paliRoman,
+      flush: false,
+      watchdog: false,
+      onProgress: kTtsWordHighlightEnabled
+          ? (s, e, w) => _handleUnitProgress(sessionId, next, u, s, e, w)
+          : null,
+      onStarted: () => _prefetchNext(sessionId, next),
+    );
+    // Drop references older than the playing unit (active awaits hold
+    // their own references; the map just stops retaining them).
+    _unitFutures.removeWhere((k, _) => k < unitIndex);
+  }
+
+  /// Skip forward one unit (next/forward button on lock screen). In batched
+  /// modes a unit is a paragraph; in alternating voice mode it is one line.
   Future<void> skipForward() async {
     if (!state.isActive && !state.isPaused) return;
+    if (state.units.isEmpty) return;
     _currentSessionId++;
     final sessionId = _currentSessionId;
     await _ref.read(ttsProvider.notifier).stop();
-    final nextIndex = state.currentIndex + 1;
-    if (nextIndex < state.lines.length) {
-      state = state.copyWith(currentIndex: nextIndex);
+    final nextUnit = state.currentUnitIndex + 1;
+    if (nextUnit < state.units.length) {
+      _clearUnitSpeechState();
+      state = state.copyWith(
+        currentUnitIndex: nextUnit,
+        currentIndex: state.units[nextUnit].lineIndices.first,
+      );
       _scheduleListeningHistorySave();
       ttsAudioHandler.setPlaybackState(
         playing: true,
         paused: false,
         hasPrev: true,
-        hasNext: nextIndex < state.lines.length - 1,
+        hasNext: nextUnit < state.units.length - 1,
       );
       _speakCurrent(sessionId);
     } else {
@@ -448,20 +718,58 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     }
   }
 
-  /// Skip backward one line (previous/rewind button on lock screen).
+  /// Skip forward to the next paragraph.
+  Future<void> skipForwardParagraph() async {
+    if (!state.isActive && !state.isPaused) return;
+    if (state.units.isEmpty) return;
+    final currentUnit = state.units[state.currentUnitIndex];
+    var nextUnit = state.currentUnitIndex + 1;
+    while (nextUnit < state.units.length &&
+        state.units[nextUnit].paraId == currentUnit.paraId) {
+      nextUnit++;
+    }
+    if (nextUnit < state.units.length) {
+      _currentSessionId++;
+      final sessionId = _currentSessionId;
+      await _ref.read(ttsProvider.notifier).stop();
+      _clearUnitSpeechState();
+      state = state.copyWith(
+        currentUnitIndex: nextUnit,
+        currentIndex: state.units[nextUnit].lineIndices.first,
+      );
+      _scheduleListeningHistorySave();
+      ttsAudioHandler.setPlaybackState(
+        playing: true,
+        paused: false,
+        hasPrev: true,
+        hasNext: nextUnit < state.units.length - 1,
+      );
+      _speakCurrent(sessionId);
+    } else {
+      _finishReading();
+    }
+  }
+
+  /// Skip backward one unit (previous/rewind button on lock screen).
   Future<void> skipBackward() async {
     if (!state.isActive && !state.isPaused) return;
-    if (state.currentIndex <= 0) return;
+    if (state.units.isEmpty) return;
+    if (state.currentUnitIndex <= 0) return;
     _currentSessionId++;
     final sessionId = _currentSessionId;
     await _ref.read(ttsProvider.notifier).stop();
-    state = state.copyWith(currentIndex: state.currentIndex - 1);
+    final prevUnit = state.currentUnitIndex - 1;
+    _clearUnitSpeechState();
+    state = state.copyWith(
+      currentUnitIndex: prevUnit,
+      currentIndex: state.units[prevUnit].lineIndices.first,
+    );
     _scheduleListeningHistorySave();
     ttsAudioHandler.setPlaybackState(
       playing: true,
       paused: false,
-      hasPrev: state.currentIndex > 0,
-      hasNext: state.currentIndex < state.lines.length - 1,
+      hasPrev: prevUnit > 0,
+      hasNext: prevUnit < state.units.length - 1,
     );
     _speakCurrent(sessionId);
   }
@@ -474,25 +782,32 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       );
       return;
     }
-    final nextIndex = state.currentIndex + 1;
+    final nextUnit = state.currentUnitIndex + 1;
     developer.log(
-      '[TTS_PIPE] _advanceToNext: $nextIndex/${state.lines.length} (finished=$nextIndex >= ${state.lines.length}) sessionId=$sessionId',
+      '[TTS_PIPE] _advanceToNext: $nextUnit/${state.units.length} (finished=$nextUnit >= ${state.units.length}) sessionId=$sessionId',
       name: 'epitaka.tts',
     );
-    if (nextIndex >= state.lines.length) {
+    if (nextUnit >= state.units.length) {
       _finishReading();
     } else {
-      state = state.copyWith(currentIndex: nextIndex);
+      // Drop futures older than the next unit (completed; the map must not
+      // retain them, and the next unit's prefetched future — if any — stays
+      // so the loop awaits it instead of re-speaking).
+      _unitFutures.removeWhere((k, _) => k < nextUnit);
+      state = state.copyWith(
+        currentUnitIndex: nextUnit,
+        currentIndex: state.units[nextUnit].lineIndices.first,
+      );
       // Update notification prev/next buttons availability.
       ttsAudioHandler.setPlaybackState(
         playing: true,
         paused: false,
         hasPrev: true,
-        hasNext: nextIndex < state.lines.length - 1,
+        hasNext: nextUnit < state.units.length - 1,
       );
       // Debounced listening-history position update.
       _scheduleListeningHistorySave();
-      // Speak the next line
+      // Speak the next unit
       _speakCurrent(sessionId);
     }
   }
@@ -544,6 +859,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _listeningSaveTimer?.cancel();
     _listeningSaveTimer = null;
     _saveListeningHistoryNow();
+    _clearUnitSpeechState();
     state = const TtsReadingState();
     // Keep callbacks + service alive for the next session (see stopReading).
     ttsAudioHandler.dismiss();
@@ -587,6 +903,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     try {
       _ref.read(ttsProvider.notifier).stop();
     } catch (_) {}
+    _clearUnitSpeechState();
     _cleanupHandlerCallbacks();
     try {
       ttsAudioHandler.dismiss();

@@ -10,6 +10,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
+import com.ryanheise.audioservice.AudioServicePlugin
 import java.io.File
 import java.io.InputStream
 
@@ -22,13 +23,23 @@ class MainActivity : FlutterActivity() {
     //   app task is swiped away (system TTS would otherwise finish the
     //   queued utterance after the Dart isolate is gone).
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
-        // Never `new FlutterEngine()` here: the FlutterLoader is not yet
-        // initialized at this point, so manual creation crashes on cold
-        // start (`FlutterLoader.ensureInitializationComplete:533`
-        // RuntimeException, seen in Play Console v28). Returning the cached
-        // engine — or null so FlutterActivity creates it correctly —
-        // shares the engine without the crash.
-        return FlutterEngineCache.getInstance().get(engineId)
+        // Share audio_service's engine (the audio_service README pattern —
+        // equivalent to extending AudioServiceActivity, whose entire
+        // implementation is this same call). getFlutterEngine() returns the
+        // cached engine, or creates + caches one AND runs Dart on it.
+        //
+        // Do NOT return a nullable cache lookup (or null) here: on first
+        // launch FlutterActivity would then create its own engine while
+        // AudioServicePlugin.getFlutterEngine() — called from
+        // onAttachedToActivity / AudioService.onCreate with a still-empty
+        // cache — created a SECOND engine that also executed Dart. Two
+        // isolates, plugin channels missing on one of them, and a permanent
+        // "wrong FlutterEngine" mismatch, so AudioService.init() failed
+        // (and every retry died on `_cacheManager == null`) — i.e. the TTS
+        // notification never appeared. (Seen in the wild as
+        // `MissingPluginException ... handler.methods` + the
+        // `_cacheManager == null` assertion.)
+        return AudioServicePlugin.getFlutterEngine(context)
     }
 
     override fun onDestroy() {
@@ -44,9 +55,10 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // Share the correctly-initialized engine with audio_service.
-        // First launch: provideFlutterEngine returned null, FlutterActivity
-        // created this engine safely — cache it now for reuse.
+        // Belt-and-braces: provideFlutterEngine() above already caches the
+        // shared engine via AudioServicePlugin, so this is normally a no-op.
+        // Never overwrite an existing entry — that would orphan whichever
+        // engine (UI or audio service) cached first.
         if (FlutterEngineCache.getInstance().get(engineId) == null) {
             FlutterEngineCache.getInstance().put(engineId, flutterEngine)
         }

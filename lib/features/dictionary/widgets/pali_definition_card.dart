@@ -4,11 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/pali_definition_provider.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../providers/dictionary_expanded_provider.dart';
+import 'dictionary_collapsible_card.dart';
 
 /// A card showing a single `pali_definition` match: the Pāli sentence that
 /// contains the definition, its translation (first activated language), and
@@ -243,6 +244,8 @@ const int _paliDefinitionInitialCount = 3;
 
 /// Section wrapper that loads and displays pali_definition results for a word.
 ///
+/// Wrapped in a persisted collapsible card. The query only runs while
+/// expanded (lazy load): when collapsed the provider is never watched.
 /// Results are sorted by the provider so the closest words appear first;
 /// only the first [_paliDefinitionInitialCount] cards are shown by default,
 /// with a "Show more" button to reveal the rest.
@@ -264,97 +267,86 @@ class PaliDefinitionSection extends ConsumerStatefulWidget {
 }
 
 class _PaliDefinitionSectionState extends ConsumerState<PaliDefinitionSection> {
-  bool _expanded = false;
+  bool _showAll = false;
+
+  String get _cardKey => 'book_100';
 
   @override
   void didUpdateWidget(covariant PaliDefinitionSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A new search word starts collapsed again.
+    // A new search word starts with the "show more" reset.
     if (oldWidget.searchWord != widget.searchWord) {
-      _expanded = false;
+      _showAll = false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
+    // Collapsed: header only, no definition fetch.
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: widget.bookName,
+        icon: Icons.auto_stories,
+        colors: widget.colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+
     final resultsAsync = ref.watch(paliDefinitionProvider(widget.searchWord));
     final colors = widget.colors;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.sm),
-      child: resultsAsync.when(
-        // While loading, show the header + a small spinner.
-        loading: () => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _header(),
-            const SizedBox(height: 4),
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ],
+    return resultsAsync.when(
+      // While loading, show the card header + a small spinner.
+      loading: () => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: widget.bookName,
+        icon: Icons.auto_stories,
+        colors: colors,
+        child: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        // No linked sentence for this word → hide the section entirely.
-        error: (_, _) => const SizedBox.shrink(),
-        data: (results) {
-          if (results.isEmpty) return const SizedBox.shrink();
+      ),
+      // No linked sentence for this word → hide the section entirely.
+      error: (_, _) => const SizedBox.shrink(),
+      data: (results) {
+        if (results.isEmpty) return const SizedBox.shrink();
 
-          final visible = _expanded
-              ? results
-              : results.take(_paliDefinitionInitialCount).toList();
-          final hiddenCount = results.length - visible.length;
-          // Show the toggle whenever there is something to collapse back
-          // (i.e. when expanded, or when hidden cards remain collapsed).
-          final showToggle = _expanded || hiddenCount > 0;
+        final visible = _showAll
+            ? results
+            : results.take(_paliDefinitionInitialCount).toList();
+        final hiddenCount = results.length - visible.length;
+        // Show the toggle whenever there is something to collapse back
+        // (i.e. when expanded, or when hidden cards remain collapsed).
+        final showToggle = _showAll || hiddenCount > 0;
 
-          return Column(
+        return DictionaryCollapsibleCard(
+          dictionaryKey: _cardKey,
+          title: widget.bookName,
+          icon: Icons.auto_stories,
+          colors: colors,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _header(),
-              const SizedBox(height: 4),
               ...visible.map(
                 (r) => PaliDefinitionCard(result: r, colors: colors),
               ),
               if (showToggle)
                 _PaliMoreButton(
-                  label: _expanded
+                  label: _showAll
                       ? AppLocalizations.of(context).lessLabel
                       : AppLocalizations.of(context).showNMore(hiddenCount),
-                  icon: _expanded ? Icons.expand_less : Icons.expand_more,
+                  icon: _showAll ? Icons.expand_less : Icons.expand_more,
                   colors: colors,
-                  onTap: () => setState(() => _expanded = !_expanded),
+                  onTap: () => setState(() => _showAll = !_showAll),
                 ),
             ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _header() {
-    final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
-    return Row(
-      children: [
-        Icon(
-          Icons.auto_stories,
-          size: 12,
-          color: widget.colors.onSurfaceVariant,
-        ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            widget.bookName,
-            style: TextStyle(
-              fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
-              fontWeight: FontWeight.w600,
-              color: widget.colors.onSurfaceVariant,
-              fontFamily: pali.fontFamily.fontFamily,
-            ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

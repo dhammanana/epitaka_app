@@ -80,8 +80,19 @@ done
 # looks like a new version while still containing old code.
 flutter clean
 
-# Build AAB
+# Build AAB.
+#
+# Do NOT pass --target-platform here. An arm64-only bundle carries no
+# lib/armeabi-v7a/libflutter.so, so on a 32-bit device the Flutter engine
+# fails to load at startup with
+#   "Could not find 'libflutter.so'. Looked for: [armeabi-v7a, armeabi]"
+# (seen on POCO C61). Older versions of this script and the CI workflow both
+# forced android-arm64 as a workaround for sqlite_vector, which only shipped
+# an arm64 binary; that package is no longer a dependency, so the filter is
+# gone everywhere. Omitting the flag builds all three default ABIs
+# (android-arm, android-arm64, android-x64) and Play serves each device the
+# slice that matches its CPU. Keep this in step with the AAB step in
+# .github/workflows/build_app.yml.
 flutter build appbundle \
   --release \
-  --flavor prod \
-  --target-platform android-arm64
+  --flavor prod

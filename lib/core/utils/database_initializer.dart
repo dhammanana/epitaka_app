@@ -241,6 +241,14 @@ Future<void> ensureDatabasesReady() {
   return _dbPrepFuture ??= _ensureDatabasesReadyInternal();
 }
 
+/// Drop the cached prep future so the next [ensureDatabasesReady] call starts
+/// over. Used when a previous prep timed out (e.g. path_provider's FFI
+/// hanging after a Flutter hot restart) — retrying must not re-await the
+/// same stuck future, or the retry would time out again.
+void resetDatabasePrep() {
+  _dbPrepFuture = null;
+}
+
 Future<void> _ensureDatabasesReadyInternal() async {
   try {
     await migrateLegacyDatabases();
@@ -437,6 +445,22 @@ Future<void> migrateLegacyDatabases() async {
     );
   }
 
+  // The sandboxed container location used by the packaged macOS app.
+  // `flutter run -d macos` is NOT sandboxed, so its canonical directory is
+  // the shared ~/Library/Application Support/<bundleId> — while everything
+  // downloaded in the installed app lives in the container
+  // (~/Library/Containers/<bundleId>/Data/…). When they differ, migrate
+  // from the container first (it holds the newest, complete set) so debug
+  // runs don't ask to re-download hundreds of MB. When running as the
+  // packaged app itself, target == container and the equality check below
+  // skips it, so this is a no-op there.
+  if (Platform.isMacOS) {
+    final containerDir = _macContainerAppSupportDir();
+    if (containerDir != null) {
+      legacyDirs.insert(0, containerDir.path);
+    }
+  }
+
   final targetPath = p.normalize(target.path);
 
   for (final legacyPath in legacyDirs) {
@@ -446,7 +470,18 @@ Future<void> migrateLegacyDatabases() async {
 
     try {
       // Copy each *.db plus its SQLite journal siblings (-wal/-shm/-journal).
-      for (final entry in dir.listSync()) {
+      // NOTE: async listing with a timeout — a sync listSync() here used to
+      // block the main isolate's event loop, and on macOS enumerating
+      // ~/Documents can stall indefinitely (iCloud Drive file-provider
+      // lookups), leaving the startup gate on "Checking search index…"
+      // forever with its Dart-level timeouts unable to fire. A stalled
+      // legacy dir is simply skipped; the fresh target then correctly
+      // reports "not built" and the setup wizard is shown.
+      final entries = await dir
+          .list()
+          .toList()
+          .timeout(const Duration(seconds: 10), onTimeout: () => <FileSystemEntity>[]);
+      for (final entry in entries) {
         if (entry is! File) continue;
         final name = p.basename(entry.path);
         if (!name.endsWith('.db')) continue;
@@ -471,7 +506,10 @@ Future<void> migrateLegacyDatabases() async {
         if (!await gavesanaDest.exists()) {
           await gavesanaDest.create(recursive: true);
         }
-        for (final f in gavesanaSrc.listSync()) {
+        for (final f in await gavesanaSrc
+            .list()
+            .toList()
+            .timeout(const Duration(seconds: 10), onTimeout: () => <FileSystemEntity>[])) {
           if (f is! File) continue;
           final dest = File(p.join(gavesanaDest.path, p.basename(f.path)));
           if (await dest.exists()) continue;

@@ -1,5 +1,7 @@
 import 'dart:developer' as developer;
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Manages Android foreground-service download progress notifications for
@@ -24,6 +26,17 @@ class DownloadNotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+
+  /// Local notifications are an Android/iOS concern (foreground-service
+  /// compliance, background progress). On desktop/web the app window itself
+  /// shows progress — and on macOS the plugin CRASHES the whole process
+  /// (a Swift force-unwrap in `buildUserNotificationContent` when `show()`
+  /// is called without a prior `initialize()`) in a way no Dart try/catch
+  /// can intercept. So plugin calls are skipped entirely off mobile.
+  static bool get _notificationsSupported {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
 
   // Notification IDs — keep them distinct so channels don't collide.
   static const int _translationNotificationId = 1001;
@@ -406,12 +419,18 @@ class DownloadNotificationService {
   /// platform failure is logged and swallowed so a download is never
   /// interrupted by a notification problem (e.g. unsupported platform,
   /// missing permission, or a nil force-unwrap on the native side).
+  ///
+  /// Note: a native crash (Swift `fatalError`, as the macOS plugin raises
+  /// on an un-initialized `show()`) cannot be caught from Dart — that is
+  /// why [_notificationsSupported] skips desktop/web entirely instead of
+  /// relying on the try/catch below.
   void _safeShow(
     int id,
     String? title,
     String? body,
     NotificationDetails details,
   ) {
+    if (!_notificationsSupported) return;
     try {
       _plugin.show(id, title, body, details).catchError((Object e) {
         developer.log(
@@ -428,6 +447,7 @@ class DownloadNotificationService {
   }
 
   void _safeCancel(int id) {
+    if (!_notificationsSupported) return;
     try {
       _plugin.cancel(id).catchError((Object e) {
         developer.log(

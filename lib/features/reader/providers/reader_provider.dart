@@ -7,6 +7,7 @@ import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/startup_timing.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
 
@@ -325,11 +326,18 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         'paraCount=${state.paragraphs.length} elapsedMs=${sw.elapsedMilliseconds}',
         name: 'epitaka.reader',
       );
+      StartupTiming.mark(
+        'book loaded: $_bookId '
+        '(loadMs=${sw.elapsedMilliseconds}, paras=${state.paragraphs.length})',
+      );
     } catch (e, stack) {
       sw.stop();
       developer.log(
         '[LOAD] Error loading bookId=$_bookId elapsedMs=${sw.elapsedMilliseconds}: $e\n$stack',
         name: 'epitaka.reader',
+      );
+      StartupTiming.mark(
+        'book load FAILED: $_bookId (loadMs=${sw.elapsedMilliseconds})',
       );
       // Only set error state if this is still the latest generation
       if (gen == _loadGeneration) {

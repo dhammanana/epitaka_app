@@ -9,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
+import '../../shared/services/gemini_text_models.dart';
 import '../providers/ai_qa_settings_provider.dart';
 import '../services/answer_fallbacks.dart';
 import 'mention_index_build_dialog.dart';
@@ -231,30 +232,49 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
       return;
     }
 
-    // Gemini / OpenAI: the fetched list is sorted descending, so `.first`
-    // is the newest (preferred) model, e.g. gemini-flash-lite-latest.
+    // Gemini / OpenAI: pick the best text model via [pickBestGeminiToolModel]
+    // / [pickBestGeminiAnswerModel] so specialized audio/video/image models
+    // (e.g. gemini-3.8-flash-tts) are never auto-filled into text fields,
+    // whatever Google releases next. Non-Gemini providers keep the old
+    // newest-first heuristic.
     final tool = _toolModelController.text.trim();
     if (tool.isEmpty || !_availableModels.contains(tool)) {
-      final flashLite = _availableModels
-          .where((m) => m.toLowerCase().contains('flash-lite'))
-          .toList();
-      final fallback = flashLite.isNotEmpty
-          ? flashLite.first
-          : _availableModels.first;
-      _toolModelController.text = fallback;
+      final best = _selectedProvider == AiProvider.gemini
+          ? pickBestGeminiToolModel(_availableModels)
+          : null;
+      if (best != null) {
+        _toolModelController.text = best;
+      } else {
+        final flashLite = _availableModels
+            .where((m) => m.toLowerCase().contains('flash-lite'))
+            .toList();
+        final fallback = flashLite.isNotEmpty
+            ? flashLite.first
+            : _availableModels.first;
+        _toolModelController.text = fallback;
+      }
     }
 
     final answer = _answerModelController.text.trim();
     if (answer.isEmpty || !_availableModels.contains(answer)) {
-      final flash = _availableModels
-          .where(
-            (m) =>
-                m.toLowerCase().contains('flash') &&
-                !m.toLowerCase().contains('lite'),
-          )
-          .toList();
-      final fallback = flash.isNotEmpty ? flash.first : _availableModels.first;
-      _answerModelController.text = fallback;
+      final best = _selectedProvider == AiProvider.gemini
+          ? pickBestGeminiAnswerModel(_availableModels)
+          : null;
+      if (best != null) {
+        _answerModelController.text = best;
+      } else {
+        final flash = _availableModels
+            .where(
+              (m) =>
+                  m.toLowerCase().contains('flash') &&
+                  !m.toLowerCase().contains('lite'),
+            )
+            .toList();
+        final fallback = flash.isNotEmpty
+            ? flash.first
+            : _availableModels.first;
+        _answerModelController.text = fallback;
+      }
     }
   }
 
@@ -679,7 +699,7 @@ class _AiQaSettingsSheetState extends ConsumerState<_AiQaSettingsSheet> {
                 colors: colors,
                 hintText: _selectedProvider == AiProvider.openrouter
                     ? 'google/gemini-2.5-flash-lite:free'
-                    : 'gemini-flash-latest-latest',
+                    : 'gemini-flash-lite-latest',
               ),
               const SizedBox(height: 4),
               Text(

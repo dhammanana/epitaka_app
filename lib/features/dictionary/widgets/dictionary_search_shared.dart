@@ -6,6 +6,10 @@ import 'package:drift/drift.dart' hide Column;
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../mdx_dictionary/widgets/mdx_webview.dart';
+import '../providers/dictionary_expanded_provider.dart';
+import '../services/dict_entry_web.dart';
+import 'dictionary_collapsible_card.dart';
 
 /// Minimum query length before "Did you mean?" prefix suggestions are shown
 /// in the dictionary (sheet and panel). Short prefixes are too ambiguous to
@@ -378,13 +382,18 @@ class _DpdHeadwordCardState extends ConsumerState<DpdHeadwordCard> {
 
 // ── Dictionary definition section ──────────────────────────────────────────
 
-/// Shows definitions from a specific dictionary book (not DPD).
-class DictDefinitionSection extends ConsumerStatefulWidget {
+/// Shows definitions from a specific dictionary book (not DPD) inside a
+/// persisted collapsible card.
+///
+/// The definition query only runs while expanded (lazy load): when
+/// collapsed the provider is never watched, so no database fetch happens.
+class DictDefinitionSection extends ConsumerWidget {
   final int bookId;
   final String bookName;
   final String searchWord;
   final ColorScheme colors;
   final bool compact;
+  final void Function(String word)? onEntryTap;
 
   const DictDefinitionSection({
     super.key,
@@ -393,66 +402,188 @@ class DictDefinitionSection extends ConsumerStatefulWidget {
     required this.searchWord,
     required this.colors,
     this.compact = false,
+    this.onEntryTap,
   });
 
+  String get _cardKey => 'book_$bookId';
+
   @override
-  ConsumerState<DictDefinitionSection> createState() =>
-      _DictDefinitionSectionState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
+    // Collapsed: header only, no definition fetch.
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: bookName,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    // Real WebView rendering (same path as the MDX entries) where
+    // supported; the class-aware flutter_html fallback stays for Linux/web.
+    if (MdxWebViewBody.isSupported) {
+      return _DictEntryWebSection(
+        bookId: bookId,
+        bookName: bookName,
+        searchWord: searchWord,
+        colors: colors,
+        compact: compact,
+        onEntryTap: onEntryTap,
+      );
+    }
+    return _DictEntryHtmlSection(
+      bookId: bookId,
+      bookName: bookName,
+      searchWord: searchWord,
+      colors: colors,
+      compact: compact,
+    );
+  }
 }
 
-class _DictDefinitionSectionState extends ConsumerState<DictDefinitionSection> {
-  bool _expanded = true;
+/// `dictionary`-table entries rendered in a real WebView (MDX-style): the
+/// entry classes (`word`, `viggaha`, `definition`, `reference`, `gender`)
+/// are styled by [buildDictEntryDocument] CSS with colours from the current
+/// theme. One WebView per (book, word); heights are shared with the MDX
+/// height registry under a `dict-<bookId>` namespace.
+class _DictEntryWebSection extends ConsumerWidget {
+  final int bookId;
+  final String bookName;
+  final String searchWord;
+  final ColorScheme colors;
+  final bool compact;
+  final void Function(String word)? onEntryTap;
+
+  const _DictEntryWebSection({
+    required this.bookId,
+    required this.bookName,
+    required this.searchWord,
+    required this.colors,
+    required this.compact,
+    this.onEntryTap,
+  });
+
+  String get _cardKey => 'book_$bookId';
 
   @override
-  void didUpdateWidget(covariant DictDefinitionSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.searchWord != widget.searchWord) _expanded = true;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final pali = settings.typography.pali;
+    final key = DictLookupKey(bookId, searchWord);
+    final defsAsync = ref.watch(dictionaryDefinitionProvider(key));
+
+    return defsAsync.when(
+      loading: () => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: bookName,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      // No record for this word in this dictionary → hide entirely
+      // (no header, no "No entry found" text).
+      error: (_, _) => const SizedBox.shrink(),
+      data: (definitions) {
+        if (definitions.isEmpty) return const SizedBox.shrink();
+        final bodies = definitions
+            .map((def) => def['definition'] as String? ?? '')
+            .where((s) => s.trim().isNotEmpty)
+            .toList();
+        if (bodies.isEmpty) return const SizedBox.shrink();
+        final document = buildDictEntryDocument(
+          bodies: bodies,
+          fontSize: (pali.fontSize * 0.8).clamp(12.0, 24.0),
+          fontFamily: pali.fontFamily.fontFamily,
+          primary: colors.primary,
+          onSurface: colors.onSurface,
+          onSurfaceVariant: colors.onSurfaceVariant,
+          outlineVariant: colors.outlineVariant,
+          containerLow: colors.surfaceContainerLow,
+        );
+        final child = ExcludeSemantics(
+          child: MdxWebViewBody(
+            key: ValueKey('dict-web-$bookId-$searchWord'),
+            dictId: 'dict-$bookId',
+            word: searchWord,
+            document: document,
+            readResource: dictEntryNoResource,
+            onEntryTap: onEntryTap,
+          ),
+        );
+        if (compact) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: AppDimensions.xs),
+            child: DictionaryCollapsibleCard(
+              dictionaryKey: _cardKey,
+              title: bookName,
+              icon: Icons.book,
+              colors: colors,
+              child: child,
+            ),
+          );
+        }
+        return DictionaryCollapsibleCard(
+          dictionaryKey: _cardKey,
+          title: bookName,
+          icon: Icons.book,
+          colors: colors,
+          child: child,
+        );
+      },
+    );
   }
+}
+
+/// Fallback for platforms without WebView support (Linux/web): the same
+/// entries through `flutter_html`, with the entry classes mapped to inline
+/// styles by [applyDictEntryFallbackStyles] (the renderer only styles by
+/// tag name, so bare classes would all look identical).
+class _DictEntryHtmlSection extends ConsumerWidget {
+  final int bookId;
+  final String bookName;
+  final String searchWord;
+  final ColorScheme colors;
+  final bool compact;
+
+  const _DictEntryHtmlSection({
+    required this.bookId,
+    required this.bookName,
+    required this.searchWord,
+    required this.colors,
+    required this.compact,
+  });
+
+  String get _cardKey => 'book_$bookId';
 
   @override
-  Widget build(BuildContext context) {
-    final ref = this.ref;
+  Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final defFontFamily = pali.fontFamily.fontFamily;
     final defFontSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
     final defLineHeight = pali.lineHeight;
 
-    final key = DictLookupKey(widget.bookId, widget.searchWord);
+    final key = DictLookupKey(bookId, searchWord);
     final defsAsync = ref.watch(dictionaryDefinitionProvider(key));
-    final colors = widget.colors;
-
-    Widget header() => Row(
-      children: [
-        Icon(Icons.book, size: 12, color: colors.onSurfaceVariant),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            widget.bookName,
-            style: TextStyle(
-              fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
-              fontWeight: FontWeight.w600,
-              color: colors.onSurfaceVariant,
-              fontFamily: defFontFamily,
-            ),
-          ),
-        ),
-      ],
-    );
 
     return defsAsync.when(
-      // While loading, show the header + a small spinner.
-      loading: () => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header(),
-          const SizedBox(height: 4),
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ],
+      // While loading, show the card header + a small spinner.
+      loading: () => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: bookName,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
       ),
       // No record for this word in this dictionary → hide entirely
       // (no header, no "No entry found" text).
@@ -461,72 +592,46 @@ class _DictDefinitionSectionState extends ConsumerState<DictDefinitionSection> {
         if (definitions.isEmpty) return const SizedBox.shrink();
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InkWell(
-              onTap: () => setState(() => _expanded = !_expanded),
-              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.sm,
-                  vertical: AppDimensions.xs,
+          children: definitions.map((def) {
+            final definition = def['definition'] as String? ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: DictHtmlContent(
+                html: applyDictEntryFallbackStyles(
+                  definition,
+                  primary: colors.primary,
+                  onSurfaceVariant: colors.onSurfaceVariant,
+                  containerLow: colors.surfaceContainerLow,
                 ),
-                child: Row(
-                  children: [
-                    Expanded(child: header()),
-                    Icon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ],
+                baseStyle: TextStyle(
+                  fontSize: defFontSize,
+                  height: defLineHeight,
+                  color: colors.onSurface,
+                  fontFamily: defFontFamily,
                 ),
               ),
-            ),
-            if (_expanded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppDimensions.xs,
-                  2,
-                  AppDimensions.xs,
-                  AppDimensions.xs,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: definitions.map((def) {
-                    final definition = def['definition'] as String? ?? '';
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: DictHtmlContent(
-                        html: definition,
-                        baseStyle: TextStyle(
-                          fontSize: defFontSize,
-                          height: defLineHeight,
-                          color: colors.onSurface,
-                          fontFamily: defFontFamily,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-          ],
+            );
+          }).toList(),
         );
 
-        if (widget.compact) {
+        if (compact) {
           return Padding(
             padding: const EdgeInsets.only(bottom: AppDimensions.xs),
-            child: content,
+            child: DictionaryCollapsibleCard(
+              dictionaryKey: _cardKey,
+              title: bookName,
+              icon: Icons.book,
+              colors: colors,
+              child: content,
+            ),
           );
         }
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: AppDimensions.sm),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: colors.outlineVariant.withValues(alpha: 0.55),
-            ),
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-          ),
+        return DictionaryCollapsibleCard(
+          dictionaryKey: _cardKey,
+          title: bookName,
+          icon: Icons.book,
+          colors: colors,
           child: content,
         );
       },

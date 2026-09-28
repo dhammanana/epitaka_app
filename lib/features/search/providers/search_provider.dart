@@ -13,6 +13,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../indexing/index_controller.dart';
+import 'search_history_provider.dart';
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -404,6 +405,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
       return;
     }
 
+    try {
+      _ref.read(searchHistoryProvider.notifier).add(normalized);
+    } catch (_) {}
     state = const SearchLoading();
 
     try {
@@ -892,6 +896,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }) async {
     state = const SearchLoading();
     try {
+      final q = query.trim();
+      if (q.isNotEmpty) {
+        try {
+          _ref.read(searchHistoryProvider.notifier).add(q);
+        } catch (_) {}
+      }
       final seen = <String>{};
       final grouped = <String, List<AiPassageRef>>{};
       for (final p in passages) {

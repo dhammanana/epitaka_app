@@ -95,7 +95,7 @@ class DisplayLayoutPopup extends ConsumerWidget {
       child: Container(
         constraints: BoxConstraints(
           maxWidth: 300,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+          maxHeight: MediaQuery.sizeOf(context).height * 2 / 3,
         ),
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
@@ -233,6 +233,16 @@ class DisplayLayoutPopup extends ConsumerWidget {
                   endIndent: 16,
                   color: colors.outlineVariant.withValues(alpha: 0.2),
                 ),
+              ),
+
+              // ── Auto hide toolbar ────────────────────────────────────
+              _CheckboxTile(
+                icon: Icons.unfold_less,
+                title: loc.autoHideToolbar,
+                value: settings.autoHideToolbar,
+                onChanged: (v) => ref
+                    .read(settingsProvider.notifier)
+                    .setAutoHideToolbar(v),
               ),
 
               // ── Show Inline Commentaries (temporary toggle) ───────────────

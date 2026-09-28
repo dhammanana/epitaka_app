@@ -57,6 +57,27 @@ List<String> discoverMddPaths(String mdxPath) {
   return out;
 }
 
+/// Copies a companion bundle file (`.mdd` resources, `.css` stylesheets,
+/// `.js`) next to the persisted `.mdx` so sidecar lookup
+/// (`discoverMddPaths`, stylesheet `href`s, image/audio sidecars) keeps
+/// working after a SAF multi-pick on Android/iOS, where only the files the
+/// user explicitly selects are granted to the app.
+Future<void> copyCompanionNextToMdx({
+  required String companionSrc,
+  required String stableMdxPath,
+}) async {
+  final dest = File(p.join(p.dirname(stableMdxPath), p.basename(companionSrc)));
+  if (dest.path == companionSrc) return;
+  final srcFile = File(companionSrc);
+  if (!await srcFile.exists()) return;
+  if (await dest.exists()) {
+    try {
+      if (await dest.length() == await srcFile.length()) return;
+    } catch (_) {}
+  }
+  await srcFile.copy(dest.path);
+}
+
 Future<String> ensurePersistentCopy(String path) async {
   final lower = path.toLowerCase();
   final transient =

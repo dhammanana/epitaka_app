@@ -43,7 +43,6 @@ class ContextMenuSettingsBody extends ConsumerStatefulWidget {
 class _ContextMenuSettingsBodyState
     extends ConsumerState<ContextMenuSettingsBody> {
   bool _loadingApps = false;
-  List<ProcessTextApp>? _installedApps;
 
   List<ContextMenuAction> get _actions =>
       ref.watch(settingsProvider).contextMenuActions;
@@ -158,80 +157,7 @@ class _ContextMenuSettingsBodyState
             },
           ),
         const SizedBox(height: AppDimensions.md),
-        if (_installedApps != null) ...[
-          Text(
-            loc.installedApps,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppDimensions.sm),
-          if (_installedApps!.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppDimensions.sm),
-              child: Text(
-                '${loc.noCompatibleApps}\n${loc.noCompatibleAppsHint}',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            for (final app in _installedApps!) _buildInstalledAppRow(app),
-        ],
       ],
-    );
-  }
-
-  Widget _buildInstalledAppRow(ProcessTextApp app) {
-    final colors = Theme.of(context).colorScheme;
-    final added = _actions.any(
-      (a) =>
-          a.kind == ContextMenuActionKind.externalApp &&
-          a.appPackage == app.packageName,
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.xs),
-      child: Material(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-        child: ListTile(
-          dense: true,
-          leading: const Icon(Icons.extension_outlined, size: 20),
-          title: Text(
-            app.label,
-            style: AppTypography.labelMedium.copyWith(color: colors.onSurface),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            app.packageName,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: added
-              ? Icon(Icons.check_circle, color: colors.tertiary, size: 20)
-              : IconButton(
-                  icon: const Icon(Icons.add, size: 20),
-                  color: colors.primary,
-                  onPressed: () {
-                    ref.read(settingsProvider.notifier).setContextMenuActions([
-                      ..._actions,
-                      ContextMenuAction(
-                        id: 'app:${app.packageName}',
-                        kind: ContextMenuActionKind.externalApp,
-                        appPackage: app.packageName,
-                        appLabel: app.label,
-                      ),
-                    ]);
-                  },
-                ),
-        ),
-      ),
     );
   }
 
@@ -246,16 +172,130 @@ class _ContextMenuSettingsBodyState
         onTimeout: () => const <ProcessTextApp>[],
       );
       if (!mounted) return;
-      setState(() => _installedApps = apps);
-      if (apps.isEmpty && mounted) {
-        final loc = AppLocalizations.of(context);
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(loc.noCompatibleApps)));
-      }
+      await _showInstalledAppsDialog(context, apps);
     } finally {
       if (mounted) setState(() => _loadingApps = false);
     }
+  }
+
+  Future<void> _showInstalledAppsDialog(
+    BuildContext context,
+    List<ProcessTextApp> apps,
+  ) async {
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(loc.installedApps),
+        content: SizedBox(
+          width: 420,
+          child: apps.isEmpty
+              ? Text(
+                  '${loc.noCompatibleApps}\n${loc.noCompatibleAppsHint}',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                )
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 380),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final app in apps)
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final actions = ref
+                                  .watch(settingsProvider)
+                                  .contextMenuActions;
+                              final added = actions.any(
+                                (a) =>
+                                    a.kind ==
+                                        ContextMenuActionKind.externalApp &&
+                                    a.appPackage == app.packageName,
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppDimensions.xs,
+                                ),
+                                child: Material(
+                                  color: colors.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(
+                                    AppDimensions.radiusMd,
+                                  ),
+                                  child: ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.extension_outlined,
+                                      size: 20,
+                                    ),
+                                    title: Text(
+                                      app.label,
+                                      style: AppTypography.labelMedium.copyWith(
+                                        color: colors.onSurface,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      app.packageName,
+                                      style: AppTypography.labelSmall.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: added
+                                        ? Icon(
+                                            Icons.check_circle,
+                                            color: colors.tertiary,
+                                            size: 20,
+                                          )
+                                        : IconButton(
+                                            icon: const Icon(
+                                              Icons.add,
+                                              size: 20,
+                                            ),
+                                            color: colors.primary,
+                                            onPressed: () {
+                                              ref
+                                                  .read(
+                                                    settingsProvider.notifier,
+                                                  )
+                                                  .setContextMenuActions([
+                                                    ...actions,
+                                                    ContextMenuAction(
+                                                      id:
+                                                          'app:${app.packageName}',
+                                                      kind:
+                                                          ContextMenuActionKind
+                                                              .externalApp,
+                                                      appPackage:
+                                                          app.packageName,
+                                                      appLabel: app.label,
+                                                    ),
+                                                  ]);
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(loc.close),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmReset(BuildContext context) async {

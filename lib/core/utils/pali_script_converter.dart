@@ -1769,6 +1769,13 @@ List<Function> beautifyFunc(Script script) {
       return [beautifyCommon];
     case Script.telugu:
       return [beautifyCommon];
+    case Script.kannada:
+      // Must match Telugu/Sinhala: the TTS speak text always gets
+      // beautifyCommon (space-before-punctuation cleanup) via the Sinhala
+      // pipeline, and the spoken-word highlight maps by word index — so the
+      // display text needs the same tokenization, otherwise the highlight
+      // lands on the wrong Kannada word.
+      return [beautifyCommon];
     case Script.malayalam:
       return [beautifyCommon];
     case Script.brahmi:

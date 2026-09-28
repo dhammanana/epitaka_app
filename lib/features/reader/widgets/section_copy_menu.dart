@@ -35,7 +35,8 @@ class SectionCopyMenuButton extends ConsumerWidget {
         ),
         tooltip: 'Copy section',
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        splashRadius: 14,
         onSelected: (value) => _onSelected(context, ref, value),
         itemBuilder: (context) => const [
           PopupMenuItem(value: 0, child: Text('Copy Pāli')),

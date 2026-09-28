@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:epitaka/features/dictionary/providers/dictionary_expanded_provider.dart';
+import 'package:epitaka/features/dictionary/widgets/dictionary_collapsible_card.dart';
+
 import '../providers/mdx_lookup_providers.dart';
+import '../providers/mdx_web_providers.dart';
 import '../services/mdx_text.dart';
+import 'mdx_webview.dart';
 
 class MdxDefinitionSection extends ConsumerWidget {
   final String dictId;
@@ -18,73 +23,57 @@ class MdxDefinitionSection extends ConsumerWidget {
     this.onEntryTap,
   });
 
+  String get _cardKey => 'mdx_$dictId';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
+    // Collapsed: header only, no definition fetch.
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: dictTitle,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+    // Real WebView rendering (Ciyue-style) where supported; legacy
+    // flutter_html stays for Linux/web.
+    if (MdxWebViewBody.isSupported) {
+      return _MdxWebDocSection(
+        dictId: dictId,
+        dictTitle: dictTitle,
+        searchWord: searchWord,
+        onEntryTap: onEntryTap,
+      );
+    }
     final baseStyle = Theme.of(context).textTheme.bodyMedium!;
     final defs = ref.watch(
       mdxDefinitionsProvider(MdxDefKey(dictId, searchWord)),
     );
     return defs.when(
-      loading: () => ExcludeSemantics(
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                dictTitle,
-                style: baseStyle.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: colors.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                height: 12,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: colors.outlineVariant.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                height: 12,
-                width: 180,
-                decoration: BoxDecoration(
-                  color: colors.outlineVariant.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ],
-          ),
+      loading: () => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: dictTitle,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
-      error: (e, _) => ExcludeSemantics(
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(8),
-          ),
+      error: (e, _) => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: dictTitle,
+        icon: Icons.book,
+        colors: colors,
+        child: ExcludeSemantics(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                dictTitle,
-                style: baseStyle.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: colors.primary,
-                ),
-              ),
-              const SizedBox(height: 6),
               Text(
                 e.toString(),
                 style: baseStyle.copyWith(color: colors.error, fontSize: 13),
@@ -102,40 +91,17 @@ class MdxDefinitionSection extends ConsumerWidget {
         ),
       ),
       data: (list) {
-        if (list.isEmpty) {
-          return ExcludeSemantics(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                '$dictTitle: No entry in MDX',
-                style: baseStyle.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          );
-        }
-        return ExcludeSemantics(
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(8),
-            ),
+        // No entry in this dictionary → hide the section entirely.
+        if (list.isEmpty) return const SizedBox.shrink();
+        return DictionaryCollapsibleCard(
+          dictionaryKey: _cardKey,
+          title: dictTitle,
+          icon: Icons.book,
+          colors: colors,
+          child: ExcludeSemantics(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  dictTitle,
-                  style: baseStyle.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.primary,
-                  ),
-                ),
-                const SizedBox(height: 6),
                 for (var i = 0; i < list.length; i++) ...[
                   if (i > 0) const Divider(height: 16),
                   Html(
@@ -169,8 +135,94 @@ class MdxDefinitionSection extends ConsumerWidget {
   }
 }
 
-void _handleLinkTap(String? url, void Function(String word)? onEntryTap) {
-  if (url == null || url.trim().isEmpty) return;
+/// WebView branch of the definition section: watches the full HTML document
+/// provider and embeds one auto-height WebView per (dictionary, word).
+/// The caller ([MdxDefinitionSection]) already guarantees expanded state,
+/// so this only runs while expanded (lazy load).
+class _MdxWebDocSection extends ConsumerWidget {
+  final String dictId;
+  final String dictTitle;
+  final String searchWord;
+  final void Function(String word)? onEntryTap;
+
+  const _MdxWebDocSection({
+    required this.dictId,
+    required this.dictTitle,
+    required this.searchWord,
+    this.onEntryTap,
+  });
+
+  String get _cardKey => 'mdx_$dictId';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final baseStyle = Theme.of(context).textTheme.bodyMedium!;
+    final doc = ref.watch(mdxWebDocumentProvider(MdxDefKey(dictId, searchWord)));
+    return doc.when(
+      loading: () => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: dictTitle,
+        icon: Icons.book,
+        colors: colors,
+        child: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      error: (e, _) => DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: dictTitle,
+        icon: Icons.book,
+        colors: colors,
+        child: ExcludeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                e.toString(),
+                style: baseStyle.copyWith(color: colors.error, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+                onPressed: () => ref.invalidate(
+                  mdxWebDocumentProvider(MdxDefKey(dictId, searchWord)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (document) {
+        // No entry in this dictionary → hide the section entirely.
+        if (document.trim().isEmpty) return const SizedBox.shrink();
+        return DictionaryCollapsibleCard(
+          dictionaryKey: _cardKey,
+          title: dictTitle,
+          icon: Icons.book,
+          colors: colors,
+          child: ExcludeSemantics(
+            child: MdxWebViewBody(
+              key: ValueKey('mdx-web-$dictId-$searchWord'),
+              dictId: dictId,
+              word: searchWord,
+              document: document,
+              readResource: (key) => ref.read(
+                mdxResourceProvider(MdxResKey(dictId, key)).future,
+              ),
+              onEntryTap: onEntryTap,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+void _handleLinkTap(String? url, void Function(String word)? onEntryTap) {  if (url == null || url.trim().isEmpty) return;
   final trimmed = url.trim();
   final lower = trimmed.toLowerCase();
   if (lower.startsWith('entry://')) {

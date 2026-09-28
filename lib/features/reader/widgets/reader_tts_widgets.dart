@@ -9,17 +9,22 @@ import '../../../shared/widgets/tts_speed_control.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/services/system_tts_availability.dart';
 import '../providers/tts_reading_provider.dart';
+import '../providers/tts_speak_unit.dart'
+    show ttsPlainTextForSpeech;
+import '../providers/reader_tts_sync_provider.dart';
 
 /// Fixed width of the TTS controls card. The dialog caps its content at this
 /// width too, so the card can never be stretched wider by a long fallback
 /// notice.
-const double kTtsControlsCardWidth = 280;/// Floating TTS control pill shown while a reading session is active.
+const double kTtsControlsCardWidth = 280;
+
+/// Floating TTS control pill shown while a reading session is active.
 ///
 /// Collapsed: a single tappable chip (with a "Follow" badge when the
 /// spoken line is off-screen). Tapping it expands into a transport bar:
-/// Prev · Stop · Pause/Play · Next · More. "More" opens the full TTS
-/// controls dialog (voice/speed/config — the previous behavior).
-class TtsFloatingChip extends ConsumerStatefulWidget {
+/// Prev · Stop · Pause/Play · Next · Next Para · More · Collapse.
+/// "More" opens the full TTS controls dialog (voice/speed/config).
+class TtsFloatingChip extends ConsumerWidget {
   final ColorScheme colors;
 
   final bool isAutoScroll;
@@ -27,6 +32,7 @@ class TtsFloatingChip extends ConsumerStatefulWidget {
   final bool isTtsLineVisible;
   final VoidCallback onTap;
   final VoidCallback onFollowTap;
+  final String bookId;
 
   const TtsFloatingChip({
     super.key,
@@ -36,68 +42,56 @@ class TtsFloatingChip extends ConsumerStatefulWidget {
     required this.isTtsLineVisible,
     required this.onTap,
     required this.onFollowTap,
+    required this.bookId,
   });
 
   @override
-  ConsumerState<TtsFloatingChip> createState() => _TtsFloatingChipState();
-}
-
-class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
-  bool _expanded = false;
-
-  BoxDecoration get _pillDecoration => BoxDecoration(
-    color: widget.colors.primary,
-    borderRadius: BorderRadius.circular(9999),
-    boxShadow: [
-      BoxShadow(
-        color: widget.colors.primary.withValues(alpha: 0.3),
-        blurRadius: 8,
-        offset: const Offset(0, 2),
-      ),
-    ],
-  );
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ttsSync = ref.watch(ttsSyncProvider(bookId));
+    final expanded = ttsSync.ttsControlsExpanded;
     final needsFollow =
-        !widget.isAutoScroll ||
-        (!widget.isTtsLineVisible && !widget.isJumpPending);
+        !isAutoScroll || (!isTtsLineVisible && !isJumpPending);
     final loc = AppLocalizations.of(context);
 
-    return _expanded
-        ? _buildExpanded(loc)
-        : _buildCollapsed(needsFollow, loc);
+    return expanded
+        ? _buildExpanded(context, ref, loc)
+        : _buildCollapsed(context, ref, needsFollow, loc);
   }
 
   /// Collapsed chip: tap to expand into the transport bar.
-  Widget _buildCollapsed(bool needsFollow, AppLocalizations loc) {
+  Widget _buildCollapsed(
+    BuildContext context,
+    WidgetRef ref,
+    bool needsFollow,
+    AppLocalizations loc,
+  ) {
     return GestureDetector(
-      onTap: () => setState(() => _expanded = true),
+      onTap: () => ref.read(ttsSyncProvider(bookId).notifier).setControlsExpanded(true),
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: needsFollow ? 14 : 10,
           vertical: needsFollow ? 8 : 10,
         ),
-        decoration: _pillDecoration,
+        decoration: _pillDecoration(context),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.record_voice_over,
               size: 18,
-              color: widget.colors.onPrimary,
+              color: colors.onPrimary,
             ),
             if (needsFollow) ...[
               const SizedBox(width: 6),
               GestureDetector(
-                onTap: widget.onFollowTap,
+                onTap: onFollowTap,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: widget.colors.onPrimary.withValues(alpha: 0.2),
+                    color: colors.onPrimary.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(9999),
                   ),
                   child: Row(
@@ -106,13 +100,13 @@ class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
                       Icon(
                         Icons.my_location,
                         size: 14,
-                        color: widget.colors.onPrimary,
+                        color: colors.onPrimary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         loc.follow,
                         style: TextStyle(
-                          color: widget.colors.onPrimary,
+                          color: colors.onPrimary,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -123,21 +117,21 @@ class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
               ),
             ],
             const SizedBox(width: 4),
-            Icon(Icons.expand_less, size: 16, color: widget.colors.onPrimary),
+            Icon(Icons.expand_less, size: 16, color: colors.onPrimary),
           ],
         ),
       ),
     );
   }
 
-  /// Expanded transport bar: Prev · Stop · Play/Pause · Next · More.
-  Widget _buildExpanded(AppLocalizations loc) {
+  /// Expanded transport bar: Prev · Stop · Play/Pause · Next · Next Para · More · Collapse.
+  Widget _buildExpanded(BuildContext context, WidgetRef ref, AppLocalizations loc) {
     final ttsPlayback = ref.watch(ttsProvider);
     final ttsReading = ref.watch(ttsReadingProvider);
     final isPlaying = ttsPlayback == TtsPlaybackState.playing;
     final isActive =
         ttsReading.isActive || ttsReading.isPaused || isPlaying;
-    final iconColor = widget.colors.onPrimary;
+    final iconColor = colors.onPrimary;
 
     Widget action({
       required IconData icon,
@@ -157,7 +151,7 @@ class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      decoration: _pillDecoration,
+      decoration: _pillDecoration(context),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -173,7 +167,6 @@ class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
             tooltip: loc.stopLabel,
             onPressed: isActive
                 ? () {
-                    setState(() => _expanded = false);
                     ref.read(ttsReadingProvider.notifier).stopReading();
                   }
                 : null,
@@ -195,17 +188,40 @@ class _TtsFloatingChipState extends ConsumerState<TtsFloatingChip> {
                 : null,
           ),
           action(
+            icon: Icons.arrow_forward,
+            tooltip: loc.ttsNextParagraph ?? 'Next Paragraph',
+            onPressed: isActive
+                ? () => ref.read(ttsReadingProvider.notifier).skipForwardParagraph()
+                : null,
+          ),
+          action(
             icon: Icons.tune,
             tooltip: loc.ttsControls,
-            // "More settings" — opens the full controls dialog that the
-            // collapsed chip used to open directly.
-            onPressed: widget.onTap,
+            onPressed: onTap,
+            size: 18,
+          ),
+          action(
+            icon: Icons.expand_more,
+            tooltip: loc.ttsCollapse ?? 'Collapse',
+            onPressed: () => ref.read(ttsSyncProvider(bookId).notifier).setControlsExpanded(false),
             size: 18,
           ),
         ],
       ),
     );
   }
+
+  BoxDecoration _pillDecoration(BuildContext context) => BoxDecoration(
+    color: colors.primary,
+    borderRadius: BorderRadius.circular(9999),
+    boxShadow: [
+      BoxShadow(
+        color: colors.primary.withValues(alpha: 0.3),
+        blurRadius: 8,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  );
 }
 
 class TtsControlsCard extends StatelessWidget {
@@ -746,14 +762,9 @@ class _TtsScriptDropdown extends StatelessWidget {
   }
 }
 
-String stripHtmlForTts(String text) {
-  return text
-      .replaceAll(RegExp(r'<i>.*?</i>', caseSensitive: false, dotAll: true), '')
-      // .replaceAll(RegExp(r'\([^()]*[' + r'āīūōṅñṭḍṇḷṃṁĀĪŪŌṄÑṬḌṆḶṀ' + r'][^()]*\)'), '')
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll(RegExp(r'\\s+'), ' ')
-      .trim();
-}
+/// Plain speak-equivalent of reader HTML (single source in
+/// `tts_speak_unit.dart` — progress offsets index into this string).
+String stripHtmlForTts(String text) => ttsPlainTextForSpeech(text);
 
 /// Keep only system voices whose locale matches [langCode] (e.g. 'en'
 /// → 'en-US', 'en-GB'). When [showAllIfEmpty] is true (the default),

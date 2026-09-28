@@ -19,6 +19,8 @@ import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
 import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
+import '../providers/dictionary_expanded_provider.dart';
+import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
@@ -852,6 +854,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                     bookName: book.name,
                     searchWord: searchWord,
                     colors: colors,
+                    onEntryTap: _selectWord,
                   ),
                 );
               }
@@ -909,7 +912,6 @@ class _DpdSection extends ConsumerStatefulWidget {
 class _DpdSectionState extends ConsumerState<_DpdSection> {
   /// Which deconstructor candidate card is expanded (-1 = none).
   int _activeDeconCardIndex = -1;
-  bool _dpdExpanded = true;
 
   /// Which token inside the expanded candidate is selected.
   int _activeDeconTokenIndex = 0;
@@ -917,6 +919,8 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
   /// Cached headword rows for deconstructor tokens, so tapping a token
   /// doesn't re-hit the database every time.
   final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
+
+  static const _cardKey = 'dpd';
 
   @override
   void didUpdateWidget(_DpdSection oldWidget) {
@@ -937,73 +941,57 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
     final paliFontFamily = pali.fontFamily.fontFamily;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.sm),
+    // Collapsed: header only. The headword HTML is only built while
+    // expanded (lazy), and the expand state persists across searches.
+    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: _cardKey,
+        title: loc.dpdDictionary,
+        icon: Icons.auto_stories,
+        colors: colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+    return DictionaryCollapsibleCard(
+      dictionaryKey: _cardKey,
+      title: loc.dpdDictionary,
+      icon: Icons.auto_stories,
+      colors: colors,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.auto_stories, size: 14, color: colors.primary),
-              const SizedBox(width: 4),
-              Text(
-                loc.dpdDictionary,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: (pali.fontSize * 0.6).clamp(10.0, 16.0),
-                  fontFamily: paliFontFamily,
-                ),
-              ),
-            ],
-          ),
-          // Headword row — always visible as the expand/collapse toggle.
-          GestureDetector(
-            onTap: () => setState(() => _dpdExpanded = !_dpdExpanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      lookup.searchedKey,
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: colors.onSurface,
-                        fontSize: (pali.fontSize * 1.0).clamp(16.0, 30.0),
-                        fontWeight: FontWeight.bold,
-                        fontFamily: paliFontFamily,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _dpdExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ],
+          // Headword row — the searched key for this lookup.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
+            child: Text(
+              lookup.searchedKey,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.onSurface,
+                fontSize: (pali.fontSize * 1.0).clamp(16.0, 30.0),
+                fontWeight: FontWeight.bold,
+                fontFamily: paliFontFamily,
               ),
             ),
           ),
-          if (_dpdExpanded) ...[
-            const SizedBox(height: 6),
-            if (lookup.hasDeconstructor) ...[
-              _buildDeconstructorSection(colors, lookup),
-              const SizedBox(height: 12),
-            ],
-            if (lookup.hasEpd) ...[
-              _buildEpdSection(colors, lookup.lookup!.epd!),
-              const SizedBox(height: 12),
-            ],
-            ...lookup.headwords.map(
-              (hw) => DpdHeadwordCard(
-                lemma: hw.lemma1,
-                meaningHtml: hw.meaningHtml,
-                colors: colors,
-                compact: true,
-                showBorder: false,
-              ),
-            ),
+          const SizedBox(height: 6),
+          if (lookup.hasDeconstructor) ...[
+            _buildDeconstructorSection(colors, lookup),
+            const SizedBox(height: 12),
           ],
+          if (lookup.hasEpd) ...[
+            _buildEpdSection(colors, lookup.lookup!.epd!),
+            const SizedBox(height: 12),
+          ],
+          ...lookup.headwords.map(
+            (hw) => DpdHeadwordCard(
+              lemma: hw.lemma1,
+              meaningHtml: hw.meaningHtml,
+              colors: colors,
+              compact: true,
+              showBorder: false,
+            ),
+          ),
         ],
       ),
     );

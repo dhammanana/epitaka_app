@@ -163,6 +163,8 @@ void main() {
       Script.thai,
       Script.tamil,
       Script.sinhala,
+      Script.telugu,
+      Script.kannada,
       Script.roman,
     ]) {
       testWidgets('${script.name}: every extracted word is a complete '

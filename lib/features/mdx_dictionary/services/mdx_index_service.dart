@@ -126,6 +126,7 @@ class MdxIndexService {
     String indexPath,
     String key, {
     bool allowScripts = false,
+    int? maxChars,
   }) async {
     if (!File(mdxPath).existsSync()) throw MdxMissingFile(mdxPath);
     if (!File(indexPath).existsSync()) {
@@ -147,7 +148,13 @@ class MdxIndexService {
       html = await _followLinks(mdxPath, indexPath, html, visited, 0);
       final css = await _cssFor(mdxPath, mdxStylesheetHrefs(html));
       html = mdxStripStylesheetLinks(html);
-      out.add(_finalize(css + html, allowScripts: allowScripts));
+      out.add(
+        _finalize(
+          css + html,
+          allowScripts: allowScripts,
+          maxChars: maxChars ?? maxDefinitionChars,
+        ),
+      );
     }
     return out;
   }
@@ -194,10 +201,16 @@ class MdxIndexService {
     return resolved.join();
   }
 
-  String _finalize(String html, {required bool allowScripts}) {
+  /// [maxChars] caps the output length (`null` = uncapped, used for full
+  /// WebView documents; the flutter_html path always passes a cap).
+  String _finalize(
+    String html, {
+    required bool allowScripts,
+    int? maxChars = maxDefinitionChars,
+  }) {
     var out = html;
-    if (out.length > maxDefinitionChars) {
-      out = out.substring(0, maxDefinitionChars);
+    if (maxChars != null && out.length > maxChars) {
+      out = out.substring(0, maxChars);
     }
     if (!allowScripts) out = mdxSanitize(out);
     return out.trim();
