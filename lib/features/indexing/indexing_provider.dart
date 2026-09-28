@@ -86,7 +86,12 @@ final ftsRequiredCoreAssetsProvider = FutureProvider<List<CoreAsset>>((
   for (final entry in manifest.core.entries) {
     final asset = entry.value;
     if (!asset.compulsory) continue;
-    final filename = asset.filename ?? '${entry.key}.db';
+    // Same fallback as the download path in IndexGate (_buildCoreAssetCard):
+    // slugs use underscores (dpd_dictionary) but on-disk files use hyphens
+    // (dpd-dictionary.db). A mismatched guess here would report an installed
+    // database as missing and ask for it again every launch.
+    final filename =
+        asset.filename ?? '${entry.key.replaceAll('_', '-')}.db';
     final exists = await coreAssetExists(filename);
     if (!exists) {
       required.add(asset);

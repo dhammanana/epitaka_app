@@ -11,6 +11,7 @@ import '../../../core/theme/color_pair.dart';
 import '../widgets/color_swatch.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
+import '../screens/translation_settings_screen.dart';
 
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
@@ -64,7 +65,207 @@ class AppearanceSettingsBody extends ConsumerWidget {
                 ColorSwatch(color: accent, isSelected: settings.accentColor == accent, onTap: () => ref.read(settingsProvider.notifier).setAccentColor(accent)),
             ])),
           ]),
+          const SizedBox(height: AppDimensions.lg),
+          _LabelRow(
+            label: loc.textAlign,
+            control: _AlignIcons(
+              current: settings.textAlign,
+              onChanged: (align) => ref.read(settingsProvider.notifier).setTextAlign(align),
+              colors: colors,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.md),
+          _LabelRow(
+            label: loc.lineSpacing,
+            control: _Stepper(
+              value: settings.lineHeight,
+              min: 0,
+              max: 100,
+              onChanged: (v) => ref.read(settingsProvider.notifier).setLineHeight(v),
+              colors: colors,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.md),
+          _LabelRow(
+            label: loc.paragraphSpacing,
+            control: _Stepper(
+              value: settings.paragraphSpacing,
+              min: 0,
+              max: 100,
+              onChanged: (v) => ref.read(settingsProvider.notifier).setParagraphSpacing(v),
+              colors: colors,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.lg),
+          SettingsSection(title: loc.fontSettings, colors: colors, children: [
+            _FontSettingsLink(
+              onTap: () => _openFontSettings(context),
+              colors: colors,
+            ),
+          ]),
         ],
+    );
+  }
+
+  void _openFontSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TranslationSettingsScreen()),
+    );
+  }
+}
+
+/// Simple label + control row without a card box.
+class _LabelRow extends StatelessWidget {
+  final String label;
+  final Widget control;
+
+  const _LabelRow({required this.label, required this.control});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.labelMedium.copyWith(color: colors.onSurface),
+          ),
+        ),
+        control,
+      ],
+    );
+  }
+}
+
+/// Text alignment as a plain row of icons. Selected icon uses the primary
+/// color, the rest use onSurfaceVariant.
+class _AlignIcons extends StatelessWidget {
+  final TextAlignOption current;
+  final ValueChanged<TextAlignOption> onChanged;
+  final ColorScheme colors;
+
+  const _AlignIcons({
+    required this.current,
+    required this.onChanged,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final options = [
+      (TextAlignOption.start, loc.textAlignStart, Icons.format_align_left),
+      (TextAlignOption.center, loc.textAlignCenter, Icons.format_align_center),
+      (TextAlignOption.end, loc.textAlignEnd, Icons.format_align_right),
+      (TextAlignOption.justify, loc.textAlignJustify, Icons.format_align_justify),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (value, tooltip, icon) in options)
+          IconButton(
+            icon: Icon(icon, size: 22),
+            tooltip: tooltip,
+            onPressed: () => onChanged(value),
+            color: current == value ? colors.primary : colors.onSurfaceVariant,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(40, 40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Compact stepper: − value + without a surrounding box.
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+  final ColorScheme colors;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.remove, size: 20),
+          onPressed: value > min ? () => onChanged(value - 1) : null,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(36, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            '$value',
+            textAlign: TextAlign.center,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.add, size: 20),
+          onPressed: value < max ? () => onChanged(value + 1) : null,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(36, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FontSettingsLink extends StatelessWidget {
+  final VoidCallback onTap;
+  final ColorScheme colors;
+
+  const _FontSettingsLink({
+    required this.onTap,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(AppDimensions.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(loc.fontSettingsSubtitle, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)),
+          const SizedBox(height: AppDimensions.md),
+          OutlinedButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.font_download, size: 18),
+            label: Text(loc.openFontSettings),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: colors.primary,
+              side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
+              padding: const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: AppDimensions.sm),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusMd)),
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

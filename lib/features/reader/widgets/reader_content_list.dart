@@ -161,6 +161,9 @@ class _ReaderContentConfig {
   final String pageNumberingSystem;
   final double translationFontSize;
   final double translationLineHeight;
+  final TextAlignOption textAlign;
+  final int lineHeight;
+  final int paragraphSpacing;
 
   const _ReaderContentConfig({
     required this.bookId,
@@ -177,6 +180,9 @@ class _ReaderContentConfig {
     required this.pageNumberingSystem,
     required this.translationFontSize,
     required this.translationLineHeight,
+    required this.textAlign,
+    required this.lineHeight,
+    required this.paragraphSpacing,
   });
 
   static ParagraphDisplayMode _toParagraphDisplayMode(
@@ -218,6 +224,9 @@ class _ReaderContentConfig {
       translationLineHeight: settings.typography.lineHeightFor(
         settings.primaryTranslationLang,
       ),
+      textAlign: settings.textAlign,
+      lineHeight: settings.lineHeight,
+      paragraphSpacing: settings.paragraphSpacing,
     );
   }
 
@@ -238,7 +247,10 @@ class _ReaderContentConfig {
         identical(other.script, script) &&
         other.pageNumberingSystem == pageNumberingSystem &&
         other.translationFontSize == translationFontSize &&
-        other.translationLineHeight == translationLineHeight;
+        other.translationLineHeight == translationLineHeight &&
+        other.textAlign == textAlign &&
+        other.lineHeight == lineHeight &&
+        other.paragraphSpacing == paragraphSpacing;
   }
 
   @override
@@ -257,6 +269,9 @@ class _ReaderContentConfig {
     pageNumberingSystem,
     translationFontSize,
     translationLineHeight,
+    textAlign,
+    lineHeight,
+    paragraphSpacing,
   );
 }
 
@@ -298,6 +313,9 @@ class _ReaderContentListState extends State<ReaderContentList> {
     pageNumberingSystem: 'vri',
     translationFontSize: 17,
     translationLineHeight: 28 / 17,
+    textAlign: TextAlignOption.justify,
+    lineHeight: 0,
+    paragraphSpacing: 8,
   );
 
   /// Identity of the data / annotations the memo was built against. New
@@ -405,6 +423,8 @@ class _ReaderContentListState extends State<ReaderContentList> {
             ? paragraph.paraId
             : null,
         ttsHighlightIsPali: slice.ttsHighlightIsPali,
+        ttsHighlightWordIndex: slice.ttsWordIndex,
+        ttsHighlightWordLineText: slice.ttsWordLineText,
         jumpHighlightLineId: slice.jumpHighlightLineId,
         jumpHighlightParaId: slice.jumpHighlightLineId != null
             ? paragraph.paraId
@@ -423,6 +443,9 @@ class _ReaderContentListState extends State<ReaderContentList> {
         paliLineHeight: config.paliTypography.lineHeight,
         translationFontSize: config.translationFontSize,
         translationLineHeight: config.translationLineHeight,
+        textAlign: config.textAlign,
+        lineHeight: config.lineHeight,
+        paragraphSpacing: config.paragraphSpacing,
       ),
     );
 
@@ -499,6 +522,14 @@ class _ReaderContentListState extends State<ReaderContentList> {
               scrollOffsetListener: widget.scrollOffsetListener,
               scrollOffsetController:
                   widget.scrollOffsetController ?? ScrollOffsetController(),
+              // Keep-alives off: paragraphs are stateless and memoized in
+              // [_memo], so retaining thousands of offscreen elements only
+              // costs memory and scroll-time bookkeeping. Repaint boundaries
+              // off: [_buildParagraph] already wraps every item in its own
+              // RepaintBoundary — the automatic one would add a second
+              // nested layer per paragraph.
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
               padding: EdgeInsets.fromLTRB(
                 0,
                 AppDimensions.lg + pad,

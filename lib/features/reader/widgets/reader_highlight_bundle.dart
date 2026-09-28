@@ -33,6 +33,13 @@ class ReaderHighlightBundle {
   /// Null = unknown/legacy (highlights translation).
   final bool? ttsHighlightIsPali;
 
+  // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
+  // into the line's words plus the line's speak substring (rendered as-is
+  // for translation, converted to display script for Pāli). Null = none.
+  final int? ttsWordLineId;
+  final int? ttsWordIndex;
+  final String? ttsWordLineText;
+
   /// Jump-flash highlight (fades out after a few seconds).
   final int? jumpHighlightLineId;
   final int? jumpHighlightParaId;
@@ -64,6 +71,7 @@ class ReaderHighlightBundle {
       lookupHighlight == null &&
       ttsHighlightLineId == null &&
       ttsHighlightParaId == null &&
+      ttsWordLineId == null &&
       jumpHighlightLineId == null &&
       jumpHighlightParaId == null &&
       ttsTargetParaId == null &&
@@ -81,6 +89,9 @@ class ReaderHighlightBundle {
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.ttsHighlightIsPali,
+    this.ttsWordLineId,
+    this.ttsWordIndex,
+    this.ttsWordLineText,
     this.jumpHighlightLineId,
     this.jumpHighlightParaId,
     this.ttsTargetParaId,
@@ -113,6 +124,10 @@ class ReaderHighlightBundle {
 
     final ttsLine = ttsHighlightParaId == paraId ? ttsHighlightLineId : null;
     final ttsIsPali = ttsLine != null ? ttsHighlightIsPali : null;
+    // The spoken word only applies to the spoken line itself.
+    final onSpokenLine = ttsLine != null && ttsWordLineId == ttsLine;
+    final wordIndex = onSpokenLine ? ttsWordIndex : null;
+    final wordLineText = onSpokenLine ? ttsWordLineText : null;
     final jumpLine = jumpHighlightParaId == paraId ? jumpHighlightLineId : null;
     final kbPara = keyboardFocusParaId == paraId ? keyboardFocusParaId : null;
     final kbLine = keyboardFocusParaId == paraId ? keyboardFocusLineId : null;
@@ -131,6 +146,8 @@ class ReaderHighlightBundle {
       lookupHighlight: lookupForPara,
       ttsHighlightLineId: ttsLine,
       ttsHighlightIsPali: ttsIsPali,
+      ttsWordIndex: wordIndex,
+      ttsWordLineText: wordLineText,
       jumpHighlightLineId: jumpLine,
       lineKeys: lineKeys,
       keyboardFocusParaId: kbPara,
@@ -150,6 +167,11 @@ class ReaderHighlightSlice {
   final int? ttsHighlightLineId;
   final bool? ttsHighlightIsPali;
 
+  // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
+  // into the line's words plus the line's speak substring (null = none).
+  final int? ttsWordIndex;
+  final String? ttsWordLineText;
+
   /// Line ID flashed by a jump *in this paragraph* (null otherwise).
   final int? jumpHighlightLineId;
 
@@ -165,6 +187,8 @@ class ReaderHighlightSlice {
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightIsPali,
+    this.ttsWordIndex,
+    this.ttsWordLineText,
     this.jumpHighlightLineId,
     this.lineKeys = const {},
     this.keyboardFocusParaId,
@@ -177,6 +201,8 @@ class ReaderHighlightSlice {
       (searchQuery == null || searchQuery!.isEmpty) &&
       lookupHighlight == null &&
       ttsHighlightLineId == null &&
+      ttsWordIndex == null &&
+      ttsWordLineText == null &&
       jumpHighlightLineId == null &&
       lineKeys.isEmpty &&
       keyboardFocusParaId == null &&
@@ -191,6 +217,8 @@ class ReaderHighlightSlice {
         identical(other.lookupHighlight, lookupHighlight) &&
         other.ttsHighlightLineId == ttsHighlightLineId &&
         other.ttsHighlightIsPali == ttsHighlightIsPali &&
+        other.ttsWordIndex == ttsWordIndex &&
+        other.ttsWordLineText == ttsWordLineText &&
         other.jumpHighlightLineId == jumpHighlightLineId &&
         mapEquals(other.lineKeys, lineKeys) &&
         other.keyboardFocusParaId == keyboardFocusParaId &&
@@ -204,6 +232,8 @@ class ReaderHighlightSlice {
     lookupHighlight,
     ttsHighlightLineId,
     ttsHighlightIsPali,
+    ttsWordIndex,
+    ttsWordLineText,
     jumpHighlightLineId,
     Object.hashAll(lineKeys.keys),
     keyboardFocusParaId,

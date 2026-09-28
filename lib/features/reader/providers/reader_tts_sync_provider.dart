@@ -9,6 +9,7 @@ class TtsSyncState {
   final bool ttsAutoScroll;
   final bool ttsJumpInProgress;
   final int? ttsTargetParaId;
+  final bool ttsControlsExpanded;
 
   /// Per-line GlobalKeys for precise TTS line fine-scroll.
   /// Created before a TTS jump in [_jumpToParagraph], consumed by
@@ -19,6 +20,7 @@ class TtsSyncState {
     this.ttsAutoScroll = true,
     this.ttsJumpInProgress = false,
     this.ttsTargetParaId,
+    this.ttsControlsExpanded = false,
     this.ttsTargetLineKeys = const {},
   });
 
@@ -27,6 +29,7 @@ class TtsSyncState {
     bool? ttsJumpInProgress,
     int? ttsTargetParaId,
     bool clearTtsTargetParaId = false,
+    bool? ttsControlsExpanded,
     Map<int, GlobalKey>? ttsTargetLineKeys,
     bool clearTtsTargetLineKeys = false,
   }) {
@@ -37,6 +40,7 @@ class TtsSyncState {
           clearTtsTargetParaId
               ? null
               : (ttsTargetParaId ?? this.ttsTargetParaId),
+      ttsControlsExpanded: ttsControlsExpanded ?? this.ttsControlsExpanded,
       ttsTargetLineKeys:
           clearTtsTargetLineKeys
               ? const {}
@@ -109,6 +113,11 @@ class TtsSyncNotifier extends StateNotifier<TtsSyncState> {
   /// Clear the target paraId (after fine-scroll completes).
   void clearTargetParaId() {
     state = state.copyWith(clearTtsTargetParaId: true);
+  }
+
+  /// Set the expanded state of the TTS floating controls.
+  void setControlsExpanded(bool expanded) {
+    state = state.copyWith(ttsControlsExpanded: expanded);
   }
 
   /// Cancel the jump timer immediately.

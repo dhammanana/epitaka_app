@@ -5,6 +5,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../shared/widgets/tts_speed_control.dart';
 import '../providers/tts_provider.dart';
 import '../services/system_tts_availability.dart';
 import '../services/system_tts_settings.dart';
@@ -209,13 +210,11 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
           title: loc.ttsPaliSpeed,
           colors: colors,
           children: [
-            _SpeedSlider(
+            TtsSpeedControl(
+              icon: Icons.speed,
+              label: loc.ttsPaliSpeed,
               value: settings.ttsPaliSpeed,
               min: 0.1,
-              max: 3.0,
-              // 29 divisions → clean 0.1 steps across the 0.1–3.0 range.
-              divisions: 29,
-              label: '${settings.ttsPaliSpeed.toStringAsFixed(1)}×',
               colors: colors,
               onChanged: (v) {
                 ref.read(settingsProvider.notifier).setTtsPaliSpeed(v);
@@ -251,12 +250,11 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
           title: loc.ttsTranslationSpeed,
           colors: colors,
           children: [
-            _SpeedSlider(
+            TtsSpeedControl(
+              icon: Icons.speed,
+              label: loc.ttsTranslationSpeed,
               value: settings.ttsSpeed,
               min: 0.5,
-              max: 8.0,
-              divisions: 71,
-              label: '${settings.ttsSpeed.toStringAsFixed(1)}×',
               colors: colors,
               onChanged: (v) {
                 ref.read(settingsProvider.notifier).setTtsSpeed(v);
@@ -728,9 +726,23 @@ class _RealVoiceTile extends StatelessWidget {
                 for (final v in filtered)
                   PopupMenuItem<String>(
                     value: v['name'] ?? 'default',
-                    child: Text(
-                      v['name'] ?? loc.unknown,
-                      overflow: TextOverflow.ellipsis,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      // Friendly label ("Iob (network)") plus the raw
+                      // engine ID as the subtitle.
+                      title: Text(
+                        SystemTtsAvailability.voiceDisplayName(v),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        v['name'] ?? loc.unknown,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 10,
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -909,10 +921,9 @@ class _EngineTileState extends ConsumerState<_EngineTile> {
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
     if (_engines.isEmpty) return const SizedBox.shrink();
-    final short = _engines.map((e) {
-      final parts = e.split('.');
-      return parts.isNotEmpty ? parts.last : e;
-    }).toList();
+    // Friendly labels, de-duplicated (two "…tts" packages would
+    // otherwise both show as "tts").
+    final labels = SystemTtsAvailability.engineDisplayNames(_engines);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.md,
@@ -933,7 +944,11 @@ class _EngineTileState extends ConsumerState<_EngineTile> {
                   ),
                 ),
                 Text(
-                  _defaultEngine ?? _engines.first,
+                  // Effective engine: the app-selected one if the user
+                  // switched, else the system default.
+                  _defaultEngine != null
+                      ? SystemTtsAvailability.engineDisplayName(_defaultEngine!)
+                      : SystemTtsAvailability.engineDisplayName(_engines.first),
                   style: AppTypography.labelSmall.copyWith(
                     color: widget.colors.onSurfaceVariant,
                   ),
@@ -946,13 +961,17 @@ class _EngineTileState extends ConsumerState<_EngineTile> {
               initialValue: _defaultEngine,
               onSelected: (name) async {
                 await ref.read(ttsProvider.notifier).setEngine(name);
-                _refresh();
+                // Re-query so the subtitle reflects the switch even when
+                // getDefaultEngine on the channel still reports the
+                // system-wide default.
+                await _refresh();
+                if (mounted) setState(() {});
               },
               itemBuilder: (context) => [
                 for (var i = 0; i < _engines.length; i++)
                   PopupMenuItem<String>(
                     value: _engines[i],
-                    child: Text(short[i], overflow: TextOverflow.ellipsis),
+                    child: Text(labels[i], overflow: TextOverflow.ellipsis),
                   ),
               ],
               child: Row(

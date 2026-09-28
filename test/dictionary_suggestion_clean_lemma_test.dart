@@ -27,11 +27,15 @@ import 'package:sqlite3/sqlite3.dart';
 /// a prefix search for 'aññ' returns them as "Did you mean?" suggestions.
 DpdDictionaryDatabase _makeDpdDb() {
   final sqlite = sqlite3.openInMemory();
-  sqlite.execute('CREATE TABLE dpd_lookup ('
-      'lookup_key TEXT, headwords TEXT, deconstructor TEXT)');
-  sqlite.execute('CREATE TABLE dpd_headwords ('
-      'id INTEGER PRIMARY KEY, lemma_1 TEXT, meaning_html TEXT, '
-      'antonym TEXT, synonym TEXT, stem TEXT, pattern TEXT)');
+  sqlite.execute(
+    'CREATE TABLE dpd_lookup ('
+    'lookup_key TEXT, headwords TEXT, deconstructor TEXT)',
+  );
+  sqlite.execute(
+    'CREATE TABLE dpd_headwords ('
+    'id INTEGER PRIMARY KEY, lemma_1 TEXT, meaning_html TEXT, '
+    'antonym TEXT, synonym TEXT, stem TEXT, pattern TEXT)',
+  );
   // The real DPD stores lookup keys WITH the homograph number; the headword
   // lemma_1 also carries it ("añña 1.1", "aññā 2.1").
   sqlite.execute("INSERT INTO dpd_lookup VALUES ('añña 1.1', '[1]', '[]')");
@@ -79,7 +83,10 @@ void main() {
     return container;
   }
 
-  Future<void> pumpPanel(WidgetTester tester, ProviderContainer container) async {
+  Future<void> pumpPanel(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
     tester.view.physicalSize = const Size(500, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -123,11 +130,19 @@ void main() {
       await settle(tester);
 
       // The suggestions show the full lemma WITH the homograph number.
-      expect(find.text('añña 1.1'), findsOneWidget);
-      expect(find.text('aññā 2.1'), findsOneWidget);
+      // (findRichText: tiles render the headword as highlighted RichText,
+      // so a plain find.text no longer matches the split spans.)
+      expect(
+        find.textContaining('añña 1.1', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('aññā 2.1', findRichText: true),
+        findsOneWidget,
+      );
 
       // Tap the first suggestion.
-      await tester.tap(find.text('añña 1.1'));
+      await tester.tap(find.textContaining('añña 1.1', findRichText: true));
       await settle(tester);
 
       // The search field must hold the CLEANED word — the re-search would

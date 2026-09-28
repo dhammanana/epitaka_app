@@ -49,6 +49,24 @@ class JumpService {
 
   JumpService(this._db);
 
+  /// Page/paragraph columns that may be interpolated into SQL.
+  /// `vri_para` is accepted as an alias for the real `vripara` column.
+  static const _allowedPageColumns = {
+    'vripage',
+    'ptspage',
+    'thaipage',
+    'mypage',
+    'vripara',
+  };
+
+  static String _resolvePageColumn(String column) {
+    final resolved = column == 'vri_para' ? 'vripara' : column;
+    if (!_allowedPageColumns.contains(resolved)) {
+      throw ArgumentError('Invalid page column: $column');
+    }
+    return resolved;
+  }
+
   /// Get the linked books (mula/attha/tika) for [bookId] from the `books` table.
   Future<List<LinkedBookRef>> getLinkedBooks(String bookId) async {
     final rows = await _db.customSelect(
@@ -195,15 +213,16 @@ class JumpService {
   /// Some books have pages like "1.3", "1.10" where the first number is
   /// constant for the whole book. This returns the prefix (e.g. "1.") or null.
   Future<String?> getPagePrefix(String bookId, String column) async {
+    final col = _resolvePageColumn(column);
     final rows = await _db.customSelect(
-      'SELECT $column FROM sentences '
-      'WHERE book_id = ? AND $column IS NOT NULL AND $column != \'\' '
+      'SELECT $col FROM sentences '
+      'WHERE book_id = ? AND $col IS NOT NULL AND $col != \'\' '
       'ORDER BY para_id ASC, line_id ASC LIMIT 5',
       variables: [Variable.withString(bookId)],
     ).get();
 
     for (final row in rows) {
-      final value = row.data[column] as String?;
+      final value = row.data[col] as String?;
       if (value == null) continue;
       final dotIndex = value.indexOf('.');
       if (dotIndex > 0) {
@@ -211,7 +230,7 @@ class JumpService {
         // Verify this prefix is consistent across the first few pages
         bool consistent = true;
         for (final otherRow in rows) {
-          final otherVal = otherRow.data[column] as String?;
+          final otherVal = otherRow.data[col] as String?;
           if (otherVal != null && otherVal.contains('.') &&
               !otherVal.startsWith(prefix)) {
             consistent = false;
@@ -233,11 +252,12 @@ class JumpService {
     String column,
   ) async {
     if (pageInput.trim().isEmpty) return null;
+    final col = _resolvePageColumn(column);
 
     // Try exact match first
     final exactRows = await _db.customSelect(
       'SELECT para_id FROM sentences '
-      'WHERE book_id = ? AND $column = ? '
+      'WHERE book_id = ? AND $col = ? '
       'ORDER BY para_id ASC LIMIT 1',
       variables: [
         Variable.withString(bookId),
@@ -256,7 +276,7 @@ class JumpService {
         final fullPage = '$prefix${pageInput.trim()}';
         final prefixedRows = await _db.customSelect(
           'SELECT para_id FROM sentences '
-          'WHERE book_id = ? AND $column = ? '
+          'WHERE book_id = ? AND $col = ? '
           'ORDER BY para_id ASC LIMIT 1',
           variables: [
             Variable.withString(bookId),
@@ -273,7 +293,7 @@ class JumpService {
     // Try partial match (containing the input)
     final likeRows = await _db.customSelect(
       'SELECT para_id FROM sentences '
-      'WHERE book_id = ? AND $column LIKE ? '
+      'WHERE book_id = ? AND $col LIKE ? '
       'ORDER BY para_id ASC LIMIT 1',
       variables: [
         Variable.withString(bookId),
@@ -291,15 +311,16 @@ class JumpService {
   /// Get the first available page number for a book in the given column.
   /// Returns null if no page data exists.
   Future<String?> getFirstPage(String bookId, String column) async {
+    final col = _resolvePageColumn(column);
     final rows = await _db.customSelect(
-      'SELECT $column FROM sentences '
-      'WHERE book_id = ? AND $column IS NOT NULL AND $column != \'\' '
+      'SELECT $col FROM sentences '
+      'WHERE book_id = ? AND $col IS NOT NULL AND $col != \'\' '
       'ORDER BY para_id ASC, line_id ASC LIMIT 1',
       variables: [Variable.withString(bookId)],
     ).get();
 
     if (rows.isEmpty) return null;
-    return rows.first.data[column] as String?;
+    return rows.first.data[col] as String?;
   }
 
   /// Get book name for a book ID.

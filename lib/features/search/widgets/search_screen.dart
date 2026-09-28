@@ -12,6 +12,7 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
 import '../providers/search_provider.dart';
+import 'search_history_chips.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import 'search_results_view.dart';
 
@@ -173,6 +174,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _executeSearch();
   }
 
+  /// Fill the search bar with a previous query from history and run it.
+  void _onHistorySelected(String query) {
+    _searchController.text = query;
+    final wordCount = query.trim().isEmpty
+        ? 0
+        : query.trim().split(RegExp(r'\s+')).length;
+    setState(() {
+      _isMultiWord = wordCount >= 2;
+      if (_isMultiWord && _wordDistance == 0) _wordDistance = 3;
+    });
+    _executeSearch();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -224,6 +238,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: Column(
         children: [
           _buildSearchBar(colors),
+          if (searchState is SearchIdle && !_showSuggestions)
+            SearchHistoryChips(onSelected: _onHistorySelected),
           _buildOptionsBar(colors, searchState),
           if (_showSuggestions && _suggestions.isNotEmpty)
             _buildSuggestions(colors),

@@ -27,6 +27,11 @@ final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
   throw lastError ?? Exception('Database not found at $dbPath');
 });
 
+/// In-memory cache for TranslationDatabase instances by language code.
+/// Prevents opening the same database multiple times (causes Drift warnings
+/// about multiple database instances with the same executor).
+final _translationDbCache = <String, Future<TranslationDatabase?>>{};
+
 /// Provider for a specific translation database (regular schema).
 ///
 /// Keyed by the language CODE string (e.g. 'en', 'th', 'vi') rather than
@@ -34,18 +39,23 @@ final epitakaDbProvider = FutureProvider<EpitakaDatabase>((ref) async {
 /// `fromCode()` silently maps unknown codes (vi, lo, ta …) to English,
 /// which made e.g. a downloaded `epitaka_vi.db` never get opened. Using the
 /// raw code here means any language offered by the manifest works.
+///
+/// Uses a module-level cache to ensure only one instance per language code
+/// is created per app run.
 final translationDbProvider =
     FutureProvider.family<TranslationDatabase?, String>((ref, langCode) async {
-      final dbDir = await getDatabaseDirectory();
-      final dbPath = p.join(
-        dbDir.path,
-        TranslationFilenameParser.build(langCode),
-      );
-      if (!await _isUsableDbFile(dbPath)) {
-        return null;
-      }
-      return TranslationDatabase.open(dbPath);
-    });
+  return _translationDbCache.putIfAbsent(langCode, () async {
+    final dbDir = await getDatabaseDirectory();
+    final dbPath = p.join(
+      dbDir.path,
+      TranslationFilenameParser.build(langCode),
+    );
+    if (!await _isUsableDbFile(dbPath)) {
+      return null;
+    }
+    return TranslationDatabase.open(dbPath);
+  });
+});
 
 /// Provider for a translation database by version.
 /// Returns the appropriate database type (regular or nissaya) based on the
@@ -61,17 +71,18 @@ final versionDbProvider = FutureProvider.family<Object?, TranslationVersion>((
   if (version.isNissaya) {
     return NissayaDatabase.open(dbPath);
   }
-  return TranslationDatabase.open(dbPath);
+  // For non-nissaya, use the cached translationDbProvider
+  return ref.read(translationDbProvider(version.languageCode).future);
 });
 
 /// Provider for a nissaya database by filename.
 final nissayaDbByFilenameProvider =
     FutureProvider.family<NissayaDatabase?, String>((ref, filename) async {
-      final dbDir = await getDatabaseDirectory();
-      final dbPath = p.join(dbDir.path, filename);
-      if (!await _isUsableDbFile(dbPath)) return null;
-      return NissayaDatabase.open(dbPath);
-    });
+  final dbDir = await getDatabaseDirectory();
+  final dbPath = p.join(dbDir.path, filename);
+  if (!await _isUsableDbFile(dbPath)) return null;
+  return NissayaDatabase.open(dbPath);
+});
 
 Future<bool> _isUsableDbFile(String dbPath) async {
   try {

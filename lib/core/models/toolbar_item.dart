@@ -34,15 +34,15 @@ class ToolbarBuiltins {
   /// The built-ins in their default display order.
   static const List<String> defaults = [
     contents,
-    outline,
+    aiAsk,
     search,
     dictionary,
     jump,
     displayLayout,
     listen,
-    bookmark,
     annotations,
-    aiAsk,
+    bookmark,
+    outline,
   ];
 
   /// Built-ins that are off by default (user can enable in Settings → Toolbar).

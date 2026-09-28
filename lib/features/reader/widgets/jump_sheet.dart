@@ -55,6 +55,7 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
     ('pts', 'PTS'),
     ('thai', 'Thai'),
     ('my', 'Myanmar'),
+    ('vri_para', 'VRI Para'),
   ];
 
   @override
@@ -399,6 +400,9 @@ class _JumpSheetState extends ConsumerState<_JumpSheet>
         return 'thaipage';
       case 'my':
         return 'mypage';
+      case 'vri_para':
+      case 'vripara':
+        return 'vripara';
       default:
         return 'vripage';
     }

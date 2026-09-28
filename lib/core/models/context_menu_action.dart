@@ -38,6 +38,8 @@ class ContextMenuBuiltins {
       'lookUp'; // device dictionary (iOS/macOS native Look Up)
   static const speak =
       'speak'; // native iOS/macOS text to speech (Speak Selection)
+  static const speakFromHere =
+      'speakFromHere'; // start TTS from the selected line
   static const explain = 'explain'; // AI
   static const summarizeChapter = 'summarizeChapter'; // AI
   static const share = 'share';
@@ -54,6 +56,7 @@ class ContextMenuBuiltins {
     dictionary,
     lookUp,
     speak,
+    speakFromHere,
     explain,
     summarizeChapter,
     share,

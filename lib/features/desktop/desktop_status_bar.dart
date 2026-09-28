@@ -6,6 +6,7 @@ import '../../core/utils/app_localizations.dart';
 import '../../features/ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/reader/providers/tts_reading_provider.dart';
+import '../../features/reader/widgets/display_layout_popup.dart';
 import '../../features/reader/widgets/reader_bottom_toolbar.dart';
 import '../../features/settings/providers/tts_provider.dart';
 import '../../shared/providers/vimamsa_panel_provider.dart';
@@ -43,6 +44,12 @@ class DesktopStatusBar extends ConsumerWidget {
     final isCurrentBookTts = ttsReading.bookId == activeTab?.bookId;
     final ttsPlayback = isCurrentBookTts ? globalTts : TtsPlaybackState.stopped;
 
+    // Whether a TTS session is active for the tab open in the reader —
+    // while it is, the status bar hosts the transport controls (the
+    // floating chip is hidden inside the desktop shell).
+    final showTtsTransport =
+        isCurrentBookTts && (ttsReading.isActive || ttsReading.isPaused);
+
     return Material(
       color: colors.surfaceContainerLowest,
       child: Container(
@@ -61,9 +68,52 @@ class DesktopStatusBar extends ConsumerWidget {
                 final compact = constraints.maxWidth < 860;
                 return Row(
                   children: [
-                    // Left spacer balances the right-aligned shell actions
-                    // so the remaining toolbar buttons stay centered.
-                    const Spacer(),
+                    // Left side: display-layout segmented trigger, opening
+                    // the display popup anchored above the status bar.
+                    Expanded(
+                      child: Row(
+                        children: [
+                          _DisplayModeStatusButton(
+                            displayMode: settings.translationDisplayMode,
+                            showTranslation: settings.showTranslation,
+                          ),
+                          if (showTtsTransport) ...[
+                            const SizedBox(width: 8),
+                            // Transport controls for the active TTS session:
+                            // Prev · Pause/Play · Next · Follow · More.
+                            _StatusIconButton(
+                              icon: Icons.skip_previous,
+                              tooltip: loc.ttsSkipPrevious,
+                              onTap: controller.onTtsPrev,
+                            ),
+                            _StatusIconButton(
+                              icon: globalTts == TtsPlaybackState.playing
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                              tooltip: globalTts == TtsPlaybackState.playing
+                                  ? loc.pause
+                                  : loc.play,
+                              onTap: controller.onTtsPlayPause,
+                            ),
+                            _StatusIconButton(
+                              icon: Icons.skip_next,
+                              tooltip: loc.ttsSkipNext,
+                              onTap: controller.onTtsNext,
+                            ),
+                            _StatusIconButton(
+                              icon: Icons.my_location,
+                              tooltip: loc.followTtsPosition,
+                              onTap: controller.onTtsFollow,
+                            ),
+                            _StatusIconButton(
+                              icon: Icons.tune,
+                              tooltip: loc.ttsControls,
+                              onTap: controller.onTtsMore,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                     // Flat reader toolbar (drives the active reader tab),
                     // centered between the two balanced sides. Contents /
                     // search / dictionary are handled by the sidebar, so
@@ -78,7 +128,10 @@ class DesktopStatusBar extends ConsumerWidget {
                       enabled: controller.enabled,
                       items: settings.toolbarItems,
                       onJumpTap: controller.onJump,
-                      onDisplayLayoutTap: controller.onDisplayLayout,
+                      // Display layout has its own dedicated button on the
+                      // left of the status bar, so the flat strip skips it
+                      // here (null handler = item not rendered).
+                      onDisplayLayoutTap: null,
                       onListenTap: controller.onListen,
                       onStopTap: controller.onStop,
                       onBookmarkTap: controller.onBookmark,
@@ -169,10 +222,93 @@ class DesktopStatusBar extends ConsumerWidget {
   }
 }
 
+/// Status-bar button showing the current display-layout mode as an icon
+/// with the mode name beside it. Tapping it opens the shared
+/// [DisplayLayoutPopup] anchored just above the status bar (same popup the
+/// reader toolbar's display button opens, without its font controls being
+/// cut off — the popup scrolls).
+class _DisplayModeStatusButton extends ConsumerWidget {
+  final TranslationDisplayMode displayMode;
+  final bool showTranslation;
+
+  const _DisplayModeStatusButton({
+    required this.displayMode,
+    required this.showTranslation,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+
+    IconData icon;
+    String label;
+    if (!showTranslation) {
+      icon = Icons.visibility_off;
+      label = loc.displayNoTranslation;
+    } else {
+      switch (displayMode) {
+        case TranslationDisplayMode.lineByLine:
+          icon = Icons.view_headline;
+          label = loc.displayLineByLine;
+        case TranslationDisplayMode.sideBySide:
+          icon = Icons.view_column;
+          label = loc.displaySideBySide;
+        case TranslationDisplayMode.hideJoinLines:
+          icon = Icons.visibility_off;
+          label = loc.hideLabel;
+      }
+    }
+
+    return Tooltip(
+      message: loc.display,
+      child: InkWell(
+        onTap: () => showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          barrierDismissible: true,
+          builder: (_) => const Align(
+            alignment: Alignment(0, 0.88),
+            child: DisplayLayoutPopup(),
+          ),
+        ),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: colors.primary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.keyboard_arrow_up,
+                size: 14,
+                color: colors.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusIconButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _StatusIconButton({
     required this.icon,

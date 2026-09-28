@@ -7,14 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
-import 'core/config/supabase_config.dart';
 import 'core/services/app_analytics.dart';
-import 'core/utils/database_initializer.dart';
-import 'features/settings/services/download_notification_service.dart';
+import 'core/utils/app_initializer.dart';
+import 'core/utils/startup_timing.dart';
 
 /// Maximum number of identical errors to report in a 2-second window.
 /// Prevents the console from being flooded with thousands of repeated
@@ -68,6 +65,11 @@ void _handleFlutterError(FlutterErrorDetails details) {
 }
 
 Future<void> main() async {
+  // Start the cold-start stopwatch first so every later milestone is
+  // reported relative to process start.
+  StartupTiming.start();
+  StartupTiming.mark('main() entered');
+
   // Capture full stack traces for framework assertion errors.
   // Crashlytics is attached inside [_handleFlutterError] once ready.
   FlutterError.onError = _handleFlutterError;
@@ -84,14 +86,21 @@ Future<void> main() async {
   // and harmless on other platforms; must run before any download can start
   // a foreground service.
   FlutterForegroundTask.initCommunicationPort();
+  StartupTiming.mark('foreground-task comm port ready');
+
+  // Run critical initializations before first frame
+  await AppInitializer.instance.initCritical();
 
   // Paint the first frame immediately. Everything below is non-critical for
   // the first paint and runs in the background: the FTS gate shows a loading
   // spinner until the DB copies + check finish, and cloud/analytics features
   // degrade gracefully until their init completes.
   runApp(const ProviderScope(child: EpitakaApp()));
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => StartupTiming.mark('first frame painted'),
+  );
 
-  unawaited(_initAsync());
+  unawaited(_initBackgroundAsync());
 
   // Debug-only macOS workaround: with `flutter run -d macos` the window
   // sometimes fails to repaint frames produced after launch (e.g. the
@@ -113,49 +122,14 @@ Future<void> main() async {
 ///   awaits it and shows loading meanwhile.
 /// - Supabase is optional/offline-safe ([AuthService] guards every access),
 ///   so it can finish whenever.
-Future<void> _initAsync() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    await AppAnalytics.instance.init(
-      analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
-      crashEnabled: prefs.getBool('crash_reports_enabled') ?? true,
-    );
-    // NOTE: 'app_open' is a reserved auto-collected event — logging it
-    // manually is silently dropped. Use a custom name so DebugView shows it.
-    await AppAnalytics.instance.logEvent('app_launched');
-  } catch (_) {}
-
-  await ensureDatabasesReady();
-
-  try {
-    await DownloadNotificationService.instance.init();
-  } catch (e) {
-    developer.log(
-      '[DL_NOTIF] Failed to initialise notification service: $e',
-      name: 'epitaka.download',
-    );
-  }
-
-  try {
-    await Supabase.initialize(
-      url: SupabaseConfig.url,
-      publishableKey: SupabaseConfig.anonKey,
-      authOptions: FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-        persistSession: true,
-        detectSessionInUri: kIsWeb,
-      ),
-    );
-    developer.log(
-      '[SUPABASE] Initialized (url=${SupabaseConfig.url})',
-      name: 'epitaka.sync',
-    );
-  } catch (e) {
-    developer.log(
-      '[SUPABASE] Initialization failed — cloud sync disabled: $e',
-      name: 'epitaka.sync',
-    );
-  }
+Future<void> _initBackgroundAsync() async {
+  // Get the ProviderScope's ref to initialize Riverpod providers
+  // We need to wait for the first frame to have a valid ref
+  await Future.delayed(const Duration(milliseconds: 100));
+  // The AppInitializer will handle background initialization
+  // Note: We can't easily get ref here without ProviderScope being mounted
+  // For now, the critical init is done, background init will be triggered from app.dart
+  // once the ProviderScope is available.
 }
 
 /// Debug-only helper backing the macOS repaint workaround in [main].

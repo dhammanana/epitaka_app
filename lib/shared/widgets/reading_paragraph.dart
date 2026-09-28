@@ -8,6 +8,11 @@ import '../../core/theme/app_typography.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../features/reader/providers/reader_lookup_highlight_provider.dart';
 import '../../features/reader/providers/reader_provider.dart';
+import '../../features/reader/providers/tts_speak_unit.dart'
+    show
+        buildTtsWordIndexSpans,
+        kTtsWordHighlightEnabled,
+        ttsActiveLineDecoration;
 import '../../features/reader/utils/reader_word_hit_test.dart'
     show ReaderLineMetadata;
 import '../../core/utils/pali_search_utils.dart';
@@ -59,6 +64,13 @@ class ReadingParagraph extends StatelessWidget {
   /// True when the TTS item being spoken is Pali, false for translation.
   /// Null highlights the translation (legacy behavior).
   final bool? ttsHighlightIsPali;
+
+  // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
+  // into the line's words plus the line's speak substring (translation:
+  // rendered as-is; Pāli: converted to the display script so the line never
+  // changes script mid-speech). Ignored unless [kTtsWordHighlightEnabled].
+  final int? ttsHighlightWordIndex;
+  final String? ttsHighlightWordLineText;
 
   /// Line ID to highlight after a jump (TOC, search, dictionary, etc.).
   /// The highlight fades out after a few seconds.
@@ -124,6 +136,29 @@ class ReadingParagraph extends StatelessWidget {
   final double paliLineHeight;
   final double translationFontSize;
   final double translationLineHeight;
+  final TextAlignOption textAlign;
+  final int lineHeight; // Additional pixels for line height
+  final int paragraphSpacing; // Extra space between paragraphs in pixels
+
+  /// Converts [TextAlignOption] to Flutter's [TextAlign].
+  TextAlign get _textAlign => switch (textAlign) {
+    TextAlignOption.start => TextAlign.start,
+    TextAlignOption.center => TextAlign.center,
+    TextAlignOption.end => TextAlign.end,
+    TextAlignOption.justify => TextAlign.justify,
+  };
+
+  /// Returns the effective line height for Pali text.
+  double get _paliLineHeight => paliLineHeight + (lineHeight / paliFontSize);
+
+  /// Returns the effective line height for translation text.
+  double _translationLineHeight(LanguageTypography? typo) {
+    final baseHeight = typo?.lineHeight ?? translationLineHeight;
+    return baseHeight + (lineHeight / (typo?.fontSize ?? translationFontSize));
+  }
+
+  /// Returns the paragraph spacing to apply between paragraphs.
+  double get _paragraphSpacing => paragraphSpacing.toDouble();
 
   const ReadingParagraph({
     super.key,
@@ -148,6 +183,8 @@ class ReadingParagraph extends StatelessWidget {
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.ttsHighlightIsPali,
+    this.ttsHighlightWordIndex,
+    this.ttsHighlightWordLineText,
     this.jumpHighlightLineId,
     this.jumpHighlightParaId,
     this.lineKeys,
@@ -161,6 +198,9 @@ class ReadingParagraph extends StatelessWidget {
     this.paliLineHeight = 32 / 19,
     this.translationFontSize = 17,
     this.translationLineHeight = 28 / 17,
+    this.textAlign = TextAlignOption.justify,
+    this.lineHeight = 0,
+    this.paragraphSpacing = 8,
     this.annotations = const [],
   });
 
@@ -198,11 +238,24 @@ class ReadingParagraph extends StatelessWidget {
           _buildPageBreakMarker(paragraph.pageNumber!, colors),
 
         // Content with vertical line flush to left for line-by-line and
-        // joined modes; side-by-side already has its own divider.
+        // joined modes when both Pali and translation are shown;
+        // side-by-side has its own left inset inside _buildSideBySide, and
+        // single-language views (Pali-only / translation-only) render
+        // without the line but with the same 12px text offset so they are
+        // not flush to the screen edge on mobile.
         if (displayMode == ParagraphDisplayMode.sideBySide)
           _buildContentBlock(context, colors)
+        else if (!showPali || !showTranslation)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+            child: _buildContentBlock(context, colors),
+          )
         else
           _buildContentWithVerticalLine(context, colors),
+
+        // Paragraph spacing
+        if (_paragraphSpacing > 0)
+          SizedBox(height: _paragraphSpacing),
       ],
     );
   }
@@ -303,7 +356,7 @@ class ReadingParagraph extends StatelessWidget {
     );
 
     final showCopyMenu =
-        heading.level < 10 && bookId != null && bookId!.isNotEmpty;
+        heading.level <= 10 && bookId != null && bookId!.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 8, left: 10),
@@ -320,7 +373,7 @@ class ReadingParagraph extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: wrappedTitle),
               if (showCopyMenu)
@@ -414,7 +467,7 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+      padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
       child: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -424,7 +477,7 @@ class ReadingParagraph extends StatelessWidget {
             ),
           ),
         ),
-        padding: const EdgeInsets.only(left: 3, top: 4, bottom: 4),
+        padding: const EdgeInsets.only(left: 5, top: 4, bottom: 4),
         child: _buildContentBlock(context, colors),
       ),
     );
@@ -435,6 +488,7 @@ class ReadingParagraph extends StatelessWidget {
       case ParagraphDisplayMode.sideBySide:
         return _buildSideBySide(context, colors);
       case ParagraphDisplayMode.hideJoinLines:
+        if (!showPali) return _buildAllTranslations(context, colors);
         return _buildJoinedPali(context, colors);
       case ParagraphDisplayMode.lineByLine:
         return _buildLinesStacked(context, colors);
@@ -442,26 +496,42 @@ class ReadingParagraph extends StatelessWidget {
   }
 
   Widget _buildSideBySide(BuildContext context, ColorScheme colors) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _buildJoinedPali(context, colors),
+    // Only-translation (showPali == false) or Pali-only: collapse to a
+    // single column instead of leaving an empty half-width column.
+    Widget content;
+    if (!showPali) {
+      content = _buildAllTranslations(context, colors);
+    } else if (!showTranslation) {
+      content = _buildJoinedPali(context, colors);
+    } else {
+      content = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildJoinedPali(context, colors),
+            ),
           ),
-        ),
-        Container(
-          width: 1,
-          color: colors.outlineVariant.withValues(alpha: 0.4),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: _buildAllTranslations(context, colors),
+          Container(
+            width: 1,
+            color: colors.outlineVariant.withValues(alpha: 0.4),
           ),
-        ),
-      ],
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: _buildAllTranslations(context, colors),
+            ),
+          ),
+        ],
+      );
+    }
+    // Side-by-side has no vertical accent line, so it needs its own left
+    // inset — otherwise the text sits flush to the screen edge on mobile.
+    // 12 matches the text offset of the lined modes (4 outer + 3 line + 5 gap).
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+      child: content,
     );
   }
 
@@ -490,6 +560,15 @@ class ReadingParagraph extends StatelessWidget {
         final isTranslationHighlighted =
             isTtsLine && ttsHighlightIsPali != true;
         final isHighlighted = isTtsLine;
+
+        // WORD-HIGHLIGHT: the spoken word belongs to the spoken line
+        // only. The flag short-circuits the whole word path when disabled.
+        final ttsWordIndex = isTtsLine && kTtsWordHighlightEnabled
+            ? ttsHighlightWordIndex
+            : null;
+        final ttsWordLineText = isTtsLine && kTtsWordHighlightEnabled
+            ? ttsHighlightWordLineText
+            : null;
 
         final isJumpHighlighted =
             jumpHighlightLineId != null &&
@@ -531,16 +610,15 @@ class ReadingParagraph extends StatelessWidget {
                 behavior: HitTestBehavior.translucent,
                 child: isPaliHighlighted
                     ? Container(
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                        decoration: ttsActiveLineDecoration(colors),
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: _buildPaliLine(
+                        child: _buildTtsPaliLine(
                           context,
                           line.paliText!,
                           colors,
                           lineId: lineId,
+                          wordIndex: ttsWordIndex,
+                          wordLineText: ttsWordLineText,
                         ),
                       )
                     : _buildPaliLine(
@@ -549,16 +627,6 @@ class ReadingParagraph extends StatelessWidget {
                         colors,
                         lineId: lineId,
                       ),
-              ),
-            if (displayMode == ParagraphDisplayMode.lineByLine &&
-                showTranslation)
-              _buildTranslationBlock(
-                context,
-                line.translations,
-                colors,
-                isTranslationHighlighted,
-                lineId: lineId,
-                remarks: line.remarks,
               ),
             if (showBookLinks && lineLinks != null && lineLinks.isNotEmpty)
               Padding(
@@ -569,6 +637,18 @@ class ReadingParagraph extends StatelessWidget {
                   context,
                   selectedIndex: selectedChipIndex,
                 ),
+              ),
+            if (displayMode == ParagraphDisplayMode.lineByLine &&
+                showTranslation)
+              _buildTranslationBlock(
+                context,
+                line.translations,
+                colors,
+                isTranslationHighlighted,
+                lineId: lineId,
+                remarks: line.remarks,
+                wordIndex: isTranslationHighlighted ? ttsWordIndex : null,
+                wordLineText: isTranslationHighlighted ? ttsWordLineText : null,
               ),
           ],
         );
@@ -616,6 +696,57 @@ class ReadingParagraph extends StatelessWidget {
     );
   }
 
+  /// TTS-active Pāli line: child of the underlined container.
+  ///
+  /// Renders the SPOKEN line converted to the DISPLAY script, so the line
+  /// never changes script mid-speech (e.g. Thai display stays Thai even
+  /// when the engine speaks Roman/Kannada/Sinhala). The word index transfers
+  /// across scripts because transliteration preserves word order/count.
+  /// Falls back to the normal Pāli line when the spoken text is missing.
+  /// WORD-HIGHLIGHT: delete the word branch (keep the fallback return) to
+  /// drop word tracking here.
+  Widget _buildTtsPaliLine(
+    BuildContext context,
+    String text,
+    ColorScheme colors, {
+    required int lineId,
+    int? wordIndex,
+    String? wordLineText,
+  }) {
+    final speakLine = wordLineText?.trim().isNotEmpty == true
+        ? wordLineText!
+        : null;
+    if (speakLine != null) {
+      // Same conversion as the display path, minus HTML/formatting: the
+      // active line is transient, so plain text keeps offset math trivial.
+      final display = convertPaliToScript(speakLine, script);
+      if (display.trim().isNotEmpty) {
+        final style = TextStyle(
+          fontSize: paliTypography.fontSize,
+          fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
+          fontStyle:
+              paliTypography.italic ? FontStyle.italic : FontStyle.normal,
+          height: _paliLineHeight,
+          color: paliTypography.effectiveColor(paliColor),
+          fontFamily: scriptFontFamily(script),
+        );
+        return Text.rich(
+          TextSpan(
+            style: style,
+            children: buildTtsWordIndexSpans(
+              plainText: display,
+              baseStyle: style,
+              colors: colors,
+              wordIndex: wordIndex ?? -1,
+            ),
+          ),
+          textAlign: _textAlign,
+        );
+      }
+    }
+    return _buildPaliLine(context, text, colors, lineId: lineId);
+  }
+
   Widget _buildChips(
     List<BookLinkData> links,
     ColorScheme colors,
@@ -652,6 +783,12 @@ class ReadingParagraph extends StatelessWidget {
   /// Translation lines with optional TTS highlight. When [remarks]
   /// (translation notes keyed by language code) contains a note for a
   /// rendered language, a small note is appended below that line.
+  ///
+  /// Only the FIRST (spoken) translation is ever highlighted — the engine
+  /// speaks the first enabled language only, so the underline container
+  /// wraps that line alone while the remaining languages render normally.
+  /// [wordIndex]/[wordLineText] locate the spoken word inside the spoken
+  /// (first-language) line's speak text.
   Widget _buildTranslationBlock(
     BuildContext context,
     Map<String, String> translations,
@@ -659,53 +796,63 @@ class ReadingParagraph extends StatelessWidget {
     bool isHighlighted, {
     required int lineId,
     Map<String, List<TranslationRemark>> remarks = const {},
+    int? wordIndex,
+    String? wordLineText,
   }) {
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
     if (langs == null || langs.isEmpty) return const SizedBox.shrink();
 
-    final children = <Widget>[];
+    Widget? firstLine;
+    final rest = <Widget>[];
     for (final langCode in langs) {
       final text = translations[langCode];
       if (text == null || text.trim().isEmpty) continue;
       final typo = langTypographies[langCode];
-      children.add(
-        _buildTranslationLine(
-          context,
-          langCode,
-          text,
-          typo,
-          colors,
-          lineId: lineId,
-        ),
+      final lineWidget = _buildTranslationLine(
+        context,
+        langCode,
+        text,
+        typo,
+        colors,
+        lineId: lineId,
+        // WORD-HIGHLIGHT: word range targets the spoken (first) language.
+        wordIndex: firstLine == null ? wordIndex : null,
+        wordLineText: firstLine == null ? wordLineText : null,
       );
+      if (firstLine == null) {
+        firstLine = lineWidget;
+      } else {
+        rest.add(lineWidget);
+      }
       final remarkList = remarks[langCode];
       if (remarkList != null && remarkList.any((r) => r.hasContent)) {
-        children.add(
+        rest.add(
           _buildRemarkNote(context, langCode, lineId, remarkList, colors),
         );
       }
     }
-    if (children.isEmpty) return const SizedBox.shrink();
+    if (firstLine == null) return const SizedBox.shrink();
 
     if (!isHighlighted) {
       // Fast path: no highlight container.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
+        children: [firstLine, ...rest],
       );
     }
 
-    // Highlighted path: wrap in tinted container.
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
-      ),
+    // Highlighted path: the spoken (first) line alone gets the shared
+    // underline container; other languages and remark notes stay plain.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          decoration: ttsActiveLineDecoration(colors),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: firstLine,
+        ),
+        ...rest,
+      ],
     );
   }
 
@@ -716,16 +863,22 @@ class ReadingParagraph extends StatelessWidget {
     LanguageTypography? typo,
     ColorScheme colors, {
     required int lineId,
+    int? wordIndex,
+    String? wordLineText,
   }) {
     final versionLabel = translationVersionLabels[langCode];
 
+    final baseLineHeight = _translationLineHeight(typo);
+
     final style = typo != null
-        ? typo.toTextStyle(fallbackColor: translationColor)
+        ? typo.toTextStyle(fallbackColor: translationColor).copyWith(
+            height: baseLineHeight,
+          )
         : TextStyle(
             fontFamily: AppTypography.translationFont,
             fontSize: translationFontSize,
             fontWeight: FontWeight.w400,
-            height: translationLineHeight,
+            height: baseLineHeight,
             color: translationColor.withValues(alpha: 0.8),
           );
 
@@ -754,6 +907,8 @@ class ReadingParagraph extends StatelessWidget {
                 colors,
                 lineId: lineId,
                 langCode: langCode,
+                wordIndex: wordIndex,
+                wordLineText: wordLineText,
               ),
             ),
           ),
@@ -882,7 +1037,7 @@ class ReadingParagraph extends StatelessWidget {
         extraAnnotations: annotations
             .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
             .toList(),
-        textAlign: TextAlign.left,
+        textAlign: _textAlign,
         lineHeightOverride: 1.8,
       ),
     );
@@ -973,6 +1128,7 @@ class ReadingParagraph extends StatelessWidget {
   }) {
     final paliTypography = this.paliTypography;
     final effectiveColor = paliTypography.effectiveColor(paliColor);
+    final baseLineHeight = lineHeightOverride ?? _paliLineHeight;
     final baseStyle = TextStyle(
       fontSize: paliTypography.fontSize,
       fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
@@ -980,7 +1136,7 @@ class ReadingParagraph extends StatelessWidget {
       decoration: paliTypography.underline
           ? TextDecoration.underline
           : TextDecoration.none,
-      height: lineHeightOverride ?? paliTypography.lineHeight,
+      height: baseLineHeight,
       color: effectiveColor,
     );
 
@@ -1023,7 +1179,7 @@ class ReadingParagraph extends StatelessWidget {
         colors,
         annotations: lineAnnotations,
         lookupHighlight: isLookupTarget ? lookupHighlight : null,
-        textAlign: textAlign,
+        textAlign: textAlign ?? _textAlign,
       );
     }
 
@@ -1032,7 +1188,7 @@ class ReadingParagraph extends StatelessWidget {
       script: script,
       colors: colors,
       style: baseStyle,
-      textAlign: textAlign,
+      textAlign: textAlign ?? _textAlign,
     );
   }
 
@@ -1043,9 +1199,32 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors, {
     required int lineId,
     String? langCode,
+    int? wordIndex,
+    String? wordLineText,
   }) {
     if (NissayaTextParser.isNissayaFormat(text)) {
       return NissayaText(text: text, baseStyle: style, plainStyle: style);
+    }
+
+    // WORD-HIGHLIGHT: the spoken translation line renders exactly what is
+    // spoken (its speak substring, already plain) with the spoken word
+    // filled as a rounded pill. Falls through to rich rendering when the
+    // spoken text is missing (e.g. progress unsupported).
+    final speakLine = wordLineText?.trim().isNotEmpty == true
+        ? wordLineText!
+        : null;
+    if (speakLine != null) {
+      return Text.rich(
+        TextSpan(
+          style: style,
+          children: buildTtsWordIndexSpans(
+            plainText: speakLine,
+            baseStyle: style,
+            colors: colors,
+            wordIndex: wordIndex ?? -1,
+          ),
+        ),
+      );
     }
 
     final query = searchQuery;

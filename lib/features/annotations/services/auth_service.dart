@@ -101,9 +101,9 @@ class AuthService {
   /// the `epitaka://` redirect back to the app.
   ///
   /// **Web / desktop / iOS:** browser-based OAuth PKCE flow
-  /// ([_signInWithGoogleBrowser]). On web the plugin's
-  /// `detectSessionInUri` (enabled in main.dart) recovers the session from
-  /// the callback URL; on desktop/iOS the deep-link listener →
+  /// ([_signInWithGoogleBrowser]). On web Supabase's
+  /// `detectSessionInUri` (enabled in AppInitializer) recovers the session
+  /// from the callback URL; on desktop/iOS the deep-link listener →
   /// [handleRedirectUri] completes the exchange.
   Future<bool> signInWithGoogle() async {
     if (_useNativeGoogleSignIn) return _signInWithGoogleNative();

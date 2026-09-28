@@ -7,15 +7,16 @@ import '../../core/utils/app_localizations.dart';
 /// Shared font-size adjuster used by the reader's display popup and the
 /// search screen's font-size popup.
 ///
-/// Shows the current Pāli and (active) translation font sizes with −/+
-/// buttons that call [SettingsNotifier.increaseFontSize]/decreaseFontSize,
-/// so both sizes change together and the readout updates live.
+/// Shows the Pāli and translation sizes as two independent rows, each with
+/// its own −/+ buttons so the user can tune them separately. Pāli calls
+/// [SettingsNotifier.increasePaliFontSize]/decreasePaliFontSize; the
+/// translation row calls increaseTranslationFontSize/decreaseTranslationFontSize,
+/// which scale every visible translation in lockstep.
 class FontSizeAdjuster extends ConsumerWidget {
   const FontSizeAdjuster({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final settings = ref.watch(settingsProvider);
     final paliSize = settings.typography.pali.fontSize.round();
@@ -29,52 +30,89 @@ class FontSizeAdjuster extends ConsumerWidget {
         ? settings.typography.typographyFor(transLang).fontSize.round()
         : null;
 
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _FontSizeRow(
+          label: loc.pali,
+          size: paliSize,
+          onDecrease: () =>
+              ref.read(settingsProvider.notifier).decreasePaliFontSize(),
+          onIncrease: () =>
+              ref.read(settingsProvider.notifier).increasePaliFontSize(),
+        ),
+        const SizedBox(height: 8),
+        if (transSize != null) ...[
+          _FontSizeRow(
+            label: loc.translationWord,
+            size: transSize,
+            onDecrease: () => ref
+                .read(settingsProvider.notifier)
+                .decreaseTranslationFontSize(),
+            onIncrease: () => ref
+                .read(settingsProvider.notifier)
+                .increaseTranslationFontSize(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One row of the font-size adjuster: `label  [−]  N  [+]`.
+class _FontSizeRow extends StatelessWidget {
+  final String label;
+  final int size;
+  final VoidCallback onDecrease;
+  final VoidCallback onIncrease;
+
+  const _FontSizeRow({
+    required this.label,
+    required this.size,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Row(
       children: [
-        _SizeButton(
-          icon: Icons.remove,
-          colors: colors,
-          onTap: () => ref.read(settingsProvider.notifier).decreaseFontSize(),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${loc.pali} $paliSize',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colors.onSurface,
-                  ),
-                ),
-                if (transSize != null)
-                  Text(
-                    '${loc.translationWord} $transSize',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-              ],
+        SizedBox(
+          width: 84,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: colors.onSurface,
             ),
           ),
         ),
         const SizedBox(width: 8),
         _SizeButton(
+          icon: Icons.remove,
+          colors: colors,
+          onTap: onDecrease,
+        ),
+        Expanded(
+          child: Text(
+            '$size',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: colors.onSurface,
+            ),
+          ),
+        ),
+        _SizeButton(
           icon: Icons.add,
           colors: colors,
-          onTap: () => ref.read(settingsProvider.notifier).increaseFontSize(),
+          onTap: onIncrease,
         ),
       ],
     );
@@ -101,13 +139,13 @@ class _SizeButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(9999),
         child: Container(
-          width: 44,
-          height: 44,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
           ),
-          child: Icon(icon, size: 22, color: colors.onSurfaceVariant),
+          child: Icon(icon, size: 20, color: colors.onSurfaceVariant),
         ),
       ),
     );

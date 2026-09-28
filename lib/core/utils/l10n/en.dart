@@ -259,6 +259,18 @@ const Map<String, String> en = {
   'Light mode': 'Light mode',
   'Dark mode': 'Dark mode',
   'Button': 'Button',
+  'Text Alignment': 'Text Alignment',
+  'Text alignment for reading content': 'Text alignment for reading content',
+  'Left': 'Left',
+  'Center': 'Center',
+  'Right': 'Right',
+  'Justify': 'Justify',
+  'Line Spacing': 'Line Spacing',
+  'Paragraph Spacing': 'Paragraph Spacing',
+  'Additional spacing in pixels': 'Additional spacing in pixels',
+  'Font Settings': 'Font Settings',
+  'Configure Pāli and translation fonts': 'Configure Pāli and translation fonts',
+  'Open Font Settings': 'Open Font Settings',
 
   // ── Reading Options ─────────────────────────────────────────────────
   'Page Numbering': 'Page Numbering',
@@ -277,6 +289,7 @@ const Map<String, String> en = {
   'Show Inline Commentaries': 'Show Inline Commentaries',
   'Show links to inlined commentaries & connected books':
       'Show links to inlined commentaries & connected books',
+  'Auto hide toolbar': 'Auto hide toolbar',
   'Book ID': 'Book ID',
   'Book Name': 'Book Name',
   'Full Citation': 'Full Citation',
@@ -403,11 +416,14 @@ const Map<String, String> en = {
   'Line': 'Line',
   'Conflict': 'Conflict',
   'Add remark': 'Add remark',
+  'ttsNextParagraph': 'Next paragraph',
+  'ttsCollapse': 'Collapse',
   'Pāli speed': 'Pāli speed',
   'Pāli voice': 'Pāli voice',
   'Translation voice': 'Translation voice',
   'Hindi voice not installed': 'Hindi voice not installed',
   'voice not installed': 'voice not installed',
+  'Enter any speed up to': 'Enter any speed up to',
   'Hindi voice missing desc':
       'A Hindi (Devanagari) voice is needed to read Pāli aloud. '
       'Install one in your device Text-to-Speech settings.',
@@ -852,6 +868,8 @@ const Map<String, String> en = {
   'Show': 'Show',
   'more': 'more',
   'result': 'result',
+  'Recent searches': 'Recent searches',
+  'Clear history': 'Clear history',
 
   // ── Dictionary panel / sheet ────────────────────────────────────────
   'DPD Dictionary': 'DPD Dictionary',
@@ -865,6 +883,10 @@ const Map<String, String> en = {
   'Line/L': 'Line/L',
   'Side/S': 'Side/S',
   'Stop': 'Stop',
+  'Play': 'Play',
+  'Pause': 'Pause',
+  'Previous paragraph': 'Previous paragraph',
+  'Next paragraph': 'Next paragraph',
   'Less': 'Less',
   'Library': 'Library',
   'Reset layout': 'Reset layout',
@@ -954,6 +976,8 @@ const Map<String, String> en = {
   'Reset to default': 'Reset to default',
   'Reset context menu actions and order to default?':
       'Reset context menu actions and order to default?',
+  'Speak from here': 'Speak from here',
+  'Start TTS from the selected line': 'Start TTS from the selected line',
 
   // ── Toolbar (reader bottom toolbar) ────────────────────────────────
   'Toolbar': 'Toolbar',

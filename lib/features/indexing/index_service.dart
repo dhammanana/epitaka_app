@@ -1,14 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../core/database/app_database.dart';
+import '../../core/database/nissaya_database.dart';
+import '../../core/database/translation_database.dart';
 import '../../core/providers/app_db_provider.dart';
 import '../../core/providers/database_provider.dart';
 import '../../core/providers/translation_manifest_provider.dart';
 import '../../core/utils/database_initializer.dart';
+import '../../core/models/translation_version.dart';
 import '../ai_qa/services/mention_service.dart';
 
 // ── Result types used by IndexController ───────────────────────────────
+
+/// Max time for the database-prep step (bundled/legacy file copies) during
+/// an index check. Generous on purpose: a first launch copies hundreds of MB.
+const Duration _kDbPrepTimeout = Duration(minutes: 2);
+
+/// Max time for opening app_data.db and querying sqlite_master. Normally
+/// well under a second — anything longer means a hang (stale SQLite lock,
+/// or path_provider's FFI stalling after a Flutter hot restart).
+const Duration _kDbOpenTimeout = Duration(seconds: 45);
 
 /// Result of a `checkStatus()` call on the index service.
 class IndexCheckStatus {
@@ -72,14 +85,36 @@ class IndexService {
 
   /// Check the current status of the FTS indexes (Pali + translations)
   /// and the mention index.
+  ///
+  /// Every step has a timeout: without one, a hang deep in the chain (e.g.
+  /// path_provider's FFI stalling after a Flutter hot restart, or a stale
+  /// SQLite lock) leaves the gate on its "checking" spinner forever.
+  /// [TimeoutException] is rethrown (not mapped to "corrupted") so the
+  /// controller can offer a plain Retry instead of data-destructive recovery.
   Future<IndexCheckStatus> checkStatus() async {
     debugPrint('[INDEX_SVC] checkStatus: checking index status');
     try {
-      await ensureDatabasesReady();
-      final appDb = await _ref.read(appDbProvider.future);
-      final paliBuilt = await appDb.isSearchIndexBuilt();
-      final mentionService = _ref.read(mentionServiceProvider);
-      final mentionBuilt = await mentionService.isIndexBuilt();
+      debugPrint('[INDEX_SVC] checkStatus: ensuring databases ready…');
+      try {
+        await ensureDatabasesReady().timeout(_kDbPrepTimeout);
+      } on TimeoutException {
+        // A stuck prep future never resolves — drop it so a later Retry
+        // starts over instead of re-awaiting the same stuck future.
+        resetDatabasePrep();
+        rethrow;
+      }
+      debugPrint('[INDEX_SVC] checkStatus: databases ready, opening app db…');
+      final appDb = await _ref
+          .read(appDbProvider.future)
+          .timeout(_kDbOpenTimeout);
+
+      debugPrint('[INDEX_SVC] checkStatus: checking indexes…');
+      // Use cached index check to avoid re-checking on startup
+      final cachedResults = await appDb
+          .checkAllIndexesCached()
+          .timeout(_kDbOpenTimeout);
+      final paliBuilt = cachedResults['pali_fts'] ?? false;
+      final mentionBuilt = cachedResults['mention_index'] ?? false;
 
       if (paliBuilt) {
         return IndexCheckStatus(
@@ -103,6 +138,12 @@ class IndexService {
         isComplete: false,
         paliBuilt: false,
       );
+    } on TimeoutException catch (e) {
+      // Let the controller turn this into a Retry-able error screen.
+      // Deliberately NOT mapped to healthy:false — that path suggests the
+      // index is damaged and offers destructive recovery.
+      debugPrint('[INDEX_SVC] checkStatus: timed out: $e');
+      rethrow;
     } catch (e) {
       debugPrint('[INDEX_SVC] checkStatus: unexpected error: $e');
       return const IndexCheckStatus(
@@ -178,6 +219,45 @@ class IndexService {
       final count = await mentionService.buildIndex();
       debugPrint('[INDEX_SVC] Mention index built: $count entries');
     }
+
+    // Ensure all database indexes exist (optimize query performance)
+    onProgress?.call(0.95, 'Optimizing database indexes…');
+    try {
+      final translationDbs = <String, TranslationDatabase>{};
+      for (final version in availableVersions) {
+        if (version.isNissaya) continue;
+        if (seenLangCodes.contains(version.languageCode)) continue;
+        final transDb = await _ref.read(
+          translationDbProvider(version.languageCode).future,
+        );
+        if (transDb != null) {
+          translationDbs[version.languageCode] = transDb;
+        }
+      }
+      NissayaDatabase? nissayaDb;
+      try {
+        for (final version in availableVersions) {
+          if (version.isNissaya && version.isAvailable) {
+            final filename = TranslationFilenameParser.build(version.languageCode);
+            nissayaDb = await _ref.read(
+              nissayaDbByFilenameProvider(filename).future,
+            );
+            break;
+          }
+        }
+      } catch (_) {}
+
+      await appDb.ensureAllDatabaseIndexes(
+        epitakaDb: epitakaDb,
+        translationDbs: translationDbs.isNotEmpty ? translationDbs : null,
+        nissayaDb: nissayaDb,
+      );
+      // Clear the index check cache so next checkStatus() picks up the new indexes
+      AppDatabase.clearIndexCheckCache();
+    } catch (e) {
+      debugPrint('[INDEX_SVC] Failed to ensure database indexes: $e');
+    }
+
     onProgress?.call(1.0, 'Index complete');
 
     return IndexBuildResult(pendingLanguages: pending);

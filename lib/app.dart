@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/utils/app_initializer.dart';
 import 'core/utils/app_localizations.dart';
 import 'core/utils/keep_awake.dart';
 import 'core/utils/l10n/app_strings.dart';
@@ -15,10 +15,14 @@ import 'core/providers/dpd_dictionary_provider.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/indexing/index_controller.dart';
 import 'features/reader/providers/tts_reading_provider.dart';
-import 'features/settings/providers/translation_download_provider.dart';
+import 'features/settings/providers/translation_download_provider.dart'
+    show DownloadStatus, translationDownloadProvider;
+import 'features/settings/services/download_notification_service.dart';
 import 'features/settings/providers/tts_provider.dart';
+import 'features/settings/services/tts_audio_handler.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_typography.dart';
+import 'features/annotations/providers/annotations_provider.dart';
 import 'features/annotations/widgets/sync_lifecycle_observer.dart';
 import 'features/changelog/changelog_service.dart';
 import 'features/update/app_update_dialog.dart';
@@ -26,26 +30,21 @@ import 'features/update/app_update_service.dart';
 import 'features/deep_links/deep_link_service.dart';
 import 'features/mcp/widgets/mcp_autostart.dart';
 import 'features/indexing/index_gate.dart';
-import 'features/settings/services/tts_audio_handler.dart';
 import 'router/app_router.dart';
 import 'shared/utils/app_shortcuts.dart';
 
-/// Initializes the Android audio service for lock-screen TTS controls
-/// and listens for app lifecycle changes to properly stop the foreground
-/// service when the app is killed.
+/// Fallback initializer for the Android audio service behind the lock-screen
+/// TTS controls, and lifecycle listener that stops the engines when the app
+/// is killed.
 ///
-/// Must be called AFTER [runApp] so the main FlutterEngine is already
-/// running. When called before [runApp], `audio_service` creates its own
-/// background FlutterEngine, which later differs from the main engine
-/// created by [runApp], causing an `IllegalStateException`:
-///
-/// ```
-/// The Activity class declared in your AndroidManifest.xml is wrong or
-/// has not provided the correct FlutterEngine.
-/// ```
-///
-/// This widget defers initialization to a post-frame callback from
-/// [initState], guaranteeing the engine is fully initialized.
+/// Primary init happens in `main()` before `runApp()` (the `audio_service`
+/// README pattern) via [initAudioServiceOnce]; this widget only retries it
+/// post-frame when that first attempt failed (some OEMs refuse the
+/// foreground service at cold start), and is a no-op otherwise. Going
+/// through [initAudioServiceOnce] instead of calling `AudioService.init()`
+/// directly is what keeps it init-once per process — a second init
+/// re-registers the handler and can make the plugin create its own
+/// FlutterEngine (a second Dart isolate sharing one sqflite database).
 class AudioServiceInitializer extends ConsumerStatefulWidget {
   final Widget child;
   const AudioServiceInitializer({super.key, required this.child});
@@ -98,26 +97,13 @@ class _AudioServiceInitializerState
 
   Future<void> _init() async {
     if (!mounted) return;
-    try {
-      await AudioService.init(
-        builder: () => ttsAudioHandler,
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.dn.epitaka.tts',
-          androidNotificationChannelName: 'TTS Playback',
-          androidStopForegroundOnPause: false,
-          androidNotificationIcon: 'mipmap/ic_launcher',
-        ),
-      );
-      developer.log(
-        '[AUDIO_SVC] AudioService.init() succeeded',
-        name: 'epitaka.tts',
-      );
-    } catch (e) {
-      developer.log(
-        '[AUDIO_SVC] AudioService.init() failed: $e',
-        name: 'epitaka.tts',
-      );
-    }
+    // Fallback only: main() already initialised the audio service before
+    // runApp, in which case this is a no-op. Going through
+    // initAudioServiceOnce() instead of calling AudioService.init() directly
+    // is what keeps it init-once per process — a second init re-registers the
+    // handler and can make the plugin create its own FlutterEngine (see the
+    // class doc above), i.e. a second Dart isolate in the same process.
+    await initAudioServiceOnce();
   }
 
   @override
@@ -135,6 +121,7 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
   late final GoRouter _router;
   final _updateService = AppUpdateService();
   bool _updateCheckDone = false;
+  bool _backgroundInitDone = false;
 
   /// Passed to GoRouter (see `buildRouter`) so AppShortcuts can resolve a
   /// BuildContext that's under MaterialApp/GoRouter at invocation time —
@@ -161,22 +148,42 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       AppTypography.setUiFontFamily(settings.uiFontFamily);
     });
 
-    // Warm the DPD dictionary connection shortly after startup. Opening
-    // dpd-dictionary.db takes ~100+ ms of synchronous sqlite work on first
-    // use; doing it while the app idles means the first double-tap lookup
-    // (reader, book-link sheet, …) only pays the query itself instead of
-    // open + query. The handle is cached by [dpdDictionaryDbProvider].
+    // Run background initializations after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 2), _warmUpDictionary);
+      _initBackground();
     });
   }
 
-  void _warmUpDictionary() {
-    if (!mounted) return;
-    // Ignore errors: if the DB is missing/not yet downloaded, the lazy open
-    // path on first lookup reports the same error as before.
-    ref.read(dpdDictionaryDbProvider.future).ignore();
-    developer.log('[DICT] DPD warm-up triggered', name: 'epitaka.dict');
+  Future<void> _initBackground() async {
+    if (_backgroundInitDone) return;
+    _backgroundInitDone = true;
+
+    // Supabase must initialize before the sync service / any sign-in
+    // attempt. AppInitializer.initBackground is currently never called, so
+    // without this the Supabase singleton stays uninitialized and every
+    // Google sign-in degrades to "sign-in failed".
+    try {
+      await AppInitializer.instance.initSupabaseOnce();
+    } catch (_) {}
+
+    // Local notifications must initialize before any show() call: on
+    // macOS an un-initialized show() crashes the process natively
+    // (Swift force-unwrap), past any Dart try/catch. Desktop show()/cancel()
+    // are no-ops; mobile needs the init for its progress notifications.
+    try {
+      await DownloadNotificationService.instance.init();
+    } catch (_) {}
+
+    // Initialize sync service (annotation sync)
+    try {
+      await ref.read(annotationSyncProvider.future);
+    } catch (_) {}
+
+    // Warm the DPD dictionary connection (provider caches the DB instance)
+    try {
+      await ref.read(dpdDictionaryDbProvider.future);
+      developer.log('[DICT] DPD warm-up triggered', name: 'epitaka.dict');
+    } catch (_) {}
   }
 
   Future<void> _checkForDesktopUpdate() async {
@@ -257,43 +264,34 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
 
     return SyncLifecycleObserver(
       child: McpAutoStart(
-        child: AudioServiceInitializer(
-          child: _KeepAwakeBinder(
-            child: Consumer(
-              builder: (context, ref, _) {
-                final app = CallbackShortcuts(
-                  bindings: AppShortcuts.bindings(_navigatorKey, ref),
-                  child: MaterialApp.router(
-                    title: 'ePitaka',
-                    debugShowCheckedModeBanner: false,
-                    // The resolved theme is set as the app theme; when no
-                    // darkTheme is provided MaterialApp falls back to [theme] in
-                    // every brightness, so the chosen scheme is always applied.
-                    theme: theme,
-                    routerConfig: _router,
-                    locale: _resolveLocale(appLanguage),
-                    supportedLocales: AppLocalizationsDelegate.supportedLocales,
-                    localizationsDelegates: [
-                      const AppLocalizationsDelegate(),
-                      GlobalMaterialLocalizations.delegate,
-                      GlobalWidgetsLocalizations.delegate,
-                      GlobalCupertinoLocalizations.delegate,
-                    ],
-                    builder: (context, child) => IndexGate(child: child!),
-                  ),
-                );
+        child: _KeepAwakeBinder(
+          child: Consumer(
+            builder: (context, ref, _) {
+              final app = CallbackShortcuts(
+                bindings: AppShortcuts.bindings(_navigatorKey, ref),
+                child: MaterialApp.router(
+                  title: 'ePitaka',
+                  debugShowCheckedModeBanner: false,
+                  theme: theme,
+                  routerConfig: _router,
+                  locale: _resolveLocale(appLanguage),
+                  supportedLocales: AppLocalizationsDelegate.supportedLocales,
+                  localizationsDelegates: [
+                    const AppLocalizationsDelegate(),
+                    GlobalMaterialLocalizations.delegate,
+                    GlobalWidgetsLocalizations.delegate,
+                    GlobalCupertinoLocalizations.delegate,
+                  ],
+                  builder: (context, child) => IndexGate(child: child!),
+                ),
+              );
 
-                // On macOS, wraps `app` in a native PlatformMenuBar so shortcuts
-                // are listed in the system menu bar and macOS's own default
-                // Cmd+F ("Find…") no longer swallows ours before CallbackShortcuts
-                // sees it. On other platforms this is a no-op passthrough.
-                return AppShortcuts.menuBar(
-                  navigatorKey: _navigatorKey,
-                  ref: ref,
-                  child: app,
-                );
-              },
-            ),
+              return AppShortcuts.menuBar(
+                navigatorKey: _navigatorKey,
+                ref: ref,
+                child: app,
+              );
+            },
           ),
         ),
       ),

@@ -45,9 +45,7 @@ class BookLinkChip extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: selected
-                  ? effectiveColor.withValues(alpha: 0.28)
-                  : effectiveColor.withValues(alpha: 0.12),
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: selected ? effectiveColor : effectiveColor.withValues(alpha: 0.35),

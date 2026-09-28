@@ -233,7 +233,9 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Only translation'));
+    // The layout modes are icon segments; "Only translation" is the
+    // article icon.
+    await tester.tap(find.byIcon(Icons.article_outlined));
     await tester.pumpAndSettle();
 
     expect(notifier.state.showPali, isFalse);

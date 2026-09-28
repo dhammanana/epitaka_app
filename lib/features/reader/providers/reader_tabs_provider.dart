@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/startup_timing.dart';
+
 /// Represents a single open reader tab.
 class ReaderTabInfo {
   final String bookId;
@@ -73,6 +75,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
   /// Open a tab (by bookId). If already open, switch to it and update
   /// fields like [searchQuery].
   void openTab(ReaderTabInfo tab) {
+    StartupTiming.mark('book open requested: ${tab.bookId}');
     // Assign a fresh jump id whenever a position is requested, so a repeat
     // request for the paragraph the reader is already on still jumps (and
     // fine-scrolls to the line).

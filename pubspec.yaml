@@ -2,7 +2,7 @@ name: epitaka
 
 description: "ePitaka - Tipitaka Reader in Multiple Languages"
 publish_to: "none"
-version: 1.1.1+32
+version: 1.1.5+36
 
 environment:
   sdk: ^3.12.2
@@ -46,6 +46,7 @@ dependencies:
   # Networking & file handling
   http: ^1.6.0
   archive: ^4.0.0
+  dict_reader: ^1.6.1
   # SHA-256 for verifying downloaded translation databases against the
   # manifest checksum (server computes the hash of the .db file)
   crypto: ^3.0.3
@@ -68,8 +69,14 @@ dependencies:
   flutter_markdown_plus: ^1.0.12
   markdown: ^7.3.1
 
-  # HTML rendering (Gavesana AI search results)
-  flutter_widget_from_html: ^0.15.0
+  # NOTE: flutter_widget_from_html was removed. Nothing renders HTML with it
+  # any more (AI answers go through flutter_markdown_plus, dictionary
+  # definitions through flutter_html), and it was the only path that pulled in
+  # cached_network_image → fwfh_cached_network_image → flutter_cache_manager →
+  # sqflite. That transitive chain is what raised
+  # "DatabaseException(database is locked (code 5 SQLITE_BUSY)) sql
+  # 'BEGIN EXCLUSIVE'" when its on-demand libCachedImageData.db was opened.
+  # Don't re-add it just to render images — AI answers are markdown now.
 
   share_plus: ^12.0.2
   # Native directory/file pickers on desktop — the Translation Builder uses
@@ -105,6 +112,11 @@ dependencies:
   firebase_analytics: ^12.0.1
   firebase_crashlytics: ^5.0.1
   pdf: ^3.13.0
+  file_picker: ^11.0.3
+  device_info_plus: ^12.4.0
+  flutter_inappwebview: ^6.1.5
+  audioplayers: ^6.8.1
+  mime: ^2.1.0
 
 flutter:
   uses-material-design: true

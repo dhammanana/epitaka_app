@@ -10,6 +10,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/startup_timing.dart';
 import '../../../features/guide/widgets/feature_guide_welcome_sheet.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
@@ -46,6 +47,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     super.initState();
     // Check if a tab index was passed via query parameter (from drawer)
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      StartupTiming.mark('library screen first frame');
       _handleTabQueryParam();
       _maybeShowFeatureGuideWelcome();
     });

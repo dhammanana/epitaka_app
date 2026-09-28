@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
+import '../../core/providers/app_db_provider.dart';
+import '../../core/utils/startup_timing.dart';
 import '../settings/services/download_foreground_service.dart';
 import '../settings/services/download_notification_service.dart';
 import 'index_service.dart';
@@ -39,8 +43,10 @@ class IndexController extends StateNotifier<IndexState> {
   Future<void> checkStatus() async {
     if (_busy) return;
     _busy = true;
+    StartupTiming.mark('index check started');
     try {
       await _checkStatusInternal();
+      StartupTiming.mark('index check done (${state.status})');
     } finally {
       _busy = false;
     }
@@ -78,6 +84,19 @@ class IndexController extends StateNotifier<IndexState> {
       state = const IndexState.notBuilt();
     } on AppDatabaseCorruptedException catch (e) {
       state = IndexState.corrupted('app_data.db could not be opened: $e');
+    } on TimeoutException {
+      // The check hung rather than failed (typical after a hot restart:
+      // path_provider's FFI can stall, or a stale SQLite lock blocks the
+      // open). Drop the cached provider future so Retry re-opens the
+      // database instead of re-awaiting the stuck attempt.
+      try {
+        _ref.invalidate(appDbProvider);
+      } catch (_) {}
+      state = IndexState.failed(
+        'The search index check timed out. This sometimes happens after a '
+        'hot restart — tap Retry, or fully stop and restart the app if it '
+        'persists.',
+      );
     } catch (e) {
       debugPrint('[INDEX] controller: checkStatus failed unexpectedly: $e');
       state = IndexState.failed('$e');

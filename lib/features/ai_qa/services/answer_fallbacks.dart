@@ -11,8 +11,14 @@ library;
 ///      model is not a flash-lite model, use the latest flash-lite model
 ///      from the fetched list.
 ///
+/// Only text models (see `isGeminiTextModel`) are ever considered, so
+/// specialized audio/video/image variants such as `gemini-3.8-flash-tts` can
+/// never enter the chain.
+///
 /// For non-Gemini providers (or unknown models) the chain is just
 /// `[answerModel]` — no heuristic renaming is attempted.
+import '../../shared/services/gemini_text_models.dart';
+
 List<String> resolveAnswerFallbacks({
   required String answerModel,
   required String toolModel,
@@ -32,9 +38,16 @@ List<String> resolveAnswerFallbacks({
   }
 
   // ── Fallback 1: same flash family, lower version ──────────────────
+  // Text models only (never a TTS/live/image variant).
   final flashModels = availableModels
       .map((m) => m.trim())
-      .where((m) => m.isNotEmpty && _isGeminiFlash(m) && !_isFlashLite(m))
+      .where(
+        (m) =>
+            m.isNotEmpty &&
+            _isGeminiFlash(m) &&
+            !_isFlashLite(m) &&
+            isGeminiTextModel(m),
+      )
       .toList();
   // Available list from the API is sorted descending; keep that order so
   // `.first` is the newest.
@@ -74,12 +87,12 @@ List<String> resolveAnswerFallbacks({
   }
 
   // ── Fallback 2: flash-lite ─────────────────────────────────────────
-  if (_isFlashLite(tool)) {
+  if (_isFlashLite(tool) && isGeminiTextModel(tool)) {
     add(tool);
   } else {
     final liteModels = availableModels
         .map((m) => m.trim())
-        .where((m) => m.isNotEmpty && _isFlashLite(m))
+        .where((m) => m.isNotEmpty && _isFlashLite(m) && isGeminiTextModel(m))
         .toList();
     if (liteModels.isNotEmpty) {
       for (final m in liteModels) {
@@ -143,6 +156,7 @@ int _compareVersions(List<int> a, List<int> b) {
 /// decrement the minor version (3.8 -> 3.7), or the major when minor is 0.
 String? _heuristicLowerFlash(String primary, List<int>? version) {
   if (version == null) return null;
+  if (!isGeminiTextModel(primary)) return null;
   final lower = primary.toLowerCase();
   if (!_isGeminiFlash(primary) || _isFlashLite(primary)) return null;
   final major = version[0];

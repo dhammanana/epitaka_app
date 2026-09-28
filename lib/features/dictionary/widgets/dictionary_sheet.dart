@@ -19,8 +19,14 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
+import '../providers/dictionary_expanded_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart'
     show dictionarySheetOpenProvider;
+import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
+import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
+import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
+import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
+import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
 import 'pali_definition_card.dart';
 
@@ -120,6 +126,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   String _draft = '';
   double? _normProgress;
 
+  // Keyboard navigation over the suggestion dropdown: -1 = caret in the
+  // field, otherwise the highlighted suggestion index (Enter accepts it).
+  int _suggestIndex = -1;
+  final Map<int, GlobalKey> _suggestKeys = {};
+  // Arrow pressed while suggestions were still loading: 0 = none,
+  // 1 = highlight first row, -1 = highlight last row once rows arrive.
+  int _suggestPending = 0;
+
   // Deconstructor state (simple ints instead of TabController to avoid
   // !semantics.parentDataDirty assertion errors inside CustomScrollView)
   // -1 means no candidate card is expanded (all collapsed by default).
@@ -152,6 +166,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   int _cachedDpdSectionCardIndex = -2;
   int _cachedDpdSectionTokenIndex = -2;
   int _cachedDpdSectionSubLookupVersion = -1;
+  bool? _cachedDpdSectionExpanded;
 
   /// Memoized *whole* results body (all dictionary sections + suggestions).
   ///
@@ -167,6 +182,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   DpdFullLookup? _cachedResultsLookup;
   String? _cachedResultsSearchWord;
   String? _cachedResultsBooksKey;
+  String? _cachedResultsMdxKey;
   AsyncValue<List<DpdHeadwordRow>>? _cachedResultsSuggestions;
   // The DPD section's interactive state is also part of the results key:
   // without it, tapping a deconstructor card (setState) would be swallowed
@@ -175,6 +191,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   int _cachedResultsCardIndex = -2;
   int _cachedResultsTokenIndex = -2;
   int _cachedResultsSubLookupVersion = -1;
+  String? _cachedResultsExpandedKey;
 
   // Search history
   late final List<String> _searchHistory = [];
@@ -193,6 +210,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _addToHistory(initial);
     }
     _attachNormProgress();
+    _focusNode.onKeyEvent = _handleSearchKey;
   }
 
   void _attachNormProgress() {
@@ -274,6 +292,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       setState(() {
         _draft = '';
         _query = '';
+        _suggestIndex = -1;
+        _suggestPending = 0;
+        _suggestKeys.clear();
       });
       return;
     }
@@ -282,7 +303,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     // meaning lookup runs on submit/enter via _performSearch.
     _suggestDebounce = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      setState(() => _draft = trimmed);
+      setState(() {
+        _draft = trimmed;
+        _suggestIndex = -1;
+        _suggestPending = 0;
+        _suggestKeys.clear();
+      });
     });
   }
 
@@ -308,6 +334,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     setState(() {
       _query = word;
       _draft = word;
+      _suggestIndex = -1;
+      _suggestPending = 0;
+      _suggestKeys.clear();
       _activeDeconCardIndex = -1;
       _activeDeconTokenIndex = 0;
       _subLookupCache.clear();
@@ -318,10 +347,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _cachedResultsLookup = null;
       _cachedResultsSearchWord = null;
       _cachedResultsBooksKey = null;
+      _cachedResultsMdxKey = null;
       _cachedResultsSuggestions = null;
       _cachedResultsCardIndex = -2;
       _cachedResultsTokenIndex = -2;
       _cachedResultsSubLookupVersion = -1;
+      _cachedResultsExpandedKey = null;
     });
   }
 
@@ -331,6 +362,96 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _searchController.text = converted;
     _addToHistory(converted);
     _initiateSearch(converted);
+  }
+
+  /// Arrow Up/Down moves through the suggestion dropdown, Enter accepts the
+  /// highlighted row. Returns handled only when a suggestion consumed the
+  /// key, so the caret and normal submit keep working otherwise.
+  KeyEventResult _handleSearchKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isDown = event.logicalKey == LogicalKeyboardKey.arrowDown;
+    final isUp = event.logicalKey == LogicalKeyboardKey.arrowUp;
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isDown && !isUp && !isEnter) return KeyEventResult.ignored;
+    if (!mounted) return KeyEventResult.ignored;
+    // Flush the live textbox value: the draft is debounced, so without
+    // this an arrow pressed right after typing would see stale state.
+    final live = _searchController.text.trim();
+    if (live != _draft) {
+      _suggestDebounce?.cancel();
+      setState(() {
+        _draft = live;
+        if (live.isEmpty) {
+          _query = '';
+        }
+        _suggestIndex = -1;
+        _suggestKeys.clear();
+      });
+    }
+    // Same gate as the suggestion box in _buildContent.
+    final mdxDicts = ref.read(mdxDictionariesProvider).valueOrNull ?? [];
+    final hasMdx = mdxDicts.any(
+      (d) => d.enabled && d.status == MdxStatus.ready,
+    );
+    if (_draft.isEmpty ||
+        _draft == _query ||
+        (_draft.length < kDictionarySuggestionMinLength && !hasMdx)) {
+      return KeyEventResult.ignored;
+    }
+    final dpdAsync = ref.read(
+      dpdDictionarySearchProvider(
+        _draft.length >= kDictionarySuggestionMinLength ? _draft : '',
+      ),
+    );
+    final mdxAsync = ref.read(mdxSuggestionsProvider(_draft));
+    final exactAsync = ref.read(mdxExactHitProvider(_draft));
+    final items = _suggestionItems(
+      dpdAsync.valueOrNull ?? [],
+      mdxAsync.valueOrNull ?? [],
+      exactAsync.valueOrNull ?? false,
+    );
+    if (items.isEmpty) {
+      // Rows for the flushed draft are still loading: swallow the arrow
+      // and highlight once they arrive, instead of dropping the keypress.
+      final loading =
+          dpdAsync.isLoading || mdxAsync.isLoading || exactAsync.isLoading;
+      if (loading && (isDown || isUp)) {
+        setState(() => _suggestPending = isDown ? 1 : -1);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (isEnter) {
+      if (_suggestIndex < 0 || _suggestIndex >= items.length) {
+        return KeyEventResult.ignored;
+      }
+      _selectWord(items[_suggestIndex].search);
+      return KeyEventResult.handled;
+    }
+    setState(() {
+      if (_suggestIndex >= items.length) {
+        _suggestIndex = items.length - 1;
+      }
+      if (isDown) {
+        _suggestIndex = _suggestIndex < items.length - 1
+            ? _suggestIndex + 1
+            : items.length - 1;
+      } else {
+        _suggestIndex = _suggestIndex == -1
+            ? items.length - 1
+            : _suggestIndex - 1;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _suggestKeys[_suggestIndex]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx);
+      }
+    });
+    return KeyEventResult.handled;
   }
 
   /// Toolbar shown when the user selects text inside a dictionary result.
@@ -743,10 +864,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   Widget _buildContent(ColorScheme colors, ScrollController scrollController) {
+    final mdxDicts = ref.watch(mdxDictionariesProvider).valueOrNull ?? [];
+    final hasMdxDicts = mdxDicts.any(
+      (d) => d.enabled && d.status == MdxStatus.ready,
+    );
     final showSuggestions =
         _draft.isNotEmpty &&
         _draft != _query &&
-        _draft.length >= kDictionarySuggestionMinLength;
+        (_draft.length >= kDictionarySuggestionMinLength || hasMdxDicts);
     if (_query.isEmpty && !showSuggestions) {
       return _buildIdleState(colors, scrollController);
     }
@@ -774,10 +899,18 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     );
   }
 
-  /// Prefix suggestions for the live draft (typing). Tapping a suggestion
+  /// Prefix suggestions for the live draft (typing). Merges DPD prefix
+  /// matches with MDX suggestions (enabled dicts, user order), with an
+  /// exact MDX headword match pinned at the top. Tapping a suggestion
   /// submits it as the full lookup.
   Widget _buildSuggestionBox(ColorScheme colors) {
-    final suggestionsAsync = ref.watch(dpdDictionarySearchProvider(_draft));
+    final dpdAsync = ref.watch(
+      dpdDictionarySearchProvider(
+        _draft.length >= kDictionarySuggestionMinLength ? _draft : '',
+      ),
+    );
+    final mdxAsync = ref.watch(mdxSuggestionsProvider(_draft));
+    final exactAsync = ref.watch(mdxExactHitProvider(_draft));
     return Container(
       constraints: const BoxConstraints(maxHeight: 260),
       margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
@@ -786,38 +919,110 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
         border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.4)),
       ),
-      child: suggestionsAsync.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
-          child: Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        ),
-        error: (_, _) => const SizedBox.shrink(),
-        data: (results) {
-          if (results.isEmpty) return const SizedBox.shrink();
-          final shown = results.take(8).toList();
+      child: Builder(
+        builder: (context) {
+          final dpd = dpdAsync.valueOrNull ?? [];
+          final mdx = mdxAsync.valueOrNull ?? [];
+          final tiles = _mergedSuggestionTiles(colors, dpd, mdx, exactAsync);
+          // Arrow pressed while rows were loading: highlight now.
+          if (_suggestPending != 0 && tiles.isNotEmpty) {
+            final pending = _suggestPending;
+            final last = tiles.length - 1;
+            _suggestPending = 0;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() => _suggestIndex = pending > 0 ? 0 : last);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final ctx = _suggestKeys[_suggestIndex]?.currentContext;
+                if (ctx != null) {
+                  Scrollable.ensureVisible(ctx);
+                }
+              });
+            });
+          }
+          if (tiles.isEmpty) {
+            if (dpdAsync.isLoading || mdxAsync.isLoading) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }
           return ListView.builder(
             shrinkWrap: true,
             padding: const EdgeInsets.symmetric(vertical: 4),
-            itemCount: shown.length,
-            itemBuilder: (context, index) {
-              final r = shown[index];
-              return SuggestionTile(
-                word: r.lemma1,
-                meaningPreview: r.meaningHtml,
-                onTap: () => _selectWord(r.cleanLemma1),
-                colors: colors,
-              );
-            },
+            itemCount: tiles.length,
+            itemBuilder: (context, index) => tiles[index],
           );
         },
       ),
     );
+  }
+
+  /// Merge MDX suggestions (enabled-order dicts first) with DPD rows,
+  /// pinning the exact headword at the top. Dedupes case-insensitively.
+  /// Shared with [_handleSearchKey] so keyboard and pointer pick the same
+  /// rows in the same order.
+  List<({String word, String search, String? preview, bool isExact})>
+  _suggestionItems(List<DpdHeadwordRow> dpd, List<String> mdx, bool exact) {
+    final seen = <String>{};
+    final items =
+        <({String word, String search, String? preview, bool isExact})>[];
+    void add(String word, String search, String? preview, bool isExact) {
+      if (seen.add(word.toLowerCase()) && items.length < 10) {
+        items.add((
+          word: word,
+          search: search,
+          preview: preview,
+          isExact: isExact,
+        ));
+      }
+    }
+
+    final query = _draft.trim();
+    if (exact) {
+      add(query, query, null, true);
+    }
+    for (final w in mdx) {
+      add(w, w, null, false);
+    }
+    for (final r in dpd) {
+      add(r.lemma1, r.cleanLemma1, r.meaningHtml, false);
+    }
+    return items;
+  }
+
+  List<Widget> _mergedSuggestionTiles(
+    ColorScheme colors,
+    List<DpdHeadwordRow> dpd,
+    List<String> mdx,
+    AsyncValue<bool> exactAsync,
+  ) {
+    final query = _draft.trim();
+    final items = _suggestionItems(dpd, mdx, exactAsync.valueOrNull == true);
+    final selected = _suggestIndex < items.length ? _suggestIndex : -1;
+    return items.asMap().entries.map((e) {
+      final i = e.key;
+      final it = e.value;
+      return SuggestionTile(
+        key: _suggestKeys.putIfAbsent(i, () => GlobalKey()),
+        word: it.word,
+        meaningPreview: it.preview,
+        onTap: () => _selectWord(it.search),
+        colors: colors,
+        highlightQuery: query,
+        isExact: it.isExact,
+        selected: i == selected,
+      );
+    }).toList();
   }
 
   Widget _buildIdleState(
@@ -1016,6 +1221,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       // which would otherwise be searched as-is.
                       onTap: () => _selectWord(result.cleanLemma1),
                       colors: colors,
+                      highlightQuery: _query.trim(),
                     );
                   }, childCount: results.length),
                 ),
@@ -1045,6 +1251,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     return Consumer(
       builder: (context, ref, _) {
         final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
+        final mdxAsync = ref.watch(mdxDictionariesProvider);
+        // Expand/collapse state is part of the memo key: toggling a card
+        // must rebuild, while sheet drag frames reuse the cached tree.
+        final expandedMap = ref.watch(dictionaryExpandedProvider);
         // When DPD misses, the "Did you mean?" suggestions are a nested
         // provider; watch it here (instead of inside a cached subtree) so a
         // resolve invalidates the memoized results and rebuilds them.
@@ -1056,6 +1266,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           error: (_, _) => const SizedBox.shrink(),
           data: (books) {
             final enabledBooks = books.where((b) => b.userChoice).toList();
+            final mdxBooks = (mdxAsync.valueOrNull ?? [])
+                .where((d) => d.enabled && d.status == MdxStatus.ready)
+                .toList();
             // Memoize: skip rebuilding when nothing changed. The sheet's
             // builder re-runs on every drag/keyboard frame, and rebuilding
             // flutter_html definitions each time is the dictionary's biggest
@@ -1063,6 +1276,17 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             final booksKey = enabledBooks
                 .map((b) => '${b.id}:${b.userChoice}:${b.userOrder}')
                 .join('|');
+            final mdxKey = mdxBooks
+                .map(
+                  (d) =>
+                      '${d.id}:${d.userOrder}:${d.entryCount}:${d.status.name}',
+                )
+                .join('|');
+            final expandedKey = [
+              'dpd:${expandedMap['dpd'] ?? true}',
+              for (final b in enabledBooks) 'book_${b.id}:${expandedMap['book_${b.id}'] ?? true}',
+              for (final m in mdxBooks) 'mdx_${m.id}:${expandedMap['mdx_${m.id}'] ?? true}',
+            ].join('|');
             // Suggestions value identity is part of the key: when it
             // transitions loading → data, the builder re-runs (watch above)
             // and this comparison fails, forcing a rebuild with fresh data.
@@ -1071,10 +1295,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 identical(_cachedResultsLookup, lookup) &&
                 _cachedResultsSearchWord == searchWord &&
                 _cachedResultsBooksKey == booksKey &&
+                _cachedResultsMdxKey == mdxKey &&
                 identical(_cachedResultsSuggestions, suggestionsAsync) &&
                 _cachedResultsCardIndex == _activeDeconCardIndex &&
                 _cachedResultsTokenIndex == _activeDeconTokenIndex &&
-                _cachedResultsSubLookupVersion == _subLookupVersion) {
+                _cachedResultsSubLookupVersion == _subLookupVersion &&
+                _cachedResultsExpandedKey == expandedKey) {
               return _cachedResultsWidget!;
             }
 
@@ -1103,6 +1329,15 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       searchWord,
                       enabledBooks,
                     ),
+                    for (final m in mdxBooks)
+                      SliverToBoxAdapter(
+                        child: MdxDefinitionSection(
+                          dictId: m.id,
+                          dictTitle: m.title,
+                          searchWord: searchWord,
+                          onEntryTap: _selectWord,
+                        ),
+                      ),
                     if (includePrefixSuggestions)
                       ..._prefixSuggestionsSlivers(colors, ref),
                     const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -1115,10 +1350,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             _cachedResultsLookup = lookup;
             _cachedResultsSearchWord = searchWord;
             _cachedResultsBooksKey = booksKey;
+            _cachedResultsMdxKey = mdxKey;
             _cachedResultsSuggestions = suggestionsAsync;
             _cachedResultsCardIndex = _activeDeconCardIndex;
             _cachedResultsTokenIndex = _activeDeconTokenIndex;
             _cachedResultsSubLookupVersion = _subLookupVersion;
+            _cachedResultsExpandedKey = expandedKey;
             return built;
           },
         );
@@ -1160,6 +1397,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           bookName: book.name,
           searchWord: searchWord,
           colors: colors,
+          onEntryTap: _selectWord,
         ),
       };
       if (child is SizedBox && child.child == null) {
@@ -1175,12 +1413,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// data or expand/collapse state actually changed. See the fields above
   /// for why this cache exists — it's what keeps sheet dragging smooth.
   Widget _buildDpdSectionMemoized(ColorScheme colors, DpdFullLookup lookup) {
+    final expanded = ref.read(dictionaryExpandedProvider)['dpd'] ?? true;
     final cached = _cachedDpdSectionWidget;
     if (cached != null &&
         identical(_cachedDpdSectionLookup, lookup) &&
         _cachedDpdSectionCardIndex == _activeDeconCardIndex &&
         _cachedDpdSectionTokenIndex == _activeDeconTokenIndex &&
-        _cachedDpdSectionSubLookupVersion == _subLookupVersion) {
+        _cachedDpdSectionSubLookupVersion == _subLookupVersion &&
+        _cachedDpdSectionExpanded == expanded) {
       return cached;
     }
     final built = _buildDpdSection(colors, lookup);
@@ -1189,70 +1429,57 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _cachedDpdSectionCardIndex = _activeDeconCardIndex;
     _cachedDpdSectionTokenIndex = _activeDeconTokenIndex;
     _cachedDpdSectionSubLookupVersion = _subLookupVersion;
+    _cachedDpdSectionExpanded = expanded;
     return built;
   }
 
   Widget _buildDpdSection(ColorScheme colors, DpdFullLookup lookup) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliFontFamily = pali.fontFamily.fontFamily;
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppDimensions.sm),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: colors.outlineVariant.withValues(alpha: 0.55),
-        ),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-      ),
-      child: Padding(
-        padding: EdgeInsetsGeometry.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Section label
-            Row(
-              children: [
-                Icon(Icons.auto_stories, size: 16, color: colors.primary),
-                const SizedBox(width: 6),
-                Text(
-                  AppLocalizations.of(context).dpdDictionary,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
-                    fontFamily: paliFontFamily,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
-            // Deconstructor cards (if available)
-            if (lookup.hasDeconstructor) ...[
-              _buildDeconstructorSection(colors, lookup),
-              const SizedBox(height: 12),
-            ],
-
-            // English meaning from lookup.epd (if available)
-            if (lookup.hasEpd) ...[
-              _buildEpdSection(colors, lookup.lookup!.epd!),
-              const SizedBox(height: 12),
-            ],
-
-            // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
-            // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
-            // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
-            // so no extra wrapping is needed here.
-            if (lookup.hasHeadwords)
-              ...lookup.headwords.map((hw) {
-                return DpdHeadwordCard(
-                  lemma: hw.lemma1,
-                  meaningHtml: hw.meaningHtml,
-                  colors: colors,
-                );
-              }),
+    // Collapsed: header only. The expensive headword HTML is only built
+    // while expanded (lazy), and the expand state persists across searches.
+    final expanded =
+        ref.watch(dictionaryExpandedFamilyProvider('dpd'));
+    if (!expanded) {
+      return DictionaryCollapsibleCard(
+        dictionaryKey: 'dpd',
+        title: AppLocalizations.of(context).dpdDictionary,
+        icon: Icons.auto_stories,
+        colors: colors,
+        child: const SizedBox.shrink(),
+      );
+    }
+    return DictionaryCollapsibleCard(
+      dictionaryKey: 'dpd',
+      title: AppLocalizations.of(context).dpdDictionary,
+      icon: Icons.auto_stories,
+      colors: colors,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Deconstructor cards (if available)
+          if (lookup.hasDeconstructor) ...[
+            _buildDeconstructorSection(colors, lookup),
+            const SizedBox(height: 12),
           ],
-        ),
+
+          // English meaning from lookup.epd (if available)
+          if (lookup.hasEpd) ...[
+            _buildEpdSection(colors, lookup.lookup!.epd!),
+            const SizedBox(height: 12),
+          ],
+
+          // Headwords HTML — DpdHeadwordCard's DpdHtmlRichText wraps itself
+          // in ExcludeSemantics at the source (see dictionary_search_shared.dart)
+          // to avoid the flutter_html WidgetSpan merge-up '!conflict' assertion,
+          // so no extra wrapping is needed here.
+          if (lookup.hasHeadwords)
+            ...lookup.headwords.map((hw) {
+              return DpdHeadwordCard(
+                lemma: hw.lemma1,
+                meaningHtml: hw.meaningHtml,
+                colors: colors,
+              );
+            }),
+        ],
       ),
     );
   }

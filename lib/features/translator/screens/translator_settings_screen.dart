@@ -32,6 +32,7 @@ import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_app_bar.dart';
 import '../../shared/models/ai_provider.dart';
 import '../../shared/services/ai_model_service.dart';
+import '../../shared/services/gemini_text_models.dart';
 import '../providers/translator_provider.dart';
 import '../translator_constants.dart';
 import '../translator_settings.dart';
@@ -159,8 +160,15 @@ class _TranslatorSettingsScreenState
 
   String _sensibleDefaultModel(List<String> models) {
     if (models.isEmpty) return kTranslatorDefaultModel;
+    // Prefer the best Gemini text model (never a TTS/live/image variant)
+    // when the list holds Gemini ids; other providers keep the old newest
+    // flash-first heuristic.
+    if (models.any((m) => m.toLowerCase().startsWith('gemini-'))) {
+      final best = pickBestGeminiAnswerModel(models);
+      if (best != null) return best;
+    }
     final flash = models
-        .where((m) => m.toLowerCase().contains('flash'))
+        .where((m) => m.toLowerCase().contains('flash') && isGeminiTextModel(m))
         .toList();
     return flash.isNotEmpty ? flash.first : models.first;
   }

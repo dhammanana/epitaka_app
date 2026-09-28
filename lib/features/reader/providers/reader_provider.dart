@@ -7,6 +7,7 @@ import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/startup_timing.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
 
@@ -217,6 +218,10 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   /// All headings for this book (loaded once).
   List<HeadingInfo>? _headings;
 
+  /// Level-10 section markers keyed by paraId (loaded once, kept separate
+  /// so outline / nearby-heading logic stays structural-only).
+  Map<int, HeadingInfo>? _l10Headings;
+
   /// Monotonically increasing generation counter.  Incremented before
   /// every async [_loadBook] call.  When the async load completes, the
   /// captured generation is compared against the current counter.  If
@@ -251,6 +256,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         ]);
         if (prevHash != nextHash) {
           _headings = null; // Reset headings to force clean reload
+          _l10Headings = null;
           _loadBook();
         }
       }
@@ -320,11 +326,18 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         'paraCount=${state.paragraphs.length} elapsedMs=${sw.elapsedMilliseconds}',
         name: 'epitaka.reader',
       );
+      StartupTiming.mark(
+        'book loaded: $_bookId '
+        '(loadMs=${sw.elapsedMilliseconds}, paras=${state.paragraphs.length})',
+      );
     } catch (e, stack) {
       sw.stop();
       developer.log(
         '[LOAD] Error loading bookId=$_bookId elapsedMs=${sw.elapsedMilliseconds}: $e\n$stack',
         name: 'epitaka.reader',
+      );
+      StartupTiming.mark(
+        'book load FAILED: $_bookId (loadMs=${sw.elapsedMilliseconds})',
       );
       // Only set error state if this is still the latest generation
       if (gen == _loadGeneration) {
@@ -374,6 +387,24 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         )
         .toList();
 
+    final l10rows =
+        await (db.select(db.headings)
+              ..where((h) => h.bookId.equals(_bookId) & h.level.equals(10))
+              ..orderBy([(h) => OrderingTerm(expression: h.paraId)]))
+            .get();
+    _l10Headings = {
+      for (final row in l10rows)
+        row.paraId: HeadingInfo(
+          bookId: row.bookId,
+          paraId: row.paraId,
+          level: row.level,
+          title: row.title,
+          chapterLen: row.chapterLen,
+          parent: row.parent,
+          scId: row.scId,
+        ),
+    };
+
     buildSw.stop();
     developer.log(
       '[LOAD] Headings build: ${buildSw.elapsedMilliseconds}ms',
@@ -382,17 +413,30 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
   }
 
   /// Find the heading that exactly matches [paraId], if any.
+  ///
+  /// Structural headings (`level < 10`) win; level-10 section markers are
+  /// returned as a fallback so they also render (with the ⋮ copy menu).
   ParagraphHeading? _headingForPara(int paraId) {
-    if (_headings == null) return null;
-    for (final h in _headings!) {
-      if (h.paraId == paraId) {
-        return ParagraphHeading(
-          title: h.title ?? '',
-          level: h.level ?? 1,
-          paraId: h.paraId,
-          chapterLen: h.chapterLen,
-        );
+    if (_headings != null) {
+      for (final h in _headings!) {
+        if (h.paraId == paraId) {
+          return ParagraphHeading(
+            title: h.title ?? '',
+            level: h.level ?? 1,
+            paraId: h.paraId,
+            chapterLen: h.chapterLen,
+          );
+        }
       }
+    }
+    final l10 = _l10Headings?[paraId];
+    if (l10 != null) {
+      return ParagraphHeading(
+        title: l10.title ?? '',
+        level: l10.level ?? 10,
+        paraId: l10.paraId,
+        chapterLen: l10.chapterLen,
+      );
     }
     return null;
   }

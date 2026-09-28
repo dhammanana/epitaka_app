@@ -265,6 +265,13 @@ class ReaderScrollController {
     if (ref.read(readerTabsProvider).activeTab?.bookId != bookId) return;
     if (!isPhone()) return;
 
+    // Auto-hide disabled → keep the app bar + bottom toolbar visible.
+    if (!ref.read(settingsProvider).autoHideToolbar) {
+      if (appBarCollapsed.value) appBarCollapsed.value = false;
+      _scrollAccum[bookId] = 0;
+      return;
+    }
+
     // Suppress app bar collapse/expand for ALL programmatic scrolls,
     // not just the initial position restoration. This prevents TTS
     // auto-scroll, TOC jumps, search-result jumps, and Follow-TTS
@@ -491,8 +498,24 @@ class ReaderScrollController {
           endControlledScroll();
           return;
         }
-        if (!isMounted()) return;
-        if (_pendingJumpParaId[bookId] != paraId) return;
+        if (!isMounted()) {
+          // Screen went away while waiting for the book to load. This jump
+          // is dead, but it still holds a controlled-scroll count — release
+          // it so the app bar / bottom toolbar can never get wedged hidden
+          // (endControlledScroll is mount-safe).
+          _pendingJumpParaId.remove(bookId);
+          endControlledScroll();
+          return;
+        }
+        if (_pendingJumpParaId[bookId] != paraId) {
+          // Superseded by a newer jump while waiting for the book to load
+          // (rapid TOC/search taps, tab switch mid-load). This jump is dead,
+          // but it still holds a controlled-scroll count — release it for
+          // the same reason. The pending marker belongs to the newer jump,
+          // so leave it alone.
+          endControlledScroll();
+          return;
+        }
 
         state = ref.read(readerDataProvider(bookId));
         index = state.paragraphs.indexWhere((p) => p.paraId == paraId);
@@ -531,7 +554,14 @@ class ReaderScrollController {
         name: 'epitaka.reader.ui',
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!isMounted()) return;
+        // Always balance the begin() above, even when unmounted: the screen
+        // may be gone but this controller's flags must not leak — a leaked
+        // hold wedges the app bar collapsed and the bottom toolbar
+        // off-screen. endControlledScroll is mount-safe.
+        if (!isMounted()) {
+          endControlledScroll();
+          return;
+        }
         jumpToParagraph(
           bookId,
           paraId,
@@ -539,11 +569,7 @@ class ReaderScrollController {
           alignment: alignment,
           lineId: lineId,
           retryCount: retryCount + 1,
-        ).then((_) {
-          if (isMounted()) {
-            endControlledScroll();
-          }
-        });
+        ).then((_) => endControlledScroll());
       });
       return;
     }
@@ -592,15 +618,34 @@ class ReaderScrollController {
       }
       return alignment;
     }();
-    if (animate) {
-      await controller.scrollTo(
-        index: index,
-        alignment: useAlignment,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+    // A throw or hang in the scroll below must never wedge the app-bar
+    // suppress flags: if the list is disposed mid-scroll (tab switch on
+    // Android) the package's scroll future can throw
+    // (_scrollableListState!) or never complete, which used to hold
+    // suppressAppBarScroll/isInitialJumpPending forever — leaving the app
+    // bar collapsed and the bottom toolbar stuck below the screen.
+    try {
+      if (animate) {
+        await controller
+            .scrollTo(
+              index: index,
+              alignment: useAlignment,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            )
+            .timeout(const Duration(seconds: 5));
+      } else {
+        controller.jumpTo(index: index, alignment: useAlignment);
+      }
+    } catch (e) {
+      developer.log(
+        '[JUMP] book=$bookId paraId=$paraId paragraph scroll failed ($e) — '
+        'releasing jump flags',
+        name: 'epitaka.reader.ui',
       );
-    } else {
-      controller.jumpTo(index: index, alignment: useAlignment);
+      _pendingJumpParaId.remove(bookId);
+      endControlledScroll();
+      return;
     }
 
     // Clear initialParaId / initialLineId
@@ -648,8 +693,15 @@ class ReaderScrollController {
             name: 'epitaka.reader.ui',
           );
           endControlledScroll();
+        } else {
+          // Screen went away before the frame ran: still release this
+          // jump's hold (mount-safe) so the flags can never leak.
+          endControlledScroll();
         }
       });
+    } else {
+      // Screen already gone: still release this jump's hold (mount-safe).
+      endControlledScroll();
     }
   }
 
@@ -891,7 +943,12 @@ class ReaderScrollController {
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!isMounted()) return;
+        if (!isMounted()) {
+          // Screen went away mid-retry: still release this jump's hold
+          // (mount-safe) so the flags can never leak.
+          finish();
+          return;
+        }
         _fineScrollByGeometry(
           bookId,
           paraIndex,

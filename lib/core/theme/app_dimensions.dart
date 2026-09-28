@@ -39,5 +39,9 @@ class AppDimensions {
   // ── Misc ────────────────────────────────────────────────────────────
   static const double tabHeight = 44;
   static const double bottomToolbarHeight = 56;
+  // Gap between the floating pill's bottom edge and the bottom safe-area
+  // inset. Kept generous so the pill never sits too close to the screen
+  // bottom (or under the Android system navigation bar).
+  static const double bottomToolbarBottomMargin = 65;
   static const double appBarHeight = 64;
 }

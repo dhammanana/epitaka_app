@@ -120,6 +120,7 @@ class AppLocalizations {
   String get showBookLinks => _t('Show Inline Commentaries');
   String get showBookLinksSubtitle =>
       _t('Show links to inlined commentaries & connected books');
+  String get autoHideToolbar => _t('Auto hide toolbar');
   String get libraryBrowser => _t('Library Browser');
   String get defaultExpandLevel => _t('Default expand level');
   String get collapsed => _t('Collapsed');
@@ -230,6 +231,18 @@ class AppLocalizations {
   String get lightMode => _t('Light mode');
   String get darkMode => _t('Dark mode');
   String get buttonLabel => _t('Button');
+  String get textAlign => _t('Text Alignment');
+  String get textAlignSubtitle => _t('Text alignment for reading content');
+  String get textAlignStart => _t('Left');
+  String get textAlignCenter => _t('Center');
+  String get textAlignEnd => _t('Right');
+  String get textAlignJustify => _t('Justify');
+  String get lineSpacing => _t('Line Spacing');
+  String get paragraphSpacing => _t('Paragraph Spacing');
+  String get spacingSubtitle => _t('Additional spacing in pixels');
+  String get fontSettings => _t('Font Settings');
+  String get fontSettingsSubtitle => _t('Configure Pāli and translation fonts');
+  String get openFontSettings => _t('Open Font Settings');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READING OPTIONS SCREEN
@@ -415,6 +428,8 @@ class AppLocalizations {
   String get lookUpDesc => _t('Look up in device dictionary (iOS/macOS)');
   String get speak => _t('Speak');
   String get speakDesc => _t('Speak the selected text (iOS/macOS)');
+  String get speakFromHere => _t('Speak from here');
+  String get speakFromHereDesc => _t('Start TTS from the selected line');
   String get resetToDefault => _t('Reset to default');
   String get resetToDefaultConfirm =>
       _t('Reset context menu actions and order to default?');
@@ -496,12 +511,20 @@ class AppLocalizations {
   String get testHearSample =>
       _t('Hear a sample of the current voice & settings');
   String get playing => _t('Playing…');
+  String get play => _t('Play');
+  String get pause => _t('Pause');
+  String get ttsSkipPrevious => _t('Previous paragraph');
+  String get ttsSkipNext => _t('Next paragraph');
   String get tapPauseOrStop => _t('Tap pause or stop to control playback');
   String get paused => _t('Paused');
   String get tapResume => _t('Tap resume to continue');
   String get loadingAudio => _t('Preparing audio…');
   String get systemDefault => _t('System Default');
   String get config => _t('Config');
+
+  /// Hint under a typed TTS speed value: any number up to the cap.
+  String ttsSpeedRangeHint(double max) =>
+      '${_t('Enter any speed up to')} $max×';
   String get ttsSpeakMode => _t('Speak');
   String get ttsSpeakTranslation => _t('Translation');
   String get ttsSpeakTranslationDesc => _t('Reads the translation aloud');
@@ -546,6 +569,8 @@ class AppLocalizations {
   String get line => _t('Line');
   String get conflict => _t('Conflict');
   String get addRemark => _t('Add remark');
+  String get ttsNextParagraph => _t('Next paragraph');
+  String get ttsCollapse => _t('Collapse');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  TTS REPLACEMENTS SCREEN
@@ -697,6 +722,8 @@ class AppLocalizations {
   String get showLabel => _t('Show');
   String get moreLabel => _t('more');
   String get resultSingular => _t('result');
+  String get recentSearches => _t('Recent searches');
+  String get clearHistory => _t('Clear history');
 
   /// `Within N words`
   String withinNWords(int n) => '${_t('Within')} $n ${_t('words')}';
