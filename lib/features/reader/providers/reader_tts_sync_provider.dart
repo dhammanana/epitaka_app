@@ -77,7 +77,6 @@ class TtsSyncNotifier extends StateNotifier<TtsSyncState> {
 
   /// Set the TTS jump-in-progress flag with a timer to auto-clear.
   void setJumpInProgress() {
-    developer.log('[TTS_SYNC] setJumpInProgress', name: 'epitaka.tts');
     state = state.copyWith(ttsJumpInProgress: true);
     _ttsJumpTimer?.cancel();
     _ttsJumpTimer = Timer(const Duration(milliseconds: 200), () {

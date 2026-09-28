@@ -44,10 +44,6 @@ class ReaderJumpController {
 
     if (index < 0) {
       if (!state.isLoaded) {
-        developer.log(
-          '[JUMP] book=$bookId paraId=$paraId data still loading, waiting…',
-          name: 'epitaka.reader',
-        );
         await _ref.read(readerDataProvider(bookId).notifier).waitUntilLoaded();
         if (_pendingJumpParaId[bookId] != paraId) return false;
 
@@ -87,11 +83,6 @@ class ReaderJumpController {
         retryCount: retryCount + 1,
       );
     }
-
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId index=$index lineId=$lineId animate=$animate',
-      name: 'epitaka.reader.ui',
-    );
 
     lastJumpedParaId[bookId] = paraId;
 
@@ -149,11 +140,6 @@ class ReaderJumpController {
       tabsNotifier.clearInitialParaId(tabIndex);
     }
     _pendingJumpParaId.remove(bookId);
-
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId COMPLETE',
-      name: 'epitaka.reader.ui',
-    );
 
     return true;
   }

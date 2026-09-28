@@ -1,3 +1,4 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 /// Provides the [ReaderToolbarController] to the widget subtree inside the
@@ -57,11 +58,27 @@ class ReaderToolbarController extends ChangeNotifier {
   VoidCallback? onTtsFollow;
   VoidCallback? onTtsMore;
 
+  bool _disposed = false;
+  bool _notifyPending = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notifySafe() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
   /// Registers the current set of action handlers.
   ///
   /// Called by [ReaderScreen] during build. Only notifies listeners when the
   /// enabled flag or any handler identity changed, so the status bar doesn't
-  /// rebuild on every reader rebuild.
+  /// rebuild on every reader rebuild. A notify that lands mid-build is
+  /// deferred to the next frame so the listening status bar is never marked
+  /// dirty during the build phase.
   void update({
     required bool enabled,
     VoidCallback? onContents,
@@ -110,7 +127,23 @@ class ReaderToolbarController extends ChangeNotifier {
     this.onTtsNext = onTtsNext;
     this.onTtsFollow = onTtsFollow;
     this.onTtsMore = onTtsMore;
-    if (changed) notifyListeners();
+    if (!changed) return;
+    // [ReaderScreen] registers handlers synchronously inside build, so a
+    // first registration (or an enabled flip) can land mid-build while the
+    // status bar's ListenableBuilder is also building. Notifying
+    // synchronously then throws "setState() called during build", so defer
+    // to the next frame (coalescing repeat updates into one notify).
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_notifyPending) return;
+      _notifyPending = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _notifyPending = false;
+        _notifySafe();
+      });
+      return;
+    }
+    notifyListeners();
   }
 
   /// Clears all handlers (e.g. when no book is open).

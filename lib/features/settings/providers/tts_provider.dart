@@ -50,6 +50,15 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   final TtsUtteranceQueue _utterances = TtsUtteranceQueue();
   String? _currentText;
 
+  /// Outcome of the most recently finished utterance: whether the engine
+  /// reported an error, and wall-clock milliseconds from enqueue to
+  /// completion. The reading loop reads it after each unit to detect a
+  /// failing engine (error callbacks or implausibly fast completions) and
+  /// stop the session with an actionable notice instead of fast-skipping
+  /// silently through lines. Null before the first utterance or after
+  /// [stop] (which resolves outstanding entries without engine playback).
+  ({bool errored, int elapsedMs})? lastOutcome;
+
   /// Subscription to Android's ACTION_AUDIO_BECOMING_NOISY broadcast
   /// (triggered when Bluetooth disconnects or the headphone jack is
   /// removed). Set up when TTS starts speaking, cancelled on stop.
@@ -165,10 +174,18 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   }
 
   /// Route an engine done/cancel/error-event to the head entry. Empty queue
-  /// means a late/duplicate callback — ignored.
-  void _routeDone() {
+  /// means a late/duplicate callback — ignored. Records the utterance
+  /// outcome (error flag + wall time) BEFORE resolving, so a sequential
+  /// waiter always observes its own utterance's outcome for failure
+  /// detection.
+  void _routeDone({bool error = false}) {
     final entry = _utterances.popHead();
     if (entry == null) return;
+    if (error) entry.errored = true;
+    lastOutcome = (
+      errored: entry.errored,
+      elapsedMs: DateTime.now().difference(entry.enqueuedAt).inMilliseconds,
+    );
     entry.resolve();
     if (_utterances.isEmpty && !_disposed) {
       if (state == TtsPlaybackState.playing) {
@@ -185,6 +202,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     if (_disposed) return;
     final entry = _utterances.matchByText(text);
     final cb = entry?.onProgress;
+    final disp = w.length > 20 ? '${w.substring(0, 20)}…' : w;
+    developer.log(
+      '[TTS_WORD] engine s=$s e=$e word="$disp" textLen=${text.length} '
+      'matched=${entry != null} speakLen=${entry?.speakText.length} '
+      'sourceLen=${entry?.sourceText.length} hasCb=${cb != null}',
+      name: 'epitaka.tts',
+    );
     if (cb == null) return;
     try {
       cb(
@@ -217,13 +241,17 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Configure the [AudioSession] for TTS playback and listen for
   /// audio route changes (Bluetooth disconnect / headphone jack removal).
   ///
-  /// Mirrors anx-reader's TtsHandler._initAudioSession: explicit `playback`
-  /// category + `spokenAudio` mode (not the generic `speech()` recipe) so
-  /// Android treats TTS as media playback and keeps the foreground service
-  /// alive with the screen off.
+  /// Android focus is TRANSIENT-MAY-DUCK, not permanent gain: the audible
+  /// audio comes from the system TTS engine's own process (not from us),
+  /// and that engine requests transient focus for every utterance. Holding
+  /// permanent gain makes each of its requests hit our interruption
+  /// listener and auto-pause/kill the just-started utterance (a few words
+  /// play, then silence, then the loop advances — the release "fast skip").
+  /// May-duck still yields to real preemptions (calls/alarms arrive as
+  /// lossTransient → pause), while engine duck-requests are ignored by the
+  /// reading loop (see its interruption handler).
   Future<void> _configureAudioSession() async {
     if (_audioSessionConfigured) return;
-    _audioSessionConfigured = true;
 
     try {
       final session = await AudioSession.instance;
@@ -232,12 +260,18 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
           avAudioSessionCategory: AVAudioSessionCategory.playback,
           avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.none,
           avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+          androidAudioFocusGainType:
+              AndroidAudioFocusGainType.gainTransientMayDuck,
+          androidWillPauseWhenDucked: false,
         ),
       );
       // Claim audio focus: without setActive(true) the OS never routes
       // media buttons to our MediaSession and may duck/kill TTS when
       // backgrounded (anx-reader calls setActive(true) in play()).
       await session.setActive(true);
+      // Latched only on success: a failed attempt must retry on the next
+      // speak instead of silently running session-less forever.
+      _audioSessionConfigured = true;
       _audioFocusClaimed = true;
       developer.log(
         '[TTS_AUDIO_SESSION] AudioSession configured (speech recipe)',
@@ -291,11 +325,11 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     _flutterTts = tts;
 
     tts.setStartHandler(_routeStart);
-    tts.setCompletionHandler(_routeDone);
-    tts.setCancelHandler(_routeDone);
+    tts.setCompletionHandler(() => _routeDone());
+    tts.setCancelHandler(() => _routeDone());
     tts.setErrorHandler((msg) {
       developer.log('[TTS] engine error: $msg', name: 'epitaka.tts');
-      _routeDone();
+      _routeDone(error: true);
     });
     tts.setProgressHandler(
       (String text, int s, int e, String w) => _routeProgress(text, s, e, w),
@@ -1056,6 +1090,10 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     translationIssueNotice = null;
     _langChecks.clear();
     _voicesCache = null;
+    // Outstanding entries are resolved by the flush below without engine
+    // playback — drop the previous outcome so the reading loop never
+    // mistakes it for the next utterance's result.
+    lastOutcome = null;
     NativeSpeechService.clearVoiceCache();
     _audioFocusClaimed = false;
     await _flushEngine();

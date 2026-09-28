@@ -46,7 +46,11 @@ class MdxAssetPathHandler extends CustomPathHandler {
 
 /// Definition body rendered in a real WebView (Ciyue-style): full CSS/JS
 /// support with MDD resources served natively (images, `<audio>` playback).
-/// Unsupported platforms (Linux, web) must use the legacy flutter_html path.
+/// Android-only for now: the entry document is served through a custom
+/// [CustomPathHandler], and flutter_inappwebview implements
+/// `createPlatformCustomPathHandler` on Android only — constructing one on
+/// iOS/macOS/Windows throws UnimplementedError synchronously during build.
+/// Everywhere else must use the legacy flutter_html path.
 class MdxWebViewBody extends ConsumerStatefulWidget {
   final String dictId;
   final String word;
@@ -54,12 +58,7 @@ class MdxWebViewBody extends ConsumerStatefulWidget {
   final Future<Uint8List?> Function(String key) readResource;
   final void Function(String word)? onEntryTap;
 
-  static bool get isSupported =>
-      !kIsWeb &&
-      (Platform.isAndroid ||
-          Platform.isIOS ||
-          Platform.isMacOS ||
-          Platform.isWindows);
+  static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
   const MdxWebViewBody({
     super.key,
@@ -81,7 +80,8 @@ class _MdxWebViewBodyState extends ConsumerState<MdxWebViewBody> {
     final h = raw.toDouble();
     if (h <= 0 || !mounted) return;
     final heights = ref.read(mdxWebHeightsProvider);
-    if ((heights[_heightKey] ?? 0) == h) return;
+    // Ignore sub-pixel jitter so a 1px reflow doesn't rebuild the list.
+    if (((heights[_heightKey] ?? 0) - h).abs() < 1) return;
     ref.read(mdxWebHeightsProvider.notifier).update(
           (m) => {...m, _heightKey: h},
         );
@@ -204,10 +204,18 @@ class _MdxWebViewBodyState extends ConsumerState<MdxWebViewBody> {
         onLoadStop: (controller, _) async {
           try {
             final h = await controller.evaluateJavascript(
-              source: 'document.body ? document.body.scrollHeight : 0',
+              source: mdxMeasureHeightScript,
             );
             if (h is num) _reportHeight(h);
+            // Installs persistent Resize/Mutation observers so late
+            // CSS/JS/image reflows (including shrinks) keep updating the
+            // cached height instead of sticking at a transient tall value.
             await controller.evaluateJavascript(source: mdxHeightPollScript);
+            // Re-runs DPD-style dynamic-bootstrap loaders that missed
+            // DOMContentLoaded while their scripts were still arriving.
+            await controller.evaluateJavascript(
+              source: mdxContentLoaderScript,
+            );
           } catch (_) {}
         },
         onLoadResourceWithCustomScheme: (controller, request) async {

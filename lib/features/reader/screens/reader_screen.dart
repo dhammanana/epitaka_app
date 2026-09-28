@@ -364,6 +364,37 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     action();
   }
 
+  // Named tear-offs (identity-stable across builds) for the desktop status
+  // bar transport controls. They must read providers at call time — inline
+  // closures would capture build-scope state, get a fresh identity every
+  // build, and make [ReaderToolbarController.update] notify on every frame.
+  void _handleTtsPrev() => _handleTtsTransport(
+        () => ref.read(ttsReadingProvider.notifier).skipBackward(),
+      );
+
+  void _handleTtsPlayPause() => _handleTtsTransport(() {
+        final notifier = ref.read(ttsReadingProvider.notifier);
+        if (ref.read(ttsReadingProvider).isPaused) {
+          notifier.resumeReading();
+        } else {
+          notifier.pauseReading();
+        }
+      });
+
+  void _handleTtsNext() => _handleTtsTransport(
+        () => ref.read(ttsReadingProvider.notifier).skipForward(),
+      );
+
+  void _handleTtsFollow() => _handleTtsTransport(
+        () => _tts.follow(ref.read(ttsReadingProvider).bookId ?? ''),
+      );
+
+  void _handleTtsMore() {
+    final activeTab = ref.read(readerTabsProvider).activeTab;
+    if (activeTab == null) return;
+    _tts.showControls(context, activeTab.bookId);
+  }
+
   void _handleToolbarBookmark() {
     final activeTab = _toolbarActiveTab();
     if (activeTab == null) return;
@@ -511,10 +542,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           StartupTiming.mark('book first visible: $bookId (paraId=$paraId)');
           _tabSwitchStartMs = null; // one-shot
         }
-        developer.log(
-          '[UI_POS] book=$bookId topIndex=$topIndex paraId=$paraId',
-          name: 'epitaka.reader.ui',
-        );
       },
     );
 
@@ -1169,27 +1196,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onStop: _handleToolbarStop,
       onBookmark: _handleToolbarBookmark,
       onAiAsk: _handleToolbarAiAsk,
-      onTtsPrev: () => _handleTtsTransport(
-        () => ref.read(ttsReadingProvider.notifier).skipBackward(),
-      ),
-      onTtsPlayPause: () => _handleTtsTransport(() {
-        final notifier = ref.read(ttsReadingProvider.notifier);
-        if (ttsReadingState.isPaused) {
-          notifier.resumeReading();
-        } else {
-          notifier.pauseReading();
-        }
-      }),
-      onTtsNext: () => _handleTtsTransport(
-        () => ref.read(ttsReadingProvider.notifier).skipForward(),
-      ),
-      onTtsFollow: () =>
-          _handleTtsTransport(() => _tts.follow(ttsReadingState.bookId ?? '')),
-      onTtsMore: () {
-        final activeTab = tabsState.activeTab;
-        if (activeTab == null) return;
-        _tts.showControls(context, activeTab.bookId);
-      },
+      onTtsPrev: _handleTtsPrev,
+      onTtsPlayPause: _handleTtsPlayPause,
+      onTtsNext: _handleTtsNext,
+      onTtsFollow: _handleTtsFollow,
+      onTtsMore: _handleTtsMore,
     );
 
     // ── Detect tab switch and start timing ───────────────────────────

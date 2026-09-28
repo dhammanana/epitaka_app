@@ -108,6 +108,16 @@ void main() {
     expect(out.contains('<p>t</p>'), true);
   });
 
+  test('mdxApplyMaxChars leaves null uncapped (WebView documents)', () {
+    final big = 'x' * 50000;
+    expect(mdxApplyMaxChars(big, null).length, 50000);
+  });
+
+  test('mdxApplyMaxChars truncates only when over the cap', () {
+    expect(mdxApplyMaxChars('abcde', 3), 'abc');
+    expect(mdxApplyMaxChars('ab', 3), 'ab');
+  });
+
   test('mdxSanitizeCss unhides display none and visibility hidden', () {
     const css =
         '.hwd{display:none}.x{color:red;display: none !important}.y{visibility:hidden}';

@@ -1,11 +1,9 @@
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -163,32 +161,17 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
   }
 
   Future<void> _pickFolder(BuildContext context, WidgetRef ref) async {
-    // Android follows Ciyue: request broad storage access, then use
-    // file_selector's native folder picker and scan with plain dart:io.
-    // iOS has no folder picker (sandbox), so it uses a SAF multi-file pick
-    // of the whole bundle (.mdx + .mdd/.css/.js).
-    if (Platform.isAndroid) {
-      final granted = await _ensureAndroidFolderAccess(context);
-      if (!granted) return;
-      String? dirPath;
-      try {
-        dirPath = await getDirectoryPath(confirmButtonText: 'Use folder');
-      } catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open picker: ${describeMdxError(e)}'),
-          ),
-        );
-        return;
-      }
-      if (dirPath == null) return;
-      await _saveLastFolder(dirPath);
-      await _importScannedFolder(context, ref, dirPath);
-      return;
-    }
-    if (Platform.isIOS) {
-      return _pickMobileFolderFiles(context, ref);
+    // Mobile (Android/iOS) has no direct folder access: the system file
+    // picker (SAF / UIDocumentPicker) grants per-file access with NO
+    // storage permission. The user multi-selects the whole dictionary
+    // bundle (.mdx + .mdd/.css/.js) and each file is copied into app-private
+    // storage. This keeps the app compliant with Google Play's All Files
+    // Access policy (MANAGE_EXTERNAL_STORAGE is not declared).
+    // Desktop keeps the native folder picker + recursive scan.
+    if (Platform.isAndroid || Platform.isIOS) {
+      final proceed = await _confirmMobileFolderHint(context);
+      if (!proceed || !context.mounted) return;
+      return _pickBundleFiles(context, ref);
     }
     String? dirPath;
     try {
@@ -204,34 +187,8 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     }
     if (dirPath == null) return;
     await _saveLastFolder(dirPath);
+    if (!context.mounted) return;
     await _importScannedFolder(context, ref, dirPath);
-  }
-
-  /// Ciyue-style storage permission: MANAGE_EXTERNAL_STORAGE on Android 11+,
-  /// READ/WRITE storage below. Returns true when the folder can be listed.
-  Future<bool> _ensureAndroidFolderAccess(BuildContext context) async {
-    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-    if (sdkInt >= 30) {
-      if (await Permission.manageExternalStorage.isGranted) return true;
-      final status = await Permission.manageExternalStorage.request();
-      if (status.isGranted) return true;
-    } else {
-      if (await Permission.storage.isGranted) return true;
-      final status = await Permission.storage.request();
-      if (status.isGranted) return true;
-    }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Storage permission denied. Grant "All files access" in system '
-            'settings to import a folder, or use Files to pick .mdx directly.',
-          ),
-          duration: Duration(seconds: 6),
-        ),
-      );
-    }
-    return false;
   }
 
   Future<void> _importScannedFolder(
@@ -269,12 +226,51 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     _showResult(context, added, failures);
   }
 
-  /// iOS folder import via SAF multi-select (the sandbox has no folder
-  /// picker). Accepts the whole dictionary bundle — `.mdx` plus companion
-  /// `.mdd` resources, `.css` stylesheets and `.js` — and copies the
-  /// companions next to each persisted `.mdx` so images/audio/styling
-  /// resolve.
-  Future<void> _pickMobileFolderFiles(
+  /// One-time hint for the mobile Folder button: the system picker can't
+  /// grant a whole folder, so the user opens the folder and selects all
+  /// files inside it. Shown once, then remembered.
+  Future<bool> _confirmMobileFolderHint(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('mdx_folder_hint_seen') ?? false) return true;
+    if (!context.mounted) return false;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import folder'),
+        content: const Text(
+          'Open the folder containing your dictionaries, select ALL files '
+          'inside it (.mdx + .mdd/.css/.js), then confirm.\n\n'
+          'Tip: use "Select all" in the picker menu to grab a folder with '
+          'many dictionaries at once. Files are copied into the app — no '
+          'storage permission needed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Open picker'),
+          ),
+        ],
+      ),
+    );
+    if (proceed ?? false) {
+      await prefs.setBool('mdx_folder_hint_seen', true);
+      return true;
+    }
+    return false;
+  }
+
+  /// Mobile bundle import via the system multi-file picker (SAF on Android,
+  /// UIDocumentPicker on iOS — the sandbox has no folder picker). Accepts
+  /// the whole dictionary bundle — `.mdx` plus companion `.mdd` resources,
+  /// `.css` stylesheets and `.js` — and copies the companions next to each
+  /// persisted `.mdx` so images/audio/styling resolve. Needs NO storage
+  /// permission: the picker grants per-file access and files are copied
+  /// into app-private storage.
+  Future<void> _pickBundleFiles(
     BuildContext context,
     WidgetRef ref,
   ) async {
@@ -304,9 +300,16 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     final mdxPaths = paths
         .where((p) => p.toLowerCase().endsWith('.mdx'))
         .toList();
-    final companions = paths
-        .where((p) => !p.toLowerCase().endsWith('.mdx'))
-        .toList();
+    final companions = paths.where((p) {
+      final lower = p.toLowerCase();
+      if (lower.endsWith('.mdx')) return false;
+      // Only real bundle sidecars — stray files from "Select all" are
+      // ignored instead of being copied next to every dictionary.
+      return lower.endsWith('.mdd') ||
+          lower.endsWith('.css') ||
+          lower.endsWith('.mcss') ||
+          lower.endsWith('.js');
+    }).toList();
     if (mdxPaths.isEmpty) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -352,9 +355,9 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
 
   Future<void> _rescanFolder(BuildContext context, WidgetRef ref) async {
     if (_lastFolder == null) return;
-    if (Platform.isAndroid) {
-      if (!await _ensureAndroidFolderAccess(context)) return;
-    }
+    // Desktop-only: mobile imports are copied into app-private storage via
+    // the system picker, so there is no external folder to rescan.
+    if (Platform.isAndroid || Platform.isIOS) return;
     final dirPath = _lastFolder!;
     final dir = Directory(dirPath);
     if (!await dir.exists()) {
@@ -466,7 +469,12 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
-                if (_lastFolder != null)
+                // Rescan only applies to desktop folder imports. Mobile
+                // imports are copied into app-private storage, so there is
+                // no external folder to rescan.
+                if (_lastFolder != null &&
+                    !Platform.isAndroid &&
+                    !Platform.isIOS)
                   Tooltip(
                     message: 'Rescan $_lastFolder for new/removed MDX files',
                     child: TextButton.icon(

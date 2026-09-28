@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/app_db_provider.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/native_speech_service.dart';
 import '../../../core/utils/notification_permission.dart';
 import '../../settings/providers/tts_provider.dart';
@@ -309,6 +310,19 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
         event,
       ) {
         if (event.begin) {
+          // Duck requests are ignored: with transient-may-duck focus the
+          // system TTS engine ducks us for every utterance it speaks (its
+          // audio runs in its own process). Pausing here would kill each
+          // just-started line after a few words and either stall the
+          // session or race through lines. Real preemptions (calls,
+          // alarms, notifications) arrive as pause/unknown and still pause.
+          if (event.type == AudioInterruptionType.duck) {
+            developer.log(
+              '[TTS_INTERRUPTION] begin duck → ignored (engine duck)',
+              name: 'epitaka.tts',
+            );
+            return;
+          }
           developer.log(
             '[TTS_INTERRUPTION] begin type=${event.type} → pausing reading',
             name: 'epitaka.tts',
@@ -509,6 +523,22 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     if (unitIndex != state.currentUnitIndex) return;
     if (word.trim().isEmpty) return;
 
+    // Coarse progress events (one callback covering a large part of the
+    // utterance — typical of streamed/network voices) carry no usable word
+    // position: trusting their offsets pins the pill to the last word for
+    // the whole utterance. Drop the word pill and keep the line underline.
+    if (_isCoarseProgress(unit, start, end)) {
+      final disp = word.length > 20 ? '${word.substring(0, 20)}…' : word;
+      developer.log(
+        '[TTS_WORD] unit=$unitIndex DROP coarse s=$start e=$end '
+        'unitLen=${unit.text.length} word="$disp" (line-only highlight)',
+        name: 'epitaka.tts',
+      );
+      final wordNotifier = _ref.read(ttsWordHighlightProvider.notifier);
+      if (wordNotifier.state != null) wordNotifier.state = null;
+      return;
+    }
+
     final slot = findLineSlotAtOffset(unit, start);
     final range = unit.lineRanges[slot];
     final global = unit.lineIndices[slot];
@@ -535,8 +565,26 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       ),
       lineText: lineSub,
     );
+    final disp = word.length > 20 ? '${word.substring(0, 20)}…' : word;
+    developer.log(
+      '[TTS_WORD] unit=$unitIndex line=${range.lineId} s=$start e=$end '
+      'wordIdx=${highlight.wordIndex} word="$disp"',
+      name: 'epitaka.tts',
+    );
     final wordNotifier = _ref.read(ttsWordHighlightProvider.notifier);
     if (wordNotifier.state != highlight) wordNotifier.state = highlight;
+  }
+
+  /// Whether a progress range is too coarse to locate a word: it spans a
+  /// large fraction of the utterance, so the offset only says "somewhere
+  /// in here" and trusting it would stick the pill on the trailing word.
+  /// Only applies to long utterances: on a short line a single spoken
+  /// word legitimately covers most of the text, and treating that as
+  /// coarse would drop the pill exactly where it works best.
+  bool _isCoarseProgress(TtsSpeakUnit unit, int start, int end) {
+    final len = unit.text.length;
+    if (len <= 60) return false;
+    return (end - start) * 5 >= len * 2;
   }
 
   /// Completion futures per unit index. A unit already spoken or queued
@@ -548,6 +596,20 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   /// before the next speak; near zero with prefetch on supported engines).
   DateTime? _lastUnitDoneAt;
 
+  /// Consecutive units whose utterance never audibly played (engine error
+  /// or implausibly fast completion). Reset on every session transition
+  /// via [_clearUnitSpeechState]. At [_kMaxConsecutiveBadUnits] the loop
+  /// aborts with an actionable notice instead of fast-skipping silently
+  /// through the rest of the book.
+  int _consecutiveBadUnits = 0;
+
+  /// How many failed units in a row abort the session (see above).
+  static const int _kMaxConsecutiveBadUnits = 4;
+
+  /// A completion faster than this (for non-trivial text at normal speeds)
+  /// means the utterance never played — killed or errored without audio.
+  static const int _kInstantCompletionMs = 250;
+
   /// Drop all unit futures and word state. Called on every session
   /// transition (stop/pause/skip/finish/start): a completed future left in
   /// the map would make a later visit to that unit return instantly
@@ -555,6 +617,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   void _clearUnitSpeechState() {
     _unitFutures.clear();
     _lastUnitDoneAt = null;
+    _consecutiveBadUnits = 0;
     try {
       _ref.read(ttsWordHighlightProvider.notifier).state = null;
     } catch (_) {}
@@ -632,7 +695,76 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     );
 
     if (sessionId == _currentSessionId) {
+      // Backstop against silent fast-skipping: when the engine keeps
+      // failing utterances (error callbacks or completions so fast nothing
+      // could have played), stop with an actionable notice instead of
+      // racing through the rest of the book unheard.
+      if (_noteUnitOutcomeAndShouldAbort(unit)) {
+        await _abortFailedSession(sessionId, unit);
+        return;
+      }
       _advanceToNext(sessionId);
+    }
+  }
+
+  /// Fold the just-finished [unit]'s engine outcome into the failure
+  /// streak. Returns true when the streak reached
+  /// [_kMaxConsecutiveBadUnits] and the session must abort.
+  bool _noteUnitOutcomeAndShouldAbort(TtsSpeakUnit unit) {
+    final outcome = _ref.read(ttsProvider.notifier).lastOutcome;
+    final bad = _isFailedUnit(unit, outcome);
+    _consecutiveBadUnits = bad ? _consecutiveBadUnits + 1 : 0;
+    if (bad) {
+      developer.log(
+        '[TTS_PIPE] failed unit (streak=$_consecutiveBadUnits): '
+        'errored=${outcome?.errored} elapsedMs=${outcome?.elapsedMs} '
+        'chars=${unit.text.trim().length} isPali=${unit.isPali}',
+        name: 'epitaka.tts',
+      );
+    }
+    return _consecutiveBadUnits >= _kMaxConsecutiveBadUnits;
+  }
+
+  /// Whether [unit]'s utterance never audibly played: the engine reported
+  /// an error, or it completed implausibly fast for non-trivial text at
+  /// normal speeds (killed/stalled without audio). Very high user speeds
+  /// are excluded — short utterances legitimately finish in milliseconds
+  /// there.
+  bool _isFailedUnit(
+    TtsSpeakUnit unit,
+    ({bool errored, int elapsedMs})? outcome,
+  ) {
+    if (outcome == null) return false;
+    if (outcome.errored) return true;
+    if (unit.text.trim().length > 20 &&
+        outcome.elapsedMs < _kInstantCompletionMs) {
+      final settings = _ref.read(settingsProvider);
+      final speed = unit.isPali ? settings.ttsPaliSpeed : settings.ttsSpeed;
+      if (speed <= 2.0) return true;
+    }
+    return false;
+  }
+
+  /// Abort a session whose engine keeps failing: tear down like
+  /// [stopReading], then attach an actionable notice (set AFTER the stop,
+  /// which clears notices) so the TTS controls dialog can tell the user
+  /// what broke instead of leaving a dead session behind.
+  Future<void> _abortFailedSession(int sessionId, TtsSpeakUnit unit) async {
+    if (sessionId != _currentSessionId) return;
+    developer.log(
+      '[TTS_PIPE] aborting session after $_consecutiveBadUnits consecutive '
+      'failed units at unit=${state.currentUnitIndex}',
+      name: 'epitaka.tts',
+    );
+    await stopReading();
+    final tts = _ref.read(ttsProvider.notifier);
+    const msg = 'Read-aloud stopped: the system voice failed several lines '
+        'in a row. Install the voice in System TTS settings (or pick '
+        'another voice), then play again.';
+    if (unit.isPali) {
+      tts.paliFallbackNotice ??= msg;
+    } else {
+      tts.translationIssueNotice ??= msg;
     }
   }
 

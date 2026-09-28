@@ -10,13 +10,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
-    <!-- MDX dictionary folder import (same approach as Ciyue): the Folder
-         button requests broad storage access at runtime, then lists the
-         chosen folder for .mdx files with plain dart:io. Scoped to old
-         SDKs for READ/WRITE; Android 11+ uses MANAGE_EXTERNAL_STORAGE. -->
+    <!-- MDX dictionary import uses the Storage Access Framework
+         (system file picker) — no broad storage access needed. The user
+         picks .mdx files (or the whole .mdx + .mdd/.css/.js bundle) and
+         the app copies them into its private storage. READ/WRITE are
+         scoped to pre-Android-10 installs only. Do NOT add
+         MANAGE_EXTERNAL_STORAGE: Google Play rejects updates whose
+         core functionality doesn't justify All Files Access. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" android:minSdkVersion="30"/>
+    <!-- Safety net: strip MANAGE_EXTERNAL_STORAGE even if a transitive
+         dependency ever re-adds it, so Play never flags All Files Access. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:node="remove" />
     <!-- Required on Android 13+ (API 33) to show download progress notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Firebase Analytics pulls in play-services-ads-identifier which adds

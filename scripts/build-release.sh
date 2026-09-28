@@ -55,7 +55,7 @@ fi
 
 echo ""
 echo "────────────────────────── Release notes ──────────────────────────"
-echo "Version $NEXT_VERSION (build $NEXT)"
+echo "v$NEXT_VERSION (build $NEXT)"
 echo ""
 echo "$CHANGES"
 echo "───────────────────────────────────────────────────────────────────"
@@ -78,7 +78,8 @@ done
 # reuse cached native libraries from a previous release, so the freshly
 # compiled Dart code (libapp.so) never makes it into the AAB and the upload
 # looks like a new version while still containing old code.
-flutter clean
+
+#flutter clean
 
 # Build AAB.
 #

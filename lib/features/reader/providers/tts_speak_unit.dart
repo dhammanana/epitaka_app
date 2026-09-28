@@ -49,9 +49,19 @@ const bool kTtsWordHighlightEnabled = true;
 /// plays, N+1 is queued so the engine pre-loads the next voice instead of
 /// going idle between utterances. This is what removes the Pāli→translation
 /// voice-switch delay in "both" mode. false = strict stop-and-wait.
-/// Prefetch additionally requires an engine with queue support (see
-/// `TtsNotifier.supportsPrefetch`); elsewhere the flag is a no-op.
-const bool kTtsPrefetchEnabled = true;
+///
+/// DISABLED (false): overlapping N+1's voice setup (setLanguage/setVoice)
+/// and its QUEUE_ADD speak with N's still-playing utterance aborts N after
+/// a few words on Google TTS — each unit then completes almost instantly,
+/// the loop advances through lines with no audible speech ("fast skip"),
+/// and the standalone Preview (strictly sequential) keeps working on the
+/// same phone/engine/voices. Release builds hit this reliably because the
+/// fast platform-channel timing makes the overlap near-certain, while
+/// debug timing usually lands the setup after N finished. Sequential
+/// speaking is the long-standing safe behavior; re-enable only with a
+/// same-voice guard (prefetch solely when N+1 needs no engine state
+/// change) plus engine-abort telemetry.
+const bool kTtsPrefetchEnabled = false;
 
 /// Progress callback: char offsets into the caller's utterance text plus
 /// the word being spoken.
@@ -261,6 +271,18 @@ class TtsQueuedUtterance {
   final VoidCallback? onStarted;
 
   bool started = false;
+
+  /// Set when the engine reported an error for this utterance (as opposed
+  /// to normal completion or a local stop). Read by the reading loop to
+  /// tell a genuinely failed utterance from a played one.
+  bool errored = false;
+
+  /// Wall-clock time the utterance was handed to the engine layer. The
+  /// reading loop compares it against completion time to detect
+  /// implausibly fast completions (killed/errored utterances that never
+  /// played) instead of racing silently through lines.
+  final DateTime enqueuedAt = DateTime.now();
+
   final Completer<void> completer = Completer<void>();
 
   TtsQueuedUtterance(
@@ -428,7 +450,8 @@ String ttsComparableWord(String word, {required bool pivotToSource}) {
 /// every later word. Re-anchoring on the word TEXT each callback keeps the
 /// highlight self-healing: the reported word (pivoted to source script for
 /// Pāli) is matched against the line's words nearest the expected position
-/// (exact, then prefix either way for merged/split ranges); when nothing
+/// in tiers — exact, then prefix either way for merged/split ranges, then
+/// substring for punctuation-glued tokens (Pāli quotes/commas); when nothing
 /// matches, the offset-based index stands. Pure.
 int ttsReconcileWordIndex({
   required String lineText,
@@ -448,17 +471,30 @@ int ttsReconcileWordIndex({
   ];
   final reported = ttsComparableWord(reportedWord, pivotToSource: isPali);
   if (reported.isEmpty) return expectedIndex;
-  bool matches(String src) =>
+  bool exact(String src) => src.isNotEmpty && src == reported;
+  bool affix(String src) =>
       src.isNotEmpty &&
-      (src == reported ||
-          src.startsWith(reported) ||
-          reported.startsWith(src));
+      (src.startsWith(reported) || reported.startsWith(src));
+  // Substring tier: Pāli source lines often glue punctuation to words
+  // ("word,‘‘next" — comma/quotes, no space) while the converted spoken
+  // text segments them apart, so the pivoted reported word is contained in
+  // (not equal to) the glued source token. Last resort only: single-char
+  // tokens are excluded to avoid matching everything.
+  bool contains(String src) =>
+      src.isNotEmpty &&
+      src.length >= 2 &&
+      reported.length >= 2 &&
+      (src.contains(reported) || reported.contains(src));
   final exp = expectedIndex.clamp(0, sourceWords.length - 1);
-  if (matches(sourceWords[exp])) return exp;
-  for (var d = 1; d <= window; d++) {
-    for (final i in [exp - d, exp + d]) {
-      if (i >= 0 && i < sourceWords.length && matches(sourceWords[i])) {
-        return i;
+  // Tiers run exact → affix → contains so a farther exact word match beats
+  // a nearer partial one; within a tier the nearest position wins.
+  for (final tier in [exact, affix, contains]) {
+    if (tier(sourceWords[exp])) return exp;
+    for (var d = 1; d <= window; d++) {
+      for (final i in [exp - d, exp + d]) {
+        if (i >= 0 && i < sourceWords.length && tier(sourceWords[i])) {
+          return i;
+        }
       }
     }
   }

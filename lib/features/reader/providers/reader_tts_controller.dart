@@ -474,11 +474,6 @@ class ReaderTtsController {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!isMounted()) return;
         final jumpToken = nextJumpToken(currentBookId);
-        developer.log(
-          '[TTS_UI] fine-scroll same-para to line=$nextLineId '
-          'token=$jumpToken',
-          name: 'epitaka.tts',
-        );
         fineScrollToLine(currentBookId, nextLineId, jumpToken: jumpToken);
       });
       return;
@@ -487,10 +482,6 @@ class ReaderTtsController {
     ref.read(ttsSyncProvider(currentBookId).notifier).setJumpInProgress();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!isMounted()) return;
-      developer.log(
-        '[TTS_UI] post-frame jump to $nextParaId line=$nextLineId',
-        name: 'epitaka.tts',
-      );
       jumpToParagraph(
         currentBookId,
         nextParaId,
@@ -517,10 +508,6 @@ class ReaderTtsController {
   ) {
     final ttsSync = ref.read(ttsSyncProvider(bookId));
     if (ttsSync.ttsJumpInProgress) {
-      developer.log(
-        '[UI_POS] book=$bookId ttsJumpInProgress=true → skip auto-scroll check',
-        name: 'epitaka.reader.ui',
-      );
       return;
     }
     final ttsState = ref.read(ttsReadingProvider);

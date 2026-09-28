@@ -78,14 +78,31 @@ Future<void> copyCompanionNextToMdx({
   await srcFile.copy(dest.path);
 }
 
+/// Copies [path] into app-private storage and returns the private path.
+///
+/// Mobile (Android/iOS) ALWAYS copies (unless already private): the system
+/// picker (SAF / UIDocumentPicker) grants per-file access with no storage
+/// permission, and raw shared-storage paths are not readable under scoped
+/// storage — so the app must never keep a reference to them. This is what
+/// keeps the app compliant with Google Play's All Files Access policy
+/// (no MANAGE_EXTERNAL_STORAGE). Desktop returns the original path:
+/// full filesystem access, no permission model to satisfy.
 Future<String> ensurePersistentCopy(String path) async {
+  final base = await getDatabaseDirectory();
+  final baseNorm = p.normalize(base.path);
+  final pathNorm = p.normalize(path);
+  // Already inside app-private storage — nothing to do.
+  if (pathNorm == baseNorm || pathNorm.startsWith('$baseNorm${p.separator}')) {
+    return path;
+  }
   final lower = path.toLowerCase();
   final transient =
       lower.contains('/cache/') ||
       lower.contains('/tmp/') ||
       lower.contains('/temp/');
-  if (!transient) return path;
-  final base = await getDatabaseDirectory();
+  // Desktop: keep referencing the original file; only transient picker
+  // copies need persisting.
+  if (!transient && !(Platform.isAndroid || Platform.isIOS)) return path;
   final dir = Directory(p.join(base.path, 'mdx_files'));
   if (!await dir.exists()) await dir.create(recursive: true);
   final srcLen = await File(path).length();

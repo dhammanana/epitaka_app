@@ -31,6 +31,15 @@ String mdxPreview(String html, [int max = 120]) {
   return '${plain.substring(0, max).trim()}…';
 }
 
+/// Caps a definition body at [maxChars]. `null` means uncapped: callers
+/// rendering full WebView documents must pass null so long entries (large
+/// inlined stylesheets + HTML) are never cut mid-tag, which would leave an
+/// unclosed `<style>`/`<script>` and render the card blank.
+String mdxApplyMaxChars(String html, int? maxChars) {
+  if (maxChars == null || html.length <= maxChars) return html;
+  return html.substring(0, maxChars);
+}
+
 const String mdxLinkPrefix = '@@@LINK=';
 
 List<String> mdxLinkTargets(String html) {

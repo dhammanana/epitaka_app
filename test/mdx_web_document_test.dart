@@ -9,9 +9,20 @@ void main() {
       bodies: const ['<p>hello</p>'],
     );
     expect(doc, contains('<link rel="stylesheet" href="http://mdx.internal/oald.css">'));
-    expect(doc, contains('<script src="http://mdx.internal/oald.js"></script>'));
+    expect(doc, contains('<script defer src="http://mdx.internal/oald.js"></script>'));
     expect(doc, contains('<p>hello</p>'));
     expect(doc, startsWith('<!DOCTYPE html>'));
+  });
+
+  test('mdxContentLoaderScript targets dynamic-bootstrap loaders', () {
+    expect(mdxContentLoaderScript, contains('load_js'));
+    expect(mdxContentLoaderScript, contains('loadData'));
+    expect(mdxContentLoaderScript, contains('__mdxLoadDataDone'));
+  });
+
+  test('mdxMeasureHeightScript reads body and documentElement', () {
+    expect(mdxMeasureHeightScript, contains('documentElement'));
+    expect(mdxMeasureHeightScript, contains('scrollHeight'));
   });
 
   test('buildMdxWebDocument omits missing bundle files', () {

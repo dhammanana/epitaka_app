@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'mdx_dictionary_provider.dart';
 import '../models/mdx_dictionary_info.dart';
 import '../services/mdx_errors.dart';
+import '../services/mdx_index_service.dart';
 import '../services/mdx_text.dart';
 
 class MdxDefKey {
@@ -114,7 +115,14 @@ final mdxDefinitionsProvider = FutureProvider.autoDispose
       }
       return ref
           .read(mdxIndexServiceProvider)
-          .readDefinitions(info.mdxPath, info.indexPath!, key.word);
+          .readDefinitions(
+            info.mdxPath,
+            info.indexPath!,
+            key.word,
+            // flutter_html path: cap very long entries for layout perf.
+            // (The WebView path passes null = uncapped.)
+            maxChars: MdxIndexService.maxDefinitionChars,
+          );
     });
 
 final mdxResourceProvider = FutureProvider.autoDispose

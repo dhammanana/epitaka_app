@@ -152,7 +152,9 @@ class MdxIndexService {
         _finalize(
           css + html,
           allowScripts: allowScripts,
-          maxChars: maxChars ?? maxDefinitionChars,
+          // Null passes through as uncapped; never default to the cap
+          // here, or long WebView documents get cut mid-tag (blank card).
+          maxChars: maxChars,
         ),
       );
     }
@@ -202,16 +204,13 @@ class MdxIndexService {
   }
 
   /// [maxChars] caps the output length (`null` = uncapped, used for full
-  /// WebView documents; the flutter_html path always passes a cap).
+  /// WebView documents; the flutter_html path passes an explicit cap).
   String _finalize(
     String html, {
     required bool allowScripts,
-    int? maxChars = maxDefinitionChars,
+    int? maxChars,
   }) {
-    var out = html;
-    if (maxChars != null && out.length > maxChars) {
-      out = out.substring(0, maxChars);
-    }
+    var out = mdxApplyMaxChars(html, maxChars);
     if (!allowScripts) out = mdxSanitize(out);
     return out.trim();
   }

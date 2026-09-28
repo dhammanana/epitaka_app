@@ -235,6 +235,62 @@ void main() {
         1,
       );
     });
+
+    test('contains tier finds the word inside punctuation-glued tokens', () {
+      // Observed in production logs: source "etāni,‘‘pubbakaraṇaṃ" (comma +
+      // quotes glued, no space) vs the spoken word "pubbakaraṇaṃ" — exact
+      // and prefix matching fail, substring finds token 1.
+      expect(
+        ttsReconcileWordIndex(
+          lineText: 'uposathassa etāni,‘‘pubbakaraṇaṃ ’’ti vuccati',
+          expectedIndex: 0,
+          reportedWord: 'pubbakaraṇaṃ',
+          isPali: false,
+        ),
+        1,
+      );
+    });
+
+    test('far exact beats near affix', () {
+      // Reported "ti": token 0 merely starts with it, token 2 matches
+      // exactly — the exact tier must win across distance.
+      expect(
+        ttsReconcileWordIndex(
+          lineText: 'tikā aa ’’ti',
+          expectedIndex: 0,
+          reportedWord: 'ti',
+          isPali: false,
+        ),
+        2,
+      );
+    });
+
+    test('contains tier works on pivoted Pāli reports', () {
+      // Production case (unit 18): source token "හොන්ති,‘‘පත්තකල්ලන්"
+      // (glued quotes) vs Kannada engine report pivoted to
+      // "පත්තකල්ලන" — exact and prefix fail, substring finds token 1.
+      expect(
+        ttsReconcileWordIndex(
+          lineText: 'න හොන්ති,‘‘පත්තකල්ලන් ’’ති',
+          expectedIndex: 0,
+          reportedWord: 'ಪತ್ತಕಲ್ಲನ್',
+          isPali: true,
+        ),
+        1,
+      );
+    });
+
+    test('single-char reports never contains-match', () {
+      expect(
+        ttsReconcileWordIndex(
+          lineText: 'ab cd',
+          expectedIndex: 1,
+          reportedWord: 'x',
+          isPali: false,
+        ),
+        1,
+      );
+    });
   });
 
   group('word spans', () {
@@ -317,6 +373,36 @@ void main() {
       doomed.resolve();
       expect(q.length, 1);
       expect(q.popHead()?.speakText, 'good');
+    });
+
+    test('entries start unerrored with an enqueue timestamp', () {
+      final q = TtsUtteranceQueue();
+      final before = DateTime.now();
+      final entry = q.enqueue('hello', sourceText: 'hello');
+      expect(entry.errored, isFalse);
+      expect(entry.started, isFalse);
+      expect(
+        entry.enqueuedAt.isAfter(before.subtract(const Duration(seconds: 5))),
+        isTrue,
+      );
+      expect(
+        entry.enqueuedAt.isBefore(
+          DateTime.now().add(const Duration(seconds: 5)),
+        ),
+        isTrue,
+      );
+    });
+
+    test('error flag survives head routing for failure detection', () {
+      final q = TtsUtteranceQueue();
+      final first = q.enqueue('first');
+      q.enqueue('second');
+      // Engine error on the head marks it; the head still pops first so
+      // the outcome can be attributed to the right utterance.
+      first.errored = true;
+      expect(q.popHead(), same(first));
+      expect(first.errored, isTrue);
+      expect(q.popHead()?.errored, isFalse);
     });
   });
 

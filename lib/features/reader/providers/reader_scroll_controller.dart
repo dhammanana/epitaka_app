@@ -408,7 +408,6 @@ class ReaderScrollController {
             : null;
 
         if (_lastScrollParaId[bookId] != visibleParaId) {
-          final posSw = Stopwatch()..start();
           onFirstVisiblePosition?.call(bookId, topIndex, visibleParaId);
           _lastScrollParaId[bookId] = visibleParaId;
 
@@ -427,14 +426,6 @@ class ReaderScrollController {
           // a TTS-initiated jump, disable auto-scroll. (Delegated to the TTS
           // controller via the injected hook.)
           onTtsManualScroll(bookId, visible, readerState.paragraphs);
-          posSw.stop();
-          if (posSw.elapsedMilliseconds > 8) {
-            developer.log(
-              '[UI_POS] book=$bookId HEAVY position work ${posSw.elapsedMilliseconds}ms '
-              'for paraId=$visibleParaId',
-              name: 'epitaka.reader.ui',
-            );
-          }
         }
       }
     }
@@ -480,10 +471,6 @@ class ReaderScrollController {
 
     if (index < 0) {
       if (!state.isLoaded) {
-        developer.log(
-          '[JUMP] book=$bookId paraId=$paraId data still loading, waiting…',
-          name: 'epitaka.reader',
-        );
         try {
           await ref.read(readerDataProvider(bookId).notifier).waitUntilLoaded();
         } catch (_) {
@@ -548,11 +535,6 @@ class ReaderScrollController {
         endControlledScroll();
         return;
       }
-      developer.log(
-        '[JUMP] book=$bookId paraId=$paraId controller not attached, retrying after frame '
-        '(attempt ${retryCount + 1}/$maxRetries)',
-        name: 'epitaka.reader.ui',
-      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         // Always balance the begin() above, even when unmounted: the screen
         // may be gone but this controller's flags must not leak — a leaked
@@ -573,13 +555,6 @@ class ReaderScrollController {
       });
       return;
     }
-
-    final jumpStart = DateTime.now().millisecondsSinceEpoch;
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId index=$index '
-      'lineId=$lineId animate=$animate isInitialJumpPending=$isInitialJumpPending',
-      name: 'epitaka.reader.ui',
-    );
 
     // Resolve the target line. AI-generated citations can reference a line
     // that doesn't exist in this paragraph (search chunks span multiple
@@ -657,13 +632,6 @@ class ReaderScrollController {
     }
     _pendingJumpParaId.remove(bookId);
 
-    final jumpElapsed = DateTime.now().millisecondsSinceEpoch - jumpStart;
-    developer.log(
-      '[JUMP] book=$bookId paraId=$paraId COMPLETE in ${jumpElapsed}ms '
-      'wasInitialJump=$isInitialJumpPending',
-      name: 'epitaka.reader.ui',
-    );
-
     // ── Precise line fine-scroll ──────────────────────────────────
     // The paragraph scroll above only positions the whole paragraph.
     // ScrollablePositionedList addresses whole items (paragraphs), not
@@ -688,10 +656,6 @@ class ReaderScrollController {
       // suppressed.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (isMounted()) {
-          developer.log(
-            '[JUMP] book=$bookId clearing _isInitialJumpPending',
-            name: 'epitaka.reader.ui',
-          );
           endControlledScroll();
         } else {
           // Screen went away before the frame ran: still release this
@@ -779,10 +743,6 @@ class ReaderScrollController {
       });
       return;
     }
-    developer.log(
-      '[JUMP] book=$bookId fine-scroll to line=$lineId',
-      name: 'epitaka.reader.ui',
-    );
     Scrollable.ensureVisible(
       lineContext,
       alignment: 0.1,
@@ -984,13 +944,6 @@ class ReaderScrollController {
       maxAlignment,
     );
 
-    debugPrint(
-      '[JUMP-GEO] book=$bookId line=$lineId lineIndex=$lineIndex '
-      'lineFraction=$lineFraction alignment=$targetAlignment '
-      'leading=${pos.itemLeadingEdge.toStringAsFixed(3)} '
-      'trailing=${pos.itemTrailingEdge.toStringAsFixed(3)} '
-      'span=${span.toStringAsFixed(3)}',
-    );
     final controller = _itemScrollControllers[bookId];
     if (controller == null) {
       finish();
