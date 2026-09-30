@@ -184,12 +184,27 @@ enum ReadingFontFamily {
   const ReadingFontFamily(this.code, this.label);
 
   /// Returns the Flutter fontFamily string.
+  // Bundled fonts only: system font names resolve differently on every
+  // platform. OpenSans is not used because it lacks ṃ ṅ ṭ ḍ ṇ ḷ.
   String get fontFamily {
     switch (this) {
       case ReadingFontFamily.serif:
-        return 'Georgia';
+        return 'NotoSerif';
       case ReadingFontFamily.sansSerif:
-        return 'Roboto'; // system default (sans-serif)
+        return 'DejaVuSans';
+      case ReadingFontFamily.mono:
+        return 'DejaVuSansMono';
+    }
+  }
+
+  // WebViews cannot load Flutter's bundled fonts, so they get the matching
+  // CSS generic family instead.
+  String get cssGenericFamily {
+    switch (this) {
+      case ReadingFontFamily.serif:
+        return 'serif';
+      case ReadingFontFamily.sansSerif:
+        return 'sans-serif';
       case ReadingFontFamily.mono:
         return 'monospace';
     }
@@ -804,6 +819,40 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void init(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
+    _moveCardColoursIntoReadingColours();
+  }
+
+  // Typography cards used to store their own colour, which silently won
+  // over the reading colour. Colours now live only in the reading colour
+  // pairs, so a colour saved the old way moves there once and is cleared.
+  void _moveCardColoursIntoReadingColours() {
+    final pali = state.typography.pali;
+    final paliColor = pali.color;
+    // A card colour was used as-is in both light and dark mode.
+    if (paliColor != null) {
+      setPaliColorPair(
+        ColorPair(light: paliColor, dark: paliColor, darkPicked: true),
+      );
+      setPaliTypography(pali.copyWith(clearColor: true));
+    }
+    final coloured = {
+      for (final e in state.typography.languageOverrides.entries)
+        if (e.value.color != null) e.key: e.value,
+    };
+    if (coloured.isEmpty) return;
+    // One translation colour serves every language: keep the one the reader
+    // showed first.
+    final keep = state.visibleTranslationLangs.firstWhere(
+      coloured.containsKey,
+      orElse: () => coloured.keys.first,
+    );
+    final keptColor = coloured[keep]!.color!;
+    setTranslationColorPair(
+      ColorPair(light: keptColor, dark: keptColor, darkPicked: true),
+    );
+    for (final e in coloured.entries) {
+      setLanguageTypography(e.key, e.value.copyWith(clearColor: true));
+    }
   }
 
   /// Load a [ColorPair] from [key].  Falls back to reading the legacy
@@ -1369,7 +1418,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   Future<void> setPaliColor(Color lightColor) async {
-    final pair = ColorPair.fromLight(lightColor);
+    final pair = state.paliColorPair.withLight(lightColor);
     state = state.copyWith(paliColorPair: pair);
     await _prefs?.setString('pali_color_pair', jsonEncode(pair.toJson()));
   }
@@ -1380,7 +1429,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   Future<void> setTranslationColor(Color lightColor) async {
-    final pair = ColorPair.fromLight(lightColor);
+    final pair = state.translationColorPair.withLight(lightColor);
     state = state.copyWith(translationColorPair: pair);
     await _prefs?.setString(
       'translation_color_pair',
@@ -1683,7 +1732,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     for (final info in listOfScripts) {
       if (info.script == script) return info.nameInLocale;
     }
-    return script.name;
+    return script.englishName;
   }
 }
 

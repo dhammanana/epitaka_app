@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:developer' as developer;
 
+import '../providers/settings_provider.dart' show ReadingFontFamily;
 import 'pali_script_converter.dart';
 
 /// Whether Pāli variant annotations wrapped in square brackets (e.g.
@@ -75,6 +76,55 @@ String? scriptFontFamily(Script script) {
       // scripts (it has the required glyphs and OpenType shaping).
       return null;
   }
+}
+
+/// Font family for Pāli reading text in [script] with the user's [choice].
+/// Scripts with only one bundled font ignore the choice and keep
+/// [scriptFontFamily].
+String? paliReadingFontFamily(Script script, ReadingFontFamily choice) {
+  switch (script) {
+    case Script.roman:
+    case Script.cyrillic:
+      // The three Latin choices all cover Cyrillic.
+      return choice.fontFamily;
+    case Script.taitham:
+      // No monospace Tai Tham font exists; Monospace falls back to sans.
+      return choice == ReadingFontFamily.serif
+          ? 'PaliSerifTaiLnTilok'
+          : 'NotoSansTaiTham';
+    default:
+      return scriptFontFamily(script);
+  }
+}
+
+/// The font choices that give a different bundled font in [script]. Empty
+/// when the script has only one font, so the choice would change nothing.
+List<ReadingFontFamily> paliFontChoices(Script script) {
+  switch (script) {
+    case Script.roman:
+    case Script.cyrillic:
+      return ReadingFontFamily.values;
+    case Script.taitham:
+      return const [ReadingFontFamily.serif, ReadingFontFamily.sansSerif];
+    default:
+      return const [];
+  }
+}
+
+// Translation languages from assets/translations_manifest.json whose text is
+// Latin or Cyrillic. Every other language falls back to one script font
+// whatever the choice. Vietnamese gets no Monospace: DejaVu Sans Mono lacks
+// 23 of its 52 accented letters, so a line would mix two typefaces.
+const _allFontChoiceLangs = {'de', 'en', 'id', 'pt', 'ru'};
+const _noMonoFontChoiceLangs = {'vi'};
+
+/// The font choices that change the look of translation text in [langCode].
+List<ReadingFontFamily> translationFontChoices(String langCode) {
+  if (_allFontChoiceLangs.contains(langCode)) return ReadingFontFamily.values;
+  if (_noMonoFontChoiceLangs.contains(langCode)) {
+    return const [ReadingFontFamily.serif, ReadingFontFamily.sansSerif];
+  }
+  return const [];
 }
 
 /// A piece of Pāli text after script conversion.

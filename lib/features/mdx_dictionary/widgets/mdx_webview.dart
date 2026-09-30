@@ -55,6 +55,7 @@ class MdxWebViewBody extends ConsumerStatefulWidget {
   final String dictId;
   final String word;
   final String document;
+  final int textZoom;
   final Future<Uint8List?> Function(String key) readResource;
   final void Function(String word)? onEntryTap;
 
@@ -65,6 +66,7 @@ class MdxWebViewBody extends ConsumerStatefulWidget {
     required this.dictId,
     required this.word,
     required this.document,
+    this.textZoom = 100,
     required this.readResource,
     this.onEntryTap,
   });
@@ -165,6 +167,9 @@ class _MdxWebViewBodyState extends ConsumerState<MdxWebViewBody> {
     return SizedBox(
       height: height.clamp(80, 4000).toDouble(),
       child: InAppWebView(
+        // initialSettings apply only when the WebView is created, so a new
+        // zoom needs a new WebView.
+        key: ValueKey(widget.textZoom),
         initialUserScripts: UnmodifiableListView([
           UserScript(
             source: mdxEntryLinkFixScript,
@@ -177,6 +182,7 @@ class _MdxWebViewBodyState extends ConsumerState<MdxWebViewBody> {
         ),
         initialSettings: InAppWebViewSettings(
           useWideViewPort: false,
+          textZoom: widget.textZoom,
           transparentBackground: true,
           javaScriptEnabled: true,
           algorithmicDarkeningAllowed: !isLight,

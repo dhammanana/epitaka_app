@@ -42,7 +42,6 @@ const Map<String, String> si = {
   'Manage translation databases: download, update, and delete.':
       'පරිවර්තන දත්ත සමුදායන් කළමනාකරණය කරන්න: බාගැනීම, යාවත්කාලීන කිරීම සහ මකා දැමීම.',
   'Pāli': 'පාලි',
-  'Pali (Roman script)': 'පාලි (රෝම අක්ෂර)',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'සක්‍රීය කළ පරිවර්තන නැවත සකස් කිරීමට ඇදගෙන යන්න. එකකට වඩා සක්‍රීය කළ විට පළමුවැන්න පෙන්වයි.',
   'Drag to reorder': 'ඇදගෙන ගොස් අනුපිළිවෙල වෙනස් කරන්න',
@@ -210,6 +209,7 @@ const Map<String, String> si = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'දර්ශන ප්‍රකාරය',
   'Pāli Text': 'පාලි පාඨය',
+  'Translation Text': 'පරිවර්තන පාඨය',
   'Translation Databases': 'පරිවර්තන දත්ත සමුදායන්',
   'Check for Updates': 'යාවත්කාලීන පරීක්ෂා කරන්න',
   'All translations are up to date.': 'සියලුම පරිවර්තන යාවත්කාලීනයි.',

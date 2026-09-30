@@ -97,19 +97,11 @@ class AppearanceSettingsBody extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppDimensions.lg),
-          SettingsSection(title: loc.fontSettings, colors: colors, children: [
-            _FontSettingsLink(
-              onTap: () => _openFontSettings(context),
-              colors: colors,
-            ),
-          ]),
+          // The same controls as on the translations screen, bound to the
+          // same settings, so a change on either screen shows on both.
+          const PaliTextSection(),
+          const TranslationTextSection(),
         ],
-    );
-  }
-
-  void _openFontSettings(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const TranslationSettingsScreen()),
     );
   }
 }
@@ -229,43 +221,6 @@ class _Stepper extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _FontSettingsLink extends StatelessWidget {
-  final VoidCallback onTap;
-  final ColorScheme colors;
-
-  const _FontSettingsLink({
-    required this.onTap,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(AppDimensions.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(loc.fontSettingsSubtitle, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)),
-          const SizedBox(height: AppDimensions.md),
-          OutlinedButton.icon(
-            onPressed: onTap,
-            icon: const Icon(Icons.font_download, size: 18),
-            label: Text(loc.openFontSettings),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: colors.primary,
-              side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
-              padding: const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: AppDimensions.sm),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusMd)),
-              minimumSize: const Size(double.infinity, 48),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

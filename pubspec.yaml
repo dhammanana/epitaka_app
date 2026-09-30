@@ -180,6 +180,12 @@ flutter:
         - asset: assets/fonts/DejaVuSans-Bold.ttf
           weight: 700
 
+    - family: DejaVuSansMono
+      fonts:
+        - asset: assets/fonts/DejaVuSansMono.ttf
+        - asset: assets/fonts/DejaVuSansMono-Bold.ttf
+          weight: 700
+
     - family: OpenSans
       fonts:
         - asset: assets/fonts/OpenSans-Regular.ttf

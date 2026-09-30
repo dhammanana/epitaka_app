@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/providers/settings_provider.dart' show ReadingFontFamily;
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../shared/widgets/pali_text.dart';
 
@@ -19,6 +20,9 @@ class BookLinkChip extends StatelessWidget {
   /// The target Pāli script to convert the word to.
   final Script? script;
 
+  // The reader passes its own Pāli font choice; null reads it from settings.
+  final ReadingFontFamily? fontChoice;
+
   /// When true (keyboard navigation selected this chip), draw a stronger
   /// border and a filled tint so the focused chip is unmistakable.
   final bool selected;
@@ -29,6 +33,7 @@ class BookLinkChip extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.script,
+    this.fontChoice,
     this.selected = false,
   });
 
@@ -55,6 +60,7 @@ class BookLinkChip extends StatelessWidget {
             child: PaliTextStatic(
               word,
               script,
+              fontChoice: fontChoice,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,

@@ -1086,6 +1086,7 @@ class _SearchResultItemTile extends ConsumerWidget {
                   transTextStyle: transTextStyle,
                   colors: colors,
                   script: script,
+                  paliFont: paliTypo.fontFamily,
                 ),
               ),
             ),
@@ -1109,6 +1110,7 @@ class _LineTile extends StatelessWidget {
   final TextStyle transTextStyle;
   final ColorScheme colors;
   final Script script;
+  final ReadingFontFamily paliFont;
 
   const _LineTile({
     required this.line,
@@ -1118,6 +1120,7 @@ class _LineTile extends StatelessWidget {
     required this.transTextStyle,
     required this.colors,
     required this.script,
+    required this.paliFont,
   });
 
   @override
@@ -1185,7 +1188,9 @@ class _LineTile extends StatelessWidget {
   }) {
     // Convert script first (preserving HTML tags like <b>, <i>)
     final converted = convertPaliToScriptPreservingHtml(text, script);
-    final effStyle = style.copyWith(fontFamily: scriptFontFamily(script));
+    final effStyle = style.copyWith(
+      fontFamily: paliReadingFontFamily(script, paliFont),
+    );
 
     if (searchTerms.isEmpty || text.isEmpty) {
       return HtmlTextParser.richText(

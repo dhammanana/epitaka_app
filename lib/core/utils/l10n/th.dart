@@ -42,7 +42,6 @@ const Map<String, String> th = {
   'Manage translation databases: download, update, and delete.':
       'จัดการฐานข้อมูลคำแปล: ดาวน์โหลด อัปเดต และลบ',
   'Pāli': 'บาลี',
-  'Pali (Roman script)': 'บาลี (อักษรโรมัน)',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'ลากเพื่อจัดลำดับคำแปลที่เปิดใช้งาน รายการแรกจะแสดงเมื่อเปิดใช้งานหลายรายการ',
   'Drag to reorder': 'ลากเพื่อจัดลำดับ',
@@ -206,6 +205,7 @@ const Map<String, String> th = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'โหมดการแสดงผล',
   'Pāli Text': 'ข้อความบาลี',
+  'Translation Text': 'ข้อความแปล',
   'Translation Databases': 'ฐานข้อมูลคำแปล',
   'Check for Updates': 'ตรวจสอบการอัปเดต',
   'All translations are up to date.': 'คำแปลทั้งหมดเป็นเวอร์ชันล่าสุดแล้ว',

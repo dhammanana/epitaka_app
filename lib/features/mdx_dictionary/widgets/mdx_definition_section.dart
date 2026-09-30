@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/features/dictionary/providers/dictionary_expanded_provider.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_collapsible_card.dart';
 
@@ -9,6 +10,16 @@ import '../providers/mdx_lookup_providers.dart';
 import '../providers/mdx_web_providers.dart';
 import '../services/mdx_text.dart';
 import 'mdx_webview.dart';
+
+/// MDX body text size: the same Pāli-size scale and limits as the other
+/// dictionaries, so MDX never grows further than they do.
+double mdxBodyFontSize(double paliFontSize) =>
+    (paliFontSize * 0.8).clamp(12.0, 24.0);
+
+/// Android WebView text zoom (percent) for [mdxBodyFontSize]. The default
+/// Pāli size (19) gives 100, today's unzoomed text.
+int mdxTextZoom(double paliFontSize) =>
+    (mdxBodyFontSize(paliFontSize) / (19 * 0.8) * 100).round();
 
 class MdxDefinitionSection extends ConsumerWidget {
   final String dictId;
@@ -50,6 +61,9 @@ class MdxDefinitionSection extends ConsumerWidget {
       );
     }
     final baseStyle = Theme.of(context).textTheme.bodyMedium!;
+    final paliFontSize = ref.watch(
+      settingsProvider.select((s) => s.typography.pali.fontSize),
+    );
     final defs = ref.watch(
       mdxDefinitionsProvider(MdxDefKey(dictId, searchWord)),
     );
@@ -112,7 +126,7 @@ class MdxDefinitionSection extends ConsumerWidget {
                       'body': Style(
                         margin: Margins.zero,
                         padding: HtmlPaddings.zero,
-                        fontSize: FontSize(baseStyle.fontSize ?? 14),
+                        fontSize: FontSize(mdxBodyFontSize(paliFontSize)),
                         lineHeight: const LineHeight(1.4),
                         color: baseStyle.color,
                       ),
@@ -159,6 +173,9 @@ class _MdxWebDocSection extends ConsumerWidget {
     final colors = Theme.of(context).colorScheme;
     final baseStyle = Theme.of(context).textTheme.bodyMedium!;
     final doc = ref.watch(mdxWebDocumentProvider(MdxDefKey(dictId, searchWord)));
+    final paliFontSize = ref.watch(
+      settingsProvider.select((s) => s.typography.pali.fontSize),
+    );
     return doc.when(
       loading: () => DictionaryCollapsibleCard(
         dictionaryKey: _cardKey,
@@ -210,6 +227,7 @@ class _MdxWebDocSection extends ConsumerWidget {
               dictId: dictId,
               word: searchWord,
               document: document,
+              textZoom: mdxTextZoom(paliFontSize),
               readResource: (key) => ref.read(
                 mdxResourceProvider(MdxResKey(dictId, key)).future,
               ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -412,6 +413,21 @@ class _SearchResultTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final paliText = result.paliText;
     final translation = result.translation;
+    // Same typography as the other search result lists and the reader;
+    // PaliHtmlText applies the Pāli font itself.
+    final settings = ref.watch(settingsProvider);
+    final paliTypo = settings.typography.pali;
+    final paliStyle = paliTypo
+        .toTextStyle(fallbackColor: colors.onSurface)
+        .copyWith(fontSize: paliTypo.fontSize * 0.95);
+    final visibleLangs = settings.visibleTranslationLangs;
+    final transStyle = settings.typography
+        .typographyFor(
+          visibleLangs.isNotEmpty
+              ? visibleLangs.first
+              : settings.primaryTranslationLang,
+        )
+        .toTextStyle(fallbackColor: colors.onSurfaceVariant);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
@@ -449,7 +465,7 @@ class _SearchResultTile extends ConsumerWidget {
             if (paliText.isNotEmpty)
               PaliHtmlText(
                 paliText,
-                style: AppTypography.bodyPali.copyWith(color: colors.onSurface),
+                style: paliStyle,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -458,10 +474,7 @@ class _SearchResultTile extends ConsumerWidget {
                 padding: const EdgeInsets.only(top: 2),
                 child: HtmlTextParser.richText(
                   translation,
-                  AppTypography.bodyTranslation.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
+                  transStyle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -388,7 +388,10 @@ class _CategoryTabBar extends ConsumerWidget {
     // otherwise scripts with a dedicated bundled font (Lao, Myanmar, …)
     // fall back to the platform default and render incorrectly, unlike the
     // book/nikaya names in the library which go through [PaliTextStatic].
-    final scriptFont = scriptFontFamily(script);
+    final scriptFont = paliReadingFontFamily(
+      script,
+      ref.watch(settingsProvider.select((s) => s.typography.pali.fontFamily)),
+    );
 
     return Container(
       margin: const EdgeInsets.symmetric(

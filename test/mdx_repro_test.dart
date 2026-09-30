@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dict_reader/dict_reader.dart';
 import 'package:epitaka/features/mdx_dictionary/services/mdx_index_service.dart';
@@ -32,9 +33,13 @@ void main() {
     expect(find.text('secret', findRichText: true), findsWidgets);
   });
 
-  testWidgets('real LDOCE6 entry renders without crash', (tester) async {
+  const mdxPath = '/Volumes/Data/Dictionaries/LDOCE6/LDOCE6.mdx';
+  // The dictionary lives on one developer's Mac. Elsewhere the file read
+  // never completes inside testWidgets and the whole suite hangs until the
+  // 10-minute timeout.
+  testWidgets('real LDOCE6 entry renders without crash',
+      skip: !File(mdxPath).existsSync(), (tester) async {
     final svc = MdxIndexService();
-    const mdxPath = '/Volumes/Data/Dictionaries/LDOCE6/LDOCE6.mdx';
     late final String entry;
     final mdx = DictReader(mdxPath);
     try {

@@ -47,7 +47,6 @@ const Map<String, String> en = {
   'Manage translation databases: download, update, and delete.':
       'Manage translation databases: download, update, and delete.',
   'Pāli': 'Pāli',
-  'Pali (Roman script)': 'Pali (Roman script)',
   'Pāli script': 'Pāli script',
   'Script used to write Pāli for the TTS voice. Each script needs its language voice installed. Hindi is the default — it reads Pāli best.':
       'Script used to write Pāli for the TTS voice. Each script needs its language voice installed. Hindi is the default — it reads Pāli best.',
@@ -268,9 +267,6 @@ const Map<String, String> en = {
   'Line Spacing': 'Line Spacing',
   'Paragraph Spacing': 'Paragraph Spacing',
   'Additional spacing in pixels': 'Additional spacing in pixels',
-  'Font Settings': 'Font Settings',
-  'Configure Pāli and translation fonts': 'Configure Pāli and translation fonts',
-  'Open Font Settings': 'Open Font Settings',
 
   // ── Reading Options ─────────────────────────────────────────────────
   'Page Numbering': 'Page Numbering',
@@ -350,6 +346,7 @@ const Map<String, String> en = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'Display Mode',
   'Pāli Text': 'Pāli Text',
+  'Translation Text': 'Translation Text',
   'Translation Databases': 'Translation Databases',
   'Check for Updates': 'Check for Updates',
   'All translations are up to date.': 'All translations are up to date.',

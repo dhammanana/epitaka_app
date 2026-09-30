@@ -42,13 +42,13 @@ class PaliDefinitionCard extends ConsumerWidget {
       fontSize: (pali.fontSize * 0.8).clamp(12.0, 26.0),
       height: pali.lineHeight,
       color: colors.onSurface,
-      fontFamily: scriptFontFamily(script) ?? pali.fontFamily.fontFamily,
+      fontFamily: paliReadingFontFamily(script, pali.fontFamily),
     );
     final contextStyle = TextStyle(
       fontSize: (pali.fontSize * 0.72).clamp(11.0, 24.0),
       height: pali.lineHeight,
       color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-      fontFamily: scriptFontFamily(script) ?? pali.fontFamily.fontFamily,
+      fontFamily: paliReadingFontFamily(script, pali.fontFamily),
     );
     final transStyle = TextStyle(
       fontSize: (pali.fontSize * 0.8).clamp(11.0, 24.0),
