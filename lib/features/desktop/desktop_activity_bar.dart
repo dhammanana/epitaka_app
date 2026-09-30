@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../shared/providers/side_panel_provider.dart';
 import '../../shared/utils/app_shortcuts.dart';
+import '../sutta_jump/widgets/go_to_sutta_dialog.dart';
 
 /// A VS Code-style vertical icon rail on the far left of the desktop shell.
 ///
@@ -85,6 +86,14 @@ class DesktopActivityBar extends StatelessWidget {
         shortcutId: 'find-everywhere',
       ),
       _ActivityItem(
+        null,
+        Icons.near_me_outlined,
+        Icons.near_me_outlined,
+        loc.goToSutta,
+        shortcutId: 'go-to-sutta',
+        onTap: () => showGoToSuttaDialog(context),
+      ),
+      _ActivityItem(
         SidePanelType.gavesana,
         Icons.travel_explore,
         Icons.travel_explore,
@@ -156,6 +165,7 @@ class DesktopActivityBar extends StatelessWidget {
                         if (item.toggleSidebar != null) {
                           onToggleSidebar(item.toggleSidebar!);
                         }
+                        item.onTap?.call();
                       },
                     ),
                 ],
@@ -179,16 +189,22 @@ class _ActivityItem {
   /// tooltip. Null when the action has no keyboard shortcut.
   final String? shortcutId;
 
+  /// For an item that opens something other than a sidebar panel.
+  final VoidCallback? onTap;
+
   const _ActivityItem(
     this.toggleSidebar,
     this.icon,
     this.activeIcon,
     this.label, {
     this.shortcutId,
+    this.onTap,
   });
 
   bool isActive(SidePanelType? activeSidebar) {
-    return activeSidebar == toggleSidebar;
+    // Without this guard an item with no panel would light up whenever the
+    // sidebar is closed (null == null).
+    return toggleSidebar != null && activeSidebar == toggleSidebar;
   }
 }
 

@@ -26,6 +26,7 @@ import '../../library/screens/library_screen.dart';
 import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
+import '../../sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../providers/reader_dictionary_lookup_controller.dart';
 import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_lookup_highlight_provider.dart';
@@ -1608,6 +1609,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                         context.push('/settings');
                       }
                     },
+                    onGoToSuttaTap: () => showGoToSuttaDialog(context),
                     actions: ResponsiveBreakpoint.isDesktop(context)
                         ? [
                             IconButton(

@@ -164,6 +164,7 @@ class _ShortcutsSection extends StatelessWidget {
       _Shortcut(loc.contents, 'contents'),
       _Shortcut(loc.vimamsa, 'vimamsa'),
       _Shortcut(loc.jumpToPage, 'jump'),
+      _Shortcut(loc.goToSutta, 'go-to-sutta'),
       _Shortcut(loc.openSettings, 'settings'),
       _Shortcut(loc.increaseFontSize, 'font-increase'),
       _Shortcut(loc.decreaseFontSize, 'font-decrease'),

@@ -125,6 +125,7 @@ flutter:
     - assets/fonts/
     - assets/changelog.md
     - assets/icon.png
+    - assets/sutta_codes.tsv
 
   fonts:
     - family: NotoSansSinhala

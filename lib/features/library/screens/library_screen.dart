@@ -15,6 +15,7 @@ import '../../../features/guide/widgets/feature_guide_welcome_sheet.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../settings/widgets/settings_dialog.dart';
+import '../../sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -204,6 +205,12 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.search),
           color: colors.onSurfaceVariant,
           onPressed: () => context.push('/search'),
+        ),
+        IconButton(
+          icon: const Icon(Icons.near_me_outlined),
+          color: colors.onSurfaceVariant,
+          tooltip: AppLocalizations.of(context).goToSutta,
+          onPressed: () => showGoToSuttaDialog(context),
         ),
         IconButton(
           icon: const Icon(Icons.settings),
