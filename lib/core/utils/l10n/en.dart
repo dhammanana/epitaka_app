@@ -1086,4 +1086,11 @@ const Map<String, String> en = {
   'Search Google': 'Search Google',
   'Show full error': 'Show full error',
   'Hide full error': 'Hide full error',
+
+  // ── Go to sutta ─────────────────────────────────────────────────────
+  'Go to sutta': 'Go to sutta',
+  'Type a sutta code, e.g. mn10': 'Type a sutta code, e.g. mn10',
+  'No sutta with code ': 'No sutta with code ',
+  'Could not look up sutta codes. The error is in the log.':
+      'Could not look up sutta codes. The error is in the log.',
 };

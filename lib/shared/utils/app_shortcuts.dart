@@ -17,6 +17,7 @@ import '../../features/reader/providers/reader_keyboard_bridge.dart';
 import '../../features/reader/providers/reader_provider.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/settings/widgets/settings_dialog.dart';
+import '../../features/sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../shared/providers/side_panel_provider.dart';
 import '../../shared/providers/vimamsa_panel_provider.dart';
 
@@ -384,6 +385,15 @@ class AppShortcuts {
       ],
       macActivator: SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
     ),
+    ShortcutBinding(
+      id: 'go-to-sutta',
+      label: 'Go to Sutta…',
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyG, control: true),
+        SingleActivator(LogicalKeyboardKey.keyG, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyG, meta: true),
+    ),
     // ── Display modes (⌥⌘/Ctrl+Alt — not in the macOS Edit menu) ─
     ShortcutBinding(
       id: 'display-hide',
@@ -750,6 +760,7 @@ class AppShortcuts {
       'outline': toggleOutline,
       'vimamsa': toggleVimamsa,
       'jump': jumpToPage,
+      'go-to-sutta': () => showGoToSuttaDialog(_ctx(navigatorKey)),
       'display-hide': hideTranslation,
       'display-line': viewLineByLine,
       'display-side': viewSideBySide,

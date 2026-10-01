@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../router/app_router.dart';
 
 /// Reader app bar that smoothly animates its height and opacity when
@@ -20,6 +21,7 @@ class ReaderAppBar extends ConsumerWidget {
   final ColorScheme colors;
   final bool showCollapsed;
   final VoidCallback onSettingsTap;
+  final VoidCallback? onGoToSuttaTap;
   final List<Widget>? actions;
 
   const ReaderAppBar({
@@ -29,6 +31,7 @@ class ReaderAppBar extends ConsumerWidget {
     required this.colors,
     required this.showCollapsed,
     required this.onSettingsTap,
+    this.onGoToSuttaTap,
     this.actions,
   });
 
@@ -112,6 +115,13 @@ class ReaderAppBar extends ConsumerWidget {
                           ),
                           // Actions
                           ...?actions,
+                          if (actions == null && onGoToSuttaTap != null)
+                            IconButton(
+                              icon: const Icon(Icons.near_me_outlined),
+                              color: colors.onSurfaceVariant,
+                              tooltip: AppLocalizations.of(context).goToSutta,
+                              onPressed: onGoToSuttaTap,
+                            ),
                           // Settings button (default action)
                           if (actions == null)
                             IconButton(

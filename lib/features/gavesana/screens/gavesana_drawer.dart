@@ -12,6 +12,7 @@ import '../../../router/app_router.dart' show AppRoutes;
 import '../../../shared/utils/app_navigation.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
+import '../../sutta_jump/widgets/go_to_sutta_dialog.dart';
 
 /// The main navigation drawer.
 ///
@@ -119,6 +120,14 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   title: loc.search,
                   onTap: () => _closeAndGo(context, '/search?fromDrawer=true'),
                   selected: _isRouteActive(context, '/search'),
+                ),
+                _DrawerItem(
+                  icon: Icons.near_me_outlined,
+                  title: loc.goToSutta,
+                  onTap: () {
+                    Navigator.of(context).pop(); // close drawer
+                    showGoToSuttaDialog(context);
+                  },
                 ),
                 _DrawerItem(
                   icon: Icons.psychology,
