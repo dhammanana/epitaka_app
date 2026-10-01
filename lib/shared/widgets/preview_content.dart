@@ -241,7 +241,7 @@ class PreviewLine extends StatelessWidget {
     final converted = PreviewContent._cachedConvert(snippet, script);
     final effectiveColor = paliTypo.effectiveColor(paliColor);
     final baseStyle = TextStyle(
-      fontFamily: scriptFontFamily(script),
+      fontFamily: paliReadingFontFamily(script, paliTypo.fontFamily),
       fontSize: paliTypo.fontSize,
       height: paliTypo.lineHeight,
       fontWeight: paliTypo.bold ? FontWeight.w700 : FontWeight.w400,
@@ -260,7 +260,7 @@ class PreviewLine extends StatelessWidget {
   Widget _buildPaliLine(String text) {
     final effectiveColor = paliTypo.effectiveColor(paliColor);
     final baseStyle = TextStyle(
-      fontFamily: scriptFontFamily(script),
+      fontFamily: paliReadingFontFamily(script, paliTypo.fontFamily),
       fontSize: paliTypo.fontSize,
       height: paliTypo.lineHeight,
       fontWeight: paliTypo.bold ? FontWeight.w700 : FontWeight.w400,

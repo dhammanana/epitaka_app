@@ -272,6 +272,7 @@ class ReadingParagraph extends StatelessWidget {
                 child: PaliTextStatic(
                   bookName ?? '',
                   script,
+                  fontChoice: paliTypography.fontFamily,
                   style: AppTypography.displayPali.copyWith(
                     color: colors.primary,
                   ),
@@ -314,7 +315,9 @@ class ReadingParagraph extends StatelessWidget {
       color: colors.primary,
       height: 1.3,
     );
-    final fontStyle = baseStyle.copyWith(fontFamily: scriptFontFamily(script));
+    final fontStyle = baseStyle.copyWith(
+      fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
+    );
 
     // Headings are anchored with lineId == -1 and segment == 'pali'.
     final headingAnnotations = _annotationsForLine(-1, 'pali', null);
@@ -342,7 +345,12 @@ class ReadingParagraph extends StatelessWidget {
         lookupHighlight: isLookupTarget ? lookupHighlight : null,
       );
     } else {
-      title = PaliTextStatic(heading.title, script, style: baseStyle);
+      title = PaliTextStatic(
+        heading.title,
+        script,
+        fontChoice: paliTypography.fontFamily,
+        style: baseStyle,
+      );
     }
 
     final wrappedTitle = MetaData(
@@ -728,7 +736,7 @@ class ReadingParagraph extends StatelessWidget {
               paliTypography.italic ? FontStyle.italic : FontStyle.normal,
           height: _paliLineHeight,
           color: paliTypography.effectiveColor(paliColor),
-          fontFamily: scriptFontFamily(script),
+          fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
         );
         return Text.rich(
           TextSpan(
@@ -764,6 +772,7 @@ class ReadingParagraph extends StatelessWidget {
             word: link.word,
             color: chipColor,
             script: script,
+            fontChoice: paliTypography.fontFamily,
             selected: i == selectedIndex,
             onTap: () => showBookLinkSectionSheet(context, link: link),
           );
@@ -775,6 +784,7 @@ class ReadingParagraph extends StatelessWidget {
       links: links,
       colors: colors,
       script: script,
+      fontChoice: paliTypography.fontFamily,
       selectedIndex: selectedIndex,
       onChipTap: (link) => showBookLinkSectionSheet(context, link: link),
     );
@@ -1169,7 +1179,7 @@ class ReadingParagraph extends StatelessWidget {
       // Myanmar, Sinhala, …) fall back to the platform default and render
       // incorrectly (e.g. missing the Pali-specific Lao characters).
       final scriptStyle = baseStyle.copyWith(
-        fontFamily: scriptFontFamily(script),
+        fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
       );
       return _buildHighlightedText(
         context,
@@ -1186,6 +1196,7 @@ class ReadingParagraph extends StatelessWidget {
     return PaliTextWithVariants(
       text,
       script: script,
+      fontChoice: paliTypography.fontFamily,
       colors: colors,
       style: baseStyle,
       textAlign: textAlign ?? _textAlign,
@@ -1792,6 +1803,7 @@ class _ExpandableChips extends StatefulWidget {
   final List<BookLinkData> links;
   final ColorScheme colors;
   final Script? script;
+  final ReadingFontFamily fontChoice;
   final void Function(BookLinkData link) onChipTap;
 
   /// Index of the keyboard-selected chip; when it's hidden behind the
@@ -1802,6 +1814,7 @@ class _ExpandableChips extends StatefulWidget {
     required this.links,
     required this.colors,
     this.script,
+    required this.fontChoice,
     required this.onChipTap,
     this.selectedIndex,
   });
@@ -1843,6 +1856,7 @@ class _ExpandableChipsState extends State<_ExpandableChips> {
       word: link.word,
       color: chipColor,
       script: widget.script,
+      fontChoice: widget.fontChoice,
       selected: index == widget.selectedIndex,
       onTap: () => widget.onChipTap(link),
     );

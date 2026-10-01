@@ -551,14 +551,14 @@ class _ScriptPickerTile extends ConsumerWidget {
   }
 
   String _scriptLabel(ScriptInfo info) {
-    return '${info.nameInLocale} (${info.script.name})';
+    return '${info.nameInLocale} (${info.script.englishName})';
   }
 
   String _currentScriptLabel(Script script) {
     for (final info in listOfScripts) {
       if (info.script == script) return info.nameInLocale;
     }
-    return script.name;
+    return script.englishName;
   }
 }
 

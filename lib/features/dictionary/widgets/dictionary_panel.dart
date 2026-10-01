@@ -968,7 +968,9 @@ class _DpdSectionState extends ConsumerState<_DpdSection> {
               lookup.searchedKey,
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.onSurface,
-                fontSize: (pali.fontSize * 1.0).clamp(16.0, 30.0),
+                // Just above the 0.8× entry titles, and below the reader's
+                // Pāli text.
+                fontSize: (pali.fontSize * 0.9).clamp(12.0, 27.0),
                 fontWeight: FontWeight.bold,
                 fontFamily: paliFontFamily,
               ),

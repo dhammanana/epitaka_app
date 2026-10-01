@@ -42,7 +42,6 @@ const Map<String, String> my = {
   'Manage translation databases: download, update, and delete.':
       'ဘာသာပြန်ဒေတာဘေ့စ်များကို စီမံပါ - ဒေါင်းလုဒ်လုပ်ခြင်း၊ အပ်ဒိတ်လုပ်ခြင်း၊ ဖျက်ခြင်း။',
   'Pāli': 'ပါဠိ',
-  'Pali (Roman script)': 'ပါဠိ (ရိုမန်အက္ခရာ)',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'ဖွင့်ထားသော ဘာသာပြန်များကို ဆွဲ၍ အစီအစဉ်ပြောင်းပါ။ တစ်ခုထက်ပို၍ ဖွင့်ထားပါက ပထမတစ်ခုကို ပြသမည်။',
   'Drag to reorder': 'ဆွဲ၍ အစီအစဉ်ပြောင်းရန်',
@@ -209,6 +208,7 @@ const Map<String, String> my = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'ပြသမှုမုဒ်',
   'Pāli Text': 'ပါဠိစာသား',
+  'Translation Text': 'ဘာသာပြန်စာသား',
   'Translation Databases': 'ဘာသာပြန်ဒေတာဘေ့စ်များ',
   'Check for Updates': 'အပ်ဒိတ်များ စစ်ဆေးမည်',
   'All translations are up to date.':

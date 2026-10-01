@@ -24,6 +24,7 @@ String buildDictEntryDocument({
   required List<String> bodies,
   required double fontSize,
   required String? fontFamily,
+  String genericFamily = 'sans-serif',
   required Color primary,
   required Color onSurface,
   required Color onSurfaceVariant,
@@ -36,7 +37,8 @@ String buildDictEntryDocument({
   final outlineHex = _hex(outlineVariant);
   final containerHex = _hex(containerLow);
   final family = (fontFamily ?? '').trim().replaceAll("'", '');
-  final familyCss = family.isEmpty ? 'sans-serif' : "'$family', sans-serif";
+  final familyCss =
+      family.isEmpty ? genericFamily : "'$family', $genericFamily";
 
   final buf = StringBuffer(
     '<!DOCTYPE html><html><head>'

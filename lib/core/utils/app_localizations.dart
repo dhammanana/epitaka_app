@@ -240,9 +240,6 @@ class AppLocalizations {
   String get lineSpacing => _t('Line Spacing');
   String get paragraphSpacing => _t('Paragraph Spacing');
   String get spacingSubtitle => _t('Additional spacing in pixels');
-  String get fontSettings => _t('Font Settings');
-  String get fontSettingsSubtitle => _t('Configure Pāli and translation fonts');
-  String get openFontSettings => _t('Open Font Settings');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  READING OPTIONS SCREEN
@@ -298,6 +295,7 @@ class AppLocalizations {
 
   String get displayMode => _t('Display Mode');
   String get paliTextLabel => _t('Pāli Text');
+  String get translationTextLabel => _t('Translation Text');
   String get translationDatabases => _t('Translation Databases');
   String get checkForUpdates => _t('Check for Updates');
   String get noUpdates => _t('All translations are up to date.');
@@ -1202,7 +1200,6 @@ class AppLocalizations {
   String get manageTranslationsSubtitle =>
       _t('Manage translation databases: download, update, and delete.');
   String get pali => _t('Pāli');
-  String get paliRomanScript => _t('Pali (Roman script)');
   String get reorderTranslationsHint => _t(
     'Drag to reorder enabled translations. The first one is shown when multiple are enabled.',
   );

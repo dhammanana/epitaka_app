@@ -500,6 +500,7 @@ class _DictEntryWebSection extends ConsumerWidget {
           bodies: bodies,
           fontSize: (pali.fontSize * 0.8).clamp(12.0, 24.0),
           fontFamily: pali.fontFamily.fontFamily,
+          genericFamily: pali.fontFamily.cssGenericFamily,
           primary: colors.primary,
           onSurface: colors.onSurface,
           onSurfaceVariant: colors.onSurfaceVariant,

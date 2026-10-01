@@ -56,7 +56,10 @@ class PaliText extends ConsumerWidget {
     );
     stripVariantAnnotations = strip;
     final converted = convertPaliToScriptPreservingHtml(data, script);
-    final fontFamily = scriptFontFamily(script);
+    final fontChoice = ref.watch(
+      settingsProvider.select((s) => s.typography.pali.fontFamily),
+    );
+    final fontFamily = paliReadingFontFamily(script, fontChoice);
     final effectiveStyle =
         style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
@@ -94,6 +97,7 @@ class PaliTextWithVariants extends StatelessWidget {
   final TextOverflow? overflow;
   final TextAlign? textAlign;
   final Script script;
+  final ReadingFontFamily fontChoice;
   final ColorScheme colors;
 
   const PaliTextWithVariants(
@@ -101,6 +105,7 @@ class PaliTextWithVariants extends StatelessWidget {
     super.key,
     required this.script,
     required this.colors,
+    this.fontChoice = ReadingFontFamily.serif,
     this.style,
     this.maxLines,
     this.overflow,
@@ -109,7 +114,7 @@ class PaliTextWithVariants extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fontFamily = scriptFontFamily(script);
+    final fontFamily = paliReadingFontFamily(script, fontChoice);
 
     final baseStyle =
         style?.copyWith(fontFamily: fontFamily) ??
@@ -230,7 +235,10 @@ class PaliHtmlText extends ConsumerWidget {
     );
     stripVariantAnnotations = strip;
     final converted = convertPaliToScriptPreservingHtml(html, script);
-    final fontFamily = scriptFontFamily(script);
+    final fontChoice = ref.watch(
+      settingsProvider.select((s) => s.typography.pali.fontFamily),
+    );
+    final fontFamily = paliReadingFontFamily(script, fontChoice);
     final effectiveStyle =
         style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);
@@ -259,6 +267,9 @@ class PaliHtmlText extends ConsumerWidget {
 class PaliTextStatic extends StatelessWidget {
   final String data;
   final Script? script;
+  // Null reads the choice from settings. The reader passes its own, because
+  // it also renders outside a ProviderScope (widget tests, previews).
+  final ReadingFontFamily? fontChoice;
   final TextStyle? style;
   final int? maxLines;
   final TextOverflow? overflow;
@@ -268,6 +279,7 @@ class PaliTextStatic extends StatelessWidget {
     this.data,
     this.script, {
     super.key,
+    this.fontChoice,
     this.style,
     this.maxLines,
     this.overflow,
@@ -276,9 +288,19 @@ class PaliTextStatic extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final choice = fontChoice;
+    if (choice != null) return _build(choice);
+    return Consumer(
+      builder: (context, ref, _) => _build(
+        ref.watch(settingsProvider.select((s) => s.typography.pali.fontFamily)),
+      ),
+    );
+  }
+
+  Widget _build(ReadingFontFamily choice) {
     final s = script ?? Script.roman;
     final converted = convertPaliToScriptPreservingHtml(data, s);
-    final fontFamily = scriptFontFamily(s);
+    final fontFamily = paliReadingFontFamily(s, choice);
     final effectiveStyle =
         style?.copyWith(fontFamily: fontFamily) ??
         TextStyle(fontFamily: fontFamily);

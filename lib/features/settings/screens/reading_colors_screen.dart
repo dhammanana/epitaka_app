@@ -5,6 +5,8 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/pali_text_utils.dart'
+    show convertPaliToScript, paliReadingFontFamily;
 import '../widgets/color_picker_section.dart';
 import '../widgets/color_swatch.dart';
 import '../widgets/settings_app_bar.dart';
@@ -22,6 +24,25 @@ class ReadingColorsScreen extends ConsumerWidget {
     final previewPali = settings.paliColorPair.resolve(brightness);
     final previewTrans = settings.translationColorPair.resolve(brightness);
     final loc = AppLocalizations.of(context);
+    // Styled exactly as the reader styles them: a colour set on the Pāli or
+    // translation card overrides the reading colour chosen here.
+    final paliTypo = settings.typography.pali;
+    final paliStyle = paliTypo
+        .toTextStyle(fallbackColor: previewPali)
+        .copyWith(
+          fontFamily: paliReadingFontFamily(
+            settings.paliScript,
+            paliTypo.fontFamily,
+          ),
+        );
+    final visibleLangs = settings.visibleTranslationLangs;
+    final transStyle = settings.typography
+        .typographyFor(
+          visibleLangs.isNotEmpty
+              ? visibleLangs.first
+              : settings.primaryTranslationLang,
+        )
+        .toTextStyle(fallbackColor: previewTrans);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
@@ -30,7 +51,8 @@ class ReadingColorsScreen extends ConsumerWidget {
         children: [
           Text(loc.readingColors, style: AppTypography.headlineLarge.copyWith(color: colors.onSurface)),
           const SizedBox(height: AppDimensions.lg),
-          _LivePreviewCard(paliColor: previewPali, transColor: previewTrans, paliText: 'Evam me sutam…', transText: 'Thus have I heard…',
+          _LivePreviewCard(paliStyle: paliStyle, transStyle: transStyle,
+            paliText: convertPaliToScript('Evaṃ me sutaṃ…', settings.paliScript), transText: 'Thus have I heard…',
             label: isDark ? loc.darkModePreview : loc.lightModePreview, colors: colors),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(title: loc.paliTextColor, colors: colors, children: [
@@ -42,7 +64,7 @@ class ReadingColorsScreen extends ConsumerWidget {
                 _CustomColorButton(onTap: () => _showColorPicker(context, ref, settings.paliColorPair.light, (c) => ref.read(settingsProvider.notifier).setPaliColor(c))),
               ]),
               const SizedBox(height: AppDimensions.sm), Divider(color: colors.outlineVariant.withValues(alpha: 0.4)), const SizedBox(height: AppDimensions.sm),
-              _ColorRow(label: loc.darkModeAuto, color: settings.paliColorPair.dark, colors: colors),
+              _ColorRow(label: settings.paliColorPair.darkPicked ? loc.darkMode : loc.darkModeAuto, color: settings.paliColorPair.dark, colors: colors),
             ])),
           ]),
           const SizedBox(height: AppDimensions.md),
@@ -55,7 +77,7 @@ class ReadingColorsScreen extends ConsumerWidget {
                 _CustomColorButton(onTap: () => _showColorPicker(context, ref, settings.translationColorPair.light, (c) => ref.read(settingsProvider.notifier).setTranslationColor(c))),
               ]),
               const SizedBox(height: AppDimensions.sm), Divider(color: colors.outlineVariant.withValues(alpha: 0.4)), const SizedBox(height: AppDimensions.sm),
-              _ColorRow(label: loc.darkModeAuto, color: settings.translationColorPair.dark, colors: colors),
+              _ColorRow(label: settings.translationColorPair.darkPicked ? loc.darkMode : loc.darkModeAuto, color: settings.translationColorPair.dark, colors: colors),
             ])),
           ]),
         ],
@@ -118,8 +140,8 @@ class _ColorRow extends StatelessWidget {
 }
 
 class _LivePreviewCard extends StatelessWidget {
-  final Color paliColor; final Color transColor; final String paliText; final String transText; final String label; final ColorScheme colors;
-  const _LivePreviewCard({required this.paliColor, required this.transColor, required this.paliText, required this.transText, required this.label, required this.colors});
+  final TextStyle paliStyle; final TextStyle transStyle; final String paliText; final String transText; final String label; final ColorScheme colors;
+  const _LivePreviewCard({required this.paliStyle, required this.transStyle, required this.paliText, required this.transText, required this.label, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -127,11 +149,11 @@ class _LivePreviewCard extends StatelessWidget {
       decoration: BoxDecoration(color: colors.surface, borderRadius: BorderRadius.circular(AppDimensions.radiusXl), border: Border.all(color: colors.outlineVariant)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Text(label, style: AppTypography.labelSmall.copyWith(color: colors.onSurfaceVariant)), const SizedBox(width: 8),
-          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: paliColor)),
-          const SizedBox(width: 4), Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: transColor))]),
+          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: paliStyle.color)),
+          const SizedBox(width: 4), Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: transStyle.color))]),
         const SizedBox(height: AppDimensions.sm),
-        Text(paliText, style: AppTypography.bodyPali.copyWith(color: paliColor)),
-        const SizedBox(height: 4), Text(transText, style: AppTypography.bodyTranslation.copyWith(color: transColor)),
+        Text(paliText, style: paliStyle),
+        const SizedBox(height: 4), Text(transText, style: transStyle),
       ]),
     );
   }

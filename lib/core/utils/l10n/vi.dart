@@ -45,7 +45,6 @@ const Map<String, String> vi = {
   'Manage translation databases: download, update, and delete.':
       'Quản lý cơ sở dữ liệu bản dịch: tải về, cập nhật và xóa.',
   'Pāli': 'Pāli',
-  'Pali (Roman script)': 'Pali (chữ La-tinh)',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'Kéo để sắp xếp các bản dịch đã bật. Bản dịch đầu tiên được hiển thị khi có nhiều bản được bật.',
   'Drag to reorder': 'Kéo để sắp xếp thứ tự',
@@ -247,6 +246,7 @@ const Map<String, String> vi = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'Chế độ hiển thị',
   'Pāli Text': 'Văn bản Pāli',
+  'Translation Text': 'Văn bản dịch',
   'Translation Databases': 'Cơ sở dữ liệu bản dịch',
   'Check for Updates': 'Kiểm tra cập nhật',
   'All translations are up to date.': 'Tất cả bản dịch đã được cập nhật.',

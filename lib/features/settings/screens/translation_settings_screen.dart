@@ -8,7 +8,16 @@ import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/theme/color_pair.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_script_converter.dart'
+    show Script, listOfScripts;
+import '../../../core/utils/pali_text_utils.dart'
+    show
+        convertPaliToScript,
+        paliFontChoices,
+        paliReadingFontFamily,
+        translationFontChoices;
 import '../providers/translation_download_provider.dart';
 import '../widgets/color_picker_section.dart';
 import '../widgets/settings_app_bar.dart';
@@ -125,26 +134,8 @@ class _TranslationSettingsBodyState
             ],
           ),
           const SizedBox(height: AppDimensions.lg),
-          SettingsSection(
-            title: loc.paliTextLabel,
-            colors: colors,
-            children: [
-              _LanguageTypographyCard(
-                isEnabled: settings.showPali,
-                title: loc.pali,
-                subtitle: loc.paliRomanScript,
-                typography: settings.typography.pali,
-                defaultColor: AppSettings.defaultPaliColor,
-                onEnabledChanged: (v) {
-                  ref.read(settingsProvider.notifier).setShowPali(v);
-                },
-                onTypographyChanged: (typo) {
-                  ref.read(settingsProvider.notifier).setPaliTypography(typo);
-                },
-                colors: colors,
-              ),
-            ],
-          ),
+          const PaliTextSection(),
+          const TranslationTextSection(),
           const SizedBox(height: AppDimensions.lg),
           SettingsSection(
             title: loc.translationOrder,
@@ -360,14 +351,12 @@ class _TranslationSettingsBodyState
                           final dlState =
                               downloadStates[versionKey] ??
                               const TranslationDownloadState();
-                          final typo = settings.typography.typographyFor(code);
                           final selectedSuffix =
                               settings.translationVersionMap[code];
 
                           return _TranslationVersionTile(
                             version: v,
                             downloadState: dlState,
-                            typography: typo,
                             isEnabled: isAnyEnabled,
                             selectedSuffix: selectedSuffix,
                             colors: colors,
@@ -390,11 +379,6 @@ class _TranslationSettingsBodyState
                               ref
                                   .read(settingsProvider.notifier)
                                   .setTranslationEnabled(code, enabled);
-                            },
-                            onTypographyChanged: (newTypo) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setLanguageTypography(code, newTypo);
                             },
                             onVersionChanged: (String? suffix) {
                               ref
@@ -704,7 +688,6 @@ class _LanguageHeader extends StatelessWidget {
 class _TranslationVersionTile extends StatefulWidget {
   final TranslationVersion version;
   final TranslationDownloadState downloadState;
-  final LanguageTypography typography;
   final bool isEnabled;
   final String? selectedSuffix;
   final ColorScheme colors;
@@ -712,13 +695,11 @@ class _TranslationVersionTile extends StatefulWidget {
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
   final ValueChanged<bool> onEnableChanged;
-  final ValueChanged<LanguageTypography> onTypographyChanged;
   final ValueChanged<String?> onVersionChanged;
 
   const _TranslationVersionTile({
     required this.version,
     required this.downloadState,
-    required this.typography,
     required this.isEnabled,
     this.selectedSuffix,
     required this.colors,
@@ -726,7 +707,6 @@ class _TranslationVersionTile extends StatefulWidget {
     required this.onDelete,
     this.onCancel,
     required this.onEnableChanged,
-    required this.onTypographyChanged,
     required this.onVersionChanged,
   });
 
@@ -1053,8 +1033,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
 
   Widget _buildExpandedContent(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
-    final typo = widget.typography;
-    final defaultColor = AppSettings.defaultTranslationColor;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1071,64 +1049,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
             color: colors.outlineVariant.withValues(alpha: 0.25),
           ),
           const SizedBox(height: AppDimensions.sm + 2),
-          _SectionLabel(loc.fontFamily, colors),
-          const SizedBox(height: 8),
-          _FontFamilySelector(
-            current: typo.fontFamily,
-            colors: colors,
-            onChanged: (family) {
-              widget.onTypographyChanged(typo.copyWith(fontFamily: family));
-            },
-          ),
-          const SizedBox(height: AppDimensions.md),
-          _SectionLabel(loc.fontSize, colors),
-          const SizedBox(height: 8),
-          _FontSizeControl(
-            fontSize: typo.fontSize,
-            colors: colors,
-            onChanged: (size) {
-              widget.onTypographyChanged(typo.copyWith(fontSize: size));
-            },
-          ),
-          const SizedBox(height: AppDimensions.md),
-          _SectionLabel(loc.style, colors),
-          const SizedBox(height: 8),
-          _StyleToggles(
-            bold: typo.bold,
-            italic: typo.italic,
-            underline: typo.underline,
-            colors: colors,
-            onBoldChanged: (v) =>
-                widget.onTypographyChanged(typo.copyWith(bold: v)),
-            onItalicChanged: (v) =>
-                widget.onTypographyChanged(typo.copyWith(italic: v)),
-            onUnderlineChanged: (v) =>
-                widget.onTypographyChanged(typo.copyWith(underline: v)),
-          ),
-          const SizedBox(height: AppDimensions.md),
-          ColorPickerSection(
-            title: loc.colorLabel,
-            icon: Icons.palette_outlined,
-            currentColor: typo.color ?? defaultColor,
-            selectedColor: typo.color ?? defaultColor,
-            presetColors: _colorPresets(defaultColor),
-            colors: colors,
-            onColorSelected: (c) {
-              widget.onTypographyChanged(typo.copyWith(color: c));
-            },
-            onCustomColor: () {
-              showColorPickerScreen(
-                context,
-                title: loc.pickColor,
-                initialColor: typo.color ?? defaultColor,
-                onApply: (c) {
-                  widget.onTypographyChanged(typo.copyWith(color: c));
-                },
-              );
-            },
-          ),
-          const SizedBox(height: AppDimensions.md),
-
           // Version selector
           _SectionLabel(loc.useForReading, colors),
           const SizedBox(height: 8),
@@ -1171,28 +1091,6 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
         ],
       ),
     );
-  }
-
-  List<Color> _colorPresets(Color defaultColor) {
-    // Dedupe by ARGB value so the default color (which may itself be
-    // black, or match one of the fixed swatches) never appears twice.
-    final swatches = <Color>[
-      defaultColor,
-      const Color(0xFF7A2E1D),
-      const Color(0xFF33312E),
-      const Color(0xFF3D3D8F),
-      const Color(0xFF2A6B6B),
-      const Color(0xFF3C6E47),
-      const Color(0xFFB5651D),
-      const Color(0xFF4A6FA5),
-      const Color(0xFF6B635A),
-      Colors.black,
-    ];
-    final seen = <int>{};
-    return [
-      for (final c in swatches)
-        if (seen.add(c.toARGB32())) c,
-    ];
   }
 }
 
@@ -1570,23 +1468,158 @@ class _NissayaInfoCard extends StatelessWidget {
 
 // ── Language Typography Card (for Pāli) ─────────────────────────────────────
 
+// A card has no light/dark rows, so a pick sets the colour of the mode being
+// looked at, used exactly as picked. In light mode the dark colour is still
+// derived from it until the user has picked a dark colour of their own. (Deriving in dark mode
+// turned every pick into a near-white pastel: lightness is forced to 70–93%.)
+bool _isDark(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark;
+
+/// The Pāli typography card. The same widget appears on the translations
+/// and the appearance screens; both edit the one stored setting, so a change
+/// on either shows on the other.
+class PaliTextSection extends ConsumerWidget {
+  const PaliTextSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return SettingsSection(
+      title: loc.paliTextLabel,
+      colors: colors,
+      children: [
+        _LanguageTypographyCard(
+          key: const ValueKey('pali_typography'),
+          isEnabled: settings.showPali,
+          title: loc.pali,
+          subtitle: listOfScripts
+              .firstWhere((i) => i.script == settings.paliScript)
+              .nameInLocale,
+          previewText: 'Evaṃ me sutaṃ…',
+          previewScript: settings.paliScript,
+          typography: settings.typography.pali,
+          defaultColor: ColorPair.pali.resolve(Theme.of(context).brightness),
+          colorPair: settings.paliColorPair,
+          onColorChanged: (c) {
+            final notifier = ref.read(settingsProvider.notifier);
+            final pair = ref.read(settingsProvider).paliColorPair;
+            _isDark(context)
+                ? notifier.setPaliColorPair(pair.withDark(c))
+                : notifier.setPaliColor(c);
+          },
+          fontChoices: paliFontChoices(settings.paliScript),
+          onEnabledChanged: (v) {
+            ref.read(settingsProvider.notifier).setShowPali(v);
+          },
+          onTypographyChanged: (typo) {
+            ref.read(settingsProvider.notifier).setPaliTypography(typo);
+          },
+          colors: colors,
+        ),
+      ],
+    );
+  }
+}
+
+/// One typography card per visible translation, shared the same way as
+/// [PaliTextSection]. Draws nothing, not even its top gap, when no
+/// translation is visible.
+class TranslationTextSection extends ConsumerWidget {
+  const TranslationTextSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    if (settings.visibleTranslationLangs.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimensions.lg),
+      child: SettingsSection(
+        title: loc.translationTextLabel,
+        colors: colors,
+        children: [
+          for (final code in settings.visibleTranslationLangs)
+            _LanguageTypographyCard(
+              key: ValueKey('translation_typography_$code'),
+              isEnabled: true,
+              title: TranslationLanguageRegistry.englishName(code),
+              subtitle: TranslationLanguageRegistry.nativeName(code),
+              // The language's own name shows the script being styled.
+              previewText: code == 'en'
+                  ? 'Thus have I heard…'
+                  : TranslationLanguageRegistry.nativeName(code),
+              typography: settings.typography.typographyFor(code),
+              defaultColor: ColorPair.translation.resolve(
+                Theme.of(context).brightness,
+              ),
+              // One translation colour for every language, the same one the
+              // reading-colours screen edits.
+              colorPair: settings.translationColorPair,
+              onColorChanged: (c) {
+                final notifier = ref.read(settingsProvider.notifier);
+                final pair = ref.read(settingsProvider).translationColorPair;
+                _isDark(context)
+                    ? notifier.setTranslationColorPair(pair.withDark(c))
+                    : notifier.setTranslationColor(c);
+              },
+              fontChoices: translationFontChoices(code),
+              onTypographyChanged: (typo) {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setLanguageTypography(code, typo);
+              },
+              colors: colors,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LanguageTypographyCard extends StatefulWidget {
   final bool isEnabled;
   final String title;
   final String subtitle;
   final LanguageTypography typography;
+  // The built-in colour for the current mode, offered first among the
+  // swatches.
   final Color defaultColor;
-  final ValueChanged<bool> onEnabledChanged;
+  // The reading colour pair, the same value the reading-colours screen
+  // edits, so both screens always agree. The card shows and edits the
+  // colour of the current mode.
+  final ColorPair colorPair;
+  final ValueChanged<Color> onColorChanged;
+  // Empty hides the font family section: the text has one font whatever
+  // is chosen, so the section would do nothing visible.
+  final List<ReadingFontFamily> fontChoices;
+  // Roman source text for Pāli (converted to [previewScript] and drawn in
+  // its reading font, as the reader does), or ready text for translations.
+  final String previewText;
+  final Script? previewScript;
+  // Null hides the show/hide checkbox (translation cards: turning one off
+  // would make its own card vanish).
+  final ValueChanged<bool>? onEnabledChanged;
   final ValueChanged<LanguageTypography> onTypographyChanged;
   final ColorScheme colors;
 
   const _LanguageTypographyCard({
+    super.key,
     required this.isEnabled,
     required this.title,
     required this.subtitle,
     required this.typography,
     required this.defaultColor,
-    required this.onEnabledChanged,
+    required this.colorPair,
+    required this.onColorChanged,
+    required this.fontChoices,
+    required this.previewText,
+    this.previewScript,
+    this.onEnabledChanged,
     required this.onTypographyChanged,
     required this.colors,
   });
@@ -1604,7 +1637,9 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
     final colors = widget.colors;
     final loc = AppLocalizations.of(context);
     final typo = widget.typography;
-    final effectiveColor = typo.effectiveColor(widget.defaultColor);
+    final effectiveColor = widget.colorPair.resolve(
+      Theme.of(context).brightness,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1619,30 +1654,32 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
             ),
             child: Row(
               children: [
-                GestureDetector(
-                  onTap: () => widget.onEnabledChanged(!widget.isEnabled),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: widget.isEnabled
-                          ? colors.primary
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
+                if (widget.onEnabledChanged != null) ...[
+                  GestureDetector(
+                    onTap: () => widget.onEnabledChanged!(!widget.isEnabled),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
                         color: widget.isEnabled
                             ? colors.primary
-                            : colors.outlineVariant,
-                        width: 1.5,
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: widget.isEnabled
+                              ? colors.primary
+                              : colors.outlineVariant,
+                          width: 1.5,
+                        ),
                       ),
+                      child: widget.isEnabled
+                          ? Icon(Icons.check, size: 14, color: colors.onPrimary)
+                          : null,
                     ),
-                    child: widget.isEnabled
-                        ? Icon(Icons.check, size: 14, color: colors.onPrimary)
-                        : null,
                   ),
-                ),
-                const SizedBox(width: AppDimensions.md),
+                  const SizedBox(width: AppDimensions.md),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1722,18 +1759,25 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   color: colors.outlineVariant.withValues(alpha: 0.25),
                 ),
                 const SizedBox(height: AppDimensions.md),
-                _SectionLabel(loc.fontFamily, colors),
-                const SizedBox(height: 8),
-                _FontFamilySelector(
-                  current: typo.fontFamily,
-                  colors: colors,
-                  onChanged: (family) {
-                    widget.onTypographyChanged(
-                      typo.copyWith(fontFamily: family),
-                    );
-                  },
-                ),
-                const SizedBox(height: AppDimensions.md),
+                if (widget.fontChoices.isNotEmpty) ...[
+                  _SectionLabel(loc.fontFamily, colors),
+                  const SizedBox(height: 8),
+                  _FontFamilySelector(
+                    choices: widget.fontChoices,
+                    // A saved choice this text cannot show (Monospace in
+                    // Tai Tham) renders as Sans-Serif, so mark that one.
+                    current: widget.fontChoices.contains(typo.fontFamily)
+                        ? typo.fontFamily
+                        : ReadingFontFamily.sansSerif,
+                    colors: colors,
+                    onChanged: (family) {
+                      widget.onTypographyChanged(
+                        typo.copyWith(fontFamily: family),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppDimensions.md),
+                ],
                 _SectionLabel(loc.fontSize, colors),
                 const SizedBox(height: 8),
                 _FontSizeControl(
@@ -1762,20 +1806,20 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                 ColorPickerSection(
                   title: loc.colorLabel,
                   icon: Icons.palette_outlined,
-                  currentColor: typo.color ?? widget.defaultColor,
-                  selectedColor: typo.color ?? widget.defaultColor,
+                  currentColor: effectiveColor,
+                  selectedColor: effectiveColor,
                   presetColors: _colorPresets(widget.defaultColor),
                   colors: colors,
                   onColorSelected: (c) {
-                    widget.onTypographyChanged(typo.copyWith(color: c));
+                    widget.onColorChanged(c);
                   },
                   onCustomColor: () {
                     showColorPickerScreen(
                       context,
                       title: loc.pickColor,
-                      initialColor: typo.color ?? widget.defaultColor,
+                      initialColor: effectiveColor,
                       onApply: (c) {
-                        widget.onTypographyChanged(typo.copyWith(color: c));
+                        widget.onColorChanged(c);
                       },
                     );
                   },
@@ -1784,8 +1828,22 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                 _SectionLabel(loc.preview, colors),
                 const SizedBox(height: 8),
                 _TextPreview(
-                  typography: typo,
-                  fallbackColor: widget.defaultColor,
+                  text: widget.previewScript == null
+                      ? widget.previewText
+                      : convertPaliToScript(
+                          widget.previewText,
+                          widget.previewScript!,
+                        ),
+                  style: typo
+                      .toTextStyle(fallbackColor: effectiveColor)
+                      .copyWith(
+                        fontFamily: widget.previewScript == null
+                            ? typo.fontFamily.fontFamily
+                            : paliReadingFontFamily(
+                                widget.previewScript!,
+                                typo.fontFamily,
+                              ),
+                      ),
                 ),
               ],
             ),
@@ -1840,11 +1898,13 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _FontFamilySelector extends StatelessWidget {
+  final List<ReadingFontFamily> choices;
   final ReadingFontFamily current;
   final ColorScheme colors;
   final ValueChanged<ReadingFontFamily> onChanged;
 
   const _FontFamilySelector({
+    required this.choices,
     required this.current,
     required this.colors,
     required this.onChanged,
@@ -1855,7 +1915,7 @@ class _FontFamilySelector extends StatelessWidget {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: ReadingFontFamily.values.map((family) {
+      children: choices.map((family) {
         final isSelected = current == family;
         return GestureDetector(
           onTap: () => onChanged(family),
@@ -2096,10 +2156,10 @@ class _StyleToggleChip extends StatelessWidget {
 }
 
 class _TextPreview extends StatelessWidget {
-  final LanguageTypography typography;
-  final Color fallbackColor;
+  final String text;
+  final TextStyle style;
 
-  const _TextPreview({required this.typography, required this.fallbackColor});
+  const _TextPreview({required this.text, required this.style});
 
   @override
   Widget build(BuildContext context) {
@@ -2112,10 +2172,7 @@ class _TextPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.4)),
       ),
-      child: Text(
-        'Evaṃ me sutaṃ… Thus have I heard…',
-        style: typography.toTextStyle(fallbackColor: fallbackColor),
-      ),
+      child: Text(text, style: style),
     );
   }
 }

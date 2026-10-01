@@ -8,7 +8,25 @@ class ColorPair {
   final Color light;
   final Color dark;
 
-  const ColorPair({required this.light, required this.dark});
+  // True once the user picked the dark colour themselves. Until then a new
+  // light colour also re-derives the dark one; after, it never touches it.
+  final bool darkPicked;
+
+  const ColorPair({
+    required this.light,
+    required this.dark,
+    this.darkPicked = false,
+  });
+
+  /// This pair with a new light colour. The dark colour follows it only
+  /// while the user has not picked one.
+  ColorPair withLight(Color lightColor) => darkPicked
+      ? ColorPair(light: lightColor, dark: dark, darkPicked: true)
+      : ColorPair.fromLight(lightColor);
+
+  /// This pair with a dark colour the user picked.
+  ColorPair withDark(Color darkColor) =>
+      ColorPair(light: light, dark: darkColor, darkPicked: true);
 
   /// Resolve to the active color based on the current brightness.
   Color resolve(Brightness brightness) =>
@@ -51,6 +69,7 @@ class ColorPair {
   Map<String, dynamic> toJson() => {
         'light': light.toARGB32().toRadixString(16).padLeft(8, '0'),
         'dark': dark.toARGB32().toRadixString(16).padLeft(8, '0'),
+        'darkPicked': darkPicked,
       };
 
   factory ColorPair.fromJson(Map<String, dynamic> json) {
@@ -60,17 +79,30 @@ class ColorPair {
     final lightVal = int.tryParse(lightHex, radix: 16);
     final darkVal = int.tryParse(darkHex, radix: 16);
     if (lightVal == null || darkVal == null) return ColorPair.pali;
-    return ColorPair(light: Color(lightVal), dark: Color(darkVal));
+    final light = Color(lightVal);
+    final dark = Color(darkVal);
+    // Saves from before the flag: a dark colour that is neither derived
+    // from the light one nor a built-in default was picked by the user.
+    final darkPicked =
+        json['darkPicked'] as bool? ??
+        (dark != deriveDark(light) &&
+            !(light == pali.light && dark == pali.dark) &&
+            !(light == translation.light && dark == translation.dark));
+    return ColorPair(light: light, dark: dark, darkPicked: darkPicked);
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ColorPair && light == other.light && dark == other.dark;
+      other is ColorPair &&
+          light == other.light &&
+          dark == other.dark &&
+          darkPicked == other.darkPicked;
 
   @override
-  int get hashCode => Object.hash(light, dark);
+  int get hashCode => Object.hash(light, dark, darkPicked);
 
   @override
-  String toString() => 'ColorPair(light: $light, dark: $dark)';
+  String toString() =>
+      'ColorPair(light: $light, dark: $dark, darkPicked: $darkPicked)';
 }

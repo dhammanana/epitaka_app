@@ -25,8 +25,25 @@ class SearchResultItemTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
-    final script = ref.watch(settingsProvider.select((s) => s.paliScript));
+    final settings = ref.watch(settingsProvider);
+    final script = settings.paliScript;
     final paliText = convertPaliToScriptPreservingHtml(result.paliText, script);
+    // Same typography as the other search result lists and the reader.
+    final paliTypo = settings.typography.pali;
+    final paliStyle = paliTypo
+        .toTextStyle(fallbackColor: colors.onSurface)
+        .copyWith(
+          fontFamily: paliReadingFontFamily(script, paliTypo.fontFamily),
+          fontSize: paliTypo.fontSize * 0.95,
+        );
+    final visibleLangs = settings.visibleTranslationLangs;
+    final transStyle = settings.typography
+        .typographyFor(
+          visibleLangs.isNotEmpty
+              ? visibleLangs.first
+              : settings.primaryTranslationLang,
+        )
+        .toTextStyle(fallbackColor: colors.onSurfaceVariant);
     final translation = result.translation;
     final convertedQuery = searchQuery != null
         ? convertSearchQueryForScript(searchQuery!, script)
@@ -66,7 +83,7 @@ class SearchResultItemTile extends ConsumerWidget {
               _HighlightedText(
                 text: paliText,
                 query: convertedQuery,
-                style: AppTypography.bodyPali.copyWith(color: colors.onSurface),
+                style: paliStyle,
                 maxLines: 2,
               ),
             // Translation snippet
@@ -76,10 +93,7 @@ class SearchResultItemTile extends ConsumerWidget {
                 child: _HighlightedText(
                   text: translation,
                   query: searchQuery,
-                  style: AppTypography.bodyTranslation.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
+                  style: transStyle,
                   maxLines: 1,
                 ),
               ),

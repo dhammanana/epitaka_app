@@ -41,6 +41,21 @@ void main() {
     expect(doc, contains('Pyidaungsu'));
   });
 
+  test('font falls back to the chosen CSS generic family', () {
+    final doc = buildDictEntryDocument(
+      bodies: const ['<p>x</p>'],
+      fontSize: 14,
+      fontFamily: 'Pyidaungsu',
+      genericFamily: 'monospace',
+      primary: _primary,
+      onSurface: _onSurface,
+      onSurfaceVariant: _variant,
+      outlineVariant: _outline,
+      containerLow: _container,
+    );
+    expect(doc, contains("font-family:'Pyidaungsu', monospace;"));
+  });
+
   test('each body is wrapped as its own entry', () {
     final doc = _doc(const ['<p>a</p>', '<p>b</p>']);
     expect('<div class="dict-entry"><p>a</p></div>', contains('<div class="dict-entry">'));

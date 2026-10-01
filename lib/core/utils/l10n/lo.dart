@@ -42,7 +42,6 @@ const Map<String, String> lo = {
   'Manage translation databases: download, update, and delete.':
       'ຈັດການຖານຂໍ້ມູນການແປ: ດາວໂຫລດ, ອັບເດດ, ແລະລຶບ.',
   'Pāli': 'ບາລີ',
-  'Pali (Roman script)': 'ບາລີ (ອັກສອນໂຣມັນ)',
   'Drag to reorder enabled translations. The first one is shown when multiple are enabled.':
       'ລາກເພື່ອຈັດລຳດັບການແປທີ່ເປີດໃຊ້. ອັນທຳອິດຈະຖືກສະແດງເມື່ອເປີດໃຊ້ຫຼາຍກວ່າໜຶ່ງ.',
   'Drag to reorder': 'ລາກເພື່ອຈັດລຳດັບ',
@@ -205,6 +204,7 @@ const Map<String, String> lo = {
   // ── Translation Settings ────────────────────────────────────────────
   'Display Mode': 'ໂໝດການສະແດງຜົນ',
   'Pāli Text': 'ຂໍ້ຄວາມບາລີ',
+  'Translation Text': 'ຂໍ້ຄວາມແປ',
   'Translation Databases': 'ຖານຂໍ້ມູນການແປ',
   'Check for Updates': 'ກວດສອບການອັບເດດ',
   'All translations are up to date.': 'ການແປທັງໝົດເປັນສະບັບລ່າສຸດແລ້ວ.',

@@ -23,7 +23,8 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
-import '../../../core/utils/pali_text_utils.dart' show scriptFontFamily;
+import '../../../core/utils/pali_text_utils.dart'
+    show paliReadingFontFamily, scriptFontFamily;
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../services/script_conversion.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
@@ -391,7 +392,12 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
               style: TextStyle(
                 color: colors.onSurface,
                 fontSize: 15,
-                fontFamily: scriptFontFamily(_target),
+                fontFamily: paliReadingFontFamily(
+                  _target,
+                  ref.watch(
+                    settingsProvider.select((s) => s.typography.pali.fontFamily),
+                  ),
+                ),
                 fontWeight: FontWeight.w600,
               ),
               dropdownColor: colors.surfaceContainer,
@@ -439,7 +445,12 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
                       fontSize: 18,
                       height: 1.5,
                       color: colors.onSurface,
-                      fontFamily: scriptFontFamily(_target),
+                      fontFamily: paliReadingFontFamily(
+                  _target,
+                  ref.watch(
+                    settingsProvider.select((s) => s.typography.pali.fontFamily),
+                  ),
+                ),
                     ),
                   ),
           ),
@@ -496,7 +507,7 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
     for (final info in listOfScripts) {
       if (info.script == script) return info.nameInLocale;
     }
-    return script.name;
+    return script.englishName;
   }
 }
 
@@ -585,7 +596,7 @@ class _ScriptBadge extends StatelessWidget {
     for (final info in listOfScripts) {
       if (info.script == script) return info.nameInLocale;
     }
-    return script.name;
+    return script.englishName;
   }
 }
 

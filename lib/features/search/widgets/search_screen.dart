@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
@@ -303,6 +304,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         ),
         style: AppTypography.bodyPali.copyWith(
+          fontFamily: ref
+              .watch(
+                settingsProvider.select((s) => s.typography.pali.fontFamily),
+              )
+              .fontFamily,
           fontSize: 16,
           color: colors.onSurface,
         ),
@@ -600,6 +606,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     child: Text(
                       sug.pali,
                       style: AppTypography.bodyPali.copyWith(
+                      fontFamily: ref
+                          .watch(
+                            settingsProvider.select((s) => s.typography.pali.fontFamily),
+                          )
+                          .fontFamily,
                         fontSize: 15,
                         color: colors.onSurface,
                       ),

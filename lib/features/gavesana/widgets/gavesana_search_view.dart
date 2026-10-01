@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
@@ -197,6 +198,11 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
         ),
       ),
       style: AppTypography.bodyPali.copyWith(
+        fontFamily: ref
+            .watch(
+              settingsProvider.select((s) => s.typography.pali.fontFamily),
+            )
+            .fontFamily,
         fontSize: widget.dense ? 14 : 16,
         color: colors.onSurface,
       ),

@@ -560,6 +560,11 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                           child: Text(
                             sug.pali,
                             style: AppTypography.bodyPali.copyWith(
+                            fontFamily: ref
+                                .watch(
+                                  settingsProvider.select((s) => s.typography.pali.fontFamily),
+                                )
+                                .fontFamily,
                               fontSize: 13,
                               color: colors.onSurface,
                             ),
@@ -1187,6 +1192,7 @@ class _ResultItemTile extends ConsumerWidget {
                   transTextStyle: transTextStyle,
                   colors: colors,
                   script: script,
+                  paliFont: paliTypo.fontFamily,
                 ),
               ),
             ),
@@ -1205,6 +1211,7 @@ class _PanelLineTile extends StatelessWidget {
   final TextStyle transTextStyle;
   final ColorScheme colors;
   final Script script;
+  final ReadingFontFamily paliFont;
 
   const _PanelLineTile({
     required this.line,
@@ -1213,6 +1220,7 @@ class _PanelLineTile extends StatelessWidget {
     required this.transTextStyle,
     required this.colors,
     required this.script,
+    required this.paliFont,
   });
 
   @override
@@ -1274,7 +1282,9 @@ class _PanelLineTile extends StatelessWidget {
   }) {
     // Convert script first (preserving HTML tags like <b>, <i>)
     final converted = convertPaliToScriptPreservingHtml(text, script);
-    final effStyle = style.copyWith(fontFamily: scriptFontFamily(script));
+    final effStyle = style.copyWith(
+      fontFamily: paliReadingFontFamily(script, paliFont),
+    );
 
     if (searchTerms.isEmpty || text.isEmpty) {
       return HtmlTextParser.richText(

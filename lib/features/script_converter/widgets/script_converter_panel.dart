@@ -17,7 +17,8 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
-import '../../../core/utils/pali_text_utils.dart' show scriptFontFamily;
+import '../../../core/utils/pali_text_utils.dart'
+    show paliReadingFontFamily, scriptFontFamily;
 import '../services/script_conversion.dart';
 
 /// Desktop sidebar panel: convert Pāli text between any of the app's scripts.
@@ -217,7 +218,12 @@ class _ScriptConverterPanelState extends ConsumerState<ScriptConverterPanel> {
                           fontSize: 16,
                           height: 1.5,
                           color: colors.onSurface,
-                          fontFamily: scriptFontFamily(_target),
+                          fontFamily: paliReadingFontFamily(
+                  _target,
+                  ref.watch(
+                    settingsProvider.select((s) => s.typography.pali.fontFamily),
+                  ),
+                ),
                         ),
                       ),
                     ),

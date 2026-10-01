@@ -180,3 +180,6 @@ app.*.symbols
 
 # Local environment secrets
 .env
+
+# Linux package built by `just linux-deb`
+epitaka-linux-x64.deb

@@ -28,6 +28,30 @@ enum Script {
   tamil,
 }
 
+/// English display name of a script; the enum names are storage codes.
+extension ScriptEnglishName on Script {
+  String get englishName => switch (this) {
+    Script.sinhala => 'Sinhala',
+    Script.devanagari => 'Devanagari',
+    Script.roman => 'Roman',
+    Script.thai => 'Thai',
+    Script.laos => 'Lao',
+    Script.myanmar => 'Myanmar',
+    Script.khmer => 'Khmer',
+    Script.bengali => 'Bengali',
+    Script.gurmukhi => 'Gurmukhi',
+    Script.taitham => 'Tai Tham',
+    Script.gujarati => 'Gujarati',
+    Script.telugu => 'Telugu',
+    Script.kannada => 'Kannada',
+    Script.malayalam => 'Malayalam',
+    Script.brahmi => 'Brahmi',
+    Script.tibetan => 'Tibetan',
+    Script.cyrillic => 'Cyrillic',
+    Script.tamil => 'Tamil',
+  };
+}
+
 class _CodePointRange {
   final int start;
   final int end;

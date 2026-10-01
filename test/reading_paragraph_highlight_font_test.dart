@@ -11,6 +11,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/core/providers/settings_provider.dart' show ReadingFontFamily;
 import '../lib/features/reader/providers/reader_provider.dart'
     show LineData, ParagraphData;
 import '../lib/core/utils/pali_script_converter.dart';
@@ -72,12 +73,15 @@ void main() {
   }
 
   // Scripts that have a dedicated bundled font — the ones that regressed.
+  // The expected font is what the default (Serif) choice gives the script.
+  String? readingFont(Script s) =>
+      paliReadingFontFamily(s, ReadingFontFamily.serif);
   final bundledFontScripts = Script.values
-      .where((s) => scriptFontFamily(s) != null)
+      .where((s) => readingFont(s) != null)
       .toList();
 
   for (final script in bundledFontScripts) {
-    final font = scriptFontFamily(script)!;
+    final font = readingFont(script)!;
 
     testWidgets('highlighted Pāli line resolves to $font (${script.name})', (
       tester,
