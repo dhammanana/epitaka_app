@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show AppExitType;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -164,6 +165,15 @@ class AppShortcuts {
         meta: true,
         shift: true,
       ),
+    ),
+    ShortcutBinding(
+      id: 'quit',
+      label: 'Quit',
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyQ, control: true),
+        SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
     ),
     ShortcutBinding(
       id: 'dictionary',
@@ -564,6 +574,16 @@ class AppShortcuts {
       ref.read(readerTabsProvider.notifier).closeAll();
     }
 
+    void quitApp() {
+      // Only the desktop engines implement System.exitApplication; on mobile
+      // the call throws, and those platforms close apps their own way.
+      if (kIsWeb ||
+          !(Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+        return;
+      }
+      ServicesBinding.instance.exitApplication(AppExitType.required);
+    }
+
     void increaseFont() {
       ref.read(settingsProvider.notifier).increaseFontSize();
     }
@@ -706,6 +726,7 @@ class AppShortcuts {
       'find-everywhere': openGlobalSearch,
       'close-tab': closeFocusTab,
       'close-all-tabs': closeAllTabs,
+      'quit': quitApp,
       'dictionary': openDictionary,
       'library-open': openLibrary,
       'settings': openSettings,
