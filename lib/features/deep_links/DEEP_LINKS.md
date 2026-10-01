@@ -31,6 +31,24 @@ Where:
 - `#paraId-lineId` — exact paragraph (and optional line) to open. The line
   part is optional (`#123` alone is valid).
 
+## Search links and shared text
+
+`epitaka://search?q={query}` (or `https://epitaka.org/app/search?q={query}`)
+opens search on top of the current screen and runs the query, as if it had
+been typed and Enter pressed. If search is already on top, the query replaces
+it. In the custom scheme the route name is the host (`search`, `reader`), not
+the first path segment.
+
+The query is cleaned first by `cleanIncomingSearchText`: URLs are removed,
+apostrophes and hyphens are deleted (`dhamma-vinayaṃ` → `dhammavinayaṃ`, the
+way the canon writes it), and any other character that is not a letter, mark,
+digit or space becomes a space.
+
+On Android, `ShareTextActivity` receives text from the share sheet
+(`ACTION_SEND`) and the text-selection menu (`ACTION_PROCESS_TEXT`), and
+forwards it to `MainActivity` as this link. Other platforms can feed the same
+link later.
+
 ## Behavior
 
 - **Mobile with the app installed:** tapping an `/app/...` link opens the app

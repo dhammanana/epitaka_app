@@ -9,9 +9,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/config/supabase_config.dart';
 import '../../core/providers/database_provider.dart';
+import '../../core/utils/pali_search_utils.dart';
 import '../annotations/services/auth_service.dart';
 import '../reader/providers/reader_tabs_provider.dart';
 import '../../router/app_router.dart';
+import '../../shared/utils/app_navigation.dart';
 
 /// Handles incoming deep links and navigates to the appropriate app
 /// screen.
@@ -23,6 +25,11 @@ import '../../router/app_router.dart';
 ///     book at a specific paragraph/line (both optional).
 ///   - `epitaka://reader/{bookId}` — open a book.
 ///   - `epitaka://search?q={query}` — open global search with a query.
+///     On Android, `ShareTextActivity` turns text from the share sheet or
+///     the text-selection menu into this link.
+///
+///   The route name is the link's HOST (`search`, `reader`); see
+///   [routeSegments].
 ///
 /// **2. Universal / App Links** (`https://epitaka.org/app/...`):
 ///   - `https://epitaka.org/app/{lang}/{bookId}/{heading-slug}#{paraId}-{lineId}`
@@ -75,7 +82,10 @@ class DeepLinkService {
       }
 
       // ── Subscribe to subsequent links ──────────────────────────────
-      _linkSub = _appLinks!.uriLinkStream.listen((Uri uri) {
+      _linkSub = dropRepeatedInitialLink(
+        _appLinks!.uriLinkStream,
+        initialUri,
+      ).listen((Uri uri) {
         developer.log(
           '[DEEPLINK] Stream link: $uri',
           name: 'epitaka.deeplink',
@@ -179,14 +189,7 @@ class DeepLinkService {
         uri.host == 'epitaka.app';
     if (!isEpitaka) return;
 
-    final segments = uri.pathSegments;
-    if (segments.isEmpty) return;
-
-    // For universal links (epitaka.org/app/...) the first segment is 'app'.
-    // Strip it so the remaining segments match the same switch cases as
-    // custom scheme links.
-    final effectiveSegments =
-        (uri.scheme == 'epitaka') ? segments : _stripAppPrefix(segments);
+    final effectiveSegments = routeSegments(uri);
     if (effectiveSegments.isEmpty) return;
 
     if (uri.scheme != 'epitaka') {
@@ -217,10 +220,27 @@ class DeepLinkService {
     }
   }
 
+  /// The route segments of [uri], in the same shape for both link formats:
+  /// `epitaka://search?q=…` and `https://epitaka.org/app/search?q=…` both
+  /// give `[search]`.
+  ///
+  /// Dart parses `epitaka://search?q=…` with `search` as the HOST and no path
+  /// segments, so the custom scheme's route name has to be read from the host.
+  /// For universal links (epitaka.org/app/...) the first segment is 'app';
+  /// strip it so the remaining segments match the same switch cases as
+  /// custom scheme links.
+  @visibleForTesting
+  static List<String> routeSegments(Uri uri) {
+    if (uri.scheme == 'epitaka') {
+      return [if (uri.host.isNotEmpty) uri.host, ...uri.pathSegments];
+    }
+    return _stripAppPrefix(uri.pathSegments);
+  }
+
   /// Strip the `/app` prefix from universal link segments so that
   /// `/app/reader/{bookId}` → `[reader, {bookId}]`.
   /// Returns the segments unchanged if the first segment is not 'app'.
-  List<String> _stripAppPrefix(List<String> segments) {
+  static List<String> _stripAppPrefix(List<String> segments) {
     if (segments.isNotEmpty && segments.first == 'app') {
       return segments.sublist(1);
     }
@@ -367,12 +387,27 @@ class DeepLinkService {
   ///
   /// Format: `epitaka://search?q={query}`
   void _handleSearchLink(Uri uri, BuildContext context) {
-    final query = uri.queryParameters['q'] ?? '';
-    final queryParams = <String, String>{
-      if (query.isNotEmpty) 'q': query,
-    };
-    context.go(
-      Uri(path: AppRoutes.search, queryParameters: queryParams).toString(),
-    );
+    openSearchRoute(context, searchQueryOf(uri));
+  }
+
+  /// The cleaned search text of a search link's `q` parameter.
+  @visibleForTesting
+  static String searchQueryOf(Uri uri) =>
+      cleanIncomingSearchText(uri.queryParameters['q'] ?? '');
+
+  /// [links] without its first event when that event is [initial].
+  ///
+  /// On Android, app_links hands the launch link to [AppLinks.getInitialLink]
+  /// AND pushes it again as the stream's first event when the stream is first
+  /// listened to (AppLinksPlugin.onListen). Handling both would run a shared
+  /// search, or any other launch link, twice.
+  @visibleForTesting
+  static Stream<Uri> dropRepeatedInitialLink(Stream<Uri> links, Uri? initial) {
+    var first = true;
+    return links.where((uri) {
+      final repeat = first && uri == initial;
+      first = false;
+      return !repeat;
+    });
   }
 }

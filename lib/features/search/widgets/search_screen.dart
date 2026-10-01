@@ -18,7 +18,11 @@ import 'search_results_view.dart';
 
 /// The full-page search screen.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.initialQuery});
+
+  /// Text to search for as soon as the screen opens, as if typed and
+  /// submitted — set by incoming search links (share sheet, selection menu).
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -49,7 +53,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(searchProvider.notifier).ensureIndexBuilt();
-      _focusNode.requestFocus();
+      final initial = widget.initialQuery?.trim() ?? '';
+      if (initial.isNotEmpty) {
+        _onHistorySelected(initial);
+      } else {
+        _focusNode.requestFocus();
+      }
     });
   }
 
@@ -192,6 +201,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final searchState = ref.watch(searchProvider);
+    ref.listen<IncomingSearch?>(incomingSearchProvider, (_, next) {
+      if (next != null) _onHistorySelected(next.query);
+    });
 
     final isFromDrawer =
         GoRouterState.of(context).uri.queryParameters['fromDrawer'] == 'true';
