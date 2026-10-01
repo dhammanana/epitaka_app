@@ -100,3 +100,28 @@ String normalizePaliFuzzy(String text) {
       .replaceAll(_whitespaceRun, ' ')
       .trim();
 }
+
+final _incomingUrl = RegExp(r'https?://\S+', caseSensitive: false);
+final _incomingApostrophe = RegExp('[\'‘’ʼ]');
+final _incomingHyphen = RegExp('[-‐‑­]');
+final _incomingNonWord = RegExp(r'[^\p{L}\p{M}\p{N}\s]', unicode: true);
+
+/// Clean text that arrives from outside the app (share sheet, text-selection
+/// menu, search links) before it fills the search box.
+///
+/// Text selected in another Pāḷi app often carries a stray `'`, `-`, quotes
+/// or punctuation, and a browser share can add the page URL. Only letters
+/// (any script), combining marks, digits and spaces are kept. Apostrophes are
+/// deleted, as [cleanPaliForIndexing] does. Hyphens are deleted too, so
+/// `dhamma-vinayaṃ` becomes `dhammavinayaṃ`: other sources hyphenate compounds
+/// for reading, but the canon writes them joined. Other characters become
+/// spaces.
+String cleanIncomingSearchText(String text) {
+  return text
+      .replaceAll(_incomingUrl, ' ')
+      .replaceAll(_incomingApostrophe, '')
+      .replaceAll(_incomingHyphen, '')
+      .replaceAll(_incomingNonWord, ' ')
+      .replaceAll(_whitespaceRun, ' ')
+      .trim();
+}

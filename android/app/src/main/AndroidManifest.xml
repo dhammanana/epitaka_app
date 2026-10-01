@@ -102,6 +102,26 @@
                     android:pathPrefix="/app/" />
             </intent-filter>
         </activity>
+        <!-- Share sheet and text-selection menu → "ePitaka". Forwards the text
+             to MainActivity as epitaka://search?q=… and finishes. -->
+        <activity
+            android:name=".ShareTextActivity"
+            android:exported="true"
+            android:label="ePitaka"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+        </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -3,9 +3,11 @@
 // Route-navigation helpers shared across features.
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/utils/responsive_breakpoint.dart';
+import '../../features/search/providers/search_provider.dart';
 import '../../router/app_router.dart';
 
 /// Open the reader route for the tab that was just activated via
@@ -40,4 +42,31 @@ void openReaderRoute(BuildContext context) {
       context.canPop()) {
     context.pop();
   }
+}
+
+/// Open the search route with [query] filled in and run, the way an
+/// incoming search link (share sheet, text-selection menu) should.
+///
+///   * Search not on top: push it, so Back returns to the screen the user
+///     was on — the same as tapping the search button.
+///   * Search already on top: no navigation. The open screen is told to run
+///     the query through [incomingSearchProvider], so a second share never
+///     stacks a second search screen and always searches again, even for the
+///     same word after the user edited the box. Replacing the page instead
+///     does not work: when search is the only page (opened from the drawer),
+///     go_router keeps its page key and the old screen state.
+void openSearchRoute(BuildContext context, String query) {
+  if (GoRouter.of(context).state.matchedLocation == AppRoutes.search) {
+    if (query.isEmpty) return;
+    ProviderScope.containerOf(context, listen: false)
+        .read(incomingSearchProvider.notifier)
+        .state = IncomingSearch(query);
+    return;
+  }
+  context.push(
+    Uri(
+      path: AppRoutes.search,
+      queryParameters: {if (query.isNotEmpty) 'q': query},
+    ).toString(),
+  );
 }

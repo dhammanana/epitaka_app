@@ -121,7 +121,8 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
       GoRoute(
         path: '/search',
         name: 'search',
-        builder: (context, state) => const SearchScreen(),
+        builder: (context, state) =>
+            SearchScreen(initialQuery: state.uri.queryParameters['q']),
       ),
       GoRoute(
         path: AppRoutes.annotations,

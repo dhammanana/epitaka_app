@@ -204,6 +204,19 @@ class SearchError extends SearchState {
 
 // ── Provider ─────────────────────────────────────────────────────────────
 
+/// A search sent from outside the app (share sheet, text-selection menu,
+/// search link) to a search screen that is already open.
+///
+/// No `==` override: every request is a new object, so the same word sent
+/// twice still notifies the screen.
+class IncomingSearch {
+  IncomingSearch(this.query);
+
+  final String query;
+}
+
+final incomingSearchProvider = StateProvider<IncomingSearch?>((ref) => null);
+
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
   ref,
 ) {
