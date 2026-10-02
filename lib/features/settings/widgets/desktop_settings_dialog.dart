@@ -9,6 +9,7 @@ import '../screens/dictionary_settings_screen.dart';
 import '../screens/help_screen.dart';
 import '../screens/reading_options_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/shortcut_settings_screen.dart';
 import '../screens/translation_settings_screen.dart';
 import '../screens/tts_replacements_screen.dart';
 import '../screens/tts_settings_screen.dart';
@@ -76,6 +77,11 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
       body: const ToolbarSettingsBody(),
     ),
     _SettingsCategory(
+      icon: Icons.keyboard_outlined,
+      title: loc.keyboardShortcuts,
+      body: const ShortcutSettingsBody(),
+    ),
+    _SettingsCategory(
       icon: Icons.search,
       title: loc.search,
       body: _SectionPane(
@@ -121,10 +127,6 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     ),
   ];
 
-  final screenSize = MediaQuery.sizeOf(context);
-  final width = (screenSize.width * 0.85).clamp(640.0, 960.0);
-  final height = (screenSize.height * 0.85).clamp(520.0, 760.0);
-
   await showDialog<void>(
     context: context,
     useSafeArea: false,
@@ -135,20 +137,74 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
       ),
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: _DesktopSettingsDialog(categories: categories),
+      // Measured inside the builder so the window follows the app window
+      // when it is resized or maximized while settings are open.
+      child: Builder(
+        builder: (ctx) {
+          final screenSize = MediaQuery.sizeOf(ctx);
+          // A wide screen gets a wider window so the sidebar shows every
+          // category name in full; the content pane keeps its width. On a
+          // narrower screen the sidebar gives the room back first, down to
+          // its old width (names then end in "…" as before).
+          final extra = _sidebarWidthFor(ctx, categories) - _kSidebarMinWidth;
+          final width = (screenSize.width * 0.85).clamp(
+            640.0,
+            _kMaxWidthBefore + extra,
+          );
+          return SizedBox(
+            width: width,
+            height: (screenSize.height * 0.9).clamp(520.0, double.infinity),
+            child: _DesktopSettingsDialog(
+              categories: categories,
+              sidebarWidth: (_kSidebarMinWidth + width - _kMaxWidthBefore)
+                  .clamp(_kSidebarMinWidth, _kSidebarMinWidth + extra),
+            ),
+          );
+        },
       ),
     ),
   );
 }
 
 /// The macOS-style settings window: title bar, sidebar, content pane.
+/// The sidebar's width before it could grow, and the window's widest size
+/// then; small screens still get exactly these.
+const double _kSidebarMinWidth = 230;
+const double _kMaxWidthBefore = 960;
+
+/// The sidebar width that shows the longest category name in full: the
+/// selected (bold) title plus the row's icon, gap and paddings below.
+double _sidebarWidthFor(
+  BuildContext context,
+  List<_SettingsCategory> categories,
+) {
+  var widest = 0.0;
+  for (final category in categories) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: category.title,
+        style: AppTypography.labelMedium.copyWith(fontWeight: FontWeight.w600),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    if (painter.width > widest) widest = painter.width;
+    painter.dispose();
+  }
+  // 8 + 10 padding each side, 18 icon, 10 gap, 4 to spare for rounding.
+  final needed = (widest + 2 * 8 + 2 * 10 + 18 + 10 + 4).ceilToDouble();
+  return needed < _kSidebarMinWidth ? _kSidebarMinWidth : needed;
+}
+
 class _DesktopSettingsDialog extends StatefulWidget {
   final List<_SettingsCategory> categories;
+  final double sidebarWidth;
 
-  const _DesktopSettingsDialog({required this.categories});
+  const _DesktopSettingsDialog({
+    required this.categories,
+    required this.sidebarWidth,
+  });
 
   @override
   State<_DesktopSettingsDialog> createState() => _DesktopSettingsDialogState();
@@ -205,7 +261,7 @@ class _DesktopSettingsDialogState extends State<_DesktopSettingsDialog> {
             children: [
               // Left sidebar
               Container(
-                width: 230,
+                width: widget.sidebarWidth,
                 color: colors.surfaceContainerLow,
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),

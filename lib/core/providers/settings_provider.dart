@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/utils/copy_types.dart';
 import '../services/app_analytics.dart';
 import '../models/context_menu_action.dart';
+import '../models/shortcut_override.dart';
 import '../models/toolbar_item.dart';
 import '../theme/app_colors.dart';
 import '../theme/color_pair.dart';
@@ -636,6 +637,11 @@ class AppSettings {
   /// order (drag-to-reorder in Settings → Toolbar).
   final List<ToolbarItem> toolbarItems;
 
+  /// The user's own keyboard shortcuts by catalog id (Settings → Keyboard
+  /// Shortcuts). Only changed shortcuts are here.
+  /// A null value means the user left that shortcut with no keys.
+  final Map<String, SingleActivator?> shortcutOverrides;
+
   /// Script/language for Pāli TTS: 'kn' (Kannada), 'te' (Telugu), 'si' (Sinhala),
   /// 'hi' (Hindi/Sanskrit). Hindi enables Devanagari conversion + replacement.
   final String ttsScript;
@@ -690,6 +696,7 @@ class AppSettings {
     this.analyticsEnabled = true,
     this.crashReportsEnabled = true,
     this.toolbarItems = const [],
+    this.shortcutOverrides = const {},
     this.quoteTemplate = '- {book_name} > {heading} VRI p.{vri_page}',
     this.useBookName = true,
     this.includeHeading = true,
@@ -743,6 +750,7 @@ class AppSettings {
     bool? analyticsEnabled,
     bool? crashReportsEnabled,
     List<ToolbarItem>? toolbarItems,
+    Map<String, SingleActivator?>? shortcutOverrides,
     String? quoteTemplate,
     bool? useBookName,
     bool? includeHeading,
@@ -801,6 +809,7 @@ class AppSettings {
       analyticsEnabled: analyticsEnabled ?? this.analyticsEnabled,
       crashReportsEnabled: crashReportsEnabled ?? this.crashReportsEnabled,
       toolbarItems: toolbarItems ?? this.toolbarItems,
+      shortcutOverrides: shortcutOverrides ?? this.shortcutOverrides,
       quoteTemplate: quoteTemplate ?? this.quoteTemplate,
       useBookName: useBookName ?? this.useBookName,
       includeHeading: includeHeading ?? this.includeHeading,
@@ -1179,6 +1188,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
       crashReportsEnabled: prefs.getBool('crash_reports_enabled') ?? true,
       toolbarItems: _loadToolbarItems(),
+      shortcutOverrides: decodeOverrides(
+        prefs.getString('shortcut_overrides'),
+      ),
       quoteTemplate: _migrateQuoteTemplate(
         prefs.getString('quote_template') ??
             '- {book_name} > {heading} VRI p.{vri_page}',
@@ -1694,6 +1706,29 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   /// Reset reader-toolbar items and their display order to defaults.
   Future<void> resetToolbarItems() async {
     await setToolbarItems(defaultToolbarItems());
+  }
+
+  /// Use [activator] for the keyboard shortcut [id] instead of its defaults;
+  /// null leaves [id] with no keys at all.
+  Future<void> setShortcutOverride(String id, SingleActivator? activator) =>
+      _saveShortcutOverrides({...state.shortcutOverrides, id: activator});
+
+  /// Give the keyboard shortcut [id] its default combinations back.
+  Future<void> clearShortcutOverride(String id) =>
+      _saveShortcutOverrides({...state.shortcutOverrides}..remove(id));
+
+  /// Give every keyboard shortcut its default combinations back.
+  Future<void> resetShortcutOverrides() => _saveShortcutOverrides(const {});
+
+  Future<void> _saveShortcutOverrides(
+    Map<String, SingleActivator?> overrides,
+  ) async {
+    state = state.copyWith(shortcutOverrides: overrides);
+    if (overrides.isEmpty) {
+      await _prefs?.remove('shortcut_overrides');
+    } else {
+      await _prefs?.setString('shortcut_overrides', encodeOverrides(overrides));
+    }
   }
 
   /// Mark the one-time Feature Guide welcome as shown (or reset it).

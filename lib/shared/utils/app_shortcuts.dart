@@ -61,8 +61,11 @@ class ShortcutBinding {
   const ShortcutBinding({
     required this.id,
     required this.label,
+    required this.section,
     required this.activators,
     this.macActivator,
+    this.fixedHint,
+    this.allowsBareKey = false,
   });
 
   /// Stable, unique identifier used to look the shortcut up from tooltips
@@ -81,6 +84,38 @@ class ShortcutBinding {
   /// The activator to display in the native macOS menu (see
   /// [AppAction.macActivator]).
   final SingleActivator? macActivator;
+
+  /// Where the shortcut works, and its heading in Settings → Keyboard
+  /// Shortcuts.
+  final ShortcutSection section;
+
+  /// A plain UI key that also triggers the action and cannot be changed,
+  /// e.g. "↓" next to the J of "Next line".
+  final String? fixedHint;
+
+  /// Whether a key with no Ctrl/Alt/Meta may trigger this action. Only the
+  /// movement keys of handlers that never see keys typed into a text field
+  /// qualify (the reader and chat handlers check for a focused field, the
+  /// search list's handler sits on the list, not the search box); a bare
+  /// letter anywhere else fires while the user types.
+  final bool allowsBareKey;
+}
+
+/// The groups of Settings → Keyboard Shortcuts, in display order. The
+/// app-wide ones are bound at the app root; the others are checked by the
+/// key handler of one place (reader, search results list, Vīmaṃsā chat)
+/// through [AppShortcuts.matches] / [AppShortcuts.activatorsFor].
+enum ShortcutSection {
+  sidebar,
+  reading,
+  tabs,
+  textDisplay,
+  app,
+  reader,
+  searchResults,
+  chat;
+
+  bool get isAppWide => index <= app.index;
 }
 
 /// Centralized keyboard shortcuts for ePitaka.
@@ -123,196 +158,11 @@ class AppShortcuts {
   /// (which render the shortcut next to tooltips). Keep key assignments in
   /// here — never hardcode them elsewhere.
   static const List<ShortcutBinding> shortcutCatalog = [
-    ShortcutBinding(
-      id: 'find-in-book',
-      label: 'Find in Book',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyF, control: true),
-        SingleActivator(LogicalKeyboardKey.keyF, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyF, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'find-everywhere',
-      label: 'Find Everywhere',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true),
-        SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true),
-      ],
-      macActivator: SingleActivator(
-        LogicalKeyboardKey.keyF,
-        meta: true,
-        shift: true,
-      ),
-    ),
-    ShortcutBinding(
-      id: 'close-tab',
-      label: 'Close Tab',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyW, control: true),
-        SingleActivator(LogicalKeyboardKey.keyW, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyW, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'close-all-tabs',
-      label: 'Close All Tabs',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyW, control: true, shift: true),
-        SingleActivator(LogicalKeyboardKey.keyW, meta: true, shift: true),
-      ],
-      macActivator: SingleActivator(
-        LogicalKeyboardKey.keyW,
-        meta: true,
-        shift: true,
-      ),
-    ),
-    ShortcutBinding(
-      id: 'quit',
-      label: 'Quit',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyQ, control: true),
-        SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'dictionary',
-      label: 'Dictionary',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyD, control: true),
-        SingleActivator(LogicalKeyboardKey.keyD, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyD, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'library-open',
-      label: 'Library',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyN, control: true),
-        SingleActivator(LogicalKeyboardKey.keyN, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'settings',
-      label: 'Settings…',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.comma, control: true),
-        SingleActivator(LogicalKeyboardKey.comma, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.comma, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'font-increase',
-      label: 'Increase Font Size',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.equal, control: true),
-        SingleActivator(LogicalKeyboardKey.equal, meta: true),
-        SingleActivator(LogicalKeyboardKey.add, control: true),
-        SingleActivator(LogicalKeyboardKey.add, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.equal, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'font-decrease',
-      label: 'Decrease Font Size',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.minus, control: true),
-        SingleActivator(LogicalKeyboardKey.minus, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.minus, meta: true),
-    ),
-    // Tab shortcuts — no macActivator needed since Tab/digits aren't
-    // macOS system-menu keys, and we don't want them in the Edit menu.
-    ShortcutBinding(
-      id: 'tab-1',
-      label: 'Switch to Tab 1',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit1, control: true),
-        SingleActivator(LogicalKeyboardKey.digit1, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-2',
-      label: 'Switch to Tab 2',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit2, control: true),
-        SingleActivator(LogicalKeyboardKey.digit2, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-3',
-      label: 'Switch to Tab 3',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit3, control: true),
-        SingleActivator(LogicalKeyboardKey.digit3, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-4',
-      label: 'Switch to Tab 4',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit4, control: true),
-        SingleActivator(LogicalKeyboardKey.digit4, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-5',
-      label: 'Switch to Tab 5',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit5, control: true),
-        SingleActivator(LogicalKeyboardKey.digit5, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-6',
-      label: 'Switch to Tab 6',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit6, control: true),
-        SingleActivator(LogicalKeyboardKey.digit6, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-7',
-      label: 'Switch to Tab 7',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit7, control: true),
-        SingleActivator(LogicalKeyboardKey.digit7, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-8',
-      label: 'Switch to Tab 8',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit8, control: true),
-        SingleActivator(LogicalKeyboardKey.digit8, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-9',
-      label: 'Switch to Tab 9',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.digit9, control: true),
-        SingleActivator(LogicalKeyboardKey.digit9, meta: true),
-      ],
-    ),
-    ShortcutBinding(
-      id: 'tab-next',
-      label: 'Next Tab',
-      activators: [SingleActivator(LogicalKeyboardKey.tab, control: true)],
-    ),
-    ShortcutBinding(
-      id: 'tab-prev',
-      label: 'Previous Tab',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true),
-      ],
-    ),
-    // ── Library / panels ─────────────────────────────────────────
+    // ── Sidebar, in the activity bar's top-to-bottom order ──────────
     ShortcutBinding(
       id: 'library-sidebar',
-      label: 'Library',
+      label: 'Library Sidebar',
+      section: ShortcutSection.sidebar,
       activators: [
         SingleActivator(LogicalKeyboardKey.keyL, control: true),
         SingleActivator(LogicalKeyboardKey.keyL, meta: true),
@@ -320,26 +170,23 @@ class AppShortcuts {
       macActivator: SingleActivator(LogicalKeyboardKey.keyL, meta: true),
     ),
     ShortcutBinding(
-      id: 'annotations',
-      label: 'Annotations',
+      id: 'vimamsa',
+      label: 'Vīmaṃsā',
+      section: ShortcutSection.sidebar,
       activators: [
-        SingleActivator(LogicalKeyboardKey.keyB, control: true),
-        SingleActivator(LogicalKeyboardKey.keyB, meta: true),
+        SingleActivator(LogicalKeyboardKey.keyV, control: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyV, meta: true, shift: true),
       ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyB, meta: true),
-    ),
-    ShortcutBinding(
-      id: 'history',
-      label: 'History',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyY, control: true),
-        SingleActivator(LogicalKeyboardKey.keyY, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyY, meta: true),
+      macActivator: SingleActivator(
+        LogicalKeyboardKey.keyV,
+        meta: true,
+        shift: true,
+      ),
     ),
     ShortcutBinding(
       id: 'contents',
       label: 'Contents',
+      section: ShortcutSection.sidebar,
       activators: [
         SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true),
         SingleActivator(LogicalKeyboardKey.keyC, meta: true, shift: true),
@@ -353,6 +200,7 @@ class AppShortcuts {
     ShortcutBinding(
       id: 'outline',
       label: 'Outline',
+      section: ShortcutSection.sidebar,
       activators: [
         SingleActivator(LogicalKeyboardKey.keyO, control: true, shift: true),
         SingleActivator(LogicalKeyboardKey.keyO, meta: true, shift: true),
@@ -364,40 +212,257 @@ class AppShortcuts {
       ),
     ),
     ShortcutBinding(
-      id: 'vimamsa',
-      label: 'Vīmaṃsā',
+      id: 'annotations',
+      label: 'Annotations',
+      section: ShortcutSection.sidebar,
       activators: [
-        SingleActivator(LogicalKeyboardKey.keyV, control: true, shift: true),
-        SingleActivator(LogicalKeyboardKey.keyV, meta: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyB, control: true),
+        SingleActivator(LogicalKeyboardKey.keyB, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyB, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'history',
+      label: 'History',
+      section: ShortcutSection.sidebar,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyY, control: true),
+        SingleActivator(LogicalKeyboardKey.keyY, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyY, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'find-everywhere',
+      label: 'Find Everywhere',
+      section: ShortcutSection.sidebar,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true),
       ],
       macActivator: SingleActivator(
-        LogicalKeyboardKey.keyV,
+        LogicalKeyboardKey.keyF,
         meta: true,
         shift: true,
       ),
     ),
     ShortcutBinding(
-      id: 'jump',
-      label: 'Jump to Page…',
-      activators: [
-        SingleActivator(LogicalKeyboardKey.keyJ, control: true),
-        SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-      ],
-      macActivator: SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
-    ),
-    ShortcutBinding(
       id: 'go-to-sutta',
       label: 'Go to Sutta…',
+      section: ShortcutSection.sidebar,
       activators: [
         SingleActivator(LogicalKeyboardKey.keyG, control: true),
         SingleActivator(LogicalKeyboardKey.keyG, meta: true),
       ],
       macActivator: SingleActivator(LogicalKeyboardKey.keyG, meta: true),
     ),
+    ShortcutBinding(
+      id: 'dictionary',
+      label: 'Dictionary',
+      section: ShortcutSection.sidebar,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyD, control: true),
+        SingleActivator(LogicalKeyboardKey.keyD, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyD, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'find-in-book',
+      label: 'Find in Book',
+      section: ShortcutSection.reading,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyF, control: true),
+        SingleActivator(LogicalKeyboardKey.keyF, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyF, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'close-tab',
+      label: 'Close Tab',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyW, control: true),
+        SingleActivator(LogicalKeyboardKey.keyW, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyW, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'close-all-tabs',
+      label: 'Close All Tabs',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyW, control: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyW, meta: true, shift: true),
+      ],
+      macActivator: SingleActivator(
+        LogicalKeyboardKey.keyW,
+        meta: true,
+        shift: true,
+      ),
+    ),
+    ShortcutBinding(
+      id: 'quit',
+      label: 'Quit',
+      section: ShortcutSection.app,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyQ, control: true),
+        SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'library-open',
+      label: 'Open Library',
+      section: ShortcutSection.app,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyN, control: true),
+        SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'settings',
+      label: 'Settings…',
+      section: ShortcutSection.app,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.comma, control: true),
+        SingleActivator(LogicalKeyboardKey.comma, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.comma, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'font-increase',
+      label: 'Increase Font Size',
+      section: ShortcutSection.textDisplay,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.equal, control: true),
+        SingleActivator(LogicalKeyboardKey.equal, meta: true),
+        SingleActivator(LogicalKeyboardKey.add, control: true),
+        SingleActivator(LogicalKeyboardKey.add, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.equal, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'font-decrease',
+      label: 'Decrease Font Size',
+      section: ShortcutSection.textDisplay,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.minus, control: true),
+        SingleActivator(LogicalKeyboardKey.minus, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.minus, meta: true),
+    ),
+    // Tab shortcuts — no macActivator needed since Tab/digits aren't
+    // macOS system-menu keys, and we don't want them in the Edit menu.
+    ShortcutBinding(
+      id: 'tab-1',
+      label: 'Switch to Tab 1',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit1, control: true),
+        SingleActivator(LogicalKeyboardKey.digit1, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-2',
+      label: 'Switch to Tab 2',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit2, control: true),
+        SingleActivator(LogicalKeyboardKey.digit2, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-3',
+      label: 'Switch to Tab 3',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit3, control: true),
+        SingleActivator(LogicalKeyboardKey.digit3, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-4',
+      label: 'Switch to Tab 4',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit4, control: true),
+        SingleActivator(LogicalKeyboardKey.digit4, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-5',
+      label: 'Switch to Tab 5',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit5, control: true),
+        SingleActivator(LogicalKeyboardKey.digit5, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-6',
+      label: 'Switch to Tab 6',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit6, control: true),
+        SingleActivator(LogicalKeyboardKey.digit6, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-7',
+      label: 'Switch to Tab 7',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit7, control: true),
+        SingleActivator(LogicalKeyboardKey.digit7, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-8',
+      label: 'Switch to Tab 8',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit8, control: true),
+        SingleActivator(LogicalKeyboardKey.digit8, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-9',
+      label: 'Switch to Tab 9',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit9, control: true),
+        SingleActivator(LogicalKeyboardKey.digit9, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'tab-next',
+      label: 'Next Tab',
+      section: ShortcutSection.tabs,
+      activators: [SingleActivator(LogicalKeyboardKey.tab, control: true)],
+    ),
+    ShortcutBinding(
+      id: 'tab-prev',
+      label: 'Previous Tab',
+      section: ShortcutSection.tabs,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'jump',
+      label: 'Jump to Page…',
+      section: ShortcutSection.reading,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyJ, control: true),
+        SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
+      ],
+      macActivator: SingleActivator(LogicalKeyboardKey.keyJ, meta: true),
+    ),
     // ── Display modes (⌥⌘/Ctrl+Alt — not in the macOS Edit menu) ─
     ShortcutBinding(
       id: 'display-hide',
       label: 'Hide Translation',
+      section: ShortcutSection.textDisplay,
       activators: [
         SingleActivator(LogicalKeyboardKey.digit1, control: true, alt: true),
         SingleActivator(LogicalKeyboardKey.digit1, meta: true, alt: true),
@@ -406,6 +471,7 @@ class AppShortcuts {
     ShortcutBinding(
       id: 'display-line',
       label: 'View Line by Line',
+      section: ShortcutSection.textDisplay,
       activators: [
         SingleActivator(LogicalKeyboardKey.digit2, control: true, alt: true),
         SingleActivator(LogicalKeyboardKey.digit2, meta: true, alt: true),
@@ -414,12 +480,288 @@ class AppShortcuts {
     ShortcutBinding(
       id: 'display-side',
       label: 'View Side by Side',
+      section: ShortcutSection.textDisplay,
       activators: [
         SingleActivator(LogicalKeyboardKey.digit3, control: true, alt: true),
         SingleActivator(LogicalKeyboardKey.digit3, meta: true, alt: true),
       ],
     ),
+    // ── In-place shortcuts (checked by one place's own key handler) ──
+    ShortcutBinding(
+      id: 'reader-next-line',
+      label: 'Next line',
+      section: ShortcutSection.reader,
+      activators: [SingleActivator(LogicalKeyboardKey.keyJ)],
+      fixedHint: '↓',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'reader-prev-line',
+      label: 'Previous line',
+      section: ShortcutSection.reader,
+      activators: [SingleActivator(LogicalKeyboardKey.keyK)],
+      fixedHint: '↑',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'reader-prev-link',
+      label: 'Previous link',
+      section: ShortcutSection.reader,
+      activators: [SingleActivator(LogicalKeyboardKey.keyH)],
+      fixedHint: '←',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'reader-next-link',
+      label: 'Next link',
+      section: ShortcutSection.reader,
+      activators: [SingleActivator(LogicalKeyboardKey.keyL)],
+      fixedHint: '→',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'reader-copy',
+      label: 'Copy selection',
+      section: ShortcutSection.reader,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyC, control: true),
+        SingleActivator(LogicalKeyboardKey.keyC, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'search-next',
+      label: 'Next result',
+      section: ShortcutSection.searchResults,
+      activators: [SingleActivator(LogicalKeyboardKey.keyJ)],
+      fixedHint: '↓',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'search-prev',
+      label: 'Previous result',
+      section: ShortcutSection.searchResults,
+      activators: [SingleActivator(LogicalKeyboardKey.keyK)],
+      fixedHint: '↑',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'chat-scroll-down',
+      label: 'Scroll down',
+      section: ShortcutSection.chat,
+      activators: [SingleActivator(LogicalKeyboardKey.keyJ)],
+      fixedHint: '↓',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'chat-scroll-up',
+      label: 'Scroll up',
+      section: ShortcutSection.chat,
+      activators: [SingleActivator(LogicalKeyboardKey.keyK)],
+      fixedHint: '↑',
+      allowsBareKey: true,
+    ),
+    ShortcutBinding(
+      id: 'chat-new',
+      label: 'New chat',
+      section: ShortcutSection.chat,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyN, control: true),
+        SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'chat-find',
+      label: 'Search in chat',
+      section: ShortcutSection.chat,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.keyF, control: true),
+        SingleActivator(LogicalKeyboardKey.keyF, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'chat-font-increase',
+      label: 'Bigger text',
+      section: ShortcutSection.chat,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.equal, control: true),
+        SingleActivator(LogicalKeyboardKey.equal, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'chat-font-decrease',
+      label: 'Smaller text',
+      section: ShortcutSection.chat,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.minus, control: true),
+        SingleActivator(LogicalKeyboardKey.minus, meta: true),
+      ],
+    ),
+    ShortcutBinding(
+      id: 'chat-font-reset',
+      label: 'Reset text size',
+      section: ShortcutSection.chat,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit0, control: true),
+        SingleActivator(LogicalKeyboardKey.digit0, meta: true),
+      ],
+    ),
   ];
+
+  /// The user's own combinations from Settings → Keyboard Shortcuts, by
+  /// catalog id. `app.dart` copies them in from the settings on every
+  /// build; ids not in the catalog are ignored. A null value means the
+  /// shortcut has no keys (it was given to another action).
+  static Map<String, SingleActivator?> overrides = const {};
+
+  /// [binding] with the user's combination, if any, in place of every
+  /// default. On macOS the same instance becomes the menu activator, because
+  /// [bindings] compares activators by identity to avoid firing twice.
+  static ShortcutBinding effective(ShortcutBinding binding) {
+    if (!overrides.containsKey(binding.id)) return binding;
+    final override = overrides[binding.id];
+    return ShortcutBinding(
+      id: binding.id,
+      label: binding.label,
+      section: binding.section,
+      activators: [?override],
+      macActivator: binding.macActivator == null ? null : override,
+      fixedHint: binding.fixedHint,
+      allowsBareKey: binding.allowsBareKey,
+    );
+  }
+
+  /// The combinations that currently trigger [id] (empty for an unknown id).
+  static List<ShortcutActivator> activatorsFor(String id) {
+    for (final binding in shortcutCatalog) {
+      if (binding.id == id) return effective(binding).activators;
+    }
+    return const [];
+  }
+
+  /// Reasons [refusalFor] gives.
+  static const refusalUiKey = 'uiKey';
+  static const refusalNeedsModifier = 'needsModifier';
+  static const refusalReserved = 'reserved';
+
+  static final _uiKeys = {
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.numpadEnter,
+    LogicalKeyboardKey.escape,
+    LogicalKeyboardKey.space,
+    LogicalKeyboardKey.tab,
+    LogicalKeyboardKey.backspace,
+    LogicalKeyboardKey.delete,
+    LogicalKeyboardKey.home,
+    LogicalKeyboardKey.end,
+    LogicalKeyboardKey.pageUp,
+    LogicalKeyboardKey.pageDown,
+  };
+
+  static final _functionKeys = {
+    LogicalKeyboardKey.f1,
+    LogicalKeyboardKey.f2,
+    LogicalKeyboardKey.f3,
+    LogicalKeyboardKey.f4,
+    LogicalKeyboardKey.f5,
+    LogicalKeyboardKey.f6,
+    LogicalKeyboardKey.f7,
+    LogicalKeyboardKey.f8,
+    LogicalKeyboardKey.f9,
+    LogicalKeyboardKey.f10,
+    LogicalKeyboardKey.f11,
+    LogicalKeyboardKey.f12,
+  };
+
+  static final _editingKeys = {
+    LogicalKeyboardKey.keyC,
+    LogicalKeyboardKey.keyV,
+    LogicalKeyboardKey.keyX,
+    LogicalKeyboardKey.keyA,
+    LogicalKeyboardKey.keyZ,
+  };
+
+  // SingleActivator has no value equality, so compare field by field.
+  static bool _same(ShortcutActivator a, SingleActivator b) =>
+      a is SingleActivator &&
+      a.trigger == b.trigger &&
+      a.control == b.control &&
+      a.shift == b.shift &&
+      a.alt == b.alt &&
+      a.meta == b.meta;
+
+  static ShortcutBinding _byId(String id) =>
+      shortcutCatalog.firstWhere((b) => b.id == id);
+
+  /// Why [candidate] can never be a combination for [id], or null when it
+  /// can. Whether another row already holds it is [clashesWith]'s job.
+  static String? refusalFor(String id, SingleActivator candidate) {
+    final binding = _byId(id);
+    bool same(ShortcutActivator a) => _same(a, candidate);
+
+    // Reader Copy's default is Ctrl+C, so a row's own keys skip the rules.
+    if (binding.activators.any(same) ||
+        effective(binding).activators.any(same)) {
+      return null;
+    }
+    final key = candidate.trigger;
+    final hasModifier = candidate.control || candidate.alt || candidate.meta;
+    if (!hasModifier && _uiKeys.contains(key)) return refusalUiKey;
+    if (!binding.allowsBareKey &&
+        !hasModifier &&
+        !_functionKeys.contains(key)) {
+      return refusalNeedsModifier;
+    }
+    if ((candidate.control || candidate.meta) &&
+        !candidate.shift &&
+        !candidate.alt &&
+        _editingKeys.contains(key)) {
+      return refusalReserved;
+    }
+    return null;
+  }
+
+  /// Rows other than [id] that hold [candidate] where both would see the
+  /// key: two app-wide rows (CallbackShortcuts fires every match, so both
+  /// would run), or two rows of the same in-place section. Giving
+  /// [candidate] to [id] must leave these with no keys.
+  static List<String> clashesWith(String id, SingleActivator candidate) =>
+      _holders(id, candidate, clash: true);
+
+  /// Rows other than [id] that hold [candidate] without clashing: one of
+  /// the two is app-wide and the other in-place (in-place rows of different
+  /// places never meet, so they are neither). The in-place handler sits deeper in
+  /// the focus tree and stops the key while its place has focus, so each
+  /// works where it applies (the default Ctrl+F already does this for Find
+  /// in Book and Search in chat).
+  static List<String> overlapsWith(String id, SingleActivator candidate) =>
+      _holders(id, candidate, clash: false);
+
+  static List<String> _holders(
+    String id,
+    SingleActivator candidate, {
+    required bool clash,
+  }) {
+    final section = _byId(id).section;
+    bool matches(ShortcutSection other) => clash
+        ? other == section || (other.isAppWide && section.isAppWide)
+        : other.isAppWide != section.isAppWide;
+    return [
+      for (final other in shortcutCatalog)
+        if (other.id != id &&
+            matches(other.section) &&
+            effective(other).activators.any((a) => _same(a, candidate)))
+          other.id,
+    ];
+  }
+
+  /// Whether [event] triggers [id], with exact modifiers.
+  static bool matches(String id, KeyEvent event) => activatorsFor(
+    id,
+  ).any((activator) => activator.accepts(event, HardwareKeyboard.instance));
 
   /// True on a native macOS build — tooltips render ⌘-style hints there
   /// and Ctrl-style elsewhere.
@@ -435,7 +777,7 @@ class AppShortcuts {
   /// Returns null when no entry has that id.
   static String? hintFor(String id) {
     for (final binding in shortcutCatalog) {
-      if (binding.id == id) return _renderBinding(binding);
+      if (binding.id == id) return _renderBinding(effective(binding));
     }
     return null;
   }
@@ -766,7 +1108,10 @@ class AppShortcuts {
       'display-side': viewSideBySide,
     };
     return [
-      for (final binding in shortcutCatalog)
+      for (final binding
+          in shortcutCatalog
+              .where((b) => b.section.isAppWide)
+              .map(effective))
         AppAction(
           label: binding.label,
           activators: binding.activators,

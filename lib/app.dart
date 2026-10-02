@@ -267,6 +267,9 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
         child: _KeepAwakeBinder(
           child: Consumer(
             builder: (context, ref, _) {
+              AppShortcuts.overrides = ref.watch(
+                settingsProvider.select((s) => s.shortcutOverrides),
+              );
               final app = CallbackShortcuts(
                 bindings: AppShortcuts.bindings(_navigatorKey, ref),
                 child: MaterialApp.router(

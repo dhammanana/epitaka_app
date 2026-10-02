@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../shared/utils/app_shortcuts.dart';
 import '../providers/search_provider.dart';
 
 /// What a single keyboard-navigable row in the results list represents.
@@ -167,13 +168,13 @@ KeyEventResult handleSearchNavKey(
     return KeyEventResult.ignored;
   }
   final key = event.logicalKey;
-  if (key == LogicalKeyboardKey.keyJ ||
-      key == LogicalKeyboardKey.arrowDown) {
+  if (key == LogicalKeyboardKey.arrowDown ||
+      AppShortcuts.matches('search-next', event)) {
     nav.moveNext();
     return KeyEventResult.handled;
   }
-  if (key == LogicalKeyboardKey.keyK ||
-      key == LogicalKeyboardKey.arrowUp) {
+  if (key == LogicalKeyboardKey.arrowUp ||
+      AppShortcuts.matches('search-prev', event)) {
     nav.movePrevious();
     return KeyEventResult.handled;
   }
