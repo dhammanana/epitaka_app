@@ -54,6 +54,12 @@ class DeepLinkService {
   /// The navigator key attached to GoRouter. Set once during init.
   GlobalKey<NavigatorState>? _navigatorKey;
 
+  /// A link that arrived before the navigator existed. On a cold start the
+  /// index gate shows its loading screen first, so the launch link (a shared
+  /// text, say) comes in with no screen to open it on. Only the latest link
+  /// is kept: a second share before the screens appear replaces the first.
+  Uri? _pendingUri;
+
   /// Initialise the deep link listener. Call from a post-frame callback
   /// in the app's top-level widget.
   ///
@@ -78,7 +84,7 @@ class DeepLinkService {
           '[DEEPLINK] Initial link: $initialUri',
           name: 'epitaka.deeplink',
         );
-        _handleUri(initialUri);
+        handleUri(initialUri);
       }
 
       // ── Subscribe to subsequent links ──────────────────────────────
@@ -90,7 +96,7 @@ class DeepLinkService {
           '[DEEPLINK] Stream link: $uri',
           name: 'epitaka.deeplink',
         );
-        _handleUri(uri);
+        handleUri(uri);
       });
     } catch (e) {
       developer.log(
@@ -106,8 +112,18 @@ class DeepLinkService {
     _linkSub = null;
     _appLinks = null;
     _navigatorKey = null;
+    _pendingUri = null;
     _instance = null;
     _initialised = false;
+  }
+
+  /// Handle the link kept while the navigator did not exist yet. Called by
+  /// [PendingDeepLinkRunner] once the app screens appear.
+  void runPendingLink() {
+    final uri = _pendingUri;
+    if (uri == null) return;
+    _pendingUri = null;
+    handleUri(uri);
   }
 
   /// Resolve the current navigator context. Returns null if not mounted.
@@ -129,7 +145,8 @@ class DeepLinkService {
   bool _oauthExchangeInFlight = false;
 
   /// Parse an incoming [uri] and navigate accordingly.
-  void _handleUri(Uri uri) {
+  @visibleForTesting
+  void handleUri(Uri uri) {
     developer.log(
       '[DEEPLINK] Handling URI: scheme=${uri.scheme} host=${uri.host} '
       'path=${uri.path} query=${uri.query}',
@@ -176,9 +193,10 @@ class DeepLinkService {
     final ctx = _context;
     if (ctx == null || !ctx.mounted) {
       developer.log(
-        '[DEEPLINK] No valid context to navigate — dropping link: $uri',
+        '[DEEPLINK] No valid context to navigate — keeping link: $uri',
         name: 'epitaka.deeplink',
       );
+      _pendingUri = uri;
       return;
     }
 
@@ -410,4 +428,29 @@ class DeepLinkService {
       return !repeat;
     });
   }
+}
+
+/// Runs the link [DeepLinkService] kept while the app screens did not exist.
+/// Sits just inside the index gate, so it first mounts when the screens do.
+class PendingDeepLinkRunner extends StatefulWidget {
+  const PendingDeepLinkRunner({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<PendingDeepLinkRunner> createState() => _PendingDeepLinkRunnerState();
+}
+
+class _PendingDeepLinkRunnerState extends State<PendingDeepLinkRunner> {
+  @override
+  void initState() {
+    super.initState();
+    // After this frame, so the navigator below has built and its key resolves.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => DeepLinkService.instance.runPendingLink(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

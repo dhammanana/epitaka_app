@@ -282,7 +282,9 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
                     GlobalWidgetsLocalizations.delegate,
                     GlobalCupertinoLocalizations.delegate,
                   ],
-                  builder: (context, child) => IndexGate(child: child!),
+                  builder: (context, child) => IndexGate(
+                    child: PendingDeepLinkRunner(child: child!),
+                  ),
                 ),
               );
 
