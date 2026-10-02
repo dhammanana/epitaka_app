@@ -393,6 +393,34 @@ class _CategoryTabBar extends ConsumerWidget {
       ref.watch(settingsProvider.select((s) => s.typography.pali.fontFamily)),
     );
 
+    final labelStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w600,
+      fontFamily: scriptFont,
+    );
+    final unselectedLabelStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w500,
+      fontFamily: scriptFont,
+    );
+    final labels = [
+      for (final filter in filters) convertPaliToScript(filter.label, script),
+    ];
+    // A reading font with tall lines (or a large text size) needs more than
+    // the old fixed 40: icon 16 + margin 2 + one line of label.
+    var labelHeight = 0.0;
+    for (final label in labels) {
+      for (final style in [labelStyle, unselectedLabelStyle]) {
+        final painter = TextPainter(
+          text: TextSpan(text: label, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        if (painter.height > labelHeight) labelHeight = painter.height;
+        painter.dispose();
+      }
+    }
+    final tabHeight = (16 + 2 + labelHeight).ceilToDouble();
+
     return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppDimensions.marginMobile,
@@ -419,20 +447,14 @@ class _CategoryTabBar extends ConsumerWidget {
         ),
         labelColor: colors.primary,
         unselectedLabelColor: colors.onSurfaceVariant,
-        labelStyle: AppTypography.labelMedium.copyWith(
-          fontWeight: FontWeight.w600,
-          fontFamily: scriptFont,
-        ),
-        unselectedLabelStyle: AppTypography.labelMedium.copyWith(
-          fontWeight: FontWeight.w500,
-          fontFamily: scriptFont,
-        ),
+        labelStyle: labelStyle,
+        unselectedLabelStyle: unselectedLabelStyle,
         tabs: [
-          for (final filter in filters)
+          for (var i = 0; i < filters.length; i++)
             Tab(
-              height: 40,
-              icon: Icon(_categoryIcon(filter), size: 16),
-              text: convertPaliToScript(filter.label, script),
+              height: tabHeight < 40 ? 40 : tabHeight,
+              icon: Icon(_categoryIcon(filters[i]), size: 16),
+              text: labels[i],
               iconMargin: const EdgeInsets.only(bottom: 2),
             ),
         ],
