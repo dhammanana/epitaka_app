@@ -49,6 +49,16 @@ linux-restart:
     gtk-launch epitaka >/dev/null 2>&1 &
     echo "ePitaka restarted"
 
+# A debug build with hot reload: in this terminal, r loads code changes in
+# about a second, R restarts the app, q quits. It shares the installed app's
+# databases and settings, so the installed copy is closed first. flutter run
+# cannot stamp the release tag's version, so the app may offer an update on
+# start (see the version note at the top).
+# Run the current source live on Linux, with hot reload
+linux-run:
+    -pkill -x epitaka
+    flutter run -d linux
+
 android_pkg := "com.dn.epitaka"
 android_apk := "build/app/outputs/flutter-apk/app-prod-debug.apk"
 # Content databases: re-sent when the desktop copy changed since the last send.

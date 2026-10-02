@@ -3,7 +3,6 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -1174,6 +1173,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   Widget build(BuildContext context) {
     final tabsState = ref.watch(readerTabsProvider);
+    // Rebuilds the copy shortcut map when the user changes a shortcut.
+    ref.watch(settingsProvider.select((s) => s.shortcutOverrides));
 
     // The mobile dictionary dock is driven by the same panel state as the
     // desktop shell. While it's open, the floating pill and the TTS chip
@@ -1651,20 +1652,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     // ── Swipeable tab content with finger-following slide ──
                     CallbackShortcuts(
                       bindings: {
-                        SingleActivator(
-                          LogicalKeyboardKey.keyC,
-                          control: true,
-                        ): () => ReaderContextMenuBuilder.copyShortcut(
-                          context: context,
-                          ref: ref,
-                        ),
-                        SingleActivator(
-                          LogicalKeyboardKey.keyC,
-                          meta: true,
-                        ): () => ReaderContextMenuBuilder.copyShortcut(
-                          context: context,
-                          ref: ref,
-                        ),
+                        for (final a in AppShortcuts.activatorsFor(
+                          'reader-copy',
+                        ))
+                          a: () => ReaderContextMenuBuilder.copyShortcut(
+                            context: context,
+                            ref: ref,
+                          ),
                       },
                       child: Focus(
                         autofocus: true,

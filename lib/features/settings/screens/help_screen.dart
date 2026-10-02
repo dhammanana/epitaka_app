@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
@@ -31,6 +32,9 @@ class HelpScreenBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final overrides = ref.watch(
+      settingsProvider.select((s) => s.shortcutOverrides),
+    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -47,7 +51,7 @@ class HelpScreenBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AppDimensions.lg),
-        _ShortcutsSection(colors: colors, loc: loc),
+        _ShortcutsSection(colors: colors, loc: loc, overrides: overrides),
         const SizedBox(height: AppDimensions.lg),
 
         // ── Send Feedback ────────────────────────────────────────
@@ -145,7 +149,14 @@ class _ShortcutsSection extends StatelessWidget {
   final ColorScheme colors;
   final AppLocalizations loc;
 
-  const _ShortcutsSection({required this.colors, required this.loc});
+  /// The user's own shortcuts; any custom tab shortcut breaks the 1–9 range.
+  final Map<String, SingleActivator?> overrides;
+
+  const _ShortcutsSection({
+    required this.colors,
+    required this.loc,
+    required this.overrides,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +164,7 @@ class _ShortcutsSection extends StatelessWidget {
     // (AppShortcuts.hintFor) instead of a hardcoded string, so this list
     // can never drift from the real bindings. Hints render platform-
     // appropriately (⌘⇧C on macOS, Ctrl+Shift+C elsewhere).
+    final tabIds = [for (var i = 1; i <= 9; i++) 'tab-$i'];
     final items = [
       _Shortcut(loc.searchInBook, 'find-in-book'),
       _Shortcut(loc.globalSearch, 'find-everywhere'),
@@ -173,11 +185,15 @@ class _ShortcutsSection extends StatelessWidget {
       _Shortcut(loc.sideBySideMode, 'display-side'),
       _Shortcut(loc.closeFocusTab, 'close-tab'),
       _Shortcut(loc.closeAllTabs, 'close-all-tabs'),
-      _Shortcut(
-        'Switch to Tab 1-9',
-        'tab-1',
-        keysOverride: _tabRangeHint(),
-      ),
+      if (tabIds.any(overrides.containsKey))
+        for (var i = 0; i < tabIds.length; i++)
+          _Shortcut('Switch to Tab ${i + 1}', tabIds[i])
+      else
+        _Shortcut(
+          'Switch to Tab 1-9',
+          'tab-1',
+          keysOverride: _tabRangeHint(),
+        ),
       _Shortcut('Next Tab', 'tab-next'),
       _Shortcut('Previous Tab', 'tab-prev'),
     ];
@@ -220,7 +236,12 @@ class _ShortcutsSection extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _Kbd(entry.value.keys, colors),
+                      _Kbd(
+                        entry.value.keys.isEmpty
+                            ? loc.shortcutNone
+                            : entry.value.keys,
+                        colors,
+                      ),
                     ],
                   ),
                 ),

@@ -175,6 +175,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   Widget build(BuildContext context) {
     final panels = ref.watch(sidePanelProvider);
     final vimamsaOpen = ref.watch(vimamsaOpenProvider);
+    // Rebuilds the activity bar's tooltips when the user changes a shortcut.
+    ref.watch(settingsProvider.select((s) => s.shortcutOverrides));
     final left = panels.left.openPanel;
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
