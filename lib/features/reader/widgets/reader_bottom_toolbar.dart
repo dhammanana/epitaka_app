@@ -106,7 +106,11 @@ class ReaderBottomToolbar extends StatelessWidget {
 
     // The display-layout popup offers three modes, each with its own
     // shortcut — hint at the trio so users can learn them from the button.
-    final displayHint = AppShortcuts.isMacOS ? '⌥⌘1/2/3' : 'Ctrl+Alt+1/2/3';
+    final displayHint = ['display-hide', 'display-line', 'display-side']
+        .map(AppShortcuts.hintFor)
+        .whereType<String>()
+        .where((hint) => hint.isNotEmpty)
+        .join(' / ');
 
     // The configured item list (Settings → Toolbar). An empty list means no
     // configuration was supplied, so fall back to every action enabled in

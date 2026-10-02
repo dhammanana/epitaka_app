@@ -194,6 +194,37 @@ class AppLocalizations {
   String get version => _t('Version');
   String get help => _t('Help');
   String get keyboardShortcuts => _t('Keyboard Shortcuts');
+  String get keyboardShortcutsDesc =>
+      _t('Click Change, then press the new keys.');
+  String get changeShortcut => _t('Change');
+  String get restoreDefault => _t('Restore default');
+  String get restoreAllDefaults => _t('Restore all defaults');
+  String get pressNewShortcut => _t('Press new shortcut… (Esc to cancel)');
+  String get shortcutUiKey =>
+      _t('Arrows, Enter, Esc, Space and Tab cannot be used alone');
+  String get shortcutNeedsModifier =>
+      _t('Add Ctrl, Alt or Cmd/Win, or use F1–F12');
+  String get shortcutReserved =>
+      _t('Reserved for copy, paste, cut, select all and undo');
+  String get shortcutNone => _t('None');
+  String shortcutReplaced(String label) =>
+      '$label ${_t('no longer has a shortcut')}';
+  String shortcutSharedWith(String other, String where, String winner) =>
+      '${_t('Shared with')} $other. $where, $winner ${_t('wins')}.';
+  String get shortcutsSidebar => _t('Sidebar');
+  String get shortcutsReading => _t('Reading');
+  String get shortcutsTabs => _t('Tabs');
+  String get shortcutsTextDisplay => _t('Text & display');
+  String get shortcutsApp => _t('App');
+  String get shortcutsReader => _t('Reader');
+  String get shortcutsSearchResults => _t('Search results');
+  String get shortcutsChat => _t('Vīmaṃsā chat');
+  String get shortcutsAnywhere => _t('Anywhere in the app');
+  String get shortcutsReaderWhere => _t('When the reading cursor is active');
+  String get shortcutsSearchResultsWhere =>
+      _t('When the results list has focus');
+  String get shortcutsChatWhere => _t('When the full-screen chat has focus');
+  String shortcutAlso(String key) => '${_t('also')} $key';
   String get searchInBook => _t('Search within the book');
   String get searchBooks => _t('Search books…');
   String get globalSearch => _t('Open global search');

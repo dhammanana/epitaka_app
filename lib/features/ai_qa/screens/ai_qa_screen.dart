@@ -9,10 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/utils/app_shortcuts.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../shared/services/ai_model_service.dart';
 import '../../shared/widgets/ai_error_card.dart';
@@ -276,7 +278,8 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     }
     if (_focusNode.hasFocus || _mentionActive) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.arrowDown) {
+    if (key == LogicalKeyboardKey.arrowDown ||
+        AppShortcuts.matches('chat-scroll-down', event)) {
       _scrollController.animateTo(
         (_scrollController.offset + 160).clamp(
           0.0,
@@ -287,7 +290,8 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       );
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyK || key == LogicalKeyboardKey.arrowUp) {
+    if (key == LogicalKeyboardKey.arrowUp ||
+        AppShortcuts.matches('chat-scroll-up', event)) {
       _scrollController.animateTo(
         (_scrollController.offset - 160).clamp(
           0.0,
@@ -487,6 +491,8 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     final currentThreadId = ref.watch(currentThreadIdProvider);
     final colors = Theme.of(context).colorScheme;
     final attachments = ref.watch(attachmentsProvider);
+    // Rebuilds the chat shortcut map when the user changes a shortcut.
+    ref.watch(settingsProvider.select((s) => s.shortcutOverrides));
 
     // Watch current thread for pinned state
     final isPinned = currentThreadId != null
@@ -821,52 +827,28 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
         onKeyEvent: _handleChatNavigationKey,
         child: CallbackShortcuts(
           bindings: <ShortcutActivator, VoidCallback>{
-            // Cmd/Ctrl + N: New chat
-            const SingleActivator(LogicalKeyboardKey.keyN, control: true):
-                _startNewChat,
-            const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-                _startNewChat,
-            // Cmd/Ctrl + F: Search in thread
-            const SingleActivator(LogicalKeyboardKey.keyF, control: true):
-                _showInThreadSearch,
-            const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
-                _showInThreadSearch,
-            // Cmd/Ctrl + +: Increase font size
-            const SingleActivator(LogicalKeyboardKey.equal, control: true): () {
-              final fs = ref.read(aiQaSettingsProvider).chatFontSize;
-              ref
-                  .read(aiQaSettingsProvider.notifier)
-                  .setChatFontSize((fs + 0.1).clamp(0.7, 2.0));
-            },
-            const SingleActivator(LogicalKeyboardKey.equal, meta: true): () {
-              final fs = ref.read(aiQaSettingsProvider).chatFontSize;
-              ref
-                  .read(aiQaSettingsProvider.notifier)
-                  .setChatFontSize((fs + 0.1).clamp(0.7, 2.0));
-            },
-            // Cmd/Ctrl + -: Decrease font size
-            const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
-              final fs = ref.read(aiQaSettingsProvider).chatFontSize;
-              ref
-                  .read(aiQaSettingsProvider.notifier)
-                  .setChatFontSize((fs - 0.1).clamp(0.7, 2.0));
-            },
-            const SingleActivator(LogicalKeyboardKey.minus, meta: true): () {
-              final fs = ref.read(aiQaSettingsProvider).chatFontSize;
-              ref
-                  .read(aiQaSettingsProvider.notifier)
-                  .setChatFontSize((fs - 0.1).clamp(0.7, 2.0));
-            },
-            // Cmd/Ctrl + 0: Reset font size
-            const SingleActivator(
-              LogicalKeyboardKey.digit0,
-              control: true,
-            ): () {
-              ref.read(aiQaSettingsProvider.notifier).setChatFontSize(1.0);
-            },
-            const SingleActivator(LogicalKeyboardKey.digit0, meta: true): () {
-              ref.read(aiQaSettingsProvider.notifier).setChatFontSize(1.0);
-            },
+            for (final a in AppShortcuts.activatorsFor('chat-new'))
+              a: _startNewChat,
+            for (final a in AppShortcuts.activatorsFor('chat-find'))
+              a: _showInThreadSearch,
+            for (final a in AppShortcuts.activatorsFor('chat-font-increase'))
+              a: () {
+                final fs = ref.read(aiQaSettingsProvider).chatFontSize;
+                ref
+                    .read(aiQaSettingsProvider.notifier)
+                    .setChatFontSize((fs + 0.1).clamp(0.7, 2.0));
+              },
+            for (final a in AppShortcuts.activatorsFor('chat-font-decrease'))
+              a: () {
+                final fs = ref.read(aiQaSettingsProvider).chatFontSize;
+                ref
+                    .read(aiQaSettingsProvider.notifier)
+                    .setChatFontSize((fs - 0.1).clamp(0.7, 2.0));
+              },
+            for (final a in AppShortcuts.activatorsFor('chat-font-reset'))
+              a: () {
+                ref.read(aiQaSettingsProvider.notifier).setChatFontSize(1.0);
+              },
           },
           child: body,
         ),

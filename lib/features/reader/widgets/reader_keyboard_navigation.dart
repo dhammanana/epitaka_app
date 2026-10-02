@@ -6,6 +6,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../shared/providers/vimamsa_panel_provider.dart';
+import '../../../shared/utils/app_shortcuts.dart';
 import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
@@ -140,20 +141,23 @@ class _ReaderKeyboardNavigationState
     }
     // TTS owns this book's scrolling — don't fight the spoken line.
     if (_ttsBlocksNavigation) return KeyEventResult.ignored;
-    if (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.arrowDown) {
+    if (key == LogicalKeyboardKey.arrowDown ||
+        AppShortcuts.matches('reader-next-line', event)) {
       _moveLine(1);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyK || key == LogicalKeyboardKey.arrowUp) {
+    if (key == LogicalKeyboardKey.arrowUp ||
+        AppShortcuts.matches('reader-prev-line', event)) {
       _moveLine(-1);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyH || key == LogicalKeyboardKey.arrowLeft) {
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        AppShortcuts.matches('reader-prev-link', event)) {
       _moveChip(-1);
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyL ||
-        key == LogicalKeyboardKey.arrowRight) {
+    if (key == LogicalKeyboardKey.arrowRight ||
+        AppShortcuts.matches('reader-next-link', event)) {
       _moveChip(1);
       return KeyEventResult.handled;
     }

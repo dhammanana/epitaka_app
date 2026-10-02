@@ -8,6 +8,7 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/widgets/reader_bottom_toolbar.dart';
 import 'package:epitaka/features/settings/providers/tts_provider.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -162,5 +163,20 @@ void main() {
 
     expect(find.byType(ToolbarButton), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
+  });
+
+  testWidgets('a display mode with no shortcut leaves no gap in the hint', (
+    tester,
+  ) async {
+    AppShortcuts.overrides = {'display-line': null};
+    addTearDown(() => AppShortcuts.overrides = const {});
+    await tester.pumpWidget(wrap(toolbar()));
+    await tester.pump();
+    final tips = [
+      for (final t in tester.widgetList<Tooltip>(find.byType(Tooltip)))
+        t.message ?? '',
+    ].where((m) => m.contains('Ctrl+Alt+')).toList();
+    expect(tips, hasLength(1));
+    expect(tips.single, endsWith('Ctrl+Alt+1 / Ctrl+Alt+3'));
   });
 }

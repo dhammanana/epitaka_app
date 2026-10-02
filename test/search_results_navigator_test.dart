@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../lib/core/models/app_models.dart';
 import '../lib/features/search/providers/search_provider.dart';
 import '../lib/features/search/widgets/search_results_navigator.dart';
+import '../lib/shared/utils/app_shortcuts.dart';
 
 SearchResultItem _item(String bookId, int paraId) => SearchResultItem(
       bookId: bookId,
@@ -31,6 +32,9 @@ BookResultSummary _summary(
 }
 
 void main() {
+  // handleSearchNavKey reads modifier state from HardwareKeyboard.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('SearchResultsNavigator', () {
   test('flattens collapsed + expanded books into rows', () {
     final nav = SearchResultsNavigator();
@@ -163,6 +167,39 @@ void main() {
       expect(handle(LogicalKeyboardKey.escape), KeyEventResult.handled);
       expect(escaped, 1);
       expect(handle(LogicalKeyboardKey.keyA), KeyEventResult.ignored);
+    });
+
+    test('a rebound Next result key moves; the old J and the arrow', () {
+      AppShortcuts.overrides = {
+        'search-next': const SingleActivator(LogicalKeyboardKey.keyN),
+      };
+      addTearDown(() => AppShortcuts.overrides = const {});
+      final nav = SearchResultsNavigator();
+      nav.rebuild(
+        SearchResults(
+          query: 'x',
+          totalResults: 3,
+          bookSummaries: [_summary('b1'), _summary('b2'), _summary('b3')],
+        ),
+        includeHeadings: false,
+      );
+      KeyEventResult handle(LogicalKeyboardKey key) => handleSearchNavKey(
+            KeyDownEvent(
+              physicalKey: PhysicalKeyboardKey.keyA,
+              logicalKey: key,
+              timeStamp: Duration.zero,
+            ),
+            nav,
+            onActivate: () {},
+            onEscape: () {},
+          );
+
+      expect(handle(LogicalKeyboardKey.keyN), KeyEventResult.handled);
+      expect(nav.selected, 1);
+      expect(handle(LogicalKeyboardKey.keyJ), KeyEventResult.ignored);
+      expect(nav.selected, 1);
+      expect(handle(LogicalKeyboardKey.arrowDown), KeyEventResult.handled);
+      expect(nav.selected, 2);
     });
   });
 }
