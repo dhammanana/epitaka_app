@@ -131,24 +131,30 @@ void main() {
 
     // The query ('sutaṃ') matches, so the line renders through the
     // highlight path — the variant reading must STILL carry its recessive
-    // background + text colour.
+    // text colour, and NO background tint.
     final variantSpan = spanContaining(tester, 'iti');
     expect(variantSpan, isNotNull, reason: 'variant reading is rendered');
     expect(
       variantSpan!.style?.backgroundColor,
-      isNotNull,
-      reason: 'variant background survives the search highlight',
+      isNull,
+      reason: 'variants are colour-only: no background tint',
     );
     expect(
       variantSpan.style!.color,
-      isNot(equals(Colors.black87)),
+      Color.lerp(Colors.black87, Colors.white, 0.35),
       reason:
-          'variant text colour is the recessive derived colour, not the '
-          'base line colour (test runs light mode, paliColor: black87)',
+          'variant text colour is exactly the recessive lerp of the base '
+          'line colour (test runs light mode, paliColor: black87)',
     );
 
-    // And the bracket characters themselves are unstyled.
+    // The bracket characters share the variant styling.
     final bracketSpan = spanContaining(tester, '[');
-    expect(bracketSpan!.style?.backgroundColor, isNull);
+    expect(bracketSpan, isNotNull, reason: 'bracket is rendered');
+    expect(
+      bracketSpan!.style?.backgroundColor,
+      isNull,
+      reason: 'bracket is colour-only like the variant text',
+    );
+    expect(bracketSpan.style!.color, variantSpan.style!.color);
   });
 }

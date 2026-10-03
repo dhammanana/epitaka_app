@@ -1182,17 +1182,11 @@ class ReadingParagraph extends StatelessWidget {
     // Variant content between square brackets is styled distinctly; when
     // variants are hidden the converter has already removed the brackets,
     // so this is a no-op. The style is DERIVED from the current colours so
-    // it recedes: the background is the surface nudged darker (dark mode)
-    // or lighter (light mode), and the text is the line's own colour pulled
-    // toward that background — dimmer and grayer in both modes, never a
-    // saturated accent that sticks out.
+    // it recedes: the text is the line's own colour pulled toward the page
+    // extremes — dimmer and grayer in both modes, never a saturated accent
+    // that sticks out. Colour only: no background tint.
     final isDark = colors.brightness == Brightness.dark;
     final variantStyle = TextStyle(
-      backgroundColor: Color.lerp(
-        colors.surface,
-        isDark ? Colors.black : Colors.white,
-        0.18,
-      ),
       color: Color.lerp(
         effectiveColor,
         isDark ? Colors.black : Colors.white,
@@ -1314,9 +1308,10 @@ class ReadingParagraph extends StatelessWidget {
   }) {
     final spans = _parseHtml(text);
 
-    // 0) Variant styling: content between square brackets gets a distinct
-    //    background + text colour so readings stand out inline. A no-op
-    //    when the text has no brackets (variants hidden).
+    // 0) Variant styling: content between square brackets (and the bracket
+    //    characters themselves) gets a recessive text colour so readings
+    //    stand out inline. A no-op when the text has no brackets (variants
+    //    hidden).
     List<InlineSpan> result = variantStyle != null && text.contains('[')
         ? _applyVariantStyling(spans, variantStyle)
         : spans;
@@ -1699,11 +1694,11 @@ class ReadingParagraph extends StatelessWidget {
     return spans;
   }
 
-  /// Re-splits [spans] so the text between `[` and `]` carries
-  /// [variantStyle] (a distinct background + text colour). The bracket
-  /// characters themselves keep their existing style. The `inVariant` flag
-  /// is threaded across the whole span list because HTML parsing may split
-  /// a bracket and its content into separate spans.
+  /// Re-splits [spans] so the text between `[` and `]` (and the bracket
+  /// characters themselves) carries [variantStyle] (a recessive text
+  /// colour, no background). The `inVariant` flag is threaded across the
+  /// whole span list because HTML parsing may split a bracket and its
+  /// content into separate spans.
   List<InlineSpan> _applyVariantStyling(
     List<InlineSpan> spans,
     TextStyle variantStyle,
@@ -1748,12 +1743,12 @@ class ReadingParagraph extends StatelessWidget {
       final ch = text[i];
       if (ch == '[') {
         flush(i, inVariant ? variantMerged : base);
-        pieces.add(TextSpan(text: '[', style: base));
+        pieces.add(TextSpan(text: '[', style: variantMerged));
         inVariant = true;
         segStart = i + 1;
       } else if (ch == ']') {
-        flush(i, variantMerged);
-        pieces.add(TextSpan(text: ']', style: base));
+        flush(i, inVariant ? variantMerged : base);
+        pieces.add(TextSpan(text: ']', style: variantMerged));
         inVariant = false;
         segStart = i + 1;
       }
