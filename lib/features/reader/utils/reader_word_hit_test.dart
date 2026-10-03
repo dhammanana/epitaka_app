@@ -1,6 +1,7 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart' show GlobalKey;
 
+import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/utils/pali_script_converter.dart';
 
 /// Cleans a raw Pāli word by removing non-word characters.
@@ -61,6 +62,100 @@ TextRange wordRangeAt(String text, int tapOffset) {
   return TextRange(start: start, end: end);
 }
 
+/// Characters that may form a CLOSING quote run between a word and its
+/// joined dictionary form: CST writes closing quotes (and the verse elision
+/// mark) as a space-separated run of 1–4 of these: `oghamatarin ’’’ ti`,
+/// `dhammapuṇṇo ’ va`. Opening quotes (`‘` U+2018) are NOT in this set —
+/// a word before an opening quote is already complete (measured: joining
+/// across opening quotes produces only false positives).
+const String _kClosingQuotes = '\u2019\'';
+final RegExp _kNonLetters = RegExp(r'[^\p{L}\p{M}\p{Nd}]', unicode: true);
+
+/// Whitespace for the quote-join scan — same `\s` class [wordRangeAt] uses
+/// to terminate words, so the two routines agree about gaps (NBSP, tabs,
+/// newlines included).
+final RegExp _kJoinWhitespace = RegExp(r'\s');
+
+/// Builds the quote-run join candidate for a tapped word, or null.
+///
+/// [wordEnd] is the end offset of the tapped word in [fullText];
+/// [wordPrefix] is the cleaned Roman word itself. When the text at
+/// [wordEnd] is `whitespace + closing-quote run (1–4) + whitespace +
+/// token`, the CST source means the word and the token are ONE dictionary
+/// word with the quote run marking an elided junction (`oghamatarin ’’’ ti`
+/// → `oghamatarinti`; `dhammapuṇṇo ’ va` → `dhammapuṇṇova`). The candidate
+/// is therefore [wordPrefix] + that token, joined VERBATIM — no letter
+/// replacement, no folding; a wrong candidate simply misses the dictionary
+/// like the bare word would.
+///
+/// [fullText] is in the DISPLAY script (the reader renders Sinhala,
+/// Myanmar, …), so the raw token is pushed through the same
+/// `convertToRomanPali` + `cleanPali` pipeline as the tapped word before
+/// joining — otherwise the candidate would be a mixed-script key that can
+/// never match a Roman DPD lookup key. Non-letter residue (markup
+/// leftovers) is stripped along the way; an empty token or any non-quote
+/// content after the word returns null.
+String? quoteJoinCandidate(String fullText, int wordEnd, String wordPrefix) {
+  bool isSpace(int i) => _kJoinWhitespace.hasMatch(fullText[i]);
+  var i = wordEnd;
+  // Whitespace between word and quote run.
+  while (i < fullText.length && isSpace(i)) {
+    i++;
+  }
+  // Closing quote run, 1–4 characters.
+  var quotes = 0;
+  while (i < fullText.length &&
+      quotes < 4 &&
+      _kClosingQuotes.contains(fullText[i])) {
+    i++;
+    quotes++;
+  }
+  if (quotes == 0) return null;
+  // Whitespace between quote run and the joined token.
+  while (i < fullText.length && isSpace(i)) {
+    i++;
+  }
+  if (i >= fullText.length || isSpace(i)) return null;
+  // Token up to the next whitespace, letters only.
+  var j = i;
+  while (j < fullText.length && !isSpace(j)) {
+    j++;
+  }
+  // Push the raw (display-script) token through the same Roman pipeline
+  // as the tapped word, so the candidate matches Roman DPD lookup keys in
+  // every display script.
+  final rawToken = fullText.substring(i, j).replaceAll(_kNonLetters, '');
+  final token = cleanPali(convertToRomanPali(rawToken));
+  if (token.isEmpty) return null;
+  return wordPrefix + token;
+}
+
+/// Whether a DPD lookup row carries anything worth showing: headwords,
+/// deconstructor candidates or EPD HTML. A bare null row or an empty one
+/// counts as a miss for the two-stage pick below.
+bool lookupRowHasContent(DpdLookupRow? row) {
+  if (row == null) return false;
+  return row.headwords.isNotEmpty ||
+      row.deconstructor.isNotEmpty ||
+      (row.epd?.isNotEmpty ?? false);
+}
+
+/// Two-stage lookup pick for the reader tap path: the bare tapped [word]
+/// keeps priority; the quote-run join candidate [joinedWord] is routed only
+/// when the bare word misses entirely AND the joined form would resolve.
+/// When both miss (or there is no candidate), the bare word is returned so
+/// the dictionary shows its usual empty state for what was tapped.
+String pickLookupWord(
+  String word,
+  String? joinedWord,
+  DpdLookupRow? bare,
+  DpdLookupRow? joined,
+) {
+  if (joinedWord == null) return word;
+  if (lookupRowHasContent(bare)) return word;
+  return lookupRowHasContent(joined) ? joinedWord : word;
+}
+
 /// Metadata attached to a line or paragraph render box for hit testing.
 class ReaderLineMetadata {
   final int paraId;
@@ -99,6 +194,13 @@ class ReaderWordHitResult {
   /// Character range of the word within the RenderParagraph text.
   final TextRange range;
 
+  /// Quote-run join candidate (`oghamatarin ’’’ ti` → `oghamatarinti`),
+  /// built by [quoteJoinCandidate] when the tapped word is directly
+  /// followed by a closing quote run. Null for translation segments and
+  /// when no quote run follows. The lookup stage tries [word] first and
+  /// only falls back to this on a total miss.
+  final String? joinedWord;
+
   const ReaderWordHitResult({
     required this.word,
     required this.rawWord,
@@ -107,6 +209,7 @@ class ReaderWordHitResult {
     this.segment = 'pali',
     this.langCode,
     required this.range,
+    this.joinedWord,
   });
 }
 
@@ -198,6 +301,12 @@ ReaderWordHitResult? hitTestWordAt(
     segment: lineMetadata?.segment ?? 'pali',
     langCode: lineMetadata?.langCode,
     range: range,
+    // CST quote-run join candidate (`oghamatarin ’’’ ti` →
+    // `oghamatarinti`), Pāli segments only — translation words are never
+    // quote-joined.
+    joinedWord: isTranslation
+        ? null
+        : quoteJoinCandidate(fullText, range.end, cleaned),
   );
 }
 
