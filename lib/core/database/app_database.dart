@@ -30,7 +30,22 @@ typedef IndexProgressCallback = void Function(double progress, String status);
 ///   v1 — published builds: `unicode61 remove_diacritics 0` (tokens keep
 ///        diacritics, so `katva` cannot match `katvā`).
 ///   v2 — `unicode61 remove_diacritics 1` (diacritic-insensitive search).
+///   v2+ — variant bracket content (`[variant reading]`) is indexed
+///        (searchable) instead of removed with its brackets. This is a
+///        PIPELINE change only — deliberately NOT a version bump (user
+///        decision 2026-10-03), so existing installs are not rebuilt:
+///        only fresh builds (new installs, manual "Rebuild search index",
+///        or the next real bump) include variant content. Flip this
+///        constant to 3 to force that migration — it rebuilds ONLY the
+///        Pāli index; translation indexes have their own constant.
 const int kSearchIndexSchemaVersion = 2;
+
+/// Schema version for the per-language TRANSLATION indexes
+/// (`search_fts_<lang>`). Separate from [kSearchIndexSchemaVersion] so a
+/// Pāli pipeline/schema change never forces needless rebuilds of every
+/// installed translation index — the translation build has its own
+/// cleaning pipeline which did not change.
+const int kTranslationSearchIndexSchemaVersion = 2;
 
 /// Thrown by [AppDatabase.open] when `app_data.db` cannot be opened even
 /// after a journal-file cleanup retry. Callers should catch this and let
@@ -1569,7 +1584,7 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(
         'INSERT OR REPLACE INTO index_meta(key, value) '
         "VALUES ('search_index_version_$langCode', ?)",
-        [kSearchIndexSchemaVersion.toString()],
+        [kTranslationSearchIndexSchemaVersion.toString()],
       );
     });
 
@@ -1591,13 +1606,13 @@ class AppDatabase extends _$AppDatabase {
       ).get();
       if (rows.isEmpty) return false;
 
-      // Same tokenizer-version check as the Pāli index: an index built by
-      // a pre-versioning app build must be rebuilt so the new tokenizer
-      // takes effect.
+      // Same tokenizer-version check as the Pāli index, but against the
+      // TRANSLATION schema version — a Pāli pipeline change must not
+      // rebuild translation indexes.
       final version = await _storedIndexSchemaVersion(
         'search_index_version_$langCode',
       );
-      if (version == null || version < kSearchIndexSchemaVersion) {
+      if (version == null || version < kTranslationSearchIndexSchemaVersion) {
         debugPrint(
           '[INDEX_CHECK] $langCode index schema stamp missing/old '
           '(v$version) → needs rebuild',

@@ -127,107 +127,6 @@ List<ReadingFontFamily> translationFontChoices(String langCode) {
   return const [];
 }
 
-/// A piece of Pāli text after script conversion.
-///
-/// [isVariant] marks reading-variant spans (stored in the source as
-/// `[variant text]`). When [stripVariantAnnotations] is true, variant
-/// segments are dropped; when false, they are kept so the UI can render
-/// them as tappable chips (see [PaliTextWithVariants]).
-class PaliSegment {
-  final String text;
-  final bool isVariant;
-  const PaliSegment(this.text, {this.isVariant = false});
-}
-
-/// Splits Pāli [text] into [PaliSegment]s (normal text vs. reading variants),
-/// converting each to [targetScript].
-///
-/// Variant spans are detected as text wrapped in square brackets (`[...]`).
-/// When [stripVariantAnnotations] is true, variant segments are omitted.
-/// Normal segments keep their HTML tags (handled by the converter).
-///
-/// This is the variant-aware counterpart to [convertPaliToScriptPreservingHtml]
-/// and is used by [PaliTextWithVariants] to render variants as chips.
-///
-/// ## Performance
-///
-/// Called from inside `build()` for every visible Pāli line on every reader
-/// rebuild. The (regex split + per-segment HTML preservation) work is pure
-/// w.r.t. `(text, targetScript, stripVariantAnnotations)`, so the result is
-/// memoized — a scroll frame that re-renders the same lines skips the whole
-/// pipeline instead of redoing it. Bounded, FIFO eviction.
-List<PaliSegment> convertPaliToScriptSegments(
-  String text,
-  Script? targetScript,
-) {
-  if (text.isEmpty) return const [];
-
-  // stripVariantAnnotations is a mutable global pushed by the display
-  // widgets; it changes the output, so it must be part of the cache key.
-  final key =
-      '$stripVariantAnnotations\u0000'
-      '${targetScript?.index ?? -1}\u0000$text';
-  final cached = _segmentsCache[key];
-  if (cached != null) return cached;
-
-  final segments = _convertPaliToScriptSegmentsUncached(text, targetScript);
-  final unmodifiable = List<PaliSegment>.unmodifiable(segments);
-  if (_segmentsCache.length >= _kSegmentsCacheCap) {
-    final removeCount = _kSegmentsCacheCap ~/ 4;
-    _removeOldestEntries(_segmentsCache, removeCount);
-  }
-  _segmentsCache[key] = unmodifiable;
-  return unmodifiable;
-}
-
-List<PaliSegment> _convertPaliToScriptSegmentsUncached(
-  String text,
-  Script? targetScript,
-) {
-  final segments = <PaliSegment>[];
-  final variantPattern = RegExp(r'\[([^\[\]]*)\]');
-  int lastEnd = 0;
-
-  for (final m in variantPattern.allMatches(text)) {
-    // Normal text before this variant.
-    if (m.start > lastEnd) {
-      final before = text.substring(lastEnd, m.start);
-      if (before.trim().isNotEmpty) {
-        segments.add(
-          PaliSegment(convertPaliToScriptPreservingHtml(before, targetScript)),
-        );
-      }
-    }
-    // The variant content (without the surrounding brackets).
-    final variantText = m.group(1) ?? '';
-    if (variantText.trim().isNotEmpty) {
-      if (stripVariantAnnotations) {
-        // Dropped entirely when stripping is enabled.
-      } else {
-        segments.add(
-          PaliSegment(
-            convertPaliToScriptPreservingHtml(variantText, targetScript),
-            isVariant: true,
-          ),
-        );
-      }
-    }
-    lastEnd = m.end;
-  }
-
-  // Trailing normal text after the last variant.
-  if (lastEnd < text.length) {
-    final after = text.substring(lastEnd);
-    if (after.trim().isNotEmpty) {
-      segments.add(
-        PaliSegment(convertPaliToScriptPreservingHtml(after, targetScript)),
-      );
-    }
-  }
-
-  return segments;
-}
-
 void _removeOldestEntries<K, V>(Map<K, V> cache, int count) {
   // Snapshot the keys first: removing from the map while its live key
   // iterator is active throws ConcurrentModificationError.
@@ -236,10 +135,6 @@ void _removeOldestEntries<K, V>(Map<K, V> cache, int count) {
     cache.remove(key);
   }
 }
-
-const int _kSegmentsCacheCap = 8000;
-final Map<String, List<PaliSegment>> _segmentsCache =
-    LinkedHashMap<String, List<PaliSegment>>();
 
 /// Memoizes [convertPaliToScript] results, keyed by "scriptIndex\u0000text".
 ///
@@ -329,8 +224,8 @@ String convertPaliToScript(String text, Script? targetScript) {
 /// ## Performance
 ///
 /// Runs inside widget `build()` for every Pāli line on every reader rebuild
-/// (via [PaliText], [PaliHtmlText], [PaliTextWithVariants] and the copy
-/// service). The inner `convertPaliToScript` steps are cached, but the HTML
+/// (via [PaliText], [PaliHtmlText] and the copy service). The inner
+/// `convertPaliToScript` steps are cached, but the HTML
 /// tag split/join was redone on every call; the whole result is now memoized
 /// too (keyed by script + strip flag + text), so repeated renders of the same
 /// line are a map lookup. Bounded, FIFO eviction.
