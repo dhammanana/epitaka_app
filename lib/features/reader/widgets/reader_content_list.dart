@@ -164,6 +164,7 @@ class _ReaderContentConfig {
   final TextAlignOption textAlign;
   final int lineHeight;
   final int paragraphSpacing;
+  final bool stripVariantAnnotations;
 
   const _ReaderContentConfig({
     required this.bookId,
@@ -183,6 +184,7 @@ class _ReaderContentConfig {
     required this.textAlign,
     required this.lineHeight,
     required this.paragraphSpacing,
+    required this.stripVariantAnnotations,
   });
 
   static ParagraphDisplayMode _toParagraphDisplayMode(
@@ -227,6 +229,7 @@ class _ReaderContentConfig {
       textAlign: settings.textAlign,
       lineHeight: settings.lineHeight,
       paragraphSpacing: settings.paragraphSpacing,
+      stripVariantAnnotations: settings.stripVariantAnnotations,
     );
   }
 
@@ -250,7 +253,8 @@ class _ReaderContentConfig {
         other.translationLineHeight == translationLineHeight &&
         other.textAlign == textAlign &&
         other.lineHeight == lineHeight &&
-        other.paragraphSpacing == paragraphSpacing;
+        other.paragraphSpacing == paragraphSpacing &&
+        other.stripVariantAnnotations == stripVariantAnnotations;
   }
 
   @override
@@ -272,6 +276,7 @@ class _ReaderContentConfig {
     textAlign,
     lineHeight,
     paragraphSpacing,
+    stripVariantAnnotations,
   );
 }
 
@@ -313,6 +318,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
     pageNumberingSystem: 'vri',
     translationFontSize: 17,
     translationLineHeight: 28 / 17,
+    stripVariantAnnotations: true,
     textAlign: TextAlignOption.justify,
     lineHeight: 0,
     paragraphSpacing: 8,
@@ -484,10 +490,10 @@ class _ReaderContentListState extends State<ReaderContentList> {
 
     // Push the variant-stripping flag into the shared converter global.
     // PaliText/PaliHtmlText normally do this themselves, but the reader
-    // renders through PaliTextWithVariants and direct converter calls
-    // (heading / highlight paths), which only READ the global — so without
-    // this push, toggling "Show variant readings" would have no effect in
-    // the reader until some unrelated screen rebuilt.
+    // renders through direct converter calls (heading / highlight paths),
+    // which only READ the global — so without this push, toggling "Show
+    // variant readings" would have no effect in the reader until some
+    // unrelated screen rebuilt.
     stripVariantAnnotations = widget.settings.stripVariantAnnotations;
 
     // Log the first time content is actually built for this book.

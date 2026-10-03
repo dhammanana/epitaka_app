@@ -62,9 +62,11 @@ class LineData {
   /// boundaries.
   final Map<String, String> pageNumbers;
 
-  /// Pre-computed diacritic-normalized text for fast in-book search.
-  /// Combines Pāli + all translations, stripped of HTML/brackets/punctuation
-  /// and with diacritics normalized (ā→a, ṭ→t, ṃ→m, etc.).
+  /// Diacritic-normalized text for fast in-book search. Always empty
+  /// today — pre-computation at book load was removed; the search
+  /// notifier computes it on demand. If it is ever pre-computed again, it
+  /// MUST follow the "Show variant readings" toggle the same way
+  /// [ReaderSearchNotifier] does (Pāli gated, translations not).
   final String normalizedText;
 
   /// Translation remarks for this line, keyed by language code (e.g. 'en').

@@ -82,41 +82,7 @@ void main() {
         print('[BENCH] convertPaliToScriptPreservingHtml $script: '
             '${us ~/ iterations}µs/round (${samples.length} samples)');
       });
-
-      test('convertPaliToScriptSegments ×$iterations ($script)', () {
-        for (final s in samples) {
-          convertPaliToScriptSegments(s, script);
-        }
-        final sw = Stopwatch()..start();
-        for (var i = 0; i < iterations; i++) {
-          for (final s in samples) {
-            convertPaliToScriptSegments(s, script);
-          }
-        }
-        sw.stop();
-        final us = sw.elapsedMicroseconds;
-        // ignore: avoid_print
-        print('[BENCH] convertPaliToScriptSegments $script: '
-            '${us ~/ iterations}µs/round (${samples.length} samples)');
-      });
     }
-
-    test('convertPaliToScriptSegments (unique strings) ×2000', () {
-      // Conversion of *different* lines each time — the real scroll case,
-      // where the cache (if any) never hits.
-      final sw = Stopwatch()..start();
-      for (var i = 0; i < 2000; i++) {
-        convertPaliToScriptSegments(
-          'para $i evaṃ me sutaṃ [variant $i] ekaṃ samayaṃ '
-          '<b>bhagavā</b> sāvatthiyaṃ viharati',
-          Script.sinhala,
-        );
-      }
-      sw.stop();
-      // ignore: avoid_print
-      print('[BENCH] convertPaliToScriptSegments unique: '
-          '${sw.elapsedMicroseconds ~/ 2000}µs/line (uncached)');
-    });
   });
 
   group('HTML parsing', () {
