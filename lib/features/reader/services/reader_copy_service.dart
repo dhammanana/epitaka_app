@@ -1110,9 +1110,8 @@ class ReaderCopyService {
   ///
   /// Strips U+FFFC (Object Replacement Character) from the input selected
   /// text before matching. Flutter's SelectionArea inserts U+FFFC wherever
-  /// a [WidgetSpan] appears in a [Text.rich] — our variant-annotation chips
-  /// in [PaliTextWithVariants] produce these, so stripping them is necessary
-  /// for reliable matching.
+  /// a [WidgetSpan] appears in a [Text.rich] (e.g. inline chips), so
+  /// stripping them is necessary for reliable matching.
   ///
   /// Returns null if no match is found (caller should fall back).
   static List<ParagraphData>? _buildTrimmedSelectionParagraphs(

@@ -1186,8 +1186,11 @@ class _LineTile extends StatelessWidget {
     required TextStyle style,
     required Color highlightColor,
   }) {
-    // Convert script first (preserving HTML tags like <b>, <i>)
-    final converted = convertPaliToScriptPreservingHtml(text, script);
+    // The FTS index keeps bracket content, so snippets must too: strip
+    // only the bracket characters so variant words stay visible in results
+    // even when "Show variant readings" is OFF.
+    final snippetText = text.replaceAll('[', ' ').replaceAll(']', ' ');
+    final converted = convertPaliToScriptPreservingHtml(snippetText, script);
     final effStyle = style.copyWith(
       fontFamily: paliReadingFontFamily(script, paliFont),
     );
