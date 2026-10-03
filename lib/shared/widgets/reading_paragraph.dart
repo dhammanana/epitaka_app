@@ -893,7 +893,7 @@ class ReadingParagraph extends StatelessWidget {
           );
 
     return Padding(
-      padding: const EdgeInsets.only(left: 8, top: 2),
+      padding: const EdgeInsets.only(top: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -970,7 +970,7 @@ class ReadingParagraph extends StatelessWidget {
   ) {
     final label = AppLocalizations.of(context).translationNote;
     return Padding(
-      padding: const EdgeInsets.only(top: 3, left: 8),
+      padding: const EdgeInsets.only(top: 3),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Tooltip(
