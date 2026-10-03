@@ -1,5 +1,6 @@
 final _bracketAnnotation = RegExp(r'\[[^\]]*\]');
 final _parenPageRef = RegExp(r'\([^)]*\d+[^)]*\)');
+final _bracketReference = RegExp(r'\[[^\]]*\d[^\]]*\]');
 final _htmlTag = RegExp(r'<[^>]*>');
 final _whitespaceRun = RegExp(r'\s+');
 
@@ -22,10 +23,25 @@ String foldPaliDiacritics(String text) {
 
 /// Clean Pali text for FTS5 indexing by stripping annotations, removing
 /// punctuation, and normalizing whitespace.
-String cleanPaliForIndexing(String text) {
-  // 1. Strip [...] and all content inside (variant annotations like
-  //    "[variant text]" should not contribute any words to the index).
-  text = text.replaceAll(_bracketAnnotation, '');
+///
+/// By default the *content* of bracketed variant annotations
+/// (`"[variant text]"`) is KEPT — only the bracket characters are
+/// removed — so variant-only words are searchable (global FTS index,
+/// query normalization, word frequency). Pass [stripVariantContent] to
+/// remove the whole span, for search paths that must match only the main
+/// text (in-book search while variant readings are hidden).
+String cleanPaliForIndexing(String text, {bool stripVariantContent = false}) {
+  // 1. Variant annotations like "[variant text]". In strip mode the whole
+  //    span goes; by default the content stays and step 4 below drops only
+  //    the bracket characters.
+  if (stripVariantContent) {
+    text = text.replaceAll(_bracketAnnotation, '');
+  } else {
+    // Reference-style brackets ("[ka.517; rū.488]", "[udā.27]") are
+    // manuscript/page citations, not variant readings — drop them so they
+    // never become index tokens. Genuine readings contain no digits.
+    text = text.replaceAll(_bracketReference, ' ');
+  }
 
   // 2. Strip (...) that contain at least one digit (page/location
   //    references like "(page 12.3)") but preserve parentheses that
@@ -38,10 +54,12 @@ String cleanPaliForIndexing(String text) {
 
   // 4. Remove any remaining individual bracket characters that survived
   //    the content-stripping regexes (e.g. `(text)` without numbers, or
-  //    unmatched brackets).
+  //    unmatched brackets). In keep mode the brackets become SPACES so the
+  //    bracketed reading stays a separate token rather than fusing with a
+  //    neighbouring word.
   final cleaned = text
-      .replaceAll('[', '')
-      .replaceAll(']', '')
+      .replaceAll('[', stripVariantContent ? '' : ' ')
+      .replaceAll(']', stripVariantContent ? '' : ' ')
       .replaceAll('(', '')
       .replaceAll(')', '')
       .replaceAll('{', '')
