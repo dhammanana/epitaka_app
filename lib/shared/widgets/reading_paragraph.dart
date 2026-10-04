@@ -893,7 +893,7 @@ class ReadingParagraph extends StatelessWidget {
           );
 
     return Padding(
-      padding: const EdgeInsets.only(left: 8, top: 2),
+      padding: const EdgeInsets.only(top: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -970,7 +970,7 @@ class ReadingParagraph extends StatelessWidget {
   ) {
     final label = AppLocalizations.of(context).translationNote;
     return Padding(
-      padding: const EdgeInsets.only(top: 3, left: 8),
+      padding: const EdgeInsets.only(top: 3),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Tooltip(
@@ -1165,40 +1165,44 @@ class ReadingParagraph extends StatelessWidget {
           segment: 'pali',
         );
 
-    if (query != null && query.isNotEmpty ||
-        lineAnnotations.isNotEmpty ||
-        isLookupTarget) {
-      final convertedText = convertPaliToScriptPreservingHtml(text, script);
-      final convertedQuery = query != null && query.isNotEmpty
-          ? convertSearchQueryForScript(query, script)
-          : null;
-      // The non-search path renders through [PaliTextWithVariants], which
-      // applies the script-specific font. The highlight path builds spans
-      // directly from [baseStyle], so the script font must be applied here
-      // too — otherwise scripts with a dedicated bundled font (Lao,
-      // Myanmar, Sinhala, …) fall back to the platform default and render
-      // incorrectly (e.g. missing the Pali-specific Lao characters).
-      final scriptStyle = baseStyle.copyWith(
-        fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
-      );
-      return _buildHighlightedText(
-        context,
-        convertedText,
-        convertedQuery,
-        scriptStyle,
-        colors,
-        annotations: lineAnnotations,
-        lookupHighlight: isLookupTarget ? lookupHighlight : null,
-        textAlign: textAlign ?? _textAlign,
-      );
-    }
+    // Variants render inline (CST-style `[reading]`): the converter keeps
+    // the brackets when "Show variant readings" is ON and strips the whole
+    // span when OFF. A single render path is used whether or not a
+    // search/lookup/annotation highlight is active, so variants stay
+    // visible (and tappable for dictionary lookup) in every state.
+    final convertedText = convertPaliToScriptPreservingHtml(text, script);
+    final convertedQuery = query != null && query.isNotEmpty
+        ? convertSearchQueryForScript(query, script)
+        : null;
+    // The script-specific font must be applied to the spans directly.
+    final scriptStyle = baseStyle.copyWith(
+      fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
+    );
 
-    return PaliTextWithVariants(
-      text,
-      script: script,
-      fontChoice: paliTypography.fontFamily,
-      colors: colors,
-      style: baseStyle,
+    // Variant content between square brackets is styled distinctly; when
+    // variants are hidden the converter has already removed the brackets,
+    // so this is a no-op. The style is DERIVED from the current colours so
+    // it recedes: the text is the line's own colour pulled toward the page
+    // extremes — dimmer and grayer in both modes, never a saturated accent
+    // that sticks out. Colour only: no background tint.
+    final isDark = colors.brightness == Brightness.dark;
+    final variantStyle = TextStyle(
+      color: Color.lerp(
+        effectiveColor,
+        isDark ? Colors.black : Colors.white,
+        0.35,
+      ),
+    );
+
+    return _buildHighlightedText(
+      context,
+      convertedText,
+      convertedQuery,
+      scriptStyle,
+      colors,
+      variantStyle: variantStyle,
+      annotations: lineAnnotations,
+      lookupHighlight: isLookupTarget ? lookupHighlight : null,
       textAlign: textAlign ?? _textAlign,
     );
   }
@@ -1300,14 +1304,23 @@ class ReadingParagraph extends StatelessWidget {
     List<Annotation> annotations = const [],
     ReaderLookupHighlight? lookupHighlight,
     TextAlign? textAlign,
+    TextStyle? variantStyle,
   }) {
     final spans = _parseHtml(text);
 
-    // 1) Search-term highlighting (optional).
-    List<InlineSpan> result = spans;
+    // 0) Variant styling: content between square brackets (and the bracket
+    //    characters themselves) gets a recessive text colour so readings
+    //    stand out inline. A no-op when the text has no brackets (variants
+    //    hidden).
+    List<InlineSpan> result = variantStyle != null && text.contains('[')
+        ? _applyVariantStyling(spans, variantStyle)
+        : spans;
     if (query != null && query.isNotEmpty) {
+      // Walk the VARIANT-STYLED spans (not the raw parse) so the variant
+      // colours survive an active search highlight.
+      final styled = result;
       result = <InlineSpan>[];
-      for (final span in spans) {
+      for (final span in styled) {
         if (span is TextSpan) {
           final spanText = span.text;
           if (spanText == null) {
@@ -1681,9 +1694,72 @@ class ReadingParagraph extends StatelessWidget {
     return spans;
   }
 
+  /// Re-splits [spans] so the text between `[` and `]` (and the bracket
+  /// characters themselves) carries [variantStyle] (a recessive text
+  /// colour, no background). The `inVariant` flag is threaded across the
+  /// whole span list because HTML parsing may split a bracket and its
+  /// content into separate spans.
+  List<InlineSpan> _applyVariantStyling(
+    List<InlineSpan> spans,
+    TextStyle variantStyle,
+  ) {
+    final out = <InlineSpan>[];
+    var inVariant = false;
+    for (final span in spans) {
+      if (span is! TextSpan || span.text == null) {
+        out.add(span);
+        continue;
+      }
+      final result = _styleVariantInText(
+        span.text!,
+        span.style,
+        variantStyle,
+        inVariant: inVariant,
+      );
+      out.addAll(result.$1);
+      inVariant = result.$2;
+    }
+    return out;
+  }
+
+  (List<InlineSpan>, bool) _styleVariantInText(
+    String text,
+    TextStyle? base,
+    TextStyle variantStyle, {
+    required bool inVariant,
+  }) {
+    final pieces = <InlineSpan>[];
+    var segStart = 0;
+    final variantMerged = base?.merge(variantStyle) ?? variantStyle;
+
+    void flush(int end, TextStyle? style) {
+      if (end > segStart) {
+        pieces.add(TextSpan(text: text.substring(segStart, end), style: style));
+      }
+      segStart = end;
+    }
+
+    for (var i = 0; i < text.length; i++) {
+      final ch = text[i];
+      if (ch == '[') {
+        flush(i, inVariant ? variantMerged : base);
+        pieces.add(TextSpan(text: '[', style: variantMerged));
+        inVariant = true;
+        segStart = i + 1;
+      } else if (ch == ']') {
+        flush(i, inVariant ? variantMerged : base);
+        pieces.add(TextSpan(text: ']', style: variantMerged));
+        inVariant = false;
+        segStart = i + 1;
+      }
+    }
+    flush(text.length, inVariant ? variantMerged : base);
+
+    return (pieces, inVariant);
+  }
+
   /// Parse HTML tags into [InlineSpan]s.
   /// Supports: `<b>`, `<i>`, `<u>`, `<h1-6>`, `<br>`
-  ///
   /// The produced spans carry only the markup indicator (bold/italic/…);
   /// every other style property inherits from the root [TextSpan] at paint
   /// time, so the per-HTML cache stays correct across callers with

@@ -27,7 +27,14 @@ class SearchResultItemTile extends ConsumerWidget {
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
     final script = settings.paliScript;
-    final paliText = convertPaliToScriptPreservingHtml(result.paliText, script);
+    // The FTS index keeps bracket CONTENT, so snippets must too: strip
+    // only the bracket characters from the snippet source. The converter
+    // would otherwise remove whole `[variant]` spans when the user hides
+    // variants, making matched variant words vanish from the snippet.
+    final snippetSource = result.paliText
+        .replaceAll('[', ' ')
+        .replaceAll(']', ' ');
+    final paliText = convertPaliToScriptPreservingHtml(snippetSource, script);
     // Same typography as the other search result lists and the reader.
     final paliTypo = settings.typography.pali;
     final paliStyle = paliTypo

@@ -155,10 +155,13 @@ class ReadingOptionsBody extends ConsumerWidget {
               icon: Icons.remove_red_eye_outlined,
               title: loc.stripVariantAnnotations,
               subtitle: loc.stripVariantAnnotationsSubtitle,
-              value: settings.stripVariantAnnotations,
+              // The stored setting is "strip" (true = variants HIDDEN) but
+              // the label says "Show variant readings", so the switch must
+              // display and write the inverse of the stored value.
+              value: !settings.stripVariantAnnotations,
               onChanged: (v) => ref
                   .read(settingsProvider.notifier)
-                  .setStripVariantAnnotations(v),
+                  .setStripVariantAnnotations(!v),
               colors: colors,
             ),
             _SwitchTile(

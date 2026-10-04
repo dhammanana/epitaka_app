@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/settings_provider.dart' show settingsProvider;
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/velthuis.dart';
 import '../providers/reader_provider.dart';
@@ -37,7 +38,8 @@ class InBookSearchState {
   bool get hasMatches => matchParaIds.isNotEmpty;
   int get matchCount => matchParaIds.length;
   int get currentMatchDisplay => matchIndex + 1; // 1-based
-  String? get effectiveQuery => showSearchBar && query.isNotEmpty ? query : null;
+  String? get effectiveQuery =>
+      showSearchBar && query.isNotEmpty ? query : null;
 
   InBookSearchState copyWith({
     bool? showSearchBar,
@@ -50,8 +52,12 @@ class InBookSearchState {
     return InBookSearchState(
       showSearchBar: showSearchBar ?? this.showSearchBar,
       query: query ?? this.query,
-      matchParaIds: clearMatches ? const [] : (matchParaIds ?? this.matchParaIds),
-      matchLineIds: clearMatches ? const [] : (matchLineIds ?? this.matchLineIds),
+      matchParaIds: clearMatches
+          ? const []
+          : (matchParaIds ?? this.matchParaIds),
+      matchLineIds: clearMatches
+          ? const []
+          : (matchLineIds ?? this.matchLineIds),
       matchIndex: clearMatches ? -1 : (matchIndex ?? this.matchIndex),
     );
   }
@@ -149,10 +155,7 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     _lastSearchQuery = romanQuery;
 
     if (romanQuery.trim().isEmpty) {
-      state = state.copyWith(
-        query: '',
-        clearMatches: true,
-      );
+      state = state.copyWith(query: '', clearMatches: true);
       return;
     }
 
@@ -168,9 +171,9 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         return;
       }
 
-      // Normalize query terms
+      // Normalize query terms (normalizePaliFuzzy cleans internally).
       final normalizedTerms = words
-          .map((w) => normalizePaliFuzzy(cleanPaliForIndexing(w)))
+          .map(normalizePaliFuzzy)
           .where((n) => n.isNotEmpty)
           .toList();
 
@@ -185,7 +188,12 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         return;
       }
 
-      // Search using pre-computed normalized text cache — no DB queries
+      // Search using on-demand normalized text — no DB queries. The
+      // variant toggle is read ONCE per search so every line is judged
+      // against the same setting.
+      final hideVariants = _ref.read(
+        settingsProvider.select((s) => s.stripVariantAnnotations),
+      );
       final seenKeys = <int>{};
       final matchParas = <int>[];
       final matchLines = <int>[];
@@ -200,10 +208,15 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
 
       for (final para in readerState.paragraphs) {
         for (final line in para.lines) {
-          // Compute normalized text on-demand if it wasn't pre-computed
-          // during book load (optimization: saves ~590ms on book open).
+          // Normalized text is computed on-demand (normalizedText is
+          // always empty today — pre-computation during book load was
+          // removed as an optimization).
           final normalized = line.normalizedText.isEmpty
-              ? _normalizeLine(line.paliText, line.translations)
+              ? _normalizeLine(
+                  line.paliText,
+                  line.translations,
+                  hideVariants: hideVariants,
+                )
               : line.normalizedText;
           if (normalized.isEmpty) continue;
 
@@ -241,23 +254,48 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   }
 
   /// Compute normalized (diacritic-insensitive) text for a single line
-  /// on-demand. Mirrors [ReaderDataNotifier._normalizeLineText] without
-  /// the cost of pre-computing for every line during book load.
-  String _normalizeLine(String? pali, Map<String, String> translations) {
-    final buf = StringBuffer();
+  /// on-demand (normalizedText is always empty today; pre-computation at
+  /// book load was removed as an optimization).
+  ///
+  /// In-book search follows the "Show variant readings" toggle for the
+  /// PALI text: when the user hides variants (strip == true), only the
+  /// main reading is searched; when variants are shown, their words are
+  /// searchable too. TRANSLATION brackets are translator additions
+  /// ("[monks]"), not variant readings — they are always searchable,
+  /// whatever the toggle says.
+  String _normalizeLine(
+    String? pali,
+    Map<String, String> translations, {
+    bool? hideVariants,
+  }) {
+    final bool hide = hideVariants ??
+        _ref.read(
+          settingsProvider.select((s) => s.stripVariantAnnotations),
+        );
+    final parts = <String>[];
     if (pali != null && pali.trim().isNotEmpty) {
-      buf.write(pali);
+      parts.add(
+        normalizePaliFuzzy(
+          cleanPaliForIndexing(pali, stripVariantContent: hide),
+        ),
+      );
     }
     for (final t in translations.values) {
       if (t.trim().isNotEmpty) {
-        buf.write(' ');
-        buf.write(t);
+        parts.add(normalizePaliFuzzy(cleanPaliForIndexing(t)));
       }
     }
-    final raw = buf.toString();
-    if (raw.isEmpty) return raw;
-    return normalizePaliFuzzy(cleanPaliForIndexing(raw));
+    if (parts.isEmpty) return '';
+    return parts.join(' ');
   }
+
+  /// Test seam for [_normalizeLine] (private): lets tests assert that the
+  /// variant-content mode follows the settings toggle.
+  @visibleForTesting
+  String normalizeLineForTesting(
+    String? pali,
+    Map<String, String> translations,
+  ) => _normalizeLine(pali, translations);
 }
 
 /// Provider for the in-book search state and controls.

@@ -19,7 +19,7 @@ class HtmlTextParser {
   /// ## Performance
   ///
   /// The regex/tag walk is memoized *per input HTML string*: [parse] is
-  /// called from inside widget `build()` (PaliTextWithVariants, previews,
+  /// called from inside widget `build()` (PaliText, PaliHtmlText, previews,
   /// search snippets) with the *same* html string on every rebuild but a
   /// freshly-constructed [TextStyle]. Caching the token stream (plain-text
   /// runs + their accumulated markup flags) means a rebuild only re-applies

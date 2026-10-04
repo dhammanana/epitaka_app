@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -38,7 +39,8 @@ import '../providers/reader_tts_controller.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../providers/tts_reading_provider.dart';
 import '../providers/tts_speak_unit.dart';
-import '../utils/reader_word_hit_test.dart' show ReaderWordHitResult;
+import '../utils/reader_word_hit_test.dart'
+    show ReaderWordHitResult, pickLookupWord;
 import '../widgets/bookmark_dialog.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
@@ -765,6 +767,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (word.trim().isEmpty) return;
     developer.log('[DBG] _onWordLookup word="$word"', name: 'epitaka.dict');
 
+    // Two-stage quote-run lookup: the bare tapped word keeps priority; only
+    // when it misses the dictionary entirely do we route the CST quote-run
+    // join candidate (`oghamatarin ’’’ ti` → `oghamatarinti`). Synchronous:
+    // the DB provider is awaited at startup, so the routing below still
+    // happens before any selection clearing. If the DB is not yet loaded,
+    // the bare word is routed unchanged.
+    final lookupWord = pickLookupWord(
+      word,
+      hit?.joinedWord,
+      ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(word),
+      (hit?.joinedWord == null)
+          ? null
+          : ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(hit!.joinedWord!),
+    );
+    if (lookupWord != word) {
+      developer.log('[DBG] quote-run join: "$word" → "$lookupWord"', name: 'epitaka.dict');
+    }
+
     // Update active lookup highlight for the reader view.
     final activeTab = ref.read(readerTabsProvider).activeTab;
     if (activeTab != null) {
@@ -792,7 +812,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // (clearing first broke lookups and triggered framework assertions).
     ref
         .read(readerDictionaryLookupController)
-        .openDictionary(ref, context, word);
+        .openDictionary(ref, context, lookupWord);
     // The dictionary now owns the screen. Drop the reader's cached
     // selection state too: if SelectionArea's own double-tap word selection
     // (created on this same gesture, inside the framework) survives, the
