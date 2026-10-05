@@ -1523,15 +1523,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     });
 
     // ── In-book search global shortcut listener ───────────────────
-    // The Ctrl/Cmd+F shortcut (wired at the app level) flips this provider;
-    // we react by toggling the in-book search bar. Reset it afterwards so
-    // the shortcut can fire again.
+    // The Ctrl/Cmd+F shortcut (wired at the app level) bumps
+    // [inBookSearchToggleProvider]; every bump toggles the bar once. The
+    // provider is a counter (not a reset-bool) so handling one press can
+    // never re-fire the listener and instantly close the bar again.
     ref.listen(inBookSearchToggleProvider, (prev, next) {
       if (next != prev) {
         _toggleInBookSearch();
-        if (mounted) {
-          ref.read(inBookSearchToggleProvider.notifier).state = false;
-        }
       }
     });
 

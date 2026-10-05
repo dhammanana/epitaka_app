@@ -10,6 +10,7 @@ import '../services/mdx_errors.dart';
 import '../services/mdx_index_service.dart';
 import '../services/mdx_paths.dart';
 import '../services/mdx_validate.dart';
+import '../../../core/utils/database_initializer.dart';
 
 final mdxIndexServiceProvider = Provider<MdxIndexService>((ref) {
   final svc = MdxIndexService();
@@ -45,6 +46,40 @@ class MdxDictionariesNotifier
           .map((e) => MdxDictionaryInfo.fromJson(e as Map<String, dynamic>))
           .toList();
       var changed = false;
+      // One-time sandbox migration (macOS): older builds stored the
+      // user-picked external path (e.g. /Volumes/Data/….mdx). The sandboxed
+      // Release app loses access to it after restart
+      // (PathAccessException, errno 1), so relocate it into app-private
+      // storage now while the file may still be readable. The index file is
+      // renamed alongside (same logic as the id-mismatch branch below), so
+      // no re-index is needed when the bytes are identical.
+      if (Platform.isMacOS) {
+        try {
+          final base = await getDatabaseDirectory();
+          for (var i = 0; i < list.length; i++) {
+            var d = list[i];
+            if (isInsideAppStorage(d.mdxPath, base.path)) continue;
+            try {
+              if (!await File(d.mdxPath).exists()) continue;
+              final stable = await ensurePersistentCopy(d.mdxPath);
+              if (stable == d.mdxPath) continue;
+              await copyMdxSidecars(
+                originalMdxPath: d.mdxPath,
+                stableMdxPath: stable,
+              );
+              d = d.copyWith(
+                mdxPath: stable,
+                mddPaths: discoverMddPaths(stable),
+              );
+              list[i] = d;
+              changed = true;
+            } catch (_) {
+              // Still sandboxed out (or external drive unmounted) — leave
+              // the entry alone; it surfaces the actionable error below.
+            }
+          }
+        } catch (_) {}
+      }
       for (var i = 0; i < list.length; i++) {
         var d = list[i];
         final expectedId = mdxIdForPath(d.mdxPath);
@@ -75,20 +110,35 @@ class MdxDictionariesNotifier
             changed = true;
           }
         }
-        if (!await File(d.mdxPath).exists()) {
+        bool mdxExists = false;
+        try {
+          mdxExists = await File(d.mdxPath).exists();
+        } catch (_) {
+          mdxExists = false;
+        }
+        if (!mdxExists) {
+          // Under the macOS sandbox, exists() also returns false for files
+          // outside the container once the picker grant expired — the file
+          // is usually still there, the app just can't see it anymore.
+          final missingMsg = Platform.isMacOS
+              ? 'File not reachable (moved, deleted, or macOS sandbox '
+                  'revoked access).\n${d.mdxPath}\n'
+                  'Remove it and re-add to keep a private copy.'
+              : 'File not found. It was moved or deleted.\n${d.mdxPath}';
           if (d.status != MdxStatus.error ||
               d.lastError == null ||
-              !d.lastError!.startsWith('File not found')) {
+              (!d.lastError!.startsWith('File not found') &&
+                  !d.lastError!.startsWith('File not reachable'))) {
             d = d.copyWith(
               status: MdxStatus.error,
-              lastError:
-                  'File not found. It was moved or deleted.\n${d.mdxPath}',
+              lastError: missingMsg,
             );
             changed = true;
           }
         } else if (d.status == MdxStatus.error &&
             d.lastError != null &&
-            d.lastError!.startsWith('File not found')) {
+            (d.lastError!.startsWith('File not found') ||
+                d.lastError!.startsWith('File not reachable'))) {
           final hasIndex =
               d.indexPath != null && await File(d.indexPath!).exists();
           d = d.copyWith(
@@ -274,6 +324,15 @@ class MdxDictionariesNotifier
     var stable = trimmed;
     try {
       stable = await ensurePersistentCopy(trimmed);
+      // The .mdx may now live in app-private storage while its .mdd/.css/.js
+      // siblings stayed next to the original — bring them alongside so
+      // images/audio/styling resolve. Best-effort; never blocks the import.
+      try {
+        await copyMdxSidecars(
+          originalMdxPath: trimmed,
+          stableMdxPath: stable,
+        );
+      } catch (_) {}
     } catch (e) {
       throw MdxException(
         'Could not copy file into app storage: ${describeMdxError(e)}',

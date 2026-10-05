@@ -306,7 +306,11 @@ class ReadingParagraph extends StatelessWidget {
     ColorScheme colors,
   ) {
     final level = heading.level.clamp(1, 6);
-    final fontSize = [22.0, 20.0, 18.0, 16.0, 15.0, 14.0][level - 1];
+    // Relative to the Pāli body size so headings grow/shrink with the
+    // user's Pāli font setting. Scale factors preserve the previous
+    // absolute sizes (22/20/18/16/15/14) at the default 19pt Pāli size.
+    const scale = [22 / 19, 20 / 19, 18 / 19, 16 / 19, 15 / 19, 14 / 19];
+    final fontSize = paliTypography.fontSize * scale[level - 1];
     final weight = level <= 2 ? FontWeight.w700 : FontWeight.w600;
 
     final baseStyle = TextStyle(
@@ -1032,6 +1036,11 @@ class ReadingParagraph extends StatelessWidget {
 
     // Joined mode has no per-line anchors — pass every Pāli annotation for
     // this paragraph; the resolver re-anchors each by its quote text.
+    // Joined mode keeps a roomier 1.8 base for readability, plus the
+    // user's extra line-spacing setting so it applies here too.
+    final joinedLineHeight = _paliLineHeight > 1.8
+        ? _paliLineHeight
+        : 1.8 + (lineHeight / paliFontSize);
     final paliBlock = MetaData(
       metaData: ReaderLineMetadata(
         paraId: paragraph.paraId,
@@ -1048,7 +1057,7 @@ class ReadingParagraph extends StatelessWidget {
             .where((a) => a.segment == 'pali' && a.paraId == paragraph.paraId)
             .toList(),
         textAlign: _textAlign,
-        lineHeightOverride: 1.8,
+        lineHeightOverride: joinedLineHeight,
       ),
     );
 
@@ -1218,7 +1227,12 @@ class ReadingParagraph extends StatelessWidget {
     String? wordLineText,
   }) {
     if (NissayaTextParser.isNissayaFormat(text)) {
-      return NissayaText(text: text, baseStyle: style, plainStyle: style);
+      return NissayaText(
+        text: text,
+        baseStyle: style,
+        plainStyle: style,
+        textAlign: _textAlign,
+      );
     }
 
     // WORD-HIGHLIGHT: the spoken translation line renders exactly what is
@@ -1239,6 +1253,7 @@ class ReadingParagraph extends StatelessWidget {
             wordIndex: wordIndex ?? -1,
           ),
         ),
+        textAlign: _textAlign,
       );
     }
 
@@ -1268,11 +1283,15 @@ class ReadingParagraph extends StatelessWidget {
         colors,
         annotations: lineAnnotations,
         lookupHighlight: isLookupTarget ? lookupHighlight : null,
+        textAlign: _textAlign,
       );
     }
 
     final spans = _parseHtml(text);
-    return Text.rich(TextSpan(style: style, children: spans));
+    return Text.rich(
+      TextSpan(style: style, children: spans),
+      textAlign: _textAlign,
+    );
   }
 
   /// Filter this paragraph's annotations to one (line, segment, lang) slot.

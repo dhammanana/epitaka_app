@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'package:drift/native.dart';
 import 'package:epitaka/core/database/epitaka_database.dart';
 import 'package:epitaka/core/providers/database_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
-import 'package:epitaka/features/sutta_jump/services/sutta_code_service.dart';
 import 'package:epitaka/features/sutta_jump/widgets/go_to_sutta_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,14 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Lines copied from the generated assets/sutta_codes.tsv.
-const _fixture = '''
-mn1\tM-i\t3\tMN1\tmūlapariyāyasutta\t\t
-mn10\tM-i\t280\tMN10\tmahāsatipaṭṭhānasutta\t\t
-mn100\tM-ii\t1653\tMN100\tsaṅgāravasutta\t\t
-thig2.10\tThī\t175\tTHI28\tsāmātherīgāthā\t\tTHIG2.10
-''';
-
+// headings.sc_id cells as scripts/import_sutta_codes.py writes them.
 Future<EpitakaDatabase> _seedDatabase() async {
   final db = EpitakaDatabase(NativeDatabase.memory());
   await db.customStatement(
@@ -36,11 +26,18 @@ Future<EpitakaDatabase> _seedDatabase() async {
   );
   await db.customStatement(
     "INSERT INTO books(book_id, book_name) VALUES "
-    "('M-i', 'Mūlapaṇṇāsapāḷi'), ('Vibh', 'Vibhaṅgapāḷi')",
+    "('M-i', 'Mūlapaṇṇāsapāḷi'), "
+    "('M-ii', 'Majjhimapaṇṇāsapāḷi'), "
+    "('Thī', 'Therīgāthāpāḷi'), "
+    "('A-ii', 'Dukanipātapāḷi'), "
+    "('Vibh', 'Vibhaṅgapāḷi')",
   );
-  // Real rows from epitaka.db.
   await db.customStatement(
     "INSERT INTO headings(book_id, para_id, level, title, sc_id) VALUES "
+    "('M-i', 280, 2, 'Mahāsatipaṭṭhānasuttaṃ', 'mn10'), "
+    "('M-ii', 1653, 2, 'Saṅgāravasuttaṃ', 'mn100'), "
+    "('Thī', 175, 2, 'Sāmātherīgāthā', 'thi28 =thig2.10 =thi2.10'), "
+    "('A-ii', 35, 2, 'Adhikaraṇavagga', 'an2.11-21'), "
     "('Vibh', 4, 2, '1. Khandhavibhaṅgo', 'vb1'), "
     "('Vibh', 1520, 2, '10. Bojjhaṅgavibhaṅgo', 'vb10')",
   );
@@ -62,14 +59,13 @@ void main() {
 
   Future<void> pumpHost(
     WidgetTester tester, {
-    Future<Map<String, SuttaTarget>> Function()? codes,
+    Future<EpitakaDatabase> Function()? dbOverride,
     double height = 900,
   }) async {
     container = ProviderContainer(
       overrides: [
-        epitakaDbProvider.overrideWith((ref) async => db),
-        suttaCodesProvider.overrideWith(
-          (ref) => (codes ?? () async => parseSuttaCodes(_fixture))(),
+        epitakaDbProvider.overrideWith(
+          (ref) => (dbOverride ?? () async => db)(),
         ),
         settingsProvider.overrideWith((ref) => SettingsNotifier(null)),
       ],
@@ -149,42 +145,86 @@ void main() {
     expect(container.read(readerTabsProvider).activeTab!.bookId, 'M-ii');
   });
 
-  testWidgets('a code missing from the map falls back to headings', (tester) async {
+  testWidgets('a sutta name finds the sutta when no code matches',
+      (tester) async {
+    await pumpHost(tester);
+    await typeCode(tester, 'satipatthana');
+    expect(find.textContaining('MN10 · '), findsOneWidget);
+
+    await tester.testTextInput.receiveAction(TextInputAction.go);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+
+    final tab = container.read(readerTabsProvider).activeTab!;
+    expect(tab.bookId, 'M-i');
+    expect(tab.initialParaId, 280);
+    expect(find.byType(GoToSuttaDialog), findsNothing);
+  });
+
+  testWidgets('a range member with no token opens its covering range',
+      (tester) async {
+    await pumpHost(tester);
+    await typeCode(tester, 'an2.15');
+    expect(find.text('AN2.15 (AN2.11-21) · '), findsOneWidget);
+
+    await tester.testTextInput.receiveAction(TextInputAction.go);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+
+    final tab = container.read(readerTabsProvider).activeTab!;
+    expect(tab.bookId, 'A-ii');
+    expect(tab.initialParaId, 35);
+    expect(tab.bookName, 'Dukanipātapāḷi');
+    expect(find.byType(GoToSuttaDialog), findsNothing);
+  });
+
+  testWidgets('a code missing from the map falls back to headings',
+      (tester) async {
     await pumpHost(tester);
     await typeCode(tester, 'vb1');
-    expect(find.textContaining('vb1 · '), findsOneWidget);
-    expect(find.textContaining('vb10 · '), findsOneWidget);
+    expect(find.textContaining('VB1 · '), findsOneWidget);
+    expect(find.textContaining('VB10 · '), findsOneWidget);
     await closeWithEscape(tester);
   });
 
-  testWidgets('the list shows the SuttaCentral code beside the DPD code', (tester) async {
+  testWidgets('the list shows the SuttaCentral code beside the DPD code',
+      (tester) async {
     await pumpHost(tester);
     await typeCode(tester, 'thig2.10');
     expect(find.text('THI28 = THIG2.10 · '), findsOneWidget);
     await closeWithEscape(tester);
   });
 
-  testWidgets('typed % and _ are not wildcards in the heading fallback', (tester) async {
+  testWidgets('typed % and _ match literally', (tester) async {
     await pumpHost(tester);
     await typeCode(tester, '%');
-    expect(find.text('No sutta with code %'), findsOneWidget);
+    expect(find.text('No sutta found for %'), findsOneWidget);
     await typeCode(tester, 'vb_');
-    expect(find.text('No sutta with code vb_'), findsOneWidget);
+    expect(find.text('No sutta found for vb_'), findsOneWidget);
     await closeWithEscape(tester);
   });
 
   testWidgets('a failed lookup says so instead of "No sutta"', (tester) async {
-    await pumpHost(tester, codes: () async => throw StateError('asset missing'));
+    // A database without the headings table: the lookup query fails and
+    // the dialog reports the failure instead of "No sutta found".
+    final broken = EpitakaDatabase(NativeDatabase.memory());
+    addTearDown(broken.close);
+    await pumpHost(tester, dbOverride: () async => broken);
     await typeCode(tester, 'mn10');
     expect(find.textContaining('Could not look up sutta codes'), findsOneWidget);
-    expect(find.textContaining('No sutta with code'), findsNothing);
+    expect(find.textContaining('No sutta found for'), findsNothing);
     await closeWithEscape(tester);
   });
 
   testWidgets('arrow keys keep the highlighted line on screen', (tester) async {
-    final real = parseSuttaCodes(File(suttaCodesAsset).readAsStringSync());
-    await pumpHost(tester, codes: () async => real, height: 400);
-    await typeCode(tester, 'an1');
+    for (var i = 1; i <= 25; i++) {
+      await db.customStatement(
+        "INSERT INTO headings(book_id, para_id, level, title, sc_id) VALUES "
+        "('Vibh', ${2000 + i}, 2, 'filler $i', 'zz$i')",
+      );
+    }
+    await pumpHost(tester, height: 400);
+    await typeCode(tester, 'zz');
     for (var i = 0; i < 19; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
@@ -199,7 +239,7 @@ void main() {
   testWidgets('an unknown code shows the empty state', (tester) async {
     await pumpHost(tester);
     await typeCode(tester, 'zz99');
-    expect(find.text('No sutta with code zz99'), findsOneWidget);
+    expect(find.text('No sutta found for zz99'), findsOneWidget);
     expect(container.read(readerTabsProvider).isEmpty, isTrue);
     await closeWithEscape(tester);
   });

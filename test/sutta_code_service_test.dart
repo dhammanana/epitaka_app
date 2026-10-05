@@ -1,29 +1,54 @@
-import 'dart:io';
-
+import 'package:drift/native.dart';
+import 'package:epitaka/core/database/epitaka_database.dart';
 import 'package:epitaka/features/sutta_jump/services/sutta_code_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Lines copied from the generated assets/sutta_codes.tsv.
-const _fixture = '''
-# header line
-an1\tA-i\t3\tAN1\tekakanipātapāḷi\t
-an1.1\tA-i\t3\tAN1.1\trūpādivagga\tAN1.1-10
-an1.1-10\tA-i\t3\tAN1.1-10\trūpādivagga\t
-an1.5\tA-i\t10\tAN1.5\trūpādivagga\tAN1.1-10
-an2.11-21\tA-ii\t35\tAN2.11-21\tadhikaraṇavagga\t
-an2.21\tA-ii\t58\tAN2.21\tadhikaraṇavagga\tAN2.11-21
-an10\tA-x\t3\tAN10\tdasakanipātapāḷi\t
-an10.1\tA-x\t3\tAN10.1\tkimatthiyasutta\t
-mn10\tM-i\t280\tMN10\tmahāsatipaṭṭhānasutta\t
-sn1.1\tS-i\t3\tSN1.1\toghataraṇasutta\t
-sn1.1-10\tS-i\t3\tSN1.1-10\tnaḷavagga\t
-sn1.3\tS-i\t17\tSN1.3\tupanīyasutta\t
-thi28\tThī\t175\tTHI28\tsāmātherīgāthā\t\tTHIG2.10
-thig2.10\tThī\t175\tTHI28\tsāmātherīgāthā\t\tTHIG2.10
-''';
+// Token cells as scripts/import_sutta_codes.py writes them into
+// headings.sc_id (plus one old-style single-code row).
+SuttaLookupCache _fixture() {
+  SuttaLookupRow row(
+    String bookId,
+    int paraId,
+    String title,
+    String scId,
+  ) => SuttaLookupRow(
+    bookId: bookId,
+    paraId: paraId,
+    title: title,
+    tokens: [
+      for (final part in scId.split(' '))
+        if (part.isNotEmpty) parseToken(part),
+    ],
+  );
+  return SuttaLookupCache(
+    rows: [
+      row('M-i', 280, 'Mahāsatipaṭṭhānasuttaṃ', 'mn10'),
+      row('M-ii', 1653, 'Saṅgāravasuttaṃ', 'mn100'),
+      row('Thī', 175, 'Sāmātherīgāthā', 'thi28 =thig2.10 =thi2.10'),
+      row('A-i', 3, 'Rūpādivagga', 'an1 an1.1-10 >an1.1'),
+      row('A-i', 10, 'Rūpādivagga', '>an1.5'),
+      row('A-i', 162, 'Etadaggavagga', 'an1.188-267 +an1.188'),
+      row('Vibh', 4, '1. Khandhavibhaṅgo', 'vb1'),
+      row('Vibh', 1520, '10. Bojjhaṅgavibhaṅgo', 'vb10'),
+      row('S-iv', 1570, 'Sāmaṇḍakasuttaṃ', 'sn39.1 sn39 sn39.1-2 =sn39.1-15'),
+      // Bare ranges with no member tokens of their own.
+      row('A-ii', 35, 'Adhikaraṇavagga', 'an2.11-21'),
+      row('A-iv', 100, 'Outer range', 'an4.274-783'),
+      row('A-iv', 200, 'Inner range', 'an4.277-303'),
+    ],
+    bookNames: const {
+      'M-i': 'Mūlapaṇṇāsapāḷi',
+      'M-ii': 'Majjhimapaṇṇāsapāḷi',
+      'Thī': 'Therīgāthāpāḷi',
+      'A-i': 'Ekakanipātapāḷi',
+      'Vibh': 'Vibhaṅgapāḷi',
+      'S-iv': 'Saḷāyatanavaggasaṃyuttaṃ',
+    },
+  );
+}
 
 void main() {
-  final codes = parseSuttaCodes(_fixture);
+  final cache = _fixture();
 
   group('normaliseCode', () {
     test('ignores case and spaces', () {
@@ -38,99 +63,165 @@ void main() {
     });
   });
 
-  group('lookupSuttaCodes', () {
-    test('parse skips the header', () {
-      expect(codes.length, 14);
+  group('parseToken', () {
+    test('plain, member, kept, alias and payload tokens', () {
+      expect(parseToken('mn10').key, 'mn10');
+      expect(parseToken('>an1.5').isMember, isTrue);
+      expect(parseToken('+an1.188').isKept, isTrue);
+      expect(parseToken('=thig2.10').isRangeAlias, isTrue);
+      final payload = parseToken('an5.303-1151=an5.303');
+      expect(payload.key, 'an5.303-1151');
+      expect(payload.payload, 'an5.303');
     });
+  });
 
-    test('a CRLF copy of the map parses the same (Windows checkout)', () {
-      final crlf = parseSuttaCodes(_fixture.replaceAll('\n', '\r\n'));
-      expect(crlf['mn10']!.label, 'MN10');
-      expect(crlf['thi28']!.altCode, 'THIG2.10');
-      expect(crlf.length, codes.length);
+  group('searchSuttaCodes', () {
+    test('MN 10 finds mn10', () {
+      final r = searchSuttaCodes(cache, 'MN 10');
+      expect(r.first.bookId, 'M-i');
+      expect(r.first.paraId, 280);
+      expect(r.first.label, 'MN10');
     });
 
     test('labels show the SuttaCentral code or the range', () {
-      expect(lookupSuttaCodes(codes, 'thig2.10').single.label, 'THI28 = THIG2.10');
-      expect(lookupSuttaCodes(codes, 'thi28').single.label, 'THI28 = THIG2.10');
-      expect(lookupSuttaCodes(codes, 'an1.5').single.label, 'AN1.5 (AN1.1-10)');
-      expect(lookupSuttaCodes(codes, 'mn10').first.label, 'MN10');
+      expect(
+        searchSuttaCodes(cache, 'thig2.10').single.label,
+        'THI28 = THIG2.10',
+      );
+      expect(
+        searchSuttaCodes(cache, 'thi28').single.label,
+        'THI28 = THIG2.10',
+      );
+      expect(
+        searchSuttaCodes(cache, 'an1.5').single.label,
+        'AN1.5 (AN1.1-10)',
+      );
+      expect(searchSuttaCodes(cache, 'mn10').first.label, 'MN10');
     });
 
-    test('MN 10 finds mn10', () {
-      final r = lookupSuttaCodes(codes, 'MN 10');
+    test('a kept-range member shows the range', () {
+      expect(
+        searchSuttaCodes(cache, 'an1.188').single.label,
+        'AN1.188-267',
+      );
+    });
+
+    test('a samyutta code next to an alias row keeps its own label', () {
+      final shown = searchSuttaCodes(cache, 'sn39').map((t) => t.label).toList();
+      expect(shown.first, 'SN39');
+      expect(shown, contains('SN39.1 = SN39.1-15'));
+      expect(
+        searchSuttaCodes(cache, 'sn39.1').first.label,
+        'SN39.1 = SN39.1-15',
+      );
+    });
+
+    test('an exact range member shows itself with its range', () {
+      final r = searchSuttaCodes(cache, 'an1.1');
+      expect(r.first.displayCode, 'AN1.1 (AN1.1-10)');
+      expect(r.first.paraId, 3);
+    });
+
+    test('suttas inside a range show only as the exact match', () {
+      final shown = searchSuttaCodes(cache, 'an1').map((t) => t.label);
+      expect(shown, isNot(contains('AN1.5')));
+      expect(shown.first, 'AN1');
+      expect(shown, contains('AN1.1-10'));
+    });
+
+    test('old single-code headings still resolve by prefix', () {
+      final shown = searchSuttaCodes(cache, 'vb1').map((t) => t.label);
+      expect(shown, containsAll(['VB1', 'VB10']));
+    });
+
+    test('a member with no token opens its covering range', () {
+      final r = searchSuttaCodes(cache, 'an2.15');
+      expect(r.single.label, 'AN2.15 (AN2.11-21)');
+      expect((r.single.bookId, r.single.paraId), ('A-ii', 35));
+    });
+
+    test('a stored member token beats range synthesis', () {
+      final r = searchSuttaCodes(cache, 'an1.5');
+      expect(r.single.label, 'AN1.5 (AN1.1-10)');
+      expect((r.single.bookId, r.single.paraId), ('A-i', 10));
+    });
+
+    test('nested ranges resolve to the widest covering one', () {
+      final r = searchSuttaCodes(cache, 'an4.278');
+      expect(r.single.label, 'AN4.278 (AN4.274-783)');
+      expect((r.single.bookId, r.single.paraId), ('A-iv', 100));
+    });
+
+    test('codes outside every range and dashed inputs stay empty', () {
+      expect(searchSuttaCodes(cache, 'an2.99'), isEmpty);
+      expect(searchSuttaCodes(cache, 'an2.1-5'), isEmpty);
+    });
+
+    test('unknown code and empty input give nothing', () {
+      expect(searchSuttaCodes(cache, 'zz99'), isEmpty);
+      expect(searchSuttaCodes(cache, '  '), isEmpty);
+    });
+
+    test('typed % and _ match literally, not as wildcards', () {
+      expect(searchSuttaCodes(cache, '%'), isEmpty);
+      expect(searchSuttaCodes(cache, 'vb_'), isEmpty);
+    });
+  });
+
+  group('searchSuttaNames', () {
+    test('a sutta name finds the sutta without diacritics', () {
+      final r = searchSuttaNames(cache, 'satipatthana');
+      expect(r, isNotEmpty);
       expect(r.first.bookId, 'M-i');
       expect(r.first.paraId, 280);
     });
 
-    test('exact sutta beats the vagga range', () {
-      final r = lookupSuttaCodes(codes, 'sn1.3');
-      expect(r.first.displayCode, 'SN1.3');
-      expect(r.first.paraId, 17);
+    test('a spaced name still matches', () {
+      final r = searchSuttaNames(cache, 'maha satipatthana');
+      expect(r.map((t) => t.paraId), contains(280));
     });
 
-    test('exact match comes first even when a longer code is listed first', () {
-      final reversed = parseSuttaCodes(_fixture.split('\n').reversed.join('\n'));
-      final r = lookupSuttaCodes(reversed, 'sn1.1');
-      expect(r.first.displayCode, 'SN1.1');
-      expect(r.map((t) => t.displayCode), contains('SN1.1-10'));
+    test('a book name finds that book’s headings', () {
+      final r = searchSuttaNames(cache, 'vibhanga');
+      expect(r.map((t) => t.bookId).toSet(), {'Vibh'});
     });
 
-    test('a code inside a range opens its own paragraph', () {
-      final r = lookupSuttaCodes(codes, 'an1.5');
-      expect((r.single.bookId, r.single.paraId), ('A-i', 10));
-      expect(r.single.rangeCode, 'AN1.1-10');
-      expect(r.single.title, 'rūpādivagga');
-    });
-
-    test('suttas inside a range show only as the exact match', () {
-      final shown = lookupSuttaCodes(codes, 'an1').map((t) => t.displayCode);
-      expect(shown, isNot(contains('AN1.5')));
-      expect(lookupSuttaCodes(codes, 'an2.21').first.rangeCode, 'AN2.11-21');
-    });
-
-    test('prefix list keeps natural order: an1… before an10…', () {
-      final shown = lookupSuttaCodes(codes, 'an1').map((t) => t.displayCode).toList();
-      expect(shown.first, 'AN1');
-      expect(shown.indexOf('AN1.1-10'), lessThan(shown.indexOf('AN10')));
-      expect(shown.indexOf('AN10'), lessThan(shown.indexOf('AN10.1')));
-    });
-
-    test('one line per target', () {
-      final shown = lookupSuttaCodes(codes, 'an1.').map((t) => t.displayCode).toList();
-      expect(shown, ['AN1.1-10']);
-    });
-
-    test('unknown code and empty input give nothing', () {
-      expect(lookupSuttaCodes(codes, 'zz99'), isEmpty);
-      expect(lookupSuttaCodes(codes, '  '), isEmpty);
+    test('codes do not match names and short queries give nothing', () {
+      expect(searchSuttaNames(cache, 'mn10'), isEmpty);
+      expect(searchSuttaNames(cache, 'a'), isEmpty);
+      expect(searchSuttaNames(cache, '  '), isEmpty);
     });
   });
 
-  test('the shipped asset resolves real codes, DPD before SuttaCentral', () {
-    final real = parseSuttaCodes(File(suttaCodesAsset).readAsStringSync());
-    expect(real.length, greaterThan(13000));
+  test('loadSuttaLookup reads headings and books from the database',
+      () async {
+    final db = EpitakaDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db.customStatement(
+      'CREATE TABLE books (id INTEGER PRIMARY KEY, ref_id INTEGER, vri_id TEXT, '
+      'book_id TEXT NOT NULL UNIQUE, category TEXT, nikaya TEXT, '
+      'sub_nikaya TEXT, book_name TEXT, description TEXT, mula_ref TEXT, '
+      'attha_ref TEXT, tika_ref TEXT, para_id INTEGER, chapter_len INTEGER)',
+    );
+    await db.customStatement(
+      'CREATE TABLE headings (book_id TEXT, para_id INT, level INT, '
+      'title TEXT, chapter_len INT, parent INT, sc_id TEXT)',
+    );
+    await db.customStatement(
+      "INSERT INTO books(book_id, book_name) VALUES ('M-i', 'Mūlapaṇṇāsapāḷi')",
+    );
+    await db.customStatement(
+      "INSERT INTO headings(book_id, para_id, level, title, sc_id) VALUES "
+      "('M-i', 280, 2, 'Mahāsatipaṭṭhānasuttaṃ', 'mn10'), "
+      "('M-i', 281, 10, '2', '>mn2'), "
+      "('M-i', 282, 11, 'sub-note', 'zz9')",
+    );
 
-    final mn10 = lookupSuttaCodes(real, 'mn10').first;
-    expect((mn10.bookId, mn10.paraId), ('M-i', 280));
-
-    final ja431 = lookupSuttaCodes(real, 'ja431').first;
-    expect((ja431.bookId, ja431.paraId), ('Ja-i', 5032));
-
-    final thag = lookupSuttaCodes(real, 'thag1.1').first;
-    expect((thag.bookId, thag.paraId, thag.displayCode), ('Th', 11, 'TH1'));
-
-    final an221 = lookupSuttaCodes(real, 'an2.21').first;
-    expect((an221.paraId, an221.rangeCode), (58, 'AN2.11-21'));
-
-    // THIG2.10 is SuttaCentral's code for DPD's THI28.
-    final thi28 = lookupSuttaCodes(real, 'thi28').first;
-    final thig = lookupSuttaCodes(real, 'THIG 2.10').first;
-    expect((thig.bookId, thig.paraId), (thi28.bookId, thi28.paraId));
-    expect(thi28.label, 'THI28 = THIG2.10');
-
-    // SuttaCentral calls AN3.49 'an3.48'; the DPD code must win.
-    final an348 = lookupSuttaCodes(real, 'an3.48').first;
-    expect((an348.displayCode, an348.paraId), ('AN3.48', 370));
+    final loaded = await loadSuttaLookup(db);
+    expect(loaded.rows, hasLength(2));
+    expect(loaded.rows.last.tokens.single.key, 'mn2');
+    expect(loaded.bookNames['M-i'], 'Mūlapaṇṇāsapāḷi');
+    expect(searchSuttaCodes(loaded, 'mn10').single.paraId, 280);
+    expect(searchSuttaCodes(loaded, 'mn2').single.paraId, 281);
   });
 }

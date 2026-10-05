@@ -2,7 +2,3 @@
 # core.autocrlf is on by default on the CI runners. A CRLF shebang and CRLF
 # `case` patterns both break silently under Git Bash.
 *.sh text eol=lf
-
-# The sutta-code map is read line by line with tab-separated columns; keep it
-# byte-identical to the generator's output on every platform.
-assets/sutta_codes.tsv text eol=lf

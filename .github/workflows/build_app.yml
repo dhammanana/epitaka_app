@@ -45,6 +45,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the locally-tested Flutter: an unpinned `stable` channel
+          # once shipped engine 3.47.5 on CI while local builds ran 3.44.2,
+          # which rendered differently (scroll flicker) on Intel Macs.
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -129,6 +133,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the locally-tested Flutter: an unpinned `stable` channel
+          # once shipped engine 3.47.5 on CI while local builds ran 3.44.2,
+          # which rendered differently (scroll flicker) on Intel Macs.
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -175,6 +183,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the locally-tested Flutter: an unpinned `stable` channel
+          # once shipped engine 3.47.5 on CI while local builds ran 3.44.2,
+          # which rendered differently (scroll flicker) on Intel Macs.
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -224,13 +236,14 @@ jobs:
           magick convert assets/icon.png -define icon:auto-resize=16,32,48,64,128,256 windows/runner/resources/app_icon.ico
           Get-ChildItem windows/runner/resources
 
-      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+      - name: Download core DBs (epitaka, dpd-dictionary, epitaka_en) from latest release
         shell: pwsh
         run: |
           # URLs come from the checked-out translations manifest (single source of truth)
           $manifest = Get-Content -Raw assets/translations_manifest.json | ConvertFrom-Json
           $epitakaUrl = $manifest.core.epitaka.url
           $dpdUrl = $manifest.core.dpd_dictionary.url
+          $enUrl = $manifest.languages.en.versions.default.url
 
           New-Item -ItemType Directory -Force -Path assets/db | Out-Null
 
@@ -238,15 +251,23 @@ jobs:
           curl.exe -fL -o epitaka.zip $epitakaUrl
           Write-Host "Downloading $dpdUrl"
           curl.exe -fL -o dpd.zip $dpdUrl
+          Write-Host "Downloading $enUrl"
+          curl.exe -fL -o epitaka_en.zip $enUrl
 
           Expand-Archive -Force -Path epitaka.zip -DestinationPath epitaka_x
           Expand-Archive -Force -Path dpd.zip -DestinationPath dpd_x
+          Expand-Archive -Force -Path epitaka_en.zip -DestinationPath epitaka_en_x
 
           Get-ChildItem -Path epitaka_x -Recurse -Filter *.db | Copy-Item -Destination assets/db -Force
           Get-ChildItem -Path dpd_x -Recurse -Filter *.db | Copy-Item -Destination assets/db -Force
+          Get-ChildItem -Path epitaka_en_x -Recurse -Filter *.db | Copy-Item -Destination assets/db -Force
 
-          Remove-Item epitaka.zip, dpd.zip, epitaka_x, dpd_x -Recurse -Force
+          Remove-Item epitaka.zip, dpd.zip, epitaka_en.zip, epitaka_x, dpd_x, epitaka_en_x -Recurse -Force
           Get-ChildItem assets/db
+          # Fail fast: every desktop build must bundle all three core DBs.
+          foreach ($f in 'epitaka.db','epitaka_en.db','dpd-dictionary.db') {
+            if (-not (Test-Path "assets/db/$f")) { throw "ERROR: assets/db/$f missing from bundle" }
+          }
 
       - name: Diagnose Windows paths
         shell: pwsh
@@ -405,6 +426,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the locally-tested Flutter: an unpinned `stable` channel
+          # once shipped engine 3.47.5 on CI while local builds ran 3.44.2,
+          # which rendered differently (scroll flicker) on Intel Macs.
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -420,11 +445,12 @@ jobs:
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
 
-      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+      - name: Download core DBs (epitaka, dpd-dictionary, epitaka_en) from latest release
         run: |
           # URLs come from the checked-out translations manifest (single source of truth)
           EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
           DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+          EN_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['languages']['en']['versions']['default']['url'])")
 
           mkdir -p assets/db
 
@@ -432,13 +458,21 @@ jobs:
           curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
           echo "Downloading $DPD_URL"
           curl -fL -o /tmp/dpd.zip "$DPD_URL"
+          echo "Downloading $EN_URL"
+          curl -fL -o /tmp/epitaka_en.zip "$EN_URL"
 
           unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
           unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+          unzip -o /tmp/epitaka_en.zip -d /tmp/epitaka_en_x
 
           find /tmp/epitaka_x -name '*.db' -exec cp {} assets/db/ \;
           find /tmp/dpd_x -name '*.db' -exec cp {} assets/db/ \;
+          find /tmp/epitaka_en_x -name '*.db' -exec cp {} assets/db/ \;
           ls -la assets/db/
+          # Fail fast: every desktop build must bundle all three core DBs.
+          for f in epitaka.db epitaka_en.db dpd-dictionary.db; do
+            test -s "assets/db/$f" || { echo "ERROR: assets/db/$f missing from bundle"; exit 1; }
+          done
 
       - name: Sync CocoaPods (flutter_onnxruntime 1.8.3 needs ONNX Runtime 1.23.0)
         # The committed macos/Podfile.lock still pins onnxruntime-objc 1.24.2
@@ -585,6 +619,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # Pinned to the locally-tested Flutter: an unpinned `stable` channel
+          # once shipped engine 3.47.5 on CI while local builds ran 3.44.2,
+          # which rendered differently (scroll flicker) on Intel Macs.
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -603,10 +641,11 @@ jobs:
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
 
-      - name: Download core DBs (epitaka, dpd-dictionary) from latest release
+      - name: Download core DBs (epitaka, dpd-dictionary, epitaka_en) from latest release
         run: |
           EPITAKA_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['epitaka']['url'])")
           DPD_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['core']['dpd_dictionary']['url'])")
+          EN_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['languages']['en']['versions']['default']['url'])")
 
           mkdir -p assets/db
 
@@ -614,13 +653,21 @@ jobs:
           curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"
           echo "Downloading $DPD_URL"
           curl -fL -o /tmp/dpd.zip "$DPD_URL"
+          echo "Downloading $EN_URL"
+          curl -fL -o /tmp/epitaka_en.zip "$EN_URL"
 
           unzip -o /tmp/epitaka.zip -d /tmp/epitaka_x
           unzip -o /tmp/dpd.zip -d /tmp/dpd_x
+          unzip -o /tmp/epitaka_en.zip -d /tmp/epitaka_en_x
 
           find /tmp/epitaka_x -name '*.db' -exec cp {} assets/db/ \;
           find /tmp/dpd_x -name '*.db' -exec cp {} assets/db/ \;
+          find /tmp/epitaka_en_x -name '*.db' -exec cp {} assets/db/ \;
           ls -la assets/db/
+          # Fail fast: every desktop build must bundle all three core DBs.
+          for f in epitaka.db epitaka_en.db dpd-dictionary.db; do
+            test -s "assets/db/$f" || { echo "ERROR: assets/db/$f missing from bundle"; exit 1; }
+          done
 
       - name: Build Linux Release
         # --build-name writes APP_VERSION into the bundle's version.json, which

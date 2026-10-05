@@ -1203,18 +1203,21 @@ class AppShortcuts {
 /// Helper to toggle the in-book search from a global shortcut.
 ///
 /// The reader screen owns the actual in-book search state, so we expose a
-/// lightweight notifier that the reader subscribes to. Toggling here flips a
-/// boolean the reader watches and reacts to by calling its own
-/// [_toggleInBookSearch].
-class InBookSearchNotifier extends StateNotifier<bool> {
-  InBookSearchNotifier() : super(false);
+/// lightweight notifier that the reader subscribes to. Each shortcut press
+/// bumps the counter; the reader reacts to every change by calling its own
+/// [_toggleInBookSearch]. A counter (not a bool) is deliberate: the old
+/// bool-toggle reset itself to false after handling, and that reset re-fired
+/// the listener — so a single Cmd+F opened the bar then immediately closed
+/// it again (looked like "didn't work").
+class InBookSearchNotifier extends StateNotifier<int> {
+  InBookSearchNotifier() : super(0);
 
-  void toggle() => state = !state;
+  void toggle() => state++;
 }
 
 /// Provider the reader screen watches to react to the global in-book search
-/// shortcut. The reader resets it back to false after handling.
+/// shortcut. Every increment means "toggle the bar once".
 final inBookSearchToggleProvider =
-    StateNotifierProvider<InBookSearchNotifier, bool>(
+    StateNotifierProvider<InBookSearchNotifier, int>(
       (ref) => InBookSearchNotifier(),
     );

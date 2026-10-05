@@ -1035,12 +1035,12 @@ class AppLocalizations {
   String couldNotOpen(String url) => '${_t('Could not open: ')}$url';
 
   String get goToSutta => _t('Go to sutta');
-  String get goToSuttaHint => _t('Type a sutta code, e.g. mn10');
+  String get goToSuttaHint => _t('Type a sutta code or name, e.g. mn10');
   String get suttaLookupFailed =>
       _t('Could not look up sutta codes. The error is in the log.');
 
-  /// `No sutta with code $code`
-  String noSuttaWithCode(String code) => '${_t('No sutta with code ')}$code';
+  /// `No sutta found for $query`
+  String noSuttaFound(String query) => '${_t('No sutta found for ')}$query';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  GAVESANA SCREEN

@@ -11,6 +11,10 @@ happens here so the app only does a dictionary lookup.
 
 Re-run whenever a new epitaka.db or a changed sheet is released: the map stores
 the database's para_ids.
+
+The TSV is an intermediate: scripts/import_sutta_codes.py loads it into the
+headings.sc_id token cells of the shipped epitaka.db, which is what the app's
+"Go to sutta" queries (no TSV ships with the app).
 """
 
 import argparse

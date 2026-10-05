@@ -88,12 +88,16 @@ class NissayaText extends StatelessWidget {
   /// Color for the " | " separator pipes.
   final Color? separatorColor;
 
+  /// Alignment applied to the rendered text.
+  final TextAlign? textAlign;
+
   const NissayaText({
     super.key,
     required this.text,
     this.baseStyle = const TextStyle(fontSize: 17),
     this.plainStyle = const TextStyle(fontSize: 17),
     this.separatorColor,
+    this.textAlign,
   });
 
   @override
@@ -102,7 +106,7 @@ class NissayaText extends StatelessWidget {
 
     if (pairs.isEmpty) {
       // Not nissaya format — render as plain text
-      return Text(text, style: plainStyle);
+      return Text(text, style: plainStyle, textAlign: textAlign);
     }
 
     final effectiveSepColor =
@@ -138,6 +142,9 @@ class NissayaText extends StatelessWidget {
       }
     }
 
-    return Text.rich(TextSpan(style: baseStyle, children: spans));
+    return Text.rich(
+      TextSpan(style: baseStyle, children: spans),
+      textAlign: textAlign,
+    );
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
@@ -300,6 +299,28 @@ class _ParagraphMemoEntry {
   });
 }
 
+/// Scroll physics for the reader list: clamping on desktop, platform
+/// default (bounce) on mobile.
+///
+/// `scrollable_positioned_list` keeps two internal viewports in sync; with
+/// overscroll/bounce physics on desktop trackpads they visibly desync during
+/// flings, which reads as flicker — especially on weak integrated GPUs (the
+/// Intel Macs this was reported on). Clamping removes the overscroll path
+/// entirely. Mobile keeps the native feel.
+ScrollPhysics? _readerScrollPhysics() {
+  if (kIsWeb) return null;
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.windows:
+    case TargetPlatform.macOS:
+    case TargetPlatform.linux:
+      return const ClampingScrollPhysics();
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return null;
+  }
+}
+
 class _ReaderContentListState extends State<ReaderContentList> {
   /// Render-input snapshot the memo was built against. When this changes
   /// (settings, theme colours, book), every cached paragraph is rebuilt.
@@ -528,6 +549,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
               scrollOffsetListener: widget.scrollOffsetListener,
               scrollOffsetController:
                   widget.scrollOffsetController ?? ScrollOffsetController(),
+              physics: _readerScrollPhysics(),
               // Keep-alives off: paragraphs are stateless and memoized in
               // [_memo], so retaining thousands of offscreen elements only
               // costs memory and scroll-time bookkeeping. Repaint boundaries

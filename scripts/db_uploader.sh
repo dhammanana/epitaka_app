@@ -45,10 +45,14 @@ hash_of() {
 }
 
 # ── 2. Check if there are any matching database files ───────────────────────
+# NOTE: both epitaka*.db AND dpd-*.db are release assets (the desktop builds
+# bundle epitaka.db, epitaka_en.db and dpd-dictionary.db). The dpd glob used
+# to be missing here, so dpd-dictionary.zip could only be uploaded by hand
+# and went stale.
 shopt -s nullglob
-db_files=("$DATA_DIR"/epitaka*.db)
+db_files=("$DATA_DIR"/epitaka*.db "$DATA_DIR"/dpd-*.db)
 if [ ${#db_files[@]} -eq 0 ]; then
-    echo "⚠️  No files matching 'epitaka*.db' found in $DATA_DIR."
+    echo "⚠️  No files matching 'epitaka*.db' or 'dpd-*.db' found in $DATA_DIR."
     exit 0
 fi
 

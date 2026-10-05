@@ -13,6 +13,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../indexing/index_controller.dart';
+import '../../reader/providers/reader_tabs_provider.dart';
 import 'search_history_provider.dart';
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -492,6 +493,17 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // ── Search headings ───────────────────────────────────────────
       final headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
 
+      // The currently opened book (if any) is pinned to the front of both
+      // headings and book groups, so hits in the book being read come first.
+      final activeBookId = _ref.read(readerTabsProvider).activeTab?.bookId;
+      if (activeBookId != null) {
+        headingResults.sort((a, b) {
+          final aActive = a.bookId == activeBookId ? 0 : 1;
+          final bActive = b.bookId == activeBookId ? 0 : 1;
+          return aActive.compareTo(bActive);
+        });
+      }
+
       if (combinedCounts.isEmpty && headingResults.isEmpty) {
         state = SearchResults(
           query: normalized,
@@ -505,9 +517,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
         return;
       }
 
-      // Build summaries sorted by book id
+      // Build summaries sorted by book id, with the currently opened
+      // book (if any, read above) pinned to the front so the reader sees
+      // hits in the book they are already reading before every other book.
       final sortedBookIds = combinedCounts.keys.toList()
         ..sort((a, b) {
+          if (a == activeBookId) return -1;
+          if (b == activeBookId) return 1;
           final ba = bookMap[a];
           final bb = bookMap[b];
           return (ba?.id ?? 0).compareTo(bb?.id ?? 0);
@@ -534,7 +550,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
           BookResultSummary(
             book: book,
             totalCount: combinedCounts[bookId]!,
-            isExpanded: autoExpand,
+            // The open book is always expanded so its hits are visible
+            // immediately, even when the overall result set is large.
+            isExpanded: autoExpand || bookId == activeBookId,
           ),
         );
       }
@@ -551,11 +569,16 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
       // If auto-expanded, load every book concurrently instead of one
       // book at a time — latency is the slowest book, not the sum.
+      // Otherwise still load the open book (pinned first and expanded)
+      // so its hits are visible without an extra tap.
       if (autoExpand) {
         await Future.wait([
           for (final s in summaries)
             _loadBookPages(s.book.bookId, fetchAll: true),
         ]);
+      } else if (activeBookId != null &&
+          summaries.any((s) => s.book.bookId == activeBookId)) {
+        await _loadBookPages(activeBookId, fetchAll: true);
       }
     } catch (e) {
       if (gen != _searchGen) return;
@@ -940,9 +963,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query,
       ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
-      // Sort books by id (stable, matches normal search ordering).
+      // Sort books by id (stable, matches normal search ordering), with
+      // the currently opened book pinned first.
+      final activeBookId = _ref.read(readerTabsProvider).activeTab?.bookId;
       final bookIds = grouped.keys.toList()
-        ..sort((a, b) => (bookMap[a]?.id ?? 0).compareTo(bookMap[b]?.id ?? 0));
+        ..sort((a, b) {
+          if (a == activeBookId) return -1;
+          if (b == activeBookId) return 1;
+          return (bookMap[a]?.id ?? 0).compareTo(bookMap[b]?.id ?? 0);
+        });
 
       final summaries = <BookResultSummary>[];
       for (final bookId in bookIds) {

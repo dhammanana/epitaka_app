@@ -24,11 +24,34 @@ String describeMdxError(Object e, {String? path}) {
     final code = e.osError?.errorCode;
     if (code == 28) return 'Disk full while writing index.\n${path ?? e.path}';
     if (code == 13 || code == 1) {
+      // errno 1 (EPERM, "Operation not permitted") is what the macOS App
+      // sandbox returns when the app reopens a user-picked file outside its
+      // container after the picker grant expired (restart, background
+      // isolate). errno 13 (EACCES) is the classic Unix permission denial.
+      if (Platform.isMacOS) {
+        return 'macOS blocked access to this file (sandbox, errno $code). '
+            'Remove the dictionary and re-add it so the app can keep a '
+            'private copy, or move the .mdx into the appʼs storage.\n'
+            '${path ?? e.path}';
+      }
       return 'Permission denied. Move the .mdx out of Downloads/iCloud or grant access.\n${path ?? e.path}';
     }
     return 'File error: ${e.message}\n${path ?? e.path ?? ''}'.trim();
   }
   final s = e.toString();
+  // Dart wraps sandbox denials as PathAccessException without a
+  // FileSystemException type when thrown from RandomAccessFile paths —
+  // match the text so those get the actionable hint too.
+  if (s.contains('Operation not permitted') ||
+      s.contains('PathAccessException')) {
+    if (Platform.isMacOS) {
+      return 'macOS blocked access to this file (sandbox). '
+          'Remove the dictionary and re-add it so the app can keep a '
+          'private copy.\n${path ?? ''}'.trim();
+    }
+    return 'Permission denied. Move the .mdx out of Downloads/iCloud or grant access.\n${path ?? ''}'
+        .trim();
+  }
   if (s.contains('Failed to load dynamic library')) {
     return 'SQLite native library missing (sqlite3_flutter_libs not initialized). Restart the app.';
   }

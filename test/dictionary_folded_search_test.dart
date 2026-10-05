@@ -68,4 +68,61 @@ void main() {
     db.dispose();
     await dir.delete(recursive: true);
   });
+
+  test('interrupted norm build resumes instead of restarting', () async {
+    final dir = await Directory.systemTemp.createTemp('dpd_norm_resume');
+    final path = '${dir.path}/dpd-dictionary.db';
+    final setup = sqlite3.open(path);
+    setup.execute(
+      'CREATE TABLE dpd_lookup ('
+      'lookup_key TEXT, headwords TEXT, deconstructor TEXT)',
+    );
+    setup.execute(
+      "INSERT INTO dpd_lookup VALUES ('sīla', '[1]', '[]')",
+    );
+    setup.execute(
+      "INSERT INTO dpd_lookup VALUES ('dhamma', '[2]', '[]')",
+    );
+    setup.execute(
+      "INSERT INTO dpd_lookup VALUES ('citta', '[3]', '[]')",
+    );
+    // Simulate a build interrupted after the first row: v2 rows carry their
+    // source rowid, so the opener must continue from rowid 1, not DROP.
+    setup.execute(
+      'CREATE TABLE dpd_lookup_norm_v2('
+      'src_rowid INTEGER PRIMARY KEY, norm TEXT NOT NULL, '
+      'lookup_key TEXT NOT NULL)',
+    );
+    setup.execute(
+      "INSERT INTO dpd_lookup_norm_v2 VALUES (1, 'sila', 'sīla')",
+    );
+    setup.dispose();
+
+    final db = await DpdDictionaryDatabase.open(path);
+    final deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (!db.isNormReady) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('resumed norm index was not ready in time');
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    final check = sqlite3.open(path);
+    final n =
+        check.select('SELECT COUNT(*) c FROM dpd_lookup_norm_v2').first['c']
+            as int;
+    // No duplicate of the pre-existing row: resume, not rebuild.
+    final dupes = check
+        .select(
+          'SELECT COUNT(*) c FROM dpd_lookup_norm_v2 WHERE src_rowid = 1',
+        )
+        .first['c'] as int;
+    check.dispose();
+    expect(n, 3);
+    expect(dupes, 1);
+    expect(db.searchLookup('dham').map((r) => r.lookupKey), contains('dhamma'));
+
+    db.dispose();
+    await dir.delete(recursive: true);
+  });
 }

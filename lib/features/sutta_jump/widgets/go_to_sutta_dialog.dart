@@ -92,10 +92,26 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
   String _resultsFor = '';
   bool _failed = false;
   int _highlight = 0;
-  // Each keystroke starts a lookup; only the newest may write the list.
+  // The headings lookup loads once on first input; keystrokes after that
+  // filter the cached rows synchronously. Only the newest load may write
+  // the list.
+  Future<SuttaLookupCache>? _lookupFuture;
   int _query = 0;
   // A second Enter during the closing animation would pop the page below.
   bool _closing = false;
+
+  Future<SuttaLookupCache> _lookup() async {
+    final cached = _lookupFuture;
+    if (cached != null) return cached;
+    final loading = _loadLookup();
+    _lookupFuture = loading;
+    return loading;
+  }
+
+  Future<SuttaLookupCache> _loadLookup() async {
+    final db = await ref.read(epitakaDbProvider.future);
+    return loadSuttaLookup(db);
+  }
 
   @override
   void dispose() {
@@ -109,11 +125,11 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     var results = const <SuttaTarget>[];
     var failed = false;
     try {
-      final codes = await ref.read(suttaCodesProvider.future);
-      results = lookupSuttaCodes(codes, text);
-      if (results.isEmpty && normaliseCode(text).isNotEmpty) {
-        final db = await ref.read(epitakaDbProvider.future);
-        results = await headingFallback(db, text);
+      final cache = await _lookup();
+      // Codes first (`mn10`); sutta and book names when no code matches.
+      results = searchSuttaCodes(cache, text);
+      if (results.isEmpty && text.trim().isNotEmpty) {
+        results = searchSuttaNames(cache, text);
       }
     } catch (e) {
       developer.log(
@@ -207,13 +223,13 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 ),
               ),
             )
-          else if (normaliseCode(text).isNotEmpty &&
+          else if (text.trim().isNotEmpty &&
               _results.isEmpty &&
               _resultsFor == text)
             Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
-                l10n.noSuttaWithCode(text.trim()),
+                l10n.noSuttaFound(text.trim()),
                 style: theme.textTheme.bodyMedium,
               ),
             ),

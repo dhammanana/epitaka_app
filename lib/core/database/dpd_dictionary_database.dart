@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
 
@@ -91,8 +92,14 @@ class DpdDictionaryDatabase {
 
   DpdDictionaryDatabase(this._db, [this._dbPath]);
 
-  static const int _normTableVersion = 1;
+  static const int _normTableVersion = 2;
   static String get _normTable => 'dpd_lookup_norm_v$_normTableVersion';
+
+  /// Previous-generation norm table written by older builds. It has no
+  /// source-rowid column, so an interrupted build could never resume and
+  /// restarted from zero on every launch. Dropped once the v2 table is
+  /// ready (reclaims ~300MB on databases built by older app versions).
+  static const String _normTableV1 = 'dpd_lookup_norm_v1';
   static const int _normChunkRows = 100000;
   static const int _normPageRows = 5000;
 
@@ -172,73 +179,180 @@ class DpdDictionaryDatabase {
     _normEnsureStarted = true;
     final dbPath = _dbPath;
     if (dbPath == null) return;
-    _ensureIndexesAndNormAsync(dbPath).catchError((_) {
+    _ensureIndexesAndNormAsync(dbPath).catchError((Object e, StackTrace st) {
+      // Logged, not rethrown: a failed background build must never crash
+      // startup. Exact lookups keep working; folded search stays off until
+      // the next launch retries the ensure step.
+      developer.log(
+        '[DPD_NORM] background ensure failed: $e',
+        name: 'epitaka.dict',
+        error: e,
+        stackTrace: st,
+      );
       _reportNormProgress(1.0);
     });
   }
 
   Future<void> _ensureIndexesAndNormAsync(String dbPath) async {
-    final counts = await Isolate.run(() => _normCountEntry(dbPath));
-    final lookupCount = counts[0];
-    var normCount = counts[1];
-    if (lookupCount <= 0) return;
-    if (normCount != lookupCount) {
-      await Isolate.run(() => _normRebuildPrepareEntry(dbPath));
-      var afterRowId = 0;
-      var built = 0;
-      while (true) {
-        final chunk = await Isolate.run(
-          () => _normChunkEntry([dbPath, afterRowId]),
-        );
-        built += chunk[1];
-        afterRowId = chunk[0];
-        _reportNormProgress((built / lookupCount).clamp(0.0, 0.99));
-        if (chunk[2] == 1) break;
-      }
-      final verify = await Isolate.run(() => _normCountEntry(dbPath));
-      normCount = verify[1];
-      if (normCount != verify[0] || normCount <= 0) {
-        _reportNormProgress(0.0);
-        _normBuildProgress = null;
-        return;
-      }
+    final ok = await ensureNormTable(dbPath, onProgress: _reportNormProgress);
+    if (!ok) {
+      _normBuildProgress = null;
+      return;
     }
-    await Isolate.run(() => _normIndexEntry(dbPath));
     _prefixCache.clear();
     _isNormReady = true;
     _reportNormProgress(1.0);
   }
 
-  static List<int> _normCountEntry(String dbPath) {
+  /// Build (or resume) the folded-search norm table for [dbPath].
+  ///
+  /// Shared by the app's background ensure step and by
+  /// `dart run tool/build_dpd_norm.dart`, which pre-builds the table BEFORE
+  /// a release zip is uploaded so user devices never pay the multi-minute
+  /// first-launch build. Returns true when the table is complete.
+  static Future<bool> ensureNormTable(
+    String dbPath, {
+    void Function(double progress)? onProgress,
+  }) async {
+    // NOTE: every Isolate.run closure lives in one of the _norm* helpers
+    // below, whose scopes never see [onProgress]. This is load-bearing: a
+    // bound-method callback captures `this` (and its native sqlite handle),
+    // and Dart closures in one function body share a single context object —
+    // so an Isolate.run closure created next to any reference of onProgress
+    // drags the whole database into the isolate message and spawn fails with
+    // "Illegal argument in isolate message". Never inline these awaits.
+    void report(double p) {
+      try {
+        onProgress?.call(p);
+      } catch (_) {}
+    }
+
+    final prep = await _normPrepare(dbPath);
+    final lookupCount = prep[1];
+    final normCount = prep[2];
+    if (lookupCount <= 0) return false;
+    if (normCount != lookupCount) {
+      // Resume from the last completed source rowid instead of rebuilding
+      // from zero: quitting mid-build used to discard all progress, so slow
+      // devices rebuilt forever and the dictionary stalled on every launch.
+      var afterRowId = prep[0];
+      var built = 0;
+      while (true) {
+        final chunk = await _normChunk(dbPath, afterRowId);
+        built += chunk[1];
+        afterRowId = chunk[0];
+        report(((normCount + built) / lookupCount).clamp(0.0, 0.99));
+        if (chunk[2] == 1) break;
+      }
+      final verify = await _normVerify(dbPath);
+      if (verify[0] <= 0 || verify[1] != 0) {
+        report(0.0);
+        return false;
+      }
+    }
+    await _normFinishIndex(dbPath);
+    report(1.0);
+    return true;
+  }
+
+  // Isolate-spawning helpers: each creates its closures in a scope that only
+  // captures sendable arguments (see the NOTE on [ensureNormTable]).
+  static Future<List<int>> _normPrepare(String dbPath) =>
+      Isolate.run(() => _normPrepareEntry(dbPath));
+
+  static Future<List<int>> _normChunk(String dbPath, int afterRowId) =>
+      Isolate.run(() => _normChunkEntry([dbPath, afterRowId]));
+
+  static Future<List<int>> _normVerify(String dbPath) =>
+      Isolate.run(() => _normVerifyEntry(dbPath));
+
+  static Future<void> _normFinishIndex(String dbPath) =>
+      Isolate.run(() => _normIndexEntry(dbPath));
+
+  /// Decide whether the norm table needs work and where to resume.
+  /// Returns `[afterRowId, lookupCount, normCount]`.
+  static List<int> _normPrepareEntry(String dbPath) {
     final db = sqlite3.open(dbPath);
     try {
+      db.execute('PRAGMA journal_mode=WAL');
       db.execute('PRAGMA busy_timeout=10000');
+      db.execute('PRAGMA synchronous=NORMAL');
       int lookupCount = 0;
-      int normCount = 0;
       try {
         lookupCount =
             db.select('SELECT COUNT(*) c FROM dpd_lookup').first['c'] as int;
       } catch (_) {}
+      if (lookupCount <= 0) return [0, 0, 0];
+      // v2 carries the source rowid as its primary key: an interrupted
+      // build resumes from MAX(src_rowid) instead of starting over.
+      db.execute(
+        'CREATE TABLE IF NOT EXISTS $_normTable('
+        'src_rowid INTEGER PRIMARY KEY, norm TEXT NOT NULL, '
+        'lookup_key TEXT NOT NULL)',
+      );
+      int normCount = 0;
+      int normMax = 0;
       try {
         normCount =
             db.select('SELECT COUNT(*) c FROM $_normTable').first['c'] as int;
+        normMax =
+            (db.select('SELECT MAX(src_rowid) m FROM $_normTable').first['m']
+                    as int?) ??
+                0;
       } catch (_) {}
-      return [lookupCount, normCount];
+      int lookupMax = 0;
+      try {
+        lookupMax =
+            (db.select('SELECT MAX(rowid) m FROM dpd_lookup').first['m']
+                    as int?) ??
+                0;
+      } catch (_) {}
+      // The underlying dictionary was replaced with a smaller/different one
+      // (norm rows point past the end of dpd_lookup): only a full rebuild
+      // is correct.
+      if (normMax > lookupMax || normCount > lookupCount) {
+        db.execute('DROP TABLE IF EXISTS $_normTable');
+        db.execute(
+          'CREATE TABLE $_normTable('
+          'src_rowid INTEGER PRIMARY KEY, norm TEXT NOT NULL, '
+          'lookup_key TEXT NOT NULL)',
+        );
+        return [0, lookupCount, 0];
+      }
+      return [normMax, lookupCount, normCount];
     } finally {
       db.dispose();
     }
   }
 
-  static void _normRebuildPrepareEntry(String dbPath) {
+  /// Verify every dpd_lookup row has a norm row (rowid-exact, so rowid gaps
+  /// from regenerated dictionaries don't fail the check), drop orphan norm
+  /// rows left by a replaced dictionary, and return
+  /// `[lookupCount, missingCount]`.
+  static List<int> _normVerifyEntry(String dbPath) {
     final db = sqlite3.open(dbPath);
     try {
-      db.execute('PRAGMA journal_mode=WAL');
       db.execute('PRAGMA busy_timeout=10000');
-      db.execute('DROP TABLE IF EXISTS $_normTable');
-      db.execute(
-        'CREATE TABLE $_normTable('
-        'norm TEXT NOT NULL, lookup_key TEXT NOT NULL)',
-      );
+      int lookupCount = 0;
+      int missing = 0;
+      try {
+        lookupCount =
+            db.select('SELECT COUNT(*) c FROM dpd_lookup').first['c'] as int;
+        final row = db
+            .select(
+              'SELECT COUNT(*) c FROM dpd_lookup l WHERE NOT EXISTS '
+              '(SELECT 1 FROM $_normTable n WHERE n.src_rowid = l.rowid)',
+            )
+            .first;
+        missing = row['c'] as int;
+        if (missing == 0) {
+          db.execute(
+            'DELETE FROM $_normTable WHERE NOT EXISTS '
+            '(SELECT 1 FROM dpd_lookup l WHERE l.rowid = src_rowid)',
+          );
+        }
+      } catch (_) {}
+      return [lookupCount, missing];
     } finally {
       db.dispose();
     }
@@ -249,6 +363,7 @@ class DpdDictionaryDatabase {
     try {
       db.execute('PRAGMA journal_mode=WAL');
       db.execute('PRAGMA busy_timeout=10000');
+      db.execute('PRAGMA synchronous=NORMAL');
       var lastRowid = args[1] as int;
       var inserted = 0;
       var done = false;
@@ -266,15 +381,19 @@ class DpdDictionaryDatabase {
           }
           for (var i = 0; i < rows.length; i += 500) {
             final page = rows.skip(i).take(500).toList();
-            final placeholders = page.map((_) => '(?, ?)').join(', ');
+            final placeholders = page.map((_) => '(?, ?, ?)').join(', ');
             final values = <Object?>[];
             for (final row in page) {
               final key = row['lookup_key'] as String;
+              values.add(row['rowid'] as int);
               values.add(foldPaliDiacritics(key));
               values.add(key);
             }
+            // OR IGNORE: a resumed build re-scans from MAX(src_rowid), so a
+            // chunk boundary can never double-insert — this is belt-and-braces.
             db.execute(
-              'INSERT INTO $_normTable(norm, lookup_key) VALUES $placeholders',
+              'INSERT OR IGNORE INTO $_normTable(src_rowid, norm, lookup_key) '
+              'VALUES $placeholders',
               values,
             );
           }
@@ -299,6 +418,7 @@ class DpdDictionaryDatabase {
     try {
       db.execute('PRAGMA journal_mode=WAL');
       db.execute('PRAGMA busy_timeout=10000');
+      db.execute('PRAGMA synchronous=NORMAL');
       db.execute(
         'CREATE INDEX IF NOT EXISTS idx_dpd_lookup_lookup_key '
         'ON dpd_lookup(lookup_key)',
@@ -306,6 +426,12 @@ class DpdDictionaryDatabase {
       db.execute(
         'CREATE INDEX IF NOT EXISTS ${_normTable}_idx ON $_normTable(norm)',
       );
+      // Superseded v1 table (no src_rowid, never resumable): drop once v2 is
+      // indexed so upgraded installs reclaim the ~300MB instead of carrying
+      // a dead table forever.
+      if (_normTable != _normTableV1) {
+        db.execute('DROP TABLE IF EXISTS $_normTableV1');
+      }
     } finally {
       db.dispose();
     }
@@ -366,17 +492,22 @@ class DpdDictionaryDatabase {
     }
 
     final upper = _prefixUpperBound(normalized);
+    // `lookup_key <> ''` excludes the junk empty/whitespace-only rows the
+    // release DPD database ships (verified: "", leading-space keys); the
+    // range predicate already skips them for letter prefixes, this keeps the
+    // no-upper-bound tail query honest too.
     final results = upper == null
         ? _db.select(
             'SELECT lookup_key, headwords FROM dpd_lookup '
-            'WHERE lookup_key >= ? ORDER BY lookup_key LIMIT ?',
-            [normalized, limit],
+            'WHERE lookup_key >= ? AND lookup_key <> ? '
+            'ORDER BY lookup_key LIMIT ?',
+            [normalized, '', limit],
           )
         : _db.select(
             'SELECT lookup_key, headwords FROM dpd_lookup '
-            'WHERE lookup_key >= ? AND lookup_key < ? '
+            'WHERE lookup_key >= ? AND lookup_key < ? AND lookup_key <> ? '
             'ORDER BY lookup_key LIMIT ?',
-            [normalized, upper, limit],
+            [normalized, upper, '', limit],
           );
     final rows = results
         .map(
@@ -401,16 +532,17 @@ class DpdDictionaryDatabase {
               'SELECT n.lookup_key AS lookup_key, l.headwords AS headwords '
               'FROM $_normTable n '
               'JOIN dpd_lookup l ON l.lookup_key = n.lookup_key '
-              'WHERE n.norm >= ? ORDER BY n.norm, n.lookup_key LIMIT ?',
-              [folded, limit],
+              'WHERE n.norm >= ? AND n.norm <> ? '
+              'ORDER BY n.norm, n.lookup_key LIMIT ?',
+              [folded, '', limit],
             )
           : _db.select(
               'SELECT n.lookup_key AS lookup_key, l.headwords AS headwords '
               'FROM $_normTable n '
               'JOIN dpd_lookup l ON l.lookup_key = n.lookup_key '
-              'WHERE n.norm >= ? AND n.norm < ? '
+              'WHERE n.norm >= ? AND n.norm < ? AND n.norm <> ? '
               'ORDER BY n.norm, n.lookup_key LIMIT ?',
-              [folded, upper, limit],
+              [folded, upper, '', limit],
             );
       return results
           .map(
