@@ -66,7 +66,7 @@ class ReaderTabsState {
 
 /// StateNotifier that manages a list of open reader tabs.
 class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
-  ReaderTabsNotifier() : super(const ReaderTabsState(tabs: []));
+  ReaderTabsNotifier([super.state = const ReaderTabsState(tabs: [])]);
 
   /// Incremented for every explicit jump request so the reader can tell a
   /// NEW request (even for the same paragraph) from a stale rebuild.
