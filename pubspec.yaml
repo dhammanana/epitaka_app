@@ -117,6 +117,7 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   audioplayers: ^6.8.1
   mime: ^2.1.0
+  window_manager: ^0.5.2
 
 flutter:
   uses-material-design: true

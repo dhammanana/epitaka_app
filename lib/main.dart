@@ -7,11 +7,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
 import 'core/services/app_analytics.dart';
 import 'core/utils/app_initializer.dart';
+import 'core/utils/platform_info.dart';
 import 'core/utils/startup_timing.dart';
+import 'features/desktop/window_state.dart';
+import 'features/reader/providers/reader_tabs_persistence.dart';
+import 'features/reader/providers/reader_tabs_provider.dart';
 
 /// Maximum number of identical errors to report in a 2-second window.
 /// Prevents the console from being flooded with thousands of repeated
@@ -76,6 +82,8 @@ Future<void> main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
+  if (PlatformInfo.isDesktop) await _restoreDesktopWindow();
+
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
     AppAnalytics.instance.recordError(error, stack, fatal: true);
     return true;
@@ -91,11 +99,15 @@ Future<void> main() async {
   // Run critical initializations before first frame
   await AppInitializer.instance.initCritical();
 
+  final overrides = PlatformInfo.isDesktop
+      ? await _restoredTabOverrides()
+      : const <Override>[];
+
   // Paint the first frame immediately. Everything below is non-critical for
   // the first paint and runs in the background: the FTS gate shows a loading
   // spinner until the DB copies + check finish, and cloud/analytics features
   // degrade gracefully until their init completes.
-  runApp(const ProviderScope(child: EpitakaApp()));
+  runApp(ProviderScope(overrides: overrides, child: const EpitakaApp()));
   WidgetsBinding.instance.addPostFrameCallback(
     (_) => StartupTiming.mark('first frame painted'),
   );
@@ -112,6 +124,42 @@ Future<void> main() async {
   if (kDebugMode && Platform.isMacOS) {
     _nudgeMacDebugRepaints();
   }
+}
+
+/// Reopens the window maximized, full screen or at its last size, then
+/// watches it so the next launch can do the same. On Linux the window only
+/// appears after the first frame, so a hang here would mean no window at
+/// all: the time limit lets the app start with the default window instead.
+Future<void> _restoreDesktopWindow() async {
+  final prefs = await SharedPreferences.getInstance();
+  try {
+    await restoreWindowState(prefs).timeout(const Duration(seconds: 2));
+  } catch (e) {
+    developer.log('Window restore failed, using the default window: $e',
+        name: 'epitaka.window');
+  }
+  windowManager.addListener(WindowStateSaver(prefs));
+  StartupTiming.mark('window state restored');
+}
+
+/// The tab list starts with the tabs saved at last quit, so the reader opens
+/// the active one at its saved place on the first frame. Done here rather
+/// than in the provider so tests, which never run [main], never load or save.
+Future<List<Override>> _restoredTabOverrides() async {
+  final prefs = await SharedPreferences.getInstance();
+  final savedTabs = loadSavedReaderTabs(prefs);
+  return [
+    readerTabsProvider.overrideWith((ref) {
+      final notifier = ReaderTabsNotifier(
+        savedTabs ?? const ReaderTabsState(tabs: []),
+      );
+      notifier.addListener(
+        (state) => saveReaderTabs(prefs, state),
+        fireImmediately: false,
+      );
+      return notifier;
+    }),
+  ];
 }
 
 /// Background init deferred past the first frame so startup paints fast.
