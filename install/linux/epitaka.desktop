@@ -7,4 +7,4 @@ Exec=epitaka
 Icon=epitaka
 Terminal=false
 Categories=Education;Office;Utility;
-StartupWMClass=epitaka
+StartupWMClass=com.dn.epitaka
