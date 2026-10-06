@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/toolbar_item.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/platform_info.dart';
 import '../../../shared/utils/app_shortcuts.dart';
 import '../../settings/providers/tts_provider.dart';
 
@@ -216,7 +217,8 @@ class ReaderBottomToolbar extends StatelessWidget {
           );
         case ToolbarBuiltins.listen:
           add(
-            (onListenTap != null || onStopTap != null)
+            PlatformInfo.isTtsSupported &&
+                    (onListenTap != null || onStopTap != null)
                 ? ToolbarButton(
                     icon: isPlaying
                         ? Icons.stop

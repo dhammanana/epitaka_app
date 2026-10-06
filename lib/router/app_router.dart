@@ -159,18 +159,19 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             name: 'translationSettings',
             builder: (context, state) => const TranslationSettingsScreen(),
           ),
-          GoRoute(
-            path: 'tts',
-            name: 'ttsSettings',
-            builder: (context, state) => const TtsSettingsScreen(),
-            routes: [
-              GoRoute(
-                path: 'replacements',
-                name: 'ttsReplacements',
-                builder: (context, state) => const TtsReplacementsScreen(),
-              ),
-            ],
-          ),
+          if (PlatformInfo.isTtsSupported)
+            GoRoute(
+              path: 'tts',
+              name: 'ttsSettings',
+              builder: (context, state) => const TtsSettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'replacements',
+                  name: 'ttsReplacements',
+                  builder: (context, state) => const TtsReplacementsScreen(),
+                ),
+              ],
+            ),
           GoRoute(
             path: 'context-menu',
             name: 'contextMenuSettings',

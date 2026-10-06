@@ -51,6 +51,7 @@ class _ContextMenuSettingsBodyState
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final visible = _actions.where((a) => a.isAvailableHere).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -106,7 +107,7 @@ class _ContextMenuSettingsBodyState
           ],
         ),
         const SizedBox(height: AppDimensions.md),
-        if (_actions.isEmpty)
+        if (visible.isEmpty)
           Padding(
             padding: const EdgeInsets.all(AppDimensions.xl),
             child: Center(
@@ -124,18 +125,22 @@ class _ContextMenuSettingsBodyState
             buildDefaultDragHandles: false,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: _actions.length,
+            itemCount: visible.length,
             onReorder: (oldIndex, newIndex) {
-              final actions = List<ContextMenuAction>.from(_actions);
+              final actions = List<ContextMenuAction>.from(visible);
               if (newIndex > oldIndex) newIndex--;
               final item = actions.removeAt(oldIndex);
               actions.insert(newIndex, item);
+              // Hidden actions stay stored, each in its old slot.
+              for (var i = 0; i < _actions.length; i++) {
+                if (!_actions[i].isAvailableHere) actions.insert(i, _actions[i]);
+              }
               ref
                   .read(settingsProvider.notifier)
                   .setContextMenuActions(actions);
             },
             itemBuilder: (context, index) {
-              final action = _actions[index];
+              final action = visible[index];
               return _ActionRow(
                 key: ValueKey(action.id),
                 index: index,

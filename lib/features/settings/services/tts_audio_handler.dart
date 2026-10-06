@@ -3,6 +3,8 @@ import 'dart:developer' as developer;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/utils/platform_info.dart';
+
 /// Global singleton that bridges Android MediaSession notification/lock-screen
 /// controls with the app's TTS system.
 ///
@@ -75,6 +77,7 @@ Future<bool>? _audioServiceInitFuture;
 /// they become no-ops once an attempt has succeeded. Concurrent callers
 /// share one in-flight init instead of racing a second one.
 Future<bool> initAudioServiceOnce() {
+  if (!PlatformInfo.isTtsSupported) return Future.value(false);
   if (_audioServiceInitialized) return Future.value(true);
   return _audioServiceInitFuture ??= _doInitAudioService();
 }

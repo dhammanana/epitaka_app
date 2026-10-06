@@ -9,6 +9,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../../../core/utils/platform_info.dart';
 import '../../../router/app_router.dart' show AppRoutes;
 import '../../search/providers/search_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
@@ -107,18 +108,20 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: loc.readingOptionsSubtitle,
                 onTap: () => context.push('/settings/reading'),
               ),
-              _SettingsTile(
-                icon: Icons.record_voice_over,
-                title: loc.textToSpeech,
-                subtitle: loc.ttsSubtitle,
-                onTap: () => context.push('/settings/tts'),
-              ),
-              _SettingsTile(
-                icon: Icons.find_replace,
-                title: loc.ttsReplacements,
-                subtitle: loc.ttsReplacementsSubtitle,
-                onTap: () => context.push('/settings/tts/replacements'),
-              ),
+              if (PlatformInfo.isTtsSupported) ...[
+                _SettingsTile(
+                  icon: Icons.record_voice_over,
+                  title: loc.textToSpeech,
+                  subtitle: loc.ttsSubtitle,
+                  onTap: () => context.push('/settings/tts'),
+                ),
+                _SettingsTile(
+                  icon: Icons.find_replace,
+                  title: loc.ttsReplacements,
+                  subtitle: loc.ttsReplacementsSubtitle,
+                  onTap: () => context.push('/settings/tts/replacements'),
+                ),
+              ],
               _SettingsTile(
                 icon: Icons.touch_app,
                 title: loc.contextMenu,

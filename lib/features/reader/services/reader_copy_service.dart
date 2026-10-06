@@ -122,7 +122,9 @@ class ReaderCopyService {
     // Render the user's configured, enabled actions in their chosen order.
     // Never show an empty toolbar — fall back to Copy alone when every
     // action has been disabled.
-    var actions = settings.contextMenuActions.where((a) => a.enabled).toList();
+    var actions = settings.contextMenuActions
+        .where((a) => a.enabled && a.isAvailableHere)
+        .toList();
     if (actions.isEmpty) {
       actions = defaultContextMenuActions()
           .where((a) => a.builtinId == ContextMenuBuiltins.copy)
