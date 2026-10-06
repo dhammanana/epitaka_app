@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
+import '../../core/utils/platform_info.dart';
 import '../../features/ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/reader/providers/tts_reading_provider.dart';
@@ -48,7 +49,9 @@ class DesktopStatusBar extends ConsumerWidget {
     // while it is, the status bar hosts the transport controls (the
     // floating chip is hidden inside the desktop shell).
     final showTtsTransport =
-        isCurrentBookTts && (ttsReading.isActive || ttsReading.isPaused);
+        PlatformInfo.isTtsSupported &&
+        isCurrentBookTts &&
+        (ttsReading.isActive || ttsReading.isPaused);
 
     return Material(
       color: colors.surfaceContainerLowest,

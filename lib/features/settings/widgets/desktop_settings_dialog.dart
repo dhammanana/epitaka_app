@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/platform_info.dart';
 import '../screens/appearance_settings_screen.dart';
 import '../screens/context_menu_settings_screen.dart';
 import '../screens/dictionary_settings_screen.dart';
@@ -56,16 +57,18 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
       title: loc.readingOptions,
       body: const ReadingOptionsBody(),
     ),
-    _SettingsCategory(
-      icon: Icons.record_voice_over_outlined,
-      title: loc.textToSpeech,
-      body: const TtsSettingsBody(),
-    ),
-    _SettingsCategory(
-      icon: Icons.find_replace_outlined,
-      title: loc.ttsReplacements,
-      body: const TtsReplacementsBody(),
-    ),
+    if (PlatformInfo.isTtsSupported) ...[
+      _SettingsCategory(
+        icon: Icons.record_voice_over_outlined,
+        title: loc.textToSpeech,
+        body: const TtsSettingsBody(),
+      ),
+      _SettingsCategory(
+        icon: Icons.find_replace_outlined,
+        title: loc.ttsReplacements,
+        body: const TtsReplacementsBody(),
+      ),
+    ],
     _SettingsCategory(
       icon: Icons.touch_app_outlined,
       title: loc.contextMenu,

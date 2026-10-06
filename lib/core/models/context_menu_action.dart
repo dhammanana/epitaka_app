@@ -12,6 +12,8 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../utils/platform_info.dart';
+
 /// What kind of action a context-menu entry performs.
 enum ContextMenuActionKind {
   /// One of the app's built-in actions (copy, excerpt, …). See [builtinId].
@@ -118,6 +120,13 @@ class ContextMenuAction {
   /// A human-readable label for settings UIs (not necessarily the label
   /// shown in the context menu itself, which may be localized).
   String get label => appLabel ?? promptName ?? builtinId ?? id;
+
+  /// False for an action this platform cannot run. Such an action stays in
+  /// the saved list but is neither shown in the menu nor in its settings.
+  bool get isAvailableHere =>
+      (builtinId != ContextMenuBuiltins.speakFromHere &&
+          builtinId != ContextMenuBuiltins.speak) ||
+      PlatformInfo.isTtsSupported;
 
   Map<String, dynamic> toJson() => {
     'id': id,

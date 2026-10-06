@@ -6,6 +6,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/platform_info.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -70,15 +71,17 @@ class _HistoryTabsSectionState extends ConsumerState<HistoryTabsSection> {
         ),
         const SizedBox(height: 10),
         // ── Reading / Listening sub-tab bar ─────────────────────────
-        _HistoryTabBar(
-          selectedIndex: _selectedTab,
-          colors: colors,
-          compact: widget.compact,
-          onChanged: (i) => setState(() => _selectedTab = i),
-        ),
-        const SizedBox(height: 10),
+        if (PlatformInfo.isTtsSupported) ...[
+          _HistoryTabBar(
+            selectedIndex: _selectedTab,
+            colors: colors,
+            compact: widget.compact,
+            onChanged: (i) => setState(() => _selectedTab = i),
+          ),
+          const SizedBox(height: 10),
+        ],
         // ── List ───────────────────────────────────────────────────
-        if (_selectedTab == 0)
+        if (_selectedTab == 0 || !PlatformInfo.isTtsSupported)
           _ReadingHistoryList(
             colors: colors,
             compact: widget.compact,
