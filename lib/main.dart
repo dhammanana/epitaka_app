@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -15,6 +16,7 @@ import 'core/services/app_analytics.dart';
 import 'core/utils/app_initializer.dart';
 import 'core/utils/platform_info.dart';
 import 'core/utils/startup_timing.dart';
+import 'features/desktop/single_instance.dart';
 import 'features/desktop/window_state.dart';
 import 'features/reader/providers/reader_tabs_persistence.dart';
 import 'features/reader/providers/reader_tabs_provider.dart';
@@ -82,6 +84,10 @@ Future<void> main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Before the window is restored, so a second copy quits with no window and
+  // without writing the saved window or tab state.
+  if (PlatformInfo.isDesktop && !await _isFirstCopy()) exit(0);
+
   if (PlatformInfo.isDesktop) await _restoreDesktopWindow();
 
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
@@ -123,6 +129,31 @@ Future<void> main() async {
   // a const false there, so this whole block is compiled out.
   if (kDebugMode && Platform.isMacOS) {
     _nudgeMacDebugRepaints();
+  }
+}
+
+/// A failed check lets the app start: a second window is better than none.
+Future<bool> _isFirstCopy() async {
+  try {
+    return await claimSingleInstance(
+      await getApplicationSupportDirectory(),
+      onAnotherLaunch: _bringWindowForward,
+    );
+  } catch (e) {
+    developer.log('Single-copy check failed, starting anyway: $e',
+        name: 'epitaka.single_instance');
+    return true;
+  }
+}
+
+Future<void> _bringWindowForward() async {
+  try {
+    await windowManager.ensureInitialized();
+    await windowManager.show();
+    await windowManager.focus();
+  } catch (e) {
+    developer.log('Could not bring the window forward: $e',
+        name: 'epitaka.single_instance');
   }
 }
 
