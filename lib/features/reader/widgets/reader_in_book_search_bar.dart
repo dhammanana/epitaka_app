@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../../shared/utils/app_shortcuts.dart';
@@ -60,7 +61,27 @@ class ReaderInBookSearchBar extends StatelessWidget {
           Expanded(
             child: SizedBox(
               height: 36,
-              child: TextField(
+              // A single-line field would only move the caret on ↑/↓, so
+              // take them here to step the matches, like the results list.
+              child: Focus(
+                canRequestFocus: false,
+                onKeyEvent: (_, event) {
+                  // With nothing to step to, leave the arrows to the field.
+                  if (matchCount == 0) return KeyEventResult.ignored;
+                  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                    return KeyEventResult.ignored;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                    onNext();
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                    onPrevious();
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: TextField(
                 controller: controller,
                 focusNode: focusNode,
                 textInputAction: TextInputAction.search,
@@ -101,6 +122,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                   onQueryChanged(v);
                 },
                 onSubmitted: onSubmitted,
+              ),
               ),
             ),
           ),
