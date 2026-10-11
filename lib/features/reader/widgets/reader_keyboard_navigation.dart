@@ -141,6 +141,15 @@ class _ReaderKeyboardNavigationState
     }
     // TTS owns this book's scrolling — don't fight the spoken line.
     if (_ttsBlocksNavigation) return KeyEventResult.ignored;
+    // With the find bar open, ↑/↓ walk the matches instead of the lines.
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
+      final forward = key == LogicalKeyboardKey.arrowDown;
+      if (ref.read(readerKeyboardBridgeProvider).stepInBookMatch?.call(forward) ==
+          true) {
+        return KeyEventResult.handled;
+      }
+    }
     if (key == LogicalKeyboardKey.arrowDown ||
         AppShortcuts.matches('reader-next-line', event)) {
       _moveLine(1);

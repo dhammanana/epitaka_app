@@ -15,6 +15,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/startup_timing.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../annotations/providers/annotations_provider.dart';
 import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -219,6 +220,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       animate: true,
       lineId: lineId,
     );
+  }
+
+  /// Step to the next ([forward]) or previous in-book search match and
+  /// scroll to it.
+  void _stepInBookMatch(bool forward) {
+    final notifier = ref.read(inBookSearchProvider.notifier);
+    forward ? notifier.nextMatch() : notifier.previousMatch();
+    final searchState = ref.read(inBookSearchProvider);
+    if (!searchState.hasMatches) return;
+    _jumpToInBookMatch(searchState.matchIndex);
   }
 
   /// Toggle the in-book search bar.
@@ -1474,6 +1485,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ref
             .read(readerKeyboardNavProvider.notifier)
             .clearIfDifferentBook(next.activeTab?.bookId);
+        // The find state is shared by every tab, so its matches belong to the
+        // book it was run on. Close it rather than step through the old
+        // book's paragraph ids inside the new one.
+        if (ref.read(inBookSearchProvider).showSearchBar) {
+          ref.read(inBookSearchProvider.notifier).toggleSearchBar();
+        }
       }
 
       // ── Stop TTS if the tab doing TTS is closed ──────────────────
@@ -1530,6 +1547,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     ref.listen(inBookSearchToggleProvider, (prev, next) {
       if (next != prev) {
         _toggleInBookSearch();
+      }
+    });
+
+    // A search run builds a new match list; next/previous keep the same list
+    // and jump themselves, so comparing identity means "new results only".
+    ref.listen(inBookSearchProvider, (prev, next) {
+      if (next.hasMatches &&
+          !identical(prev?.matchParaIds, next.matchParaIds)) {
+        _jumpToInBookMatch(next.matchIndex);
       }
     });
 
@@ -1846,13 +1872,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Hand the scroll controller / positions listener to the keyboard
     // navigation layer (j/k reading cursor + Cmd/Ctrl+J). Registration is
     // idempotent per bookId and cleaned up when the tab closes.
-    ref
-        .read(readerKeyboardBridgeProvider)
-        .register(
-          activeTab.bookId,
-          _scroll.scrollControllerFor(activeTab.bookId),
-          _scroll.positionsListenerFor(activeTab.bookId),
-        );
+    final keyboardBridge = ref.read(readerKeyboardBridgeProvider);
+    keyboardBridge.register(
+      activeTab.bookId,
+      _scroll.scrollControllerFor(activeTab.bookId),
+      _scroll.positionsListenerFor(activeTab.bookId),
+    );
+    // ↑/↓ with the page focused step the find-bar matches. Checking `mounted`
+    // keeps a callback left over from a closed screen from touching `ref`.
+    keyboardBridge.stepInBookMatch = (forward) {
+      if (!mounted) return false;
+      final search = ref.read(inBookSearchProvider);
+      if (!search.showSearchBar || !search.hasMatches) return false;
+      _stepInBookMatch(forward);
+      return true;
+    };
 
     // The keyboard reading cursor (focus line + selected chip), threaded
     // down to the paragraph renderer so the highlight is drawn.
@@ -1998,22 +2032,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         ref.read(inBookSearchProvider.notifier).onQueryChanged(v);
       },
       onSubmitted: (v) {
-        ref.read(inBookSearchProvider.notifier).onSubmitted(v);
-      },
-      onPrevious: () {
         final notifier = ref.read(inBookSearchProvider.notifier);
-        notifier.previousMatch();
         final searchState = ref.read(inBookSearchProvider);
-        if (!searchState.hasMatches) return;
-        _jumpToInBookMatch(searchState.matchIndex);
+        if (searchState.hasMatches && searchState.query == velthuis(v)) {
+          // A search still waiting on the debounce would re-run later and
+          // jump back to the first match.
+          notifier.cancelPendingSearch();
+          _stepInBookMatch(true);
+        } else {
+          notifier.onSubmitted(v);
+        }
+        // Flutter drops focus on submit. Desktop keeps it so a second Enter
+        // works; on phones the keyboard stays closed to keep results visible.
+        if (PlatformInfo.isDesktop) notifier.searchFocusNode.requestFocus();
       },
-      onNext: () {
-        final notifier = ref.read(inBookSearchProvider.notifier);
-        notifier.nextMatch();
-        final searchState = ref.read(inBookSearchProvider);
-        if (!searchState.hasMatches) return;
-        _jumpToInBookMatch(searchState.matchIndex);
-      },
+      onPrevious: () => _stepInBookMatch(false),
+      onNext: () => _stepInBookMatch(true),
       onSearchEntire: () {
         _toggleInBookSearch();
         if (ResponsiveBreakpoint.isDesktop(context)) {

@@ -17,6 +17,10 @@ class ReaderKeyboardBridge {
   final Map<String, ItemScrollController> _scrollControllers = {};
   final Map<String, ItemPositionsListener> _positionsListeners = {};
 
+  /// Steps the in-book find matches forward/back. Returns false when the find
+  /// bar is closed or has no matches, so the caller keeps the key for itself.
+  bool Function(bool forward)? stepInBookMatch;
+
   void register(
     String bookId,
     ItemScrollController scrollController,

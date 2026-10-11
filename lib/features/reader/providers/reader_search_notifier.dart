@@ -110,6 +110,9 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     });
   }
 
+  /// Drop a search that is still waiting on the debounce.
+  void cancelPendingSearch() => _searchTimer?.cancel();
+
   /// Called when the user submits the search (Enter key).
   void onSubmitted(String query) {
     _searchTimer?.cancel();
