@@ -52,6 +52,7 @@ class _CopyPara {
   final int paraId;
   final String? headingTitle;
   final int? headingLevel;
+  final String? headingScId;
   final List<_CopyLine> lines;
   final Map<String, String> pageNumbers;
 
@@ -59,6 +60,7 @@ class _CopyPara {
     required this.paraId,
     this.headingTitle,
     this.headingLevel,
+    this.headingScId,
     this.lines = const [],
     this.pageNumbers = const {},
   });
@@ -70,6 +72,7 @@ class _CommentaryBlock {
   final String type;
   final String typeLabel;
   final String? headingTitle;
+  final String? headingScId;
   final List<_CopyLine> lines;
 
   const _CommentaryBlock({
@@ -78,6 +81,7 @@ class _CommentaryBlock {
     required this.type,
     required this.typeLabel,
     this.headingTitle,
+    this.headingScId,
     this.lines = const [],
   });
 }
@@ -461,7 +465,7 @@ class SectionCopyService {
     try {
       headingRows = await db
           .customSelect(
-            'SELECT para_id, title, level FROM headings '
+            'SELECT para_id, title, level, sc_id FROM headings '
             'WHERE book_id = ? $rangeSql AND level < 10 '
             'ORDER BY para_id ASC',
             variables: [Variable.withString(bookId), ...rangeVars],
@@ -528,6 +532,7 @@ class SectionCopyService {
     var curLines = <_CopyLine>[];
     var curPages = <String, String>{};
     String? curTitle;
+    String? curScId;
     int? curLevel;
 
     void flush() {
@@ -537,6 +542,7 @@ class SectionCopyService {
           paraId: curParaId,
           headingTitle: curTitle,
           headingLevel: curLevel,
+          headingScId: curScId,
           lines: List.of(curLines),
           pageNumbers: Map.of(curPages),
         ),
@@ -555,6 +561,8 @@ class SectionCopyService {
         curTitle = (h?['title'] as String?)?.trim().isNotEmpty == true
             ? (h!['title'] as String).trim()
             : null;
+        final sc = (h?['sc_id'] as String?)?.trim();
+        curScId = (sc == null || sc.isEmpty) ? null : sc;
         curLevel = h?['level'] as int?;
       }
       for (final e in {
@@ -717,6 +725,7 @@ class SectionCopyService {
             link.type,
             rangeTitle,
             enabledLangs,
+            headingScId: sectionStart.scId,
           );
           if (block != null && block.lines.isNotEmpty) out.add(block);
         } catch (_) {}
@@ -727,23 +736,25 @@ class SectionCopyService {
     }
   }
 
-  static Future<({int paraId, String? title})?> _l10AtOrBefore(
+  static Future<({int paraId, String? title, String? scId})?> _l10AtOrBefore(
     dynamic db,
     String bookId,
     int paraId,
   ) async {
     final rows = await db
         .customSelect(
-          'SELECT para_id, title FROM headings '
+          'SELECT para_id, title, sc_id FROM headings '
           'WHERE book_id = ? AND para_id <= ? AND level = 10 '
           'ORDER BY para_id DESC LIMIT 1',
           variables: [Variable.withString(bookId), Variable.withInt(paraId)],
         )
         .get();
     if (rows.isEmpty) return null;
+    final sc = (rows.first.data['sc_id'] as String?)?.trim();
     return (
       paraId: rows.first.data['para_id'] as int,
       title: rows.first.data['title'] as String?,
+      scId: (sc == null || sc.isEmpty) ? null : sc,
     );
   }
 
@@ -877,7 +888,8 @@ class SectionCopyService {
   /// Re-anchor a number-matched commentary section to the neighbour whose
   /// opening lines quote [verseText]. Returns null when nothing quotes
   /// the verse well enough — the caller then keeps the number anchor.
-  static Future<({int paraId, String? title})?> _adjustAnchorByQuote(
+  static Future<({int paraId, String? title, String? scId})?>
+  _adjustAnchorByQuote(
     dynamic db,
     String bookId,
     int anchorParaId,
@@ -913,8 +925,9 @@ class SectionCopyService {
     int sectionEndExclusive,
     String type,
     String? headingTitle,
-    List<String> enabledLangs,
-  ) async {
+    List<String> enabledLangs, {
+    String? headingScId,
+  }) async {
     final rangeSql = 'AND para_id >= ? AND para_id < ?';
     final rangeVars = [
       Variable.withInt(sectionStart),
@@ -1035,6 +1048,7 @@ class SectionCopyService {
       type: type,
       typeLabel: _typeLabel(type),
       headingTitle: headingTitle,
+      headingScId: headingScId,
       lines: lines,
     );
   }
@@ -1068,9 +1082,10 @@ class SectionCopyService {
       '<h2 style="margin:0 0 4px 0;">${_escape(bookName)} (${_escape(bookId)})</h2>',
     );
     final headTitle = (mainHeading?.title ?? '').trim();
-    if (headTitle.isNotEmpty) {
-      plain.writeln(headTitle);
-      html.writeln('<h3 style="margin:0 0 8px 0;">${_escape(headTitle)}</h3>');
+    if (headTitle.isNotEmpty || (mainHeading?.scId ?? '').trim().isNotEmpty) {
+      final label = _headingLabel(mainHeading?.scId, headTitle);
+      plain.writeln(label);
+      html.writeln('<h3 style="margin:0 0 8px 0;">${_escape(label)}</h3>');
     }
     plain.writeln();
 
@@ -1129,9 +1144,10 @@ class SectionCopyService {
       '<h2 style="margin:0 0 4px 0;">${_escape(bookName)} (${_escape(bookId)})</h2>',
     );
     final headTitle = mainHeading.title.trim();
-    if (headTitle.isNotEmpty) {
-      plain.writeln('## $headTitle');
-      html.writeln('<h3 style="margin:0 0 8px 0;">${_escape(headTitle)}</h3>');
+    if (headTitle.isNotEmpty || (mainHeading.scId ?? '').trim().isNotEmpty) {
+      final label = _headingLabel(mainHeading.scId, headTitle);
+      plain.writeln('## $label');
+      html.writeln('<h3 style="margin:0 0 8px 0;">${_escape(label)}</h3>');
     }
     plain.writeln();
     plain.writeln('---');
@@ -1229,12 +1245,13 @@ class SectionCopyService {
     for (int pi = 0; pi < paras.length; pi++) {
       final para = paras[pi];
       final title = (para.headingTitle ?? '').trim();
+      final label = _headingLabel(para.headingScId, title);
       final isFirst = pi == 0;
       if (title.isNotEmpty && !(isFirst && skipFirstHeading)) {
         plain.writeln();
-        plain.writeln('### $title');
+        plain.writeln('### $label');
         plain.writeln();
-        html.writeln('<h4 style="margin:8px 0;">${_escape(title)}</h4>');
+        html.writeln('<h4 style="margin:8px 0;">${_escape(label)}</h4>');
       }
       for (final line in para.lines) {
         if (scope != CopyScope.translation) {
@@ -1301,14 +1318,28 @@ class SectionCopyService {
 
   static String _commentaryLabel(_CommentaryBlock c, {required int index}) {
     final title = (c.headingTitle ?? '').trim();
-    final name = c.bookName.trim().isEmpty ? c.bookId : c.bookName.trim();
+    final id = c.bookId.trim();
+    var name = c.bookName.trim().isEmpty ? id : c.bookName.trim();
+    // Show every book's own id next to its name (mūla, aṭṭhakathā, ṭīkā).
+    if (id.isNotEmpty && id != name) name = '$name ($id)';
     final typeSuffix = c.typeLabel.trim().isEmpty
         ? ''
         : ' (${c.typeLabel.trim()})';
-    if (title.isNotEmpty) {
-      return '## Commentary $index: $name$typeSuffix — $title';
+    final heading = _headingLabel(c.headingScId, title);
+    if (heading.isNotEmpty) {
+      return '## Commentary $index: $name$typeSuffix — $heading';
     }
     return '## Commentary $index: $name$typeSuffix';
+  }
+
+  /// A heading line with its `sc_id` (SuttaCentral code) shown first, when
+  /// present: `an1.1-10 — 1. Rūpādivaggo`.
+  static String _headingLabel(String? scId, String title) {
+    final id = (scId ?? '').trim();
+    final t = title.trim();
+    if (id.isEmpty) return t;
+    if (t.isEmpty) return id;
+    return '$id — $t';
   }
 
   static String _typeLabel(String type) {

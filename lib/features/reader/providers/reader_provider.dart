@@ -98,11 +98,16 @@ class ParagraphHeading {
   /// (`[paraId, paraId + chapterLen)`), from `headings.chapter_len`.
   final int? chapterLen;
 
+  /// SuttaCentral-style code(s) from `headings.sc_id`, when present.
+  /// A token cell (`an1.1-10`, `mn10`, …) or null for rows without one.
+  final String? scId;
+
   const ParagraphHeading({
     required this.title,
     required this.level,
     required this.paraId,
     this.chapterLen,
+    this.scId,
   });
 }
 
@@ -427,6 +432,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
             level: h.level ?? 1,
             paraId: h.paraId,
             chapterLen: h.chapterLen,
+            scId: h.scId,
           );
         }
       }
@@ -438,6 +444,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         level: l10.level ?? 10,
         paraId: l10.paraId,
         chapterLen: l10.chapterLen,
+        scId: l10.scId,
       );
     }
     return null;
@@ -455,6 +462,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           level: h.level ?? 1,
           paraId: h.paraId,
           chapterLen: h.chapterLen,
+          scId: h.scId,
         );
       } else {
         break; // headings are ordered by paraId ascending
