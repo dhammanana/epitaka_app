@@ -49,6 +49,7 @@ const List<FeatureGuideSection> kFeatureGuideSections = [
         icon: Icons.volume_up,
         textKey:
             'Listen — read the passage aloud with text-to-speech; tap again to stop.',
+        needsTts: true,
       ),
       FeatureGuideStep(
         icon: Icons.bookmark,
@@ -135,6 +136,7 @@ const List<FeatureGuideSection> kFeatureGuideSections = [
       FeatureGuideStep(
         icon: Icons.record_voice_over,
         textKey: 'Text-to-Speech — voice, speed, pitch and word replacements.',
+        needsTts: true,
       ),
       FeatureGuideStep(
         icon: Icons.menu_book,

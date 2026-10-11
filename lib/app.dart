@@ -11,6 +11,7 @@ import 'core/utils/app_initializer.dart';
 import 'core/utils/app_localizations.dart';
 import 'core/utils/keep_awake.dart';
 import 'core/utils/l10n/app_strings.dart';
+import 'core/utils/platform_info.dart';
 import 'core/providers/dpd_dictionary_provider.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/indexing/index_controller.dart';
@@ -85,7 +86,7 @@ class _AudioServiceInitializerState
     // no UI left — so emergency-stop the engines and dismiss the
     // notification. The audio service itself is init-once per process and
     // is never `stop()`-ed here, so the next launch can reuse it.
-    if (state == AppLifecycleState.detached) {
+    if (state == AppLifecycleState.detached && PlatformInfo.isTtsSupported) {
       try {
         ref.read(ttsReadingProvider.notifier).handleAppDetached();
       } catch (_) {}

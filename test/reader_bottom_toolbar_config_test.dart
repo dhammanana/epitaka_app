@@ -6,6 +6,7 @@ library;
 import 'package:epitaka/core/models/toolbar_item.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/core/utils/platform_info.dart';
 import 'package:epitaka/features/reader/widgets/reader_bottom_toolbar.dart';
 import 'package:epitaka/features/settings/providers/tts_provider.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
@@ -61,7 +62,11 @@ void main() {
     expect(find.byIcon(Icons.menu_book), findsOneWidget);
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
     expect(find.byIcon(Icons.view_headline), findsOneWidget);
-    expect(find.byIcon(Icons.volume_up), findsOneWidget);
+    // Listen needs the speech plugin, which Linux does not have.
+    expect(
+      find.byIcon(Icons.volume_up),
+      PlatformInfo.isTtsSupported ? findsOneWidget : findsNothing,
+    );
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
     expect(find.byIcon(Icons.edit_note), findsOneWidget);
     expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
@@ -148,7 +153,10 @@ void main() {
     expect(find.byIcon(Icons.edit_note), findsNothing);
 
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
-    expect(find.byIcon(Icons.volume_up), findsOneWidget);
+    expect(
+      find.byIcon(Icons.volume_up),
+      PlatformInfo.isTtsSupported ? findsOneWidget : findsNothing,
+    );
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
     expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
   });

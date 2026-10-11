@@ -8,6 +8,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/platform_info.dart';
+
 /// One instruction step inside a [FeatureGuideSection].
 ///
 /// [icon] mirrors the icon of the real toolbar button / screen element so
@@ -18,7 +20,14 @@ class FeatureGuideStep {
   /// l10n key for the instruction text.
   final String textKey;
 
-  const FeatureGuideStep({required this.icon, required this.textKey});
+  /// True for a step about speech; it is left out where speech is unsupported.
+  final bool needsTts;
+
+  const FeatureGuideStep({
+    required this.icon,
+    required this.textKey,
+    this.needsTts = false,
+  });
 }
 
 /// A group of related features shown in the Feature Guide.
@@ -34,6 +43,12 @@ class FeatureGuideSection {
 
   /// The instruction steps, in order.
   final List<FeatureGuideStep> steps;
+
+  /// [steps] without the ones this platform cannot use.
+  List<FeatureGuideStep> get visibleSteps => [
+    for (final s in steps)
+      if (!s.needsTts || PlatformInfo.isTtsSupported) s,
+  ];
 
   const FeatureGuideSection({
     required this.id,

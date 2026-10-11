@@ -6,6 +6,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/platform_info.dart';
 import '../widgets/settings_app_bar.dart';
 
 /// Settings screen for the reader's bottom toolbar.
@@ -36,6 +37,9 @@ class ToolbarSettingsBody extends ConsumerWidget {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final items = ref.watch(settingsProvider).toolbarItems;
+    bool isShown(ToolbarItem i) =>
+        i.id != ToolbarBuiltins.listen || PlatformInfo.isTtsSupported;
+    final visible = items.where(isShown).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -79,15 +83,19 @@ class ToolbarSettingsBody extends ConsumerWidget {
           buildDefaultDragHandles: false,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
+          itemCount: visible.length,
           onReorderItem: (oldIndex, newIndex) {
-            final list = List<ToolbarItem>.from(items);
+            final list = List<ToolbarItem>.from(visible);
             final item = list.removeAt(oldIndex);
             list.insert(newIndex, item);
+            // Hidden items stay stored, each in its old slot.
+            for (var i = 0; i < items.length; i++) {
+              if (!isShown(items[i])) list.insert(i, items[i]);
+            }
             ref.read(settingsProvider.notifier).setToolbarItems(list);
           },
           itemBuilder: (context, index) {
-            final item = items[index];
+            final item = visible[index];
             return _ToolbarItemRow(
               key: ValueKey(item.id),
               index: index,

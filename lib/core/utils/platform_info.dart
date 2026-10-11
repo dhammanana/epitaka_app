@@ -6,6 +6,9 @@ class PlatformInfo {
   static final bool _isDesktop =
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
   static bool get isDesktop => _isDesktop;
+
+  // flutter_tts has no Linux part, so every speech control is hidden there.
+  static bool get isTtsSupported => !Platform.isLinux;
 }
 
 // In flutter, there are roughly 96 logical pixels per inch or 38 per cm.

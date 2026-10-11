@@ -123,6 +123,7 @@ class _FeatureGuideSectionCardState extends State<FeatureGuideSectionCard> {
     AppLocalizations loc,
     FeatureGuideSection section,
   ) {
+    final steps = section.visibleSteps;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.md,
@@ -140,13 +141,13 @@ class _FeatureGuideSectionCardState extends State<FeatureGuideSectionCard> {
             endIndent: 4,
           ),
           const SizedBox(height: AppDimensions.sm),
-          for (var i = 0; i < section.steps.length; i++) ...[
+          for (var i = 0; i < steps.length; i++) ...[
             _StepRow(
-              step: section.steps[i],
+              step: steps[i],
               colors: colors,
               loc: loc,
             ),
-            if (i < section.steps.length - 1)
+            if (i < steps.length - 1)
               const SizedBox(height: AppDimensions.sm),
           ],
         ],

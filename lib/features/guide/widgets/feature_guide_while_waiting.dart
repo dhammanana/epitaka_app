@@ -105,6 +105,7 @@ class _GuideRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final steps = section.visibleSteps;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -166,23 +167,23 @@ class _GuideRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      for (var i = 0; i < section.steps.length; i++)
+                      for (var i = 0; i < steps.length; i++)
                         Padding(
                           padding: EdgeInsets.only(
-                            bottom: i < section.steps.length - 1 ? 6 : 0,
+                            bottom: i < steps.length - 1 ? 6 : 0,
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Icon(
-                                section.steps[i].icon,
+                                steps[i].icon,
                                 size: 15,
                                 color: colors.primary,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  loc.t(section.steps[i].textKey),
+                                  loc.t(steps[i].textKey),
                                   style: AppTypography.labelSmall.copyWith(
                                     color: colors.onSurface,
                                     height: 1.35,
