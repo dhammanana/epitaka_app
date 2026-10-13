@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../dpd/providers/dpd_database_provider.dart';
+import '../../dpd/providers/dpd_settings_provider.dart';
 import '../../../features/mdx_dictionary/widgets/mdx_settings_section.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -54,6 +55,8 @@ class DictionarySettingsBody extends ConsumerWidget {
             fontSize: 14,
           ),
         ),
+        const SizedBox(height: AppDimensions.lg),
+        const _DpdLevelSection(),
         const SizedBox(height: AppDimensions.lg),
         const _DpdDatabaseSection(),
         const SizedBox(height: AppDimensions.lg),
@@ -160,6 +163,65 @@ class DictionarySettingsBody extends ConsumerWidget {
               ],
             );
           },
+        ),
+      ],
+    );
+  }
+}
+
+/// How much of each DPD entry the dictionary shows.
+class _DpdLevelSection extends ConsumerWidget {
+  const _DpdLevelSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
+    return SettingsSection(
+      title: loc.dpdLevel,
+      colors: colors,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppDimensions.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<DictionaryLevel>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final l in DictionaryLevel.values)
+                      ButtonSegment(
+                        value: l,
+                        label: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(l.paliName),
+                            Text(
+                              loc.t(l.englishName),
+                              style: AppTypography.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                  selected: {level},
+                  onSelectionChanged: (s) => ref
+                      .read(dpdSettingsProvider.notifier)
+                      .setLevel(s.first),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                loc.dpdLevelHelp,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

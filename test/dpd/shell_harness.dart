@@ -10,6 +10,7 @@ import 'package:epitaka/core/theme/app_theme.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dpd/providers/dpd_database_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
+import 'package:epitaka/features/dpd/providers/internet_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,11 +39,14 @@ Future<ProviderContainer> makeShellContainer(
   List<String> words = const [],
   List<String> prefixes = const [],
   WordLookupGesture? gesture,
+  bool online = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final container = ProviderContainer(
     overrides: [
       dpdDatabaseFileProvider.overrideWith((ref) async => dbFile),
+      // No test may reach the network, so the audio check never looks up a host.
+      hasInternetProvider.overrideWith((ref) async => online),
       dictionaryBooksNotifierProvider.overrideWith(
         (ref) => DpdOnlyBooksNotifier(ref),
       ),

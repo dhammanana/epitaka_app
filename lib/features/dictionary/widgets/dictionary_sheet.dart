@@ -21,6 +21,7 @@ import '../providers/dictionary_expanded_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart'
     show dictionarySheetOpenProvider;
 import '../../dpd/providers/dpd_lookup_provider.dart';
+import '../../dpd/providers/dpd_settings_provider.dart';
 import '../../dpd/widgets/dpd_results_view.dart';
 import '../../dpd/widgets/dpd_status_message.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
@@ -156,6 +157,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   String? _cachedResultsMdxKey;
   AsyncValue<List<String>>? _cachedResultsSuggestions;
   String? _cachedResultsExpandedKey;
+  DictionaryLevel? _cachedResultsLevel;
 
   // Search history
   late final List<String> _searchHistory = [];
@@ -293,6 +295,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _cachedResultsMdxKey = null;
       _cachedResultsSuggestions = null;
       _cachedResultsExpandedKey = null;
+      _cachedResultsLevel = null;
     });
   }
 
@@ -1160,6 +1163,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         // Expand/collapse state is part of the memo key: toggling a card
         // must rebuild, while sheet drag frames reuse the cached tree.
         final expandedMap = ref.watch(dictionaryExpandedProvider);
+        final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
         // When DPD misses, the "Did you mean?" suggestions are a nested
         // provider; watch it here (instead of inside a cached subtree) so a
         // resolve invalidates the memoized results and rebuilds them.
@@ -1202,7 +1206,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 _cachedResultsBooksKey == booksKey &&
                 _cachedResultsMdxKey == mdxKey &&
                 identical(_cachedResultsSuggestions, suggestionsAsync) &&
-                _cachedResultsExpandedKey == expandedKey) {
+                _cachedResultsExpandedKey == expandedKey &&
+                _cachedResultsLevel == level) {
               return _cachedResultsWidget!;
             }
 
@@ -1255,6 +1260,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             _cachedResultsMdxKey = mdxKey;
             _cachedResultsSuggestions = suggestionsAsync;
             _cachedResultsExpandedKey = expandedKey;
+            _cachedResultsLevel = level;
             return built;
           },
         );
@@ -1321,7 +1327,11 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
           ? const SizedBox.shrink()
           : lookup.unavailable != null
           ? DpdStatusMessage(unavailable: lookup.unavailable!)
-          : DpdResultsView(lookup: lookup, onWordTap: _selectWord),
+          : DpdResultsView(
+              lookup: lookup,
+              level: ref.read(dpdSettingsProvider).level,
+              onWordTap: _selectWord,
+            ),
     );
   }
 }

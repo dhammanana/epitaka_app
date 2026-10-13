@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
+import '../services/audio_service.dart';
 import '../theme/dpd_colors.dart';
 import '../theme/dpd_palette.dart';
 import '../utils/feedback_urls.dart';
@@ -492,6 +493,98 @@ class DpdSectionButton extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Main play button — same visual style as DpdSectionButton but with a play icon.
+/// Shows active color while playing, grays out if audio fetch fails.
+class DpdPlayButton extends StatefulWidget {
+  const DpdPlayButton({
+    super.key,
+    required this.lemma,
+    required this.gender,
+    this.compact = false,
+  });
+
+  final String lemma;
+  final String gender;
+  final bool compact;
+
+  @override
+  State<DpdPlayButton> createState() => _DpdPlayButtonState();
+}
+
+class _DpdPlayButtonState extends State<DpdPlayButton> {
+  bool _playing = false;
+  bool _errored = false;
+
+  Future<void> _play() async {
+    if (_errored) return;
+    setState(() => _playing = true);
+    final ok = await AudioService.instance.play(widget.lemma, widget.gender);
+    if (!mounted) return;
+    setState(() {
+      _playing = false;
+      if (!ok) _errored = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Color bg;
+    final Color fg;
+    final List<BoxShadow> shadow;
+    if (_errored) {
+      bg = theme.colorScheme.onSurface.withValues(alpha: 0.12);
+      fg = theme.colorScheme.onSurface.withValues(alpha: 0.38);
+      shadow = [];
+    } else if (_playing) {
+      bg = theme.colorScheme.secondary;
+      fg = theme.colorScheme.onSecondary;
+      shadow = context.palette.shadowHover;
+    } else {
+      bg = theme.colorScheme.primary;
+      fg = theme.colorScheme.onPrimary;
+      shadow = context.palette.shadowDefault;
+    }
+    final compact = widget.compact;
+    return MouseRegion(
+      cursor: _errored ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: _errored ? null : _play,
+        child: Container(
+          margin: compact ? null : const EdgeInsets.fromLTRB(1, 1, 1, 2),
+          padding: compact
+              ? const EdgeInsets.all(3)
+              : const EdgeInsets.fromLTRB(5, 2, 5, 2),
+          decoration: BoxDecoration(
+            color: bg,
+            border: compact ? null : Border.all(color: bg, width: 1),
+            borderRadius: DpdColors.borderRadius,
+            boxShadow: compact ? null : shadow,
+          ),
+          child: compact
+              ? Icon(Icons.play_arrow, color: fg, size: 12)
+              : Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Opacity(
+                      opacity: 0,
+                      child: Text(
+                        ' ',
+                        style: TextStyle(
+                          fontSize: 14.0 * 0.8,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.play_arrow, color: fg, size: 18),
+                  ],
+                ),
         ),
       ),
     );

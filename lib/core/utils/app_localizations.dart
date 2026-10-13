@@ -1115,6 +1115,9 @@ class AppLocalizations {
 
   String get dpdDictionary => _t('DPD Dictionary');
   String get dpdDatabase => _t('DPD database');
+  String get dpdLevel => _t('Level');
+  String get dpdLevelHelp =>
+      _t('How much of each DPD entry to show. Other dictionaries are not affected.');
   String get dpdNotInstalled => _t('The DPD database is not installed.');
   String dpdUnsupportedSchema(String? schema) =>
       '${_t('This DPD database uses a format this version of ePitaka cannot read')}'
