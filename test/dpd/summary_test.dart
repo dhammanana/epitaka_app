@@ -10,7 +10,6 @@ import 'package:epitaka/features/dpd/providers/dpd_database_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_settings_provider.dart';
 import 'package:epitaka/features/dpd/providers/summary_provider.dart';
-import 'package:epitaka/features/dpd/widgets/dpd_results_view.dart';
 import 'package:epitaka/features/dpd/widgets/summary_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,7 +55,7 @@ void main() {
   group('buildSummaryEntries', () {
     test('has one line per headword, with lemma, pos and meaning', () async {
       final lookup = await lookupOf('dhamma');
-      final entries = summaryOf(lookup);
+      final entries = summaryOf(lookup!);
       expect(lookup.headwords.length, greaterThan(1));
       expect(entries.length, lookup.headwords.length + lookup.secondary.length);
       final first = entries.first;
@@ -66,6 +65,23 @@ void main() {
       expect(first.typeLabel, '${h.pos}.');
       expect(first.meaning, startsWith(h.meaning1!));
       expect(first.meaningHasBold, isTrue);
+    });
+
+    test('with sources, lists only those, in that order', () async {
+      final lookup = await lookupOf('dhamma');
+      List<SummaryEntry> of(List<String> sources) => buildSummaryEntries(
+        lookup.headwords,
+        lookup.roots,
+        lookup.secondary,
+        sources: sources,
+      );
+      final grammarFirst = of(['dpd_grammar', 'dpd_headwords']);
+      expect(grammarFirst.first.type, SummaryEntryType.grammar);
+      expect(grammarFirst.last.type, SummaryEntryType.headword);
+      expect(of(['dpd_grammar']).map((e) => e.type), [
+        SummaryEntryType.grammar,
+      ]);
+      expect(of(const []), isEmpty);
     });
 
     test('has one line per root', () async {
@@ -90,7 +106,7 @@ void main() {
       };
       for (final MapEntry(key: word, value: type) in expected.entries) {
         final lookup = await lookupOf(word);
-        final types = summaryOf(lookup).map((e) => e.type);
+        final types = summaryOf(lookup!).map((e) => e.type);
         expect(types, contains(type), reason: word);
         expect(
           types.where((t) => t != SummaryEntryType.headword).length,
@@ -133,23 +149,16 @@ void main() {
         final lookup = await tester.runAsync(
           () => container.read(dpdLookupProvider(word).future),
         );
+        // A new sheet for each word: the old one keeps its first word.
+        await tester.pumpWidget(const SizedBox());
         await tester.pumpWidget(
-          wrapShell(
-            container,
-            SingleChildScrollView(
-              child: DpdResultsView(
-                lookup: lookup!,
-                level: DictionaryLevel.sankhitta,
-                onWordTap: (_) {},
-              ),
-            ),
-          ),
+          wrapShell(container, DictionarySheet(initialWord: word)),
         );
         // The localisations load asynchronously, so the first frame is empty.
         await settleShell(tester);
         final text = _drawn(tester);
         expect(find.byType(SummarySection), findsOneWidget, reason: word);
-        for (final line in summaryOf(lookup)) {
+        for (final line in summaryOf(lookup!)) {
           // Homographs share one lemma heading, so the label is checked by
           // its lemma and the rest of the line is checked on its own.
           final lemma = splitSummaryLemma(line.label).lemma;

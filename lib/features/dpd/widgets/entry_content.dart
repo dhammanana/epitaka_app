@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
+import '../providers/dpd_settings_provider.dart';
 import '../services/audio_service.dart';
 import '../theme/dpd_colors.dart';
 import '../theme/dpd_palette.dart';
 import '../utils/feedback_urls.dart';
+import '../utils/text_size.dart';
 import '../utils/text_filters.dart';
 import 'feedback_type.dart';
 
@@ -254,7 +257,10 @@ class DpdFooter extends StatelessWidget {
               },
               child: Text.rich(
                 TextSpan(
-                  style: TextStyle(fontSize: 12.8, color: context.palette.gray),
+                  style: TextStyle(
+                    fontSize: context.dpdSize(12.8),
+                    color: context.palette.gray,
+                  ),
                   children: [
                     TextSpan(text: '$messagePrefix '),
                     TextSpan(
@@ -327,7 +333,7 @@ List<InlineSpan> _parseBoldSpans(String text, {TextStyle? boldStyle}) {
   return spans;
 }
 
-class _SingleExampleBlock extends StatelessWidget {
+class _SingleExampleBlock extends ConsumerWidget {
   const _SingleExampleBlock({required this.example, this.sutta, this.source});
 
   final String example;
@@ -335,8 +341,12 @@ class _SingleExampleBlock extends StatelessWidget {
   final String? source;
 
   @override
-  Widget build(BuildContext context) {
-    String n(String t) => context.nigg(t);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showSandhi = ref.watch(
+      dpdSettingsProvider.select((s) => s.showSandhi),
+    );
+    String n(String t) =>
+        context.nigg(filterSandhi(t, show: showSandhi));
     final theme = Theme.of(context);
     final boldStyle = theme.textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.bold,
@@ -487,7 +497,7 @@ class DpdSectionButton extends StatelessWidget {
               label,
               style: TextStyle(
                 color: fg,
-                fontSize: 14.0 * 0.8,
+                fontSize: context.dpdSize(14.0 * 0.8),
                 fontWeight: FontWeight.w400,
                 height: 1.5,
               ),
@@ -568,7 +578,7 @@ class _DpdPlayButtonState extends State<DpdPlayButton> {
             boxShadow: compact ? null : shadow,
           ),
           child: compact
-              ? Icon(Icons.play_arrow, color: fg, size: 12)
+              ? Icon(Icons.play_arrow, color: fg, size: context.dpdSize(12))
               : Stack(
                   alignment: Alignment.center,
                   children: [
@@ -577,12 +587,12 @@ class _DpdPlayButtonState extends State<DpdPlayButton> {
                       child: Text(
                         ' ',
                         style: TextStyle(
-                          fontSize: 14.0 * 0.8,
+                          fontSize: context.dpdSize(14.0 * 0.8),
                           height: 1.5,
                         ),
                       ),
                     ),
-                    Icon(Icons.play_arrow, color: fg, size: 18),
+                    Icon(Icons.play_arrow, color: fg, size: context.dpdSize(18)),
                   ],
                 ),
         ),

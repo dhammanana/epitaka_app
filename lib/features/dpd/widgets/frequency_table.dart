@@ -5,9 +5,9 @@ import '../theme/dpd_colors.dart';
 import '../theme/dpd_palette.dart';
 import '../utils/text_filters.dart';
 
-/// Font size for FrequencyTable cells/labels — matches Material3 bodySmall (12sp).
-/// Fixed rather than theme-derived because the layout uses pixel-precise positioning.
-const double _kFreqSmallFontSize = 12.0;
+/// Text size of the table at the dictionary text size of 100%. The layout is
+/// pixel-precise, so every size below is multiplied by [FrequencyTable.scale].
+const double _kFreqSmallFontSize = 13.0;
 
 /// WCAG relative-luminance contrast ratio between two colors (1.0-21.0).
 double _contrastRatio(double luminanceA, double luminanceB) {
@@ -18,15 +18,22 @@ double _contrastRatio(double luminanceA, double luminanceB) {
 
 /// Native Flutter frequency heatmap table replicating the webapp layout.
 class FrequencyTable extends StatelessWidget {
-  const FrequencyTable({super.key, required this.data});
+  const FrequencyTable({super.key, required this.data, this.scale = 1.0});
 
   final FrequencyData data;
 
-  static const double _cellW = 42.0;
-  static const double _cellH = 26.0;
-  static const double _gapW = 10.0;
-  static const double _vertLabelW = 22.0;
-  static const double _rowLabelW = 110.0;
+  /// The dictionary text size as a multiple of its default (1.0 = 100%).
+  final double scale;
+
+  // The room is inside the cells, not between them: each cell is large, and
+  // neighbours are 1 px apart (user, 2026-10-13: "cramped" meant the inside).
+  double get _cellW => 56.0 * scale;
+  double get _cellH => 38.0 * scale;
+  double get _gapW => 14.0 * scale;
+  double get _vertLabelW => 30.0 * scale;
+  double get _rowLabelW => 132.0 * scale;
+  double get _inset => 0.5 * scale;
+  double get _font => _kFreqSmallFontSize * scale;
 
   // Column X offsets (pixels from left edge)
   // Col 0: vertical label (0)
@@ -148,8 +155,9 @@ class FrequencyTable extends StatelessWidget {
       left: _colX(col),
       top: row * _cellH,
       child: Container(
-        width: _cellW,
-        height: _cellH * rowSpan,
+        width: _cellW - 2 * _inset,
+        height: _cellH * rowSpan - 2 * _inset,
+        margin: EdgeInsets.all(_inset),
         decoration: BoxDecoration(
           color: bgColor,
           border: Border.all(color: borderColor, width: 1),
@@ -158,7 +166,7 @@ class FrequencyTable extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           '$value',
-          style: TextStyle(color: textColor, fontSize: _kFreqSmallFontSize),
+          style: TextStyle(color: textColor, fontSize: _font),
         ),
       ),
     );
@@ -168,7 +176,7 @@ class FrequencyTable extends StatelessWidget {
     return Positioned(
       left: _colX(col),
       top: row * _cellH,
-      child: const SizedBox(width: _cellW, height: _cellH),
+      child: SizedBox(width: _cellW, height: _cellH),
     );
   }
 
@@ -182,9 +190,10 @@ class FrequencyTable extends StatelessWidget {
       left: _colX(1),
       top: row * _cellH,
       child: Container(
-        width: _rowLabelW,
-        height: _cellH,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        width: _rowLabelW - 2 * _inset,
+        height: _cellH - 2 * _inset,
+        margin: EdgeInsets.all(_inset),
+        padding: EdgeInsets.symmetric(horizontal: 8 * scale, vertical: 4 * scale),
         decoration: BoxDecoration(
           border: Border.all(color: palette.primary, width: 1),
           borderRadius: DpdColors.borderRadius,
@@ -192,7 +201,7 @@ class FrequencyTable extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           context.nigg(text),
-          style: const TextStyle(fontSize: _kFreqSmallFontSize),
+          style: TextStyle(fontSize: _font),
           textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
@@ -205,8 +214,9 @@ class FrequencyTable extends StatelessWidget {
       left: _colX(0),
       top: startRow * _cellH,
       child: Container(
-        width: _vertLabelW,
-        height: _cellH * span,
+        width: _vertLabelW - 2 * _inset,
+        height: _cellH * span - 2 * _inset,
+        margin: EdgeInsets.all(_inset),
         decoration: BoxDecoration(
           border: Border.all(color: palette.primary, width: 1),
           borderRadius: DpdColors.borderRadius,
@@ -214,7 +224,7 @@ class FrequencyTable extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           text.split('').join('\n'),
-          style: const TextStyle(fontSize: _kFreqSmallFontSize, height: 1.1),
+          style: TextStyle(fontSize: _font, height: 1.1),
           textAlign: TextAlign.center,
         ),
       ),
@@ -233,7 +243,7 @@ class FrequencyTable extends StatelessWidget {
           child: Center(
             child: Text(
               name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: _kFreqSmallFontSize),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: _font),
             ),
           ),
         ),
@@ -253,8 +263,8 @@ class FrequencyTable extends StatelessWidget {
           child: Align(
             alignment: Alignment.centerRight,
             child: Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Text(label, style: const TextStyle(fontSize: _kFreqSmallFontSize)),
+              padding: EdgeInsets.only(right: 8 * scale),
+              child: Text(label, style: TextStyle(fontSize: _font)),
             ),
           ),
         ),

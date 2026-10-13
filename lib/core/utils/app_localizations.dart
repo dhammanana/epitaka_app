@@ -650,10 +650,6 @@ class AppLocalizations {
   String get dictionarySettingDesc => _t(
     'Enable, disable, and reorder dictionaries.\nDictionaries appear in this order in the dictionary panel.',
   );
-  String get enabledDictionaries => _t('Enabled Dictionaries');
-  String get disabledDictionaries => _t('Disabled Dictionaries');
-  String get noDictEnabled =>
-      _t('No dictionaries enabled. Tap a dictionary below to enable it.');
   String get errorLoadingDict => _t('Error loading dictionaries:');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1116,6 +1112,24 @@ class AppLocalizations {
   String get dpdDictionary => _t('DPD Dictionary');
   String get dpdDatabase => _t('DPD database');
   String get dpdLevel => _t('Level');
+  String get dictionaryFontSize => _t('Dictionary text size');
+  String get dpdPartialResults => _t('Partial Results');
+  String get dpdFuzzyResults => _t('Fuzzy Results');
+  String get dpdShowConstruction => _t('Show the construction in the brief summary');
+  String get dpdShowSummary => _t('Show the summary at the top');
+  String get dpdShowPartial => _t('Show partial results');
+  String get dpdShowFuzzy => _t('Show fuzzy results');
+  String get dpdShowSandhi => _t('Sandhi apostrophes');
+  String get dpdAudioVoice => _t('Pronunciation voice');
+  String get dpdVoiceMale => _t('Male');
+  String get dpdVoiceFemale => _t('Female');
+  String get dictionaryListTitle => _t('Dictionaries');
+  String get dictionaryListHelp =>
+      _t('Drag to set the order of the lookup page. Tick to show a dictionary.');
+  String get dpdOptionsTitle => _t('DPD display');
+  String get dpdGrammarOpen => _t('Open the grammar by default');
+  String get dpdExamplesOpen => _t('Open the examples by default');
+  String get dpdOneSectionAtATime => _t('Show one section at a time');
   String get dpdLevelHelp =>
       _t('How much of each DPD entry to show. Other dictionaries are not affected.');
   String get dpdNotInstalled => _t('The DPD database is not installed.');

@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../core/providers/dictionary_books_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -18,19 +17,18 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
 import '../providers/dictionary_expanded_provider.dart';
+import '../providers/dictionary_font_scale_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart'
     show dictionarySheetOpenProvider;
+import '../../dpd/providers/dictionary_list_provider.dart';
 import '../../dpd/providers/dpd_lookup_provider.dart';
 import '../../dpd/providers/dpd_settings_provider.dart';
-import '../../dpd/widgets/dpd_results_view.dart';
-import '../../dpd/widgets/dpd_status_message.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
-import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
-import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
-import 'pali_definition_card.dart';
+import 'ordered_dictionary_items.dart';
+import 'page_anchors.dart';
 
 /// A dictionary sheet that can be shown in a sidebar or as a standalone
 /// widget. When used in the right sidebar on desktop, it communicates
@@ -153,11 +151,15 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   String? _cachedResultsQuery;
   DpdLookup? _cachedResultsLookup;
   String? _cachedResultsSearchWord;
-  String? _cachedResultsBooksKey;
-  String? _cachedResultsMdxKey;
+  String? _cachedResultsListKey;
   AsyncValue<List<String>>? _cachedResultsSuggestions;
   String? _cachedResultsExpandedKey;
   DictionaryLevel? _cachedResultsLevel;
+  double? _cachedResultsFontScale;
+  bool? _cachedResultsShowSummary;
+
+  /// Where each summary line of the results jumps to.
+  final PageAnchors _anchors = PageAnchors();
 
   // Search history
   late final List<String> _searchHistory = [];
@@ -291,11 +293,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _cachedResultsQuery = null;
       _cachedResultsLookup = null;
       _cachedResultsSearchWord = null;
-      _cachedResultsBooksKey = null;
-      _cachedResultsMdxKey = null;
+      _cachedResultsListKey = null;
       _cachedResultsSuggestions = null;
       _cachedResultsExpandedKey = null;
       _cachedResultsLevel = null;
+      _cachedResultsFontScale = null;
+      _cachedResultsShowSummary = null;
     });
   }
 
@@ -944,10 +947,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     ColorScheme colors,
     ScrollController scrollController,
   ) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
-    final idlePromptSize = (pali.fontSize * 0.72).clamp(12.0, 24.0);
+    final pali = ref.watch(dictionaryPaliProvider);
+    final paliSize = (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 26.0);
+    final idlePromptSize = (pali.fontSize * 0.72).clamp(kDictionaryMinTextSize, 24.0);
     // Attach the sheet's scroll controller even when idle: the header's
     // drag-to-resize/close reads the sheet size via the controller, and
     // DraggableScrollableController.isAttached requires the controller to
@@ -1037,10 +1039,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// Rendered below the enabled dictionary sections when DPD has no exact
   /// match for the searched word.
   List<Widget> _prefixSuggestionsSlivers(ColorScheme colors, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
+    final pali = ref.watch(dictionaryPaliProvider);
 
-    final didYouMeanSize = (pali.fontSize * 0.64).clamp(10.0, 18.0);
+    final didYouMeanSize = (pali.fontSize * 0.64).clamp(kDictionaryMinTextSize, 18.0);
     return ref
         .watch(dpdSuggestionsProvider(_query))
         .when(
@@ -1142,11 +1143,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         );
   }
 
-  /// Show combined results from DPD and other dictionaries.
-  ///
-  /// DPD (book_id=11) and the Pāli definition dictionary (book_id=100) are
-  /// rendered inline at their settings-defined order position rather than
-  /// pinned to the top.
+  /// Show combined results from DPD and the other dictionaries, in the order
+  /// of the user's dictionary list.
   Widget _buildDictionaryResults(
     ColorScheme colors,
     DpdLookup lookup,
@@ -1158,43 +1156,36 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
     return Consumer(
       builder: (context, ref, _) {
-        final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
-        final mdxAsync = ref.watch(mdxDictionariesProvider);
+        final listAsync = ref.watch(dictionaryListProvider);
         // Expand/collapse state is part of the memo key: toggling a card
         // must rebuild, while sheet drag frames reuse the cached tree.
         final expandedMap = ref.watch(dictionaryExpandedProvider);
         final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
+        final fontScale = ref.watch(dictionaryFontScaleProvider);
+        final showSummary = ref.watch(
+          dpdSettingsProvider.select((s) => s.showSummary),
+        );
         // When DPD misses, the "Did you mean?" suggestions are a nested
         // provider; watch it here (instead of inside a cached subtree) so a
         // resolve invalidates the memoized results and rebuilds them.
         final suggestionsAsync = includePrefixSuggestions
             ? ref.watch(dpdSuggestionsProvider(_query))
             : null;
-        return booksAsync.when(
+        return listAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => const SizedBox.shrink(),
-          data: (books) {
-            final enabledBooks = books.where((b) => b.userChoice).toList();
-            final mdxBooks = (mdxAsync.valueOrNull ?? [])
-                .where((d) => d.enabled && d.status == MdxStatus.ready)
-                .toList();
+          data: (entries) {
             // Memoize: skip rebuilding when nothing changed. The sheet's
             // builder re-runs on every drag/keyboard frame, and rebuilding
             // flutter_html definitions each time is the dictionary's biggest
             // per-frame cost.
-            final booksKey = enabledBooks
-                .map((b) => '${b.id}:${b.userChoice}:${b.userOrder}')
-                .join('|');
-            final mdxKey = mdxBooks
-                .map(
-                  (d) =>
-                      '${d.id}:${d.userOrder}:${d.entryCount}:${d.status.name}',
-                )
+            final listKey = entries
+                .map((e) => '${e.item.id}:${e.enabled}:${e.item.ready}')
                 .join('|');
             final expandedKey = [
-              'dpd:${expandedMap['dpd'] ?? true}',
-              for (final b in enabledBooks) 'book_${b.id}:${expandedMap['book_${b.id}'] ?? true}',
-              for (final m in mdxBooks) 'mdx_${m.id}:${expandedMap['mdx_${m.id}'] ?? true}',
+              for (final e in entries)
+                if (e.enabled && e.item.kind != DictionaryItemKind.dpdSource)
+                  '${e.item.id}:${expandedMap[e.item.id] ?? true}',
             ].join('|');
             // Suggestions value identity is part of the key: when it
             // transitions loading → data, the builder re-runs (watch above)
@@ -1203,11 +1194,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 _cachedResultsQuery == _query &&
                 identical(_cachedResultsLookup, lookup) &&
                 _cachedResultsSearchWord == searchWord &&
-                _cachedResultsBooksKey == booksKey &&
-                _cachedResultsMdxKey == mdxKey &&
+                _cachedResultsListKey == listKey &&
                 identical(_cachedResultsSuggestions, suggestionsAsync) &&
                 _cachedResultsExpandedKey == expandedKey &&
-                _cachedResultsLevel == level) {
+                _cachedResultsLevel == level &&
+                _cachedResultsFontScale == fontScale &&
+                _cachedResultsShowSummary == showSummary) {
               return _cachedResultsWidget!;
             }
 
@@ -1230,21 +1222,18 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 child: CustomScrollView(
                   controller: scrollController,
                   slivers: [
-                    ..._buildDictionarySections(
-                      colors,
-                      lookup,
-                      searchWord,
-                      enabledBooks,
-                    ),
-                    for (final m in mdxBooks)
-                      SliverToBoxAdapter(
-                        child: MdxDefinitionSection(
-                          dictId: m.id,
-                          dictTitle: m.title,
-                          searchWord: searchWord,
-                          onEntryTap: _selectWord,
-                        ),
-                      ),
+                    for (final w in buildOrderedDictionaryItems(
+                      entries: entries,
+                      lookup: lookup,
+                      level: level,
+                      searchWord: searchWord,
+                      colors: colors,
+                      onWordTap: _selectWord,
+                      anchors: _anchors,
+                      onJump: (id) => _anchors.jumpTo(id, scrollController),
+                      showSummary: showSummary,
+                    ))
+                      SliverToBoxAdapter(child: w),
                     if (includePrefixSuggestions)
                       ..._prefixSuggestionsSlivers(colors, ref),
                     const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -1256,82 +1245,16 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             _cachedResultsQuery = _query;
             _cachedResultsLookup = lookup;
             _cachedResultsSearchWord = searchWord;
-            _cachedResultsBooksKey = booksKey;
-            _cachedResultsMdxKey = mdxKey;
+            _cachedResultsListKey = listKey;
             _cachedResultsSuggestions = suggestionsAsync;
             _cachedResultsExpandedKey = expandedKey;
             _cachedResultsLevel = level;
+            _cachedResultsFontScale = fontScale;
+            _cachedResultsShowSummary = showSummary;
             return built;
           },
         );
       },
-    );
-  }
-
-  /// Build all dictionary sections in settings order.
-  ///
-  /// - book_id=11 (DPD) → rich DPD section (headwords + deconstructor)
-  /// - book_id=100 (Pāli definition) → linked sentence cards
-  /// - everything else → plain-text definition lookup
-  ///
-  /// Each section owns only its bottom spacing (no side padding — the
-  /// results scroll view provides one uniform side padding) and returns a
-  /// zero-size widget when it has no record, so empty dictionaries simply
-  /// disappear (no "No entry found" text).
-  List<Widget> _buildDictionarySections(
-    ColorScheme colors,
-    DpdLookup lookup,
-    String searchWord,
-    List<DictionaryBook> enabledBooks,
-  ) {
-    if (enabledBooks.isEmpty) return const <Widget>[];
-
-    return enabledBooks.map((book) {
-      final child = switch (book.id) {
-        11 =>
-          (lookup.hasMatch || lookup.unavailable != null)
-              ? _buildDpdSection(colors, lookup)
-              : const SizedBox.shrink(),
-        100 => PaliDefinitionSection(
-          searchWord: searchWord,
-          bookName: book.name,
-          colors: colors,
-        ),
-        _ => DictDefinitionSection(
-          bookId: book.id,
-          bookName: book.name,
-          searchWord: searchWord,
-          colors: colors,
-          onEntryTap: _selectWord,
-        ),
-      };
-      if (child is SizedBox && child.child == null) {
-        return const SliverToBoxAdapter(child: SizedBox.shrink());
-      }
-      return SliverToBoxAdapter(child: child);
-    }).toList();
-  }
-
-  // ── DPD Section ──────────────────────────────────────────────────────────
-
-  Widget _buildDpdSection(ColorScheme colors, DpdLookup lookup) {
-    // Collapsed: header only. The entries are only built while expanded
-    // (lazy), and the expand state persists across searches.
-    final expanded = ref.watch(dictionaryExpandedFamilyProvider('dpd'));
-    return DictionaryCollapsibleCard(
-      dictionaryKey: 'dpd',
-      title: AppLocalizations.of(context).dpdDictionary,
-      icon: Icons.auto_stories,
-      colors: colors,
-      child: !expanded
-          ? const SizedBox.shrink()
-          : lookup.unavailable != null
-          ? DpdStatusMessage(unavailable: lookup.unavailable!)
-          : DpdResultsView(
-              lookup: lookup,
-              level: ref.read(dpdSettingsProvider).level,
-              onWordTap: _selectWord,
-            ),
     );
   }
 }

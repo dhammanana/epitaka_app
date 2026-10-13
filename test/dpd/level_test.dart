@@ -16,8 +16,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dpd_fixture.dart';
 import 'shell_harness.dart';
 
-DictionaryLevel _shownLevel(WidgetTester tester) =>
-    tester.widget<DpdResultsView>(find.byType(DpdResultsView)).level;
+// At Saṅkhitta the summary is tall and the sheet builds lazily, so the (empty)
+// results view can sit off screen.
+DictionaryLevel _shownLevel(WidgetTester tester) => tester
+    .widget<DpdResultsView>(find.byType(DpdResultsView, skipOffstage: false))
+    .level;
 
 void main() {
   late Directory dir;

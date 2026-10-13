@@ -102,6 +102,9 @@ class _TapSearchWrapperState extends ConsumerState<TapSearchWrapper> {
         if (_isInsideTappable(target)) return null;
         final localPosition = target.globalToLocal(globalPosition);
         final textPosition = target.getPositionForOffset(localPosition);
+        // A link inside the text (a source abbreviation) has its own tap.
+        final span = target.text.getSpanForPosition(textPosition);
+        if (span is TextSpan && span.recognizer != null) return null;
         final raw = extractWordAt(
           target.text.toPlainText(),
           textPosition.offset,

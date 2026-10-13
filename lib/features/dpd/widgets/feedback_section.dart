@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -52,36 +53,11 @@ class FeedbackSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text.rich(
-              TextSpan(
-                style: Theme.of(context).textTheme.bodyMedium,
-                children: [
-                  const TextSpan(text: 'permalink '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.baseline,
-                    baseline: TextBaseline.alphabetic,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      // disabled like every other link: the entry screen wraps
-                      // this subtree in a SelectionArea that fires a lookup on
-                      // selection change, so a tap would start a tap-search
-                      child: SelectionContainer.disabled(
-                        child: GestureDetector(
-                          onTap: () => _openUrl(_permalink),
-                          child: Text(
-                            _permalink,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: context.palette.primaryText,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            _FeedbackLink(
+              linkText: _permalink,
+              leading: 'Permalink ',
+              description: '',
+              onTap: () => _openUrl(_permalink),
             ),
             const SizedBox(height: 8),
             Text(
@@ -132,16 +108,37 @@ class FeedbackSection extends StatelessWidget {
   }
 }
 
-class _FeedbackLink extends StatelessWidget {
+/// A line with one tappable phrase. The phrase is a span of the line, not a
+/// widget placed in it: a widget inside a line is scaled by the text scale a
+/// second time, which drew the links about 1.5 times too big.
+class _FeedbackLink extends StatefulWidget {
   const _FeedbackLink({
     required this.linkText,
     required this.description,
     required this.onTap,
+    this.leading = '',
   });
 
   final String linkText;
   final String description;
   final VoidCallback onTap;
+
+  /// Plain text before the link.
+  final String leading;
+
+  @override
+  State<_FeedbackLink> createState() => _FeedbackLinkState();
+}
+
+class _FeedbackLinkState extends State<_FeedbackLink> {
+  late final TapGestureRecognizer _tap = TapGestureRecognizer()
+    ..onTap = () => widget.onTap();
+
+  @override
+  void dispose() {
+    _tap.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,26 +147,17 @@ class _FeedbackLink extends StatelessWidget {
       TextSpan(
         style: style,
         children: [
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: SelectionContainer.disabled(
-                child: GestureDetector(
-                  onTap: onTap,
-                  child: Text(
-                    linkText,
-                    style: style?.copyWith(
-                      color: context.palette.primaryText,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
+          if (widget.leading.isNotEmpty) TextSpan(text: widget.leading),
+          TextSpan(
+            text: widget.linkText,
+            recognizer: _tap,
+            mouseCursor: SystemMouseCursors.click,
+            style: style?.copyWith(
+              color: context.palette.primaryText,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          TextSpan(text: description),
+          if (widget.description.isNotEmpty) TextSpan(text: widget.description),
         ],
       ),
     );

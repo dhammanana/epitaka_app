@@ -6,11 +6,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/dictionary_books_provider.dart';
+import '../../dpd/providers/dictionary_list_provider.dart';
+import '../providers/dictionary_panel_memory.dart';
 import '../../dpd/providers/dpd_lookup_provider.dart';
 import '../../dpd/providers/dpd_settings_provider.dart';
-import '../../dpd/widgets/dpd_results_view.dart';
-import '../../dpd/widgets/dpd_status_message.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -20,11 +19,9 @@ import '../../../core/utils/velthuis.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
-import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
-import '../providers/dictionary_expanded_provider.dart';
-import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
-import 'pali_definition_card.dart';
+import 'ordered_dictionary_items.dart';
+import 'page_anchors.dart';
 
 /// A dictionary panel that can be shown in a sidebar or as a standalone
 /// widget. When used in the right sidebar on desktop, it communicates
@@ -53,6 +50,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
+
+  /// Where each summary line of the results jumps to.
+  final PageAnchors _anchors = PageAnchors();
   Timer? _suggestDebounce;
   bool _isConverting = false;
 
@@ -204,6 +204,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     if (word.isEmpty) return;
     _suggestDebounce?.cancel();
     _addToHistory(word);
+    DictionaryPanelMemory.saveWord(word);
     setState(() {
       _query = word;
       _draft = word;
@@ -768,62 +769,31 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
     return Consumer(
       builder: (context, ref, _) {
-        final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
-        final mdxAsync = ref.watch(mdxDictionariesProvider);
-        return booksAsync.when(
+        final listAsync = ref.watch(dictionaryListProvider);
+        final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
+        final showSummary = ref.watch(
+          dpdSettingsProvider.select((s) => s.showSummary),
+        );
+        return listAsync.when(
           loading: () =>
               const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           error: (_, _) => const SizedBox.shrink(),
-          data: (books) {
-            final enabledBooks = books.where((b) => b.userChoice).toList();
-            final children = <Widget>[];
-            for (final book in enabledBooks) {
-              if (book.id == 11) {
-                if (lookup.hasMatch || lookup.unavailable != null) {
-                  children.add(
-                    _DpdSection(
-                      colors: colors,
-                      lookup: lookup,
-                      onWordTap: _selectWord,
-                    ),
-                  );
-                }
-              } else if (book.id == 100) {
-                children.add(
-                  PaliDefinitionSection(
-                    searchWord: searchWord,
-                    bookName: book.name,
-                    colors: colors,
-                  ),
-                );
-              } else {
-                children.add(
-                  DictDefinitionSection(
-                    bookId: book.id,
-                    bookName: book.name,
-                    searchWord: searchWord,
-                    colors: colors,
-                    onEntryTap: _selectWord,
-                  ),
-                );
-              }
-            }
-            if (includePrefixSuggestions) {
-              children.addAll(_prefixSuggestionChildren(colors));
-            }
-            for (final m in (mdxAsync.valueOrNull ?? []).where(
-              (d) => d.enabled,
-            )) {
-              children.add(
-                MdxDefinitionSection(
-                  dictId: m.id,
-                  dictTitle: m.title,
-                  searchWord: searchWord,
-                  onEntryTap: _selectWord,
-                ),
-              );
-            }
-            children.add(const SizedBox(height: 24));
+          data: (entries) {
+            final children = <Widget>[
+              ...buildOrderedDictionaryItems(
+                entries: entries,
+                lookup: lookup,
+                level: level,
+                searchWord: searchWord,
+                colors: colors,
+                onWordTap: _selectWord,
+                anchors: _anchors,
+                onJump: (id) => _anchors.jumpTo(id, _scrollController),
+                showSummary: showSummary,
+              ),
+              if (includePrefixSuggestions) ..._prefixSuggestionChildren(colors),
+              const SizedBox(height: 24),
+            ];
             // Select-and-search: same treatment as the dictionary sheet — a
             // SelectionArea over the results lets any word inside a
             // definition be selected and re-looked-up via the toolbar's
@@ -842,45 +812,6 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
           },
         );
       },
-    );
-  }
-}
-
-// ── DPD Section ────────────────────────────────────────────────────────
-
-class _DpdSection extends ConsumerWidget {
-  final ColorScheme colors;
-  final DpdLookup lookup;
-  final void Function(String word) onWordTap;
-
-  const _DpdSection({
-    required this.colors,
-    required this.lookup,
-    required this.onWordTap,
-  });
-
-  static const _cardKey = 'dpd';
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Collapsed: header only. The entries are only built while expanded
-    // (lazy), and the expand state persists across searches.
-    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
-    final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
-    return DictionaryCollapsibleCard(
-      dictionaryKey: _cardKey,
-      title: AppLocalizations.of(context).dpdDictionary,
-      icon: Icons.auto_stories,
-      colors: colors,
-      child: !expanded
-          ? const SizedBox.shrink()
-          : lookup.unavailable != null
-          ? DpdStatusMessage(unavailable: lookup.unavailable!)
-          : DpdResultsView(
-              lookup: lookup,
-              level: level,
-              onWordTap: onWordTap,
-            ),
     );
   }
 }

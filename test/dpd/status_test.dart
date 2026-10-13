@@ -20,25 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dpd_fixture.dart';
-
-class _FakeBooksNotifier extends DictionaryBooksNotifier {
-  _FakeBooksNotifier(super.ref);
-
-  @override
-  Future<void> load() async {
-    state = AsyncData(const [
-      DictionaryBook(id: 11, name: 'DPD', userOrder: 1, userChoice: true),
-    ]);
-  }
-}
-
-/// Keeps the books list loading, so the settings page shows only its DPD row.
-class _LoadingBooksNotifier extends DictionaryBooksNotifier {
-  _LoadingBooksNotifier(super.ref);
-
-  @override
-  Future<void> load() async {}
-}
+import 'shell_harness.dart' show preloadDictionaryList;
 
 void main() {
   late Directory dir;
@@ -53,18 +35,13 @@ void main() {
 
   Future<ProviderContainer> makeContainer(
     WidgetTester tester,
-    File dbFile, {
-    bool loadingBooks = false,
-  }) async {
+    File dbFile,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final container = ProviderContainer(
       overrides: [
         dpdDatabaseFileProvider.overrideWith((ref) async => dbFile),
-        dictionaryBooksNotifierProvider.overrideWith(
-          (ref) => loadingBooks
-              ? _LoadingBooksNotifier(ref)
-              : _FakeBooksNotifier(ref),
-        ),
+        dictionaryBooksProvider.overrideWith((ref) async => const []),
       ],
     );
     addTearDown(container.dispose);
@@ -72,6 +49,7 @@ void main() {
     container.read(settingsProvider.notifier).init(prefs);
     // Real file work never finishes on the test's fake clock.
     await tester.runAsync(() async {
+      await preloadDictionaryList(container);
       container.listen(dpdDatabaseProvider, (_, _) {});
       container.listen(dpdLookupProvider('dhamma'), (_, _) {});
       await container.read(dpdLookupProvider('dhamma').future);
@@ -155,7 +133,7 @@ void main() {
   testWidgets('settings: the installed release shows', (tester) async {
     bigView(tester);
     final file = buildDpdFixture(dir);
-    final container = await makeContainer(tester, file, loadingBooks: true);
+    final container = await makeContainer(tester, file);
 
     await tester.pumpWidget(wrap(container, const DictionarySettingsBody()));
     await settle(tester);
@@ -166,7 +144,7 @@ void main() {
   testWidgets('settings: no file → not-installed and the path', (tester) async {
     bigView(tester);
     final missing = File('${dir.path}/dpd-mobile.db');
-    final container = await makeContainer(tester, missing, loadingBooks: true);
+    final container = await makeContainer(tester, missing);
 
     await tester.pumpWidget(wrap(container, const DictionarySettingsBody()));
     await settle(tester);
