@@ -29,6 +29,7 @@ QueryExecutor openDriftExecutor(
   File file, {
   DatabaseSetup? setup,
   bool logStatements = false,
+  bool enableMigrations = true,
 }) {
   final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   void wrappedSetup(db) {
@@ -43,6 +44,7 @@ QueryExecutor openDriftExecutor(
       file,
       setup: wrappedSetup,
       logStatements: logStatements,
+      enableMigrations: enableMigrations,
     );
   }
 
@@ -50,5 +52,6 @@ QueryExecutor openDriftExecutor(
     file,
     setup: wrappedSetup,
     logStatements: logStatements,
+    enableMigrations: enableMigrations,
   );
 }

@@ -1114,6 +1114,14 @@ class AppLocalizations {
   String translationTitle(String langName) => '$langName ${_t('Translation')}';
 
   String get dpdDictionary => _t('DPD Dictionary');
+  String get dpdDatabase => _t('DPD database');
+  String get dpdNotInstalled => _t('The DPD database is not installed.');
+  String dpdUnsupportedSchema(String? schema) =>
+      '${_t('This DPD database uses a format this version of ePitaka cannot read')}'
+      ' (${_t('schema')} ${schema ?? '?'}). ${_t('Update ePitaka to use it.')}';
+  String get dpdExpectedFile => _t('Expected file');
+  String dpdInstalledRelease(String release) =>
+      '${_t('Installed release')}: $release';
   String get compoundBreakdown => _t('Compound breakdown');
   String get englishMeaning => _t('English meaning');
   String get pinToSidePanel => _t('Pin to side panel');

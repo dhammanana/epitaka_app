@@ -1,8 +1,7 @@
-import 'package:epitaka/core/database/dpd_dictionary_database.dart';
 import 'package:epitaka/core/providers/dictionary_books_provider.dart';
-import 'package:epitaka/core/providers/dpd_dictionary_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
+import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,15 +17,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// leftover from an earlier refactor) opened the sidebar with an empty
 /// search field.
 void main() {
-  // Stub the DPD lookup so no database file is touched; an exact headword
-  // match also avoids the "Did you mean?" prefix-search provider.
-  final lookupOverride = dpdDictionaryLookupProvider.overrideWith(
-    (ref, String word) async => DpdFullLookup(
-      searchedKey: word,
-      headwords: [
-        DpdHeadwordRow(id: 1, lemma1: word, meaningHtml: '<p>test</p>'),
-      ],
+  // Stub the DPD lookup and its suggestions so no database file is touched.
+  // An empty lookup is a plain miss, which is all these tests need.
+  final lookupOverride = dpdLookupProvider.overrideWith(
+    (ref, String word) async => DpdLookup(
+      query: word,
+      headwords: const [],
+      roots: const [],
+      secondary: const [],
+      timer: Stopwatch(),
     ),
+  );
+  final suggestionsOverride = dpdSuggestionsProvider.overrideWith(
+    (ref, String prefix) async => <String>[],
   );
   // The real books notifier reads the epitaka database, which never resolves
   // in the widget-test environment; stub it with an empty list instead.
@@ -39,7 +42,7 @@ void main() {
     required SidePanelsState initialPanels,
   }) async {
     final container = ProviderContainer(
-      overrides: [lookupOverride, booksOverride],
+      overrides: [lookupOverride, suggestionsOverride, booksOverride],
     );
     addTearDown(container.dispose);
     container.read(sidePanelProvider.notifier).state = initialPanels;
