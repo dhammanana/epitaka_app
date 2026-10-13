@@ -12,7 +12,7 @@ import 'core/utils/app_localizations.dart';
 import 'core/utils/keep_awake.dart';
 import 'core/utils/l10n/app_strings.dart';
 import 'core/utils/platform_info.dart';
-import 'core/providers/dpd_dictionary_provider.dart';
+import 'features/dpd/providers/dpd_database_provider.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/indexing/index_controller.dart';
 import 'features/reader/providers/tts_reading_provider.dart';
@@ -180,9 +180,11 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       await ref.read(annotationSyncProvider.future);
     } catch (_) {}
 
-    // Warm the DPD dictionary connection (provider caches the DB instance)
+    // Warm the DPD dictionary connection (provider caches the DB instance).
+    // The reader's quote-join check reads the quick handle synchronously, so
+    // it must be open before the first tap.
     try {
-      await ref.read(dpdDictionaryDbProvider.future);
+      await ref.read(dpdQuickLookupProvider.future);
       developer.log('[DICT] DPD warm-up triggered', name: 'epitaka.dict');
     } catch (_) {}
   }

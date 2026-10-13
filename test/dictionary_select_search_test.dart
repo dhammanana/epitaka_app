@@ -9,86 +9,74 @@
 /// it and show `Search “word”`; tapping that re-searches the dictionary.
 library;
 
-import 'package:epitaka/core/database/dpd_dictionary_database.dart';
-import 'package:epitaka/core/providers/dictionary_books_provider.dart';
-import 'package:epitaka/core/providers/dpd_dictionary_provider.dart';
+import 'dart:io';
+
 import 'package:epitaka/core/providers/settings_provider.dart';
-import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// Stubbed DPD lookup: querying 'dhamma' returns one headword whose lemma is
-/// a *different* word ('khetta') — so the test can select a word that isn't
-/// already the search term and observe the re-search.
-DpdFullLookup _lookup(String word) => DpdFullLookup(
-      searchedKey: word,
-      headwords: const [
-        DpdHeadwordRow(
-          id: 1,
-          lemma1: 'khetta',
-          meaningHtml: '<b>khetta</b>',
-        ),
-      ],
-    );
-
-/// Stub for [DictionaryBooksNotifier]: skips the real database and reports
-/// one enabled dictionary (the DPD, id 11) so results render in the test.
-class _FakeBooksNotifier extends DictionaryBooksNotifier {
-  _FakeBooksNotifier(super.ref);
-
-  @override
-  Future<void> load() async {
-    state = AsyncData(const [
-      DictionaryBook(id: 11, name: 'DPD', userOrder: 1, userChoice: true),
-    ]);
-  }
-}
+import 'dpd/dpd_fixture.dart';
+import 'dpd/shell_harness.dart';
 
 void main() {
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
+  late Directory dir;
+  late File dbFile;
+
+  setUpAll(() async {
+    dir = await Directory.systemTemp.createTemp('dpd_select_search_test');
+    dbFile = buildDpdFixture(dir);
   });
 
-  Future<ProviderContainer> makeContainer() async {
-    final container = ProviderContainer(overrides: [
-      // Override every word the test might search (the initial 'dhamma' and
-      // the re-search target 'khetta') so neither hits the real database.
-      dpdDictionaryLookupProvider('dhamma').overrideWith(
-        (ref) async => _lookup('dhamma'),
-      ),
-      dpdDictionaryLookupProvider('khetta').overrideWith(
-        (ref) async => _lookup('khetta'),
-      ),
-      dictionaryBooksNotifierProvider.overrideWith(
-        (ref) => _FakeBooksNotifier(ref),
-      ),
-    ]);
-    addTearDown(container.dispose);
-    final prefs = await SharedPreferences.getInstance();
-    container.read(settingsProvider.notifier).init(prefs);
-    return container;
-  }
+  tearDownAll(() async {
+    await dir.delete(recursive: true);
+  });
 
-  Widget wrap(ProviderContainer container, Widget child) {
-    return UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(
-        locale: const Locale('en'),
-        supportedLocales: AppLocalizationsDelegate.supportedLocales,
-        localizationsDelegates: const [
-          AppLocalizationsDelegate(),
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        home: Scaffold(body: child),
-      ),
+  // The selection toolbar is how the double-tap setting looks a word up, so
+  // these tests use it. (With the single-tap setting a tap searches at once.)
+  Future<ProviderContainer> makeContainer(WidgetTester tester) =>
+      makeShellContainer(
+        tester,
+        dbFile,
+        words: ['dhamma', 'character'],
+        // `character` has no DPD entry, so the sheet asks for suggestions.
+        prefixes: ['character'],
+        gesture: WordLookupGesture.doubleTap,
+      );
+
+  Widget wrap(ProviderContainer container, Widget child) =>
+      wrapShell(container, child);
+
+  /// The screen position of the character at [index] in the paragraph that
+  /// draws [paragraphText], found through the render tree.
+  Offset pointInParagraph(
+    WidgetTester tester,
+    String paragraphText,
+    int index,
+  ) {
+    RenderParagraph? found;
+    void visit(RenderObject node) {
+      if (found == null &&
+          node is RenderParagraph &&
+          node.text.toPlainText().contains(paragraphText)) {
+        found = node;
+        return;
+      }
+      node.visitChildren(visit);
+    }
+
+    visit(tester.binding.renderViews.first);
+    final paragraph = found!;
+    final at = paragraph.text.toPlainText().indexOf(paragraphText) + index;
+    final caret = paragraph.getOffsetForCaret(
+      TextPosition(offset: at),
+      Rect.zero,
     );
+    final height = paragraph.getFullHeightForCaret(TextPosition(offset: at));
+    return paragraph.localToGlobal(caret + Offset(2, height / 2));
   }
 
   /// Two taps ~90ms apart, the second held past kPressTimeout — the same
@@ -116,31 +104,31 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = await makeContainer();
+    final container = await makeContainer(tester);
     await tester.pumpWidget(
       wrap(container, const DictionarySheet(initialWord: 'dhamma')),
     );
     await tester.pumpAndSettle();
 
-    // The results render the headword lemma ('khetta') — a word to select.
-    expect(find.text('khetta'), findsWidgets);
+    // The summary line "nature; character" holds a word to select.
+    final target = pointInParagraph(tester, 'nature; character', 12);
 
-    // Double-tap the bold Pāli word inside the definition.
-    await doubleTapAt(tester, tester.getCenter(find.text('khetta').first));
+    // Double-tap the word "character" inside the entry.
+    await doubleTapAt(tester, target);
     await tester.pumpAndSettle();
 
     // The selection toolbar offers the Search action + Copy + Select All.
-    expect(find.text('Search “khetta”'), findsOneWidget,
+    expect(find.text('Search “character”'), findsOneWidget,
         reason: 'toolbar lets the user re-search the selected word');
     expect(find.text('Copy'), findsOneWidget);
     expect(find.text('Select All'), findsOneWidget);
 
     // Tapping Search re-runs the dictionary lookup for the selected word.
-    await tester.tap(find.text('Search “khetta”'));
+    await tester.tap(find.text('Search “character”'));
     await tester.pumpAndSettle();
 
     final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'khetta',
+    expect(field.controller!.text, 'character',
         reason: 'the search field now holds the selected word');
   });
 
@@ -151,7 +139,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final container = await makeContainer();
+    final container = await makeContainer(tester);
     await tester.pumpWidget(
       wrap(
         container,
@@ -164,18 +152,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('khetta'), findsWidgets);
+    final target = pointInParagraph(tester, 'nature; character', 12);
 
-    await doubleTapAt(tester, tester.getCenter(find.text('khetta').first));
+    await doubleTapAt(tester, target);
     await tester.pumpAndSettle();
 
-    expect(find.text('Search “khetta”'), findsOneWidget);
+    expect(find.text('Search “character”'), findsOneWidget);
 
-    await tester.tap(find.text('Search “khetta”'));
+    await tester.tap(find.text('Search “character”'));
     await tester.pumpAndSettle();
 
     final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'khetta',
+    expect(field.controller!.text, 'character',
         reason: 'the panel search field now holds the selected word');
   });
 }

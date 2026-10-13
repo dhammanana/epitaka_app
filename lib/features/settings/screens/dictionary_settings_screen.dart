@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/providers/dictionary_books_provider.dart';
+import '../../dpd/providers/dpd_database_provider.dart';
 import '../../../features/mdx_dictionary/widgets/mdx_settings_section.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -53,6 +54,8 @@ class DictionarySettingsBody extends ConsumerWidget {
             fontSize: 14,
           ),
         ),
+        const SizedBox(height: AppDimensions.lg),
+        const _DpdDatabaseSection(),
         const SizedBox(height: AppDimensions.lg),
         booksAsync.when(
           loading: () => const Center(
@@ -157,6 +160,62 @@ class DictionarySettingsBody extends ConsumerWidget {
               ],
             );
           },
+        ),
+      ],
+    );
+  }
+}
+
+/// Which DPD release is installed, or why there is none.
+class _DpdDatabaseSection extends ConsumerWidget {
+  const _DpdDatabaseSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final state = ref.watch(dpdDatabaseProvider);
+    final subtitle = state.when(
+      loading: () => '…',
+      error: (e, _) => loc.errorMessage(e.toString()),
+      data: (s) => switch (s.status) {
+        DpdDatabaseStatus.ready => loc.dpdInstalledRelease(
+          s.releaseVersion ?? '?',
+        ),
+        DpdDatabaseStatus.notInstalled => loc.dpdNotInstalled,
+        DpdDatabaseStatus.unsupportedSchema => loc.dpdUnsupportedSchema(
+          s.schemaVersion,
+        ),
+      },
+    );
+    final path = state.valueOrNull?.path;
+    final isReady = state.valueOrNull?.status == DpdDatabaseStatus.ready;
+    return SettingsSection(
+      title: loc.dpdDatabase,
+      colors: colors,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppDimensions.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                subtitle,
+                style: AppTypography.labelMedium.copyWith(
+                  color: isReady ? colors.onSurface : colors.error,
+                ),
+              ),
+              if (path != null) ...[
+                const SizedBox(height: 4),
+                SelectableText(
+                  path,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );

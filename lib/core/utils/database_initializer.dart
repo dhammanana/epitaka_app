@@ -485,6 +485,10 @@ Future<void> migrateLegacyDatabases() async {
         if (entry is! File) continue;
         final name = p.basename(entry.path);
         if (!name.endsWith('.db')) continue;
+        // The DPD app keeps its own dpd-mobile.db (and its WAL) in Documents.
+        // Copying its side files next to ePitaka's own download pairs a
+        // foreign WAL with it, and SQLite reports "disk image is malformed".
+        if (name == 'dpd-mobile.db' || name == 'dpd-dictionary.db') continue;
         for (final suffix in ['', '-wal', '-shm', '-journal']) {
           final src = File('${entry.path}$suffix');
           if (!await src.exists()) continue;

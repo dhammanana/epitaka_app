@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/dpd/theme/dpd_palette_from_scheme.dart';
 import '../providers/settings_provider.dart' show ThemePreference;
 import 'app_colors.dart';
 import 'app_dimensions.dart';
@@ -133,6 +134,7 @@ class AppTheme {
       brightness: colors.brightness,
       colorScheme: colors,
       scaffoldBackgroundColor: colors.surface,
+      extensions: [dpdPaletteFromScheme(colors)],
 
       // ── AppBar ──────────────────────────────────────────────────────
       appBarTheme: AppBarTheme(
