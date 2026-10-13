@@ -5,6 +5,7 @@ import '../theme/dpd_colors.dart';
 import '../theme/dpd_palette.dart';
 import 'entry_content.dart';
 import 'family_table.dart';
+import '../utils/text_size.dart';
 import '../utils/text_filters.dart';
 
 /// A single sub-family entry for multi-family display.
@@ -190,7 +191,10 @@ class _JumpToNav extends StatelessWidget {
       children: [
         Text(
           'jump to: ',
-          style: TextStyle(fontSize: 12, color: context.palette.primaryText),
+          style: TextStyle(
+            fontSize: context.dpdSize(12),
+            color: context.palette.primaryText,
+          ),
         ),
         for (int i = 0; i < keys.length; i++)
           MouseRegion(
@@ -203,7 +207,7 @@ class _JumpToNav extends StatelessWidget {
                     i < keys.length - 1 ? '${keys[i]}, ' : keys[i],
                   ),
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: context.dpdSize(12),
                     color: context.palette.primaryText,
                     fontWeight: FontWeight.w700,
                     decoration: TextDecoration.none,
@@ -254,12 +258,16 @@ class _BackToTopLink extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.keyboard_double_arrow_up, size: 14, color: color),
+              Icon(
+                Icons.keyboard_double_arrow_up,
+                size: context.dpdSize(14),
+                color: color,
+              ),
               const SizedBox(width: 4),
               Text(
                 'back to top',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: context.dpdSize(12),
                   color: color,
                   fontWeight: FontWeight.w700,
                 ),

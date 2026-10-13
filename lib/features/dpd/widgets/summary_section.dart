@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/summary_entry.dart';
+import '../theme/dpd_colors.dart';
 import '../theme/dpd_palette.dart';
 import '../utils/text_filters.dart';
 
@@ -50,14 +51,16 @@ List<InlineSpan> _parseBoldSpans(String text, {TextStyle? boldStyle}) {
   return spans;
 }
 
-/// The Saṅkhitta level: one line per headword, root and secondary source.
-/// Built from the DPD app's `SummarySection`. The title, the divider and the
-/// ► tap target are left out, because here the lines are the whole entry
-/// and there is nothing to jump to.
+/// Displays a summary list at the top of search results.
+/// Each entry shows label, type, meaning, and a ► tap target.
 class SummarySection extends StatelessWidget {
-  const SummarySection({super.key, required this.entries});
+  const SummarySection({super.key, required this.entries, this.onTap});
 
   final List<SummaryEntry> entries;
+
+  /// Called with the line's `targetId`. A line with no target, or no [onTap],
+  /// is plain text: no ► and no tap (the DPD app's lines always have both).
+  final void Function(String targetId)? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -71,11 +74,19 @@ class SummarySection extends StatelessWidget {
       }
     }
 
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            'Summary',
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 4),
           for (var i = 0; i < entries.length; i++)
             _SummaryRow(
               entry: entries[i],
@@ -87,7 +98,12 @@ class SummarySection extends StatelessWidget {
                   (lemmaCounts[splitSummaryLemma(entries[i].label).lemma] ??
                       0) <=
                   1,
+              onTap: onTap != null && entries[i].targetId.isNotEmpty
+                  ? () => onTap!(entries[i].targetId)
+                  : null,
             ),
+          const SizedBox(height: 12),
+          Divider(height: 1, color: context.palette.primary.withValues(alpha: 0.3)),
         ],
       ),
     );
@@ -99,11 +115,13 @@ class _SummaryRow extends StatelessWidget {
     required this.entry,
     required this.showHeadwordHeading,
     required this.isSingletonGroup,
+    required this.onTap,
   });
 
   final SummaryEntry entry;
   final bool showHeadwordHeading;
   final bool isSingletonGroup;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -128,47 +146,100 @@ class _SummaryRow extends StatelessWidget {
           : [TextSpan(text: text, style: baseStyle)];
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: entry.type == SummaryEntryType.headword &&
-              splitLabel.suffix != null &&
-              !isSingletonGroup
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (showHeadwordHeading)
-                  Text(context.nigg(splitLabel.lemma), style: labelStyle),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: context.nigg('${splitLabel.suffix} '),
-                        style: linkStyle,
-                      ),
-                      if (entry.typeLabel.isNotEmpty)
-                        TextSpan(text: entry.typeLabel, style: baseStyle),
-                      if (entry.meaning.isNotEmpty)
-                        ...meaningSpans(
-                          entry.typeLabel.isNotEmpty
-                              ? ' ${entry.meaning}'
-                              : entry.meaning,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          : Text.rich(
-              TextSpan(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: DpdColors.borderRadius,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: entry.type == SummaryEntryType.headword &&
+                splitLabel.suffix != null &&
+                !isSingletonGroup
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextSpan(text: context.nigg(entry.label), style: labelStyle),
-                  if (entry.typeLabel.isNotEmpty)
-                    TextSpan(text: ' ${entry.typeLabel}', style: baseStyle),
-                  if (entry.meaning.isNotEmpty)
-                    ...meaningSpans(' ${entry.meaning}'),
+                  if (showHeadwordHeading)
+                    Text(context.nigg(splitLabel.lemma), style: labelStyle),
+                  if (entry.typeLabel.isNotEmpty ||
+                      entry.meaning.isNotEmpty ||
+                      splitLabel.suffix != null)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                if (splitLabel.suffix != null)
+                                  TextSpan(
+                                    text: context.nigg(
+                                      '${splitLabel.suffix} ',
+                                    ),
+                                    style: linkStyle,
+                                  ),
+                                if (entry.typeLabel.isNotEmpty)
+                                  TextSpan(
+                                    text: entry.typeLabel,
+                                    style: baseStyle,
+                                  ),
+                                if (entry.meaning.isNotEmpty)
+                                  ...meaningSpans(
+                                    entry.typeLabel.isNotEmpty
+                                        ? ' ${entry.meaning}'
+                                        : entry.meaning,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Kept in the layout when the line has no tap, so a line wraps the same
+                  // at every level.
+                  Visibility(
+                    visible: onTap != null,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: Text('►', style: linkStyle),
+                  ),
+                      ],
+                    ),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: context.nigg(entry.label),
+                            style: labelStyle,
+                          ),
+                          if (entry.typeLabel.isNotEmpty)
+                            TextSpan(
+                              text: ' ${entry.typeLabel}',
+                              style: baseStyle,
+                            ),
+                          if (entry.meaning.isNotEmpty)
+                            ...meaningSpans(' ${entry.meaning}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Kept in the layout when the line has no tap, so a line wraps the same
+                  // at every level.
+                  Visibility(
+                    visible: onTap != null,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: Text('►', style: linkStyle),
+                  ),
                 ],
               ),
-            ),
+      ),
     );
   }
 }

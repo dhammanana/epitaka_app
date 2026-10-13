@@ -15,6 +15,7 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dpd/models/lookup_results.dart';
 import 'package:epitaka/features/dpd/providers/dpd_database_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
+import 'package:epitaka/features/dpd/providers/dpd_settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -23,17 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dpd_fixture.dart';
-
-class _FakeBooksNotifier extends DictionaryBooksNotifier {
-  _FakeBooksNotifier(super.ref);
-
-  @override
-  Future<void> load() async {
-    state = AsyncData(const [
-      DictionaryBook(id: 11, name: 'DPD', userOrder: 1, userChoice: true),
-    ]);
-  }
-}
+import 'shell_harness.dart' show preloadDictionaryList;
 
 String _drawn(WidgetTester tester) => tester
     .widgetList<RichText>(find.byType(RichText))
@@ -62,18 +53,18 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         dpdDatabaseFileProvider.overrideWith((ref) async => dbFile),
-        dictionaryBooksNotifierProvider.overrideWith(
-          (ref) => _FakeBooksNotifier(ref),
-        ),
+        dictionaryBooksProvider.overrideWith((ref) async => const []),
       ],
     );
     addTearDown(container.dispose);
     final prefs = await SharedPreferences.getInstance();
     container.read(settingsProvider.notifier).init(prefs);
+    container.read(dpdSettingsProvider.notifier).setShowSummary(false);
     // Real database work never finishes on the test's fake clock, so the
     // lookup runs first, outside it, and stays cached while the widget reads
     // it. Starting it inside `runAsync` keeps its futures off the fake clock.
     await tester.runAsync(() async {
+      await preloadDictionaryList(container);
       for (final w in [word, ...alsoLoad]) {
         container.listen(dpdLookupProvider(w), (_, _) {});
         await container.read(dpdLookupProvider(w).future);

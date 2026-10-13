@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/providers/dictionary_books_provider.dart';
+import '../../dictionary/providers/dictionary_font_scale_provider.dart';
+import '../../dpd/providers/dictionary_list_provider.dart';
 import '../../dpd/providers/dpd_database_provider.dart';
 import '../../dpd/providers/dpd_settings_provider.dart';
 import '../../../features/mdx_dictionary/widgets/mdx_settings_section.dart';
@@ -32,7 +33,6 @@ class DictionarySettingsBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
-    final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
     final loc = AppLocalizations.of(context);
 
     return ListView(
@@ -60,110 +60,12 @@ class DictionarySettingsBody extends ConsumerWidget {
         const SizedBox(height: AppDimensions.lg),
         const _DpdDatabaseSection(),
         const SizedBox(height: AppDimensions.lg),
-        booksAsync.when(
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-          error: (e, _) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                '${loc.errorLoadingDict} $e',
-                style: AppTypography.labelSmall.copyWith(color: colors.error),
-              ),
-            ),
-          ),
-          data: (books) {
-            final enabledBooks = books.where((b) => b.userChoice).toList();
-            final disabledBooks = books.where((b) => !b.userChoice).toList();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SettingsSection(
-                  title: loc.enabledDictionaries,
-                  colors: colors,
-                  children: [
-                    if (enabledBooks.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(AppDimensions.md),
-                        child: Text(
-                          loc.noDictEnabled,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      children: enabledBooks
-                          .asMap()
-                          .entries
-                          .map(
-                            (entry) => _DictionaryBookTile(
-                              key: ValueKey('enabled-${entry.value.id}'),
-                              book: entry.value,
-                              index: entry.key,
-                              colors: colors,
-                              isEnabled: true,
-                              showDragHandle: true,
-                              onToggle: () => ref
-                                  .read(
-                                    dictionaryBooksNotifierProvider.notifier,
-                                  )
-                                  .toggleEnabled(entry.value.id, false),
-                            ),
-                          )
-                          .toList(),
-                      onReorderItem: (int oldIndex, int newIndex) {
-                        // NOTE: onReorderItem already returns the FINAL index
-                        // (Flutter adjusts newIndex for the removed item). Do NOT
-                        // decrement newIndex here — doing so double-adjusts and
-                        // breaks single-step moves (e.g. drag item 1 to slot 2
-                        // would snap back). See ReorderableListView docs.
-                        final ids = enabledBooks.map((b) => b.id).toList();
-                        final item = ids.removeAt(oldIndex);
-                        ids.insert(newIndex, item);
-                        ids.addAll(disabledBooks.map((b) => b.id));
-                        ref
-                            .read(dictionaryBooksNotifierProvider.notifier)
-                            .reorder(ids);
-                      },
-                    ),
-                  ],
-                ),
-                if (disabledBooks.isNotEmpty) ...[
-                  const SizedBox(height: AppDimensions.md),
-                  SettingsSection(
-                    title: loc.disabledDictionaries,
-                    colors: colors,
-                    children: disabledBooks
-                        .map(
-                          (book) => _DictionaryBookTile(
-                            key: ValueKey('disabled-${book.id}'),
-                            book: book,
-                            index: book.userOrder,
-                            colors: colors,
-                            isEnabled: false,
-                            showDragHandle: false,
-                            onToggle: () => ref
-                                .read(dictionaryBooksNotifierProvider.notifier)
-                                .toggleEnabled(book.id, true),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-                MdxSettingsSection(colors: colors),
-              ],
-            );
-          },
-        ),
+        const _DictionaryFontSizeSection(),
+        const SizedBox(height: AppDimensions.lg),
+        const _DictionaryListSection(),
+        const SizedBox(height: AppDimensions.lg),
+        const _DpdOptionsSection(),
+        MdxSettingsSection(colors: colors),
       ],
     );
   }
@@ -284,20 +186,280 @@ class _DpdDatabaseSection extends ConsumerWidget {
   }
 }
 
-class _DictionaryBookTile extends StatelessWidget {
-  final DictionaryBook book;
+/// One text size for every dictionary, as a share of the normal size.
+class _DictionaryFontSizeSection extends ConsumerWidget {
+  const _DictionaryFontSizeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final scale = ref.watch(dictionaryFontScaleProvider);
+    final percent = '${(scale * 100).round()}%';
+    return SettingsSection(
+      title: loc.dictionaryFontSize,
+      colors: colors,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppDimensions.md),
+          child: Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: scale,
+                  min: kDictionaryFontScaleMin,
+                  max: kDictionaryFontScaleMax,
+                  divisions: 14,
+                  label: percent,
+                  onChanged: ref
+                      .read(dictionaryFontScaleProvider.notifier)
+                      .setScale,
+                ),
+              ),
+              ConstrainedBox(
+                // Wide enough for "100%" at any text size, and never wrapped.
+                constraints: const BoxConstraints(minWidth: 56),
+                child: Text(
+                  percent,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// DPD sources, DPD's external dictionaries, ePitaka's books and MDX files in
+/// the one order the lookup page follows, each with an on/off switch.
+class _DictionaryListSection extends ConsumerWidget {
+  const _DictionaryListSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final listAsync = ref.watch(dictionaryListProvider);
+    final store = ref.read(dictionaryListStoreProvider.notifier);
+    return SettingsSection(
+      title: loc.dictionaryListTitle,
+      colors: colors,
+      children: [
+        listAsync.when(
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          error: (e, _) => Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '${loc.errorLoadingDict} $e',
+              style: AppTypography.labelSmall.copyWith(color: colors.error),
+            ),
+          ),
+          data: (entries) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.md,
+                  AppDimensions.md,
+                  AppDimensions.md,
+                  0,
+                ),
+                child: Text(
+                  loc.dictionaryListHelp,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              ReorderableListView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                onReorderItem: (int oldIndex, int newIndex) {
+                  // onReorderItem already gives the FINAL index; do not
+                  // adjust it again.
+                  final ids = entries.map((e) => e.item.id).toList();
+                  ids.insert(newIndex, ids.removeAt(oldIndex));
+                  store.setOrder(ids);
+                },
+                children: [
+                  for (var i = 0; i < entries.length; i++)
+                    _DictionaryTile(
+                      key: ValueKey(entries[i].item.id),
+                      label: entries[i].item.label,
+                      index: i,
+                      colors: colors,
+                      isEnabled: entries[i].enabled,
+                      onToggle: () =>
+                          store.setEnabled(entries[i].item, !entries[i].enabled),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The DPD entry options that apply to every level.
+class _DpdOptionsSection extends ConsumerWidget {
+  const _DpdOptionsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final settings = ref.watch(dpdSettingsProvider);
+    final notifier = ref.read(dpdSettingsProvider.notifier);
+    return SettingsSection(
+      title: loc.dpdOptionsTitle,
+      colors: colors,
+      children: [
+        _OptionTile(
+          title: loc.dpdGrammarOpen,
+          value: settings.grammarOpen,
+          onChanged: notifier.setGrammarOpen,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdExamplesOpen,
+          value: settings.examplesOpen,
+          onChanged: notifier.setExamplesOpen,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdOneSectionAtATime,
+          value: settings.oneButtonAtATime,
+          onChanged: notifier.setOneButtonAtATime,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdShowConstruction,
+          value: settings.showConstructionInSummary,
+          onChanged: notifier.setShowConstructionInSummary,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdShowSummary,
+          value: settings.showSummary,
+          onChanged: notifier.setShowSummary,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdShowPartial,
+          value: settings.showPartialResults,
+          onChanged: notifier.setShowPartialResults,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdShowFuzzy,
+          value: settings.showFuzzyResults,
+          onChanged: notifier.setShowFuzzyResults,
+          colors: colors,
+        ),
+        _OptionTile(
+          title: loc.dpdShowSandhi,
+          value: settings.showSandhi,
+          onChanged: notifier.setShowSandhi,
+          colors: colors,
+        ),
+        Padding(
+          padding: const EdgeInsets.all(AppDimensions.md),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  loc.dpdAudioVoice,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+              SegmentedButton<AudioGender>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(
+                    value: AudioGender.male,
+                    label: Text(loc.dpdVoiceMale),
+                  ),
+                  ButtonSegment(
+                    value: AudioGender.female,
+                    label: Text(loc.dpdVoiceFemale),
+                  ),
+                ],
+                selected: {settings.audioGender},
+                onSelectionChanged: (s) => notifier.setAudioGender(s.first),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OptionTile extends StatelessWidget {
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final ColorScheme colors;
+  const _OptionTile({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.md,
+        vertical: AppDimensions.xs,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _DictionaryTile extends StatelessWidget {
+  final String label;
   final int index;
   final ColorScheme colors;
   final bool isEnabled;
-  final bool showDragHandle;
   final VoidCallback onToggle;
-  const _DictionaryBookTile({
+  const _DictionaryTile({
     super.key,
-    required this.book,
+    required this.label,
     required this.index,
     required this.colors,
     required this.isEnabled,
-    required this.showDragHandle,
     required this.onToggle,
   });
 
@@ -310,20 +472,17 @@ class _DictionaryBookTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (showDragHandle)
-            ReorderableDragStartListener(
-              index: index,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Icon(
-                  Icons.drag_handle,
-                  size: 20,
-                  color: colors.onSurfaceVariant,
-                ),
+          ReorderableDragStartListener(
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.drag_handle,
+                size: 20,
+                color: colors.onSurfaceVariant,
               ),
-            )
-          else
-            const SizedBox(width: 28),
+            ),
+          ),
           GestureDetector(
             onTap: onToggle,
             child: AnimatedContainer(
@@ -349,7 +508,7 @@ class _DictionaryBookTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  book.name,
+                  label,
                   style: AppTypography.labelMedium.copyWith(
                     color: isEnabled
                         ? colors.onSurface

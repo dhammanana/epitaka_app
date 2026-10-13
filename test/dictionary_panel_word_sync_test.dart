@@ -1,6 +1,7 @@
 import 'package:epitaka/core/providers/dictionary_books_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
+import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
@@ -31,10 +32,14 @@ void main() {
   final suggestionsOverride = dpdSuggestionsProvider.overrideWith(
     (ref, String prefix) async => <String>[],
   );
-  // The real books notifier reads the epitaka database, which never resolves
+  // The real books provider reads the epitaka database, which never resolves
   // in the widget-test environment; stub it with an empty list instead.
-  final booksOverride = dictionaryBooksNotifierProvider.overrideWith(
-    (ref) => _EmptyBooksNotifier(ref),
+  final booksOverride = dictionaryBooksProvider.overrideWith(
+    (ref) async => const <DictionaryBook>[],
+  );
+  // The list also waits on the DPD file, which never resolves here either.
+  final listOverride = dictionaryListProvider.overrideWithValue(
+    const AsyncData(<DictionaryListEntry>[]),
   );
 
   Future<ProviderContainer> pumpPanel(
@@ -42,7 +47,12 @@ void main() {
     required SidePanelsState initialPanels,
   }) async {
     final container = ProviderContainer(
-      overrides: [lookupOverride, suggestionsOverride, booksOverride],
+      overrides: [
+        lookupOverride,
+        suggestionsOverride,
+        booksOverride,
+        listOverride,
+      ],
     );
     addTearDown(container.dispose);
     container.read(sidePanelProvider.notifier).state = initialPanels;
@@ -134,15 +144,4 @@ void main() {
               'must be ignored');
     },
   );
-}
-
-class _EmptyBooksNotifier extends DictionaryBooksNotifier {
-  _EmptyBooksNotifier(super.ref) : super() {
-    state = const AsyncData(<DictionaryBook>[]);
-  }
-
-  @override
-  Future<void> load() async {
-    // No-op: never touch the epitaka database in tests.
-  }
 }

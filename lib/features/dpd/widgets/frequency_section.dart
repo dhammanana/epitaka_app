@@ -8,6 +8,7 @@ import 'entry_content.dart';
 import 'feedback_type.dart';
 import 'frequency_table.dart';
 import '../utils/text_filters.dart';
+import '../utils/text_size.dart';
 
 class FrequencySection extends StatelessWidget {
   const FrequencySection({
@@ -32,7 +33,7 @@ class FrequencySection extends StatelessWidget {
             _buildHeading(context),
             if (!data.isNoExactMatches) ...[
               const SizedBox(height: 5),
-              FrequencyTable(data: data),
+              FrequencyTable(data: data, scale: context.dpdSize(1.0)),
               const SizedBox(height: 8),
               _buildCorpusLegend(context),
               const SizedBox(height: 8),
@@ -156,8 +157,11 @@ class FrequencySection extends StatelessWidget {
                     ),
                     mode: LaunchMode.externalApplication,
                   ),
+                  // The line already scales this widget; scaling the text
+                  // again drew the link far too big.
                   child: Text(
                     'this webpage',
+                    textScaler: TextScaler.noScaling,
                     style: TextStyle(
                       color: context.palette.primaryText,
                       fontWeight: FontWeight.bold,

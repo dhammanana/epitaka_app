@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
+import '../providers/dpd_settings_provider.dart';
 import '../providers/internet_provider.dart';
 import '../theme/dpd_colors.dart';
 import '../utils/text_filters.dart';
@@ -21,6 +22,9 @@ class GrammarTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     String n(String t) => context.nigg(t);
+    final showSandhi = ref.watch(
+      dpdSettingsProvider.select((s) => s.showSandhi),
+    );
     final hasInternet =
         audio && (ref.watch(hasInternetProvider).valueOrNull ?? true);
 
@@ -40,7 +44,11 @@ class GrammarTable extends ConsumerWidget {
       _buildAntonymRow(context, headword, n),
       _buildSynonymRow(context, headword, n),
       ..._buildVariantRows(context, headword, n),
-      _buildCommentaryRow(context, headword, n),
+      _buildCommentaryRow(
+        context,
+        headword,
+        (t) => n(filterSandhi(t, show: showSandhi)),
+      ),
       _buildNotesRow(context, headword, n),
       _buildCognateRow(context, headword, n),
       _buildLinkRow(context, headword),

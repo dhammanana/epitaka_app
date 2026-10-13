@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/lookup_results.dart';
 import '../../theme/dpd_palette.dart';
+import '../../utils/text_size.dart';
 import '../../utils/feedback_urls.dart';
 import '../../utils/pali_sort.dart';
 import '../../utils/text_filters.dart';
@@ -93,9 +94,9 @@ class _DeconstructorFooterState extends State<_DeconstructorFooter> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final footerStyle = TextStyle(fontSize: 12.8, color: palette.gray);
+    final footerStyle = TextStyle(fontSize: context.dpdSize(12.8), color: palette.gray);
     final linkStyle = TextStyle(
-      fontSize: 12.8,
+      fontSize: context.dpdSize(12.8),
       color: palette.primaryText,
       fontWeight: FontWeight.w700,
       decoration: TextDecoration.none,

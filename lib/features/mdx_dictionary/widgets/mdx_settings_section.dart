@@ -508,73 +508,20 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
                     ),
                   );
                 }
-                final enabled = dicts.where((d) => d.enabled).toList();
-                final disabled = dicts.where((d) => !d.enabled).toList();
+                // Order and on/off live in the dictionary list above; this
+                // section only manages the files.
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (enabled.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: Text(
-                          'Enabled — drag the handle to re-arrange order',
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
+                    for (final d in dicts)
+                      _tile(
+                        context,
+                        ref,
+                        d,
+                        d.enabled,
+                        0,
+                        key: ValueKey('mdx-${d.id}'),
                       ),
-                      ReorderableListView(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        buildDefaultDragHandles: false,
-                        onReorderItem: (oldI, newI) {
-                          final ids = enabled.map((d) => d.id).toList();
-                          final item = ids.removeAt(oldI);
-                          ids.insert(newI, item);
-                          ids.addAll(disabled.map((d) => d.id));
-                          ref
-                              .read(mdxDictionariesProvider.notifier)
-                              .reorder(ids);
-                        },
-                        children: [
-                          for (var i = 0; i < enabled.length; i++)
-                            _tile(
-                              context,
-                              ref,
-                              enabled[i],
-                              true,
-                              i,
-                              key: ValueKey('mdx-enabled-${enabled[i].id}'),
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (disabled.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: Text(
-                          'Disabled',
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      ),
-                      for (final d in disabled)
-                        _tile(
-                          context,
-                          ref,
-                          d,
-                          false,
-                          0,
-                          key: ValueKey('mdx-disabled-${d.id}'),
-                        ),
-                    ],
                     _DiagnosticsFooter(dicts: dicts),
                   ],
                 );
@@ -615,12 +562,7 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     }
     return ListTile(
       key: key,
-      leading: enabled
-          ? ReorderableDragStartListener(
-              index: index,
-              child: const Icon(Icons.drag_handle),
-            )
-          : const Icon(Icons.book_outlined),
+      leading: const Icon(Icons.book_outlined),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: isError
           ? Text(

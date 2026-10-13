@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -16,13 +18,36 @@ import '../screens/tts_replacements_screen.dart';
 import '../screens/tts_settings_screen.dart';
 import '../screens/toolbar_settings_screen.dart';
 
+const _lastCategoryKey = 'settings_last_category';
+
+/// The id of the page the user last chose in the settings window, if any.
+Future<String?> loadLastSettingsCategory() async {
+  try {
+    return (await SharedPreferences.getInstance()).getString(_lastCategoryKey);
+  } catch (_) {
+    return null;
+  }
+}
+
+@visibleForTesting
+Future<void> saveLastSettingsCategory(String id) async {
+  try {
+    await (await SharedPreferences.getInstance()).setString(_lastCategoryKey, id);
+  } catch (_) {}
+}
+
 /// One entry in the macOS-style settings sidebar.
-class _SettingsCategory {
+@visibleForTesting
+class SettingsCategory {
+  /// Stable across releases and platforms: this is what is saved, not the
+  /// position, because some pages exist only on some platforms.
+  final String id;
   final IconData icon;
   final String title;
   final Widget body;
 
-  const _SettingsCategory({
+  const SettingsCategory({
+    required this.id,
     required this.icon,
     required this.title,
     required this.body,
@@ -38,8 +63,9 @@ class _SettingsCategory {
 Future<void> showDesktopSettingsDialog(BuildContext context) async {
   final loc = AppLocalizations.of(context);
 
-  final categories = <_SettingsCategory>[
-    _SettingsCategory(
+  final categories = <SettingsCategory>[
+    SettingsCategory(
+      id: 'general',
       icon: Icons.tune,
       title: loc.general,
       body: _SectionPane(
@@ -47,44 +73,52 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
         child: const SettingsGeneralSection(),
       ),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'appearance',
       icon: Icons.palette_outlined,
       title: loc.appearance,
       body: const AppearanceSettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'reading',
       icon: Icons.menu_book_outlined,
       title: loc.readingOptions,
       body: const ReadingOptionsBody(),
     ),
     if (PlatformInfo.isTtsSupported) ...[
-      _SettingsCategory(
+      SettingsCategory(
+        id: 'tts',
         icon: Icons.record_voice_over_outlined,
         title: loc.textToSpeech,
         body: const TtsSettingsBody(),
       ),
-      _SettingsCategory(
+      SettingsCategory(
+        id: 'ttsReplacements',
         icon: Icons.find_replace_outlined,
         title: loc.ttsReplacements,
         body: const TtsReplacementsBody(),
       ),
     ],
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'contextMenu',
       icon: Icons.touch_app_outlined,
       title: loc.contextMenu,
       body: const ContextMenuSettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'toolbar',
       icon: Icons.view_agenda_outlined,
       title: loc.toolbar,
       body: const ToolbarSettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'shortcuts',
       icon: Icons.keyboard_outlined,
       title: loc.keyboardShortcuts,
       body: const ShortcutSettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'search',
       icon: Icons.search,
       title: loc.search,
       body: _SectionPane(
@@ -92,22 +126,26 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
         child: const SettingsSearchSection(),
       ),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'dictionaries',
       icon: Icons.translate,
       title: loc.dictionaries,
       body: const DictionarySettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'translations',
       icon: Icons.download_outlined,
       title: loc.translationsDownloads,
       body: const TranslationSettingsBody(),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'vimamsa',
       icon: Icons.question_answer_outlined,
       title: loc.vimamsa,
       body: _SectionPane(title: loc.vimamsa, child: const SettingsAiSection()),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'account',
       icon: Icons.cloud_outlined,
       title: loc.account,
       body: _SectionPane(
@@ -115,7 +153,8 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
         child: const SettingsAccountSection(),
       ),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'system',
       icon: Icons.settings_suggest_outlined,
       title: loc.system,
       body: _SectionPane(
@@ -123,13 +162,16 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
         child: const SettingsSystemSection(),
       ),
     ),
-    _SettingsCategory(
+    SettingsCategory(
+      id: 'help',
       icon: Icons.help_outline,
       title: loc.help,
       body: const HelpScreenBody(),
     ),
   ];
 
+  final lastId = await loadLastSettingsCategory();
+  if (!context.mounted) return;
   await showDialog<void>(
     context: context,
     useSafeArea: false,
@@ -157,7 +199,8 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
           return SizedBox(
             width: width,
             height: (screenSize.height * 0.9).clamp(520.0, double.infinity),
-            child: _DesktopSettingsDialog(
+            child: DesktopSettingsDialog(
+              initialId: lastId,
               categories: categories,
               sidebarWidth: (_kSidebarMinWidth + width - _kMaxWidthBefore)
                   .clamp(_kSidebarMinWidth, _kSidebarMinWidth + extra),
@@ -179,7 +222,7 @@ const double _kMaxWidthBefore = 960;
 /// selected (bold) title plus the row's icon, gap and paddings below.
 double _sidebarWidthFor(
   BuildContext context,
-  List<_SettingsCategory> categories,
+  List<SettingsCategory> categories,
 ) {
   var widest = 0.0;
   for (final category in categories) {
@@ -200,21 +243,37 @@ double _sidebarWidthFor(
   return needed < _kSidebarMinWidth ? _kSidebarMinWidth : needed;
 }
 
-class _DesktopSettingsDialog extends StatefulWidget {
-  final List<_SettingsCategory> categories;
+@visibleForTesting
+class DesktopSettingsDialog extends StatefulWidget {
+  final List<SettingsCategory> categories;
   final double sidebarWidth;
 
-  const _DesktopSettingsDialog({
+  /// The id of the page to open on; the first page when it is not listed.
+  final String? initialId;
+
+  const DesktopSettingsDialog({
+    super.key,
     required this.categories,
     required this.sidebarWidth,
+    this.initialId,
   });
 
   @override
-  State<_DesktopSettingsDialog> createState() => _DesktopSettingsDialogState();
+  State<DesktopSettingsDialog> createState() => DesktopSettingsDialogState();
 }
 
-class _DesktopSettingsDialogState extends State<_DesktopSettingsDialog> {
-  int _selected = 0;
+class DesktopSettingsDialogState extends State<DesktopSettingsDialog> {
+  late int _selected = _indexOf(widget.initialId);
+
+  int _indexOf(String? id) {
+    final i = widget.categories.indexWhere((c) => c.id == id);
+    return i < 0 ? 0 : i;
+  }
+
+  void _select(int index) {
+    setState(() => _selected = index);
+    saveLastSettingsCategory(widget.categories[index].id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -283,7 +342,7 @@ class _DesktopSettingsDialogState extends State<_DesktopSettingsDialog> {
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                         child: InkWell(
-                          onTap: () => setState(() => _selected = index),
+                          onTap: () => _select(index),
                           borderRadius: BorderRadius.circular(8),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(

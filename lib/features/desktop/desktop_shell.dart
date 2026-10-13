@@ -9,6 +9,7 @@ import '../../shared/providers/vimamsa_panel_provider.dart';
 import '../../shared/widgets/reader_toolbar_controller.dart';
 import '../ai_qa/screens/ai_qa_screen.dart';
 import '../contents/widgets/contents_panel.dart';
+import '../dictionary/providers/dictionary_panel_memory.dart';
 import '../dictionary/widgets/dictionary_panel.dart';
 import '../gavesana/widgets/gavesana_panel.dart';
 import '../translator/widgets/translator_panel.dart';
@@ -62,6 +63,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void initState() {
     super.initState();
+    if (!DictionaryPanelMemory.restoredThisRun) {
+      DictionaryPanelMemory.restoredThisRun = true;
+      DictionaryPanelMemory.restore(
+        ref.read(sidePanelProvider.notifier),
+        slotFree: () => ref.read(sidePanelProvider).left.openPanel == null,
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final s = ref.read(settingsProvider);
@@ -183,6 +191,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
     final showLeftSidebar = left != null && !_sidebarOnRight;
     final showRightSidebar = _sidebarOnRight && left != null;
+
+    ref.listen(sidePanelProvider.select((p) => p.isDictionaryOpen), (
+      prev,
+      open,
+    ) {
+      DictionaryPanelMemory.saveOpen(open);
+    });
 
     // Opening a book while Vīmaṃsā is showing returns to the reader.
     ref.listen(readerTabsProvider, (prev, next) {

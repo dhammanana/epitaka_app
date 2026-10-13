@@ -64,6 +64,9 @@ dependencies:
 
   # HTML rendering
   flutter_html: ^3.0.0-beta.2
+  # Already installed through flutter_html; the external dictionary cards parse
+  # entry HTML with it. The exact range is the override at the end of this file.
+  html: '>=0.15.6 <0.15.7'
 
   # Markdown rendering for AI Q&A
   flutter_markdown_plus: ^1.0.12

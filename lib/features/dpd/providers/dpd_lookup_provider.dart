@@ -4,6 +4,7 @@ import '../database/dpd_dao_epitaka.dart';
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
 import 'dpd_database_provider.dart';
+import 'dpd_settings_provider.dart';
 import 'secondary_results_provider.dart';
 
 /// Everything DPD knows about one typed word: headwords, roots and the
@@ -16,12 +17,22 @@ class DpdLookup {
     required this.secondary,
     required this.timer,
     this.unavailable,
+    this.partial = const [],
+    this.fuzzy = const [],
   });
 
   final String query;
   final List<DpdHeadwordWithRoot> headwords;
   final List<RootWithFamilies> roots;
   final List<Object> secondary;
+
+  /// Headwords that start with the query, when the setting is on. Never holds
+  /// a headword that is in [headwords].
+  final List<DpdHeadwordWithRoot> partial;
+
+  /// Headwords that sound like the query, when the setting is on. Never holds
+  /// a headword that is in [headwords] or [partial].
+  final List<DpdHeadwordWithRoot> fuzzy;
 
   /// Started when the lookup began, read at the first frame after it draws.
   final Stopwatch timer;
@@ -42,6 +53,11 @@ class DpdLookup {
 final dpdLookupProvider = FutureProvider.autoDispose
     .family<DpdLookup, String>((ref, query) async {
       final timer = Stopwatch()..start();
+      final (wantPartial, wantFuzzy) = ref.watch(
+        dpdSettingsProvider.select(
+          (s) => (s.showPartialResults, s.showFuzzyResults),
+        ),
+      );
       final DpdDao dao;
       try {
         dao = await ref.watch(dpdDaoProvider.future);
@@ -75,12 +91,32 @@ final dpdLookupProvider = FutureProvider.autoDispose
       final secondary = row == null
           ? const <Object>[]
           : SecondaryResultsProvider.parse(row.lookupKey, row);
+      final exactIds = {for (final h in headwords) h.headword.id};
+      // The fuzzy tier leaves out partial hits too, so the partial list is
+      // fetched when either tier is on.
+      final partialAll = wantPartial || wantFuzzy
+          ? [
+              for (final h in await dao.searchPartial(query))
+                if (!exactIds.contains(h.headword.id)) h,
+            ]
+          : const <DpdHeadwordWithRoot>[];
+      final partialIds = {for (final h in partialAll) h.headword.id};
+      final fuzzy = wantFuzzy
+          ? [
+              for (final h in await dao.searchFuzzy(query))
+                if (!exactIds.contains(h.headword.id) &&
+                    !partialIds.contains(h.headword.id))
+                  h,
+            ]
+          : const <DpdHeadwordWithRoot>[];
       return DpdLookup(
         query: query,
         headwords: headwords,
         roots: roots,
         secondary: secondary,
         timer: timer,
+        partial: wantPartial ? partialAll : const [],
+        fuzzy: fuzzy,
       );
     });
 

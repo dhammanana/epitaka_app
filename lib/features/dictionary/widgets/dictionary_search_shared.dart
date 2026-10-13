@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
 
 import '../../../core/providers/database_provider.dart';
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../mdx_dictionary/widgets/mdx_webview.dart';
+import '../providers/dictionary_font_scale_provider.dart';
 import '../providers/dictionary_expanded_provider.dart';
 import '../services/dict_entry_web.dart';
 import 'dictionary_collapsible_card.dart';
@@ -82,11 +82,15 @@ class DictHtmlContent extends StatelessWidget {
   final TextStyle baseStyle;
   final Map<String, Style>? extraStyles;
 
+  /// Called with the address of a tapped link. Without it, links do nothing.
+  final void Function(String url)? onLinkTap;
+
   const DictHtmlContent({
     super.key,
     required this.html,
     required this.baseStyle,
     this.extraStyles,
+    this.onLinkTap,
   });
 
   @override
@@ -101,6 +105,11 @@ class DictHtmlContent extends StatelessWidget {
     return ExcludeSemantics(
       child: Html(
         data: html,
+        onLinkTap: onLinkTap == null
+            ? null
+            : (url, attributes, element) {
+                if (url != null) onLinkTap!(url);
+              },
         style: {
           'body': Style(
             margin: Margins.zero,
@@ -215,8 +224,7 @@ class _DictEntryWebSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
+    final pali = ref.watch(dictionaryPaliProvider);
     final key = DictLookupKey(bookId, searchWord);
     final defsAsync = ref.watch(dictionaryDefinitionProvider(key));
 
@@ -244,7 +252,7 @@ class _DictEntryWebSection extends ConsumerWidget {
         if (bodies.isEmpty) return const SizedBox.shrink();
         final document = buildDictEntryDocument(
           bodies: bodies,
-          fontSize: (pali.fontSize * 0.8).clamp(12.0, 24.0),
+          fontSize: (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 24.0),
           fontFamily: pali.fontFamily.fontFamily,
           genericFamily: pali.fontFamily.cssGenericFamily,
           primary: colors.primary,
@@ -310,10 +318,9 @@ class _DictEntryHtmlSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
+    final pali = ref.watch(dictionaryPaliProvider);
     final defFontFamily = pali.fontFamily.fontFamily;
-    final defFontSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
+    final defFontSize = (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 24.0);
     final defLineHeight = pali.lineHeight;
 
     final key = DictLookupKey(bookId, searchWord);
@@ -422,11 +429,10 @@ class SuggestionTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
+    final pali = ref.watch(dictionaryPaliProvider);
     final paliFontFamily = pali.fontFamily.fontFamily;
-    final paliSize = (pali.fontSize * 0.8).clamp(13.0, 26.0);
-    final previewSize = (pali.fontSize * 0.64).clamp(11.0, 20.0);
+    final paliSize = (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 26.0);
+    final previewSize = (pali.fontSize * 0.64).clamp(kDictionaryMinTextSize, 20.0);
 
     final highlight = selected || isExact;
     return Card(

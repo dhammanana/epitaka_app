@@ -8,6 +8,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../providers/dictionary_font_scale_provider.dart';
 import '../providers/dictionary_expanded_provider.dart';
 import 'dictionary_collapsible_card.dart';
 
@@ -30,7 +31,7 @@ class PaliDefinitionCard extends ConsumerWidget {
     final entry = result.entry;
     final settings = ref.watch(settingsProvider);
     final script = settings.paliScript;
-    final pali = settings.typography.pali;
+    final pali = ref.watch(dictionaryPaliProvider);
     final trans = settings.typography.typographyFor(
       settings.primaryTranslationLang,
     );
@@ -39,19 +40,19 @@ class PaliDefinitionCard extends ConsumerWidget {
     // the user's Pāli typography (font family / size / line-height). The
     // dictionary uses a slightly smaller scale than the reader.
     final paliStyle = TextStyle(
-      fontSize: (pali.fontSize * 0.8).clamp(12.0, 26.0),
+      fontSize: (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 26.0),
       height: pali.lineHeight,
       color: colors.onSurface,
       fontFamily: paliReadingFontFamily(script, pali.fontFamily),
     );
     final contextStyle = TextStyle(
-      fontSize: (pali.fontSize * 0.72).clamp(11.0, 24.0),
+      fontSize: (pali.fontSize * 0.72).clamp(kDictionaryMinTextSize, 24.0),
       height: pali.lineHeight,
       color: colors.onSurfaceVariant.withValues(alpha: 0.7),
       fontFamily: paliReadingFontFamily(script, pali.fontFamily),
     );
     final transStyle = TextStyle(
-      fontSize: (pali.fontSize * 0.8).clamp(11.0, 24.0),
+      fontSize: (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 24.0),
       height: pali.lineHeight,
       fontStyle: FontStyle.italic,
       color: colors.onSurfaceVariant.withValues(alpha: 0.8),
@@ -87,7 +88,7 @@ class PaliDefinitionCard extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+                      fontSize: (pali.fontSize * 0.55).clamp(kDictionaryMinTextSize, 14.0),
                       fontWeight: FontWeight.w600,
                       color: colors.onSurfaceVariant,
                       fontFamily: pali.fontFamily.fontFamily,
@@ -114,7 +115,7 @@ class PaliDefinitionCard extends ConsumerWidget {
                         Text(
                           'p${entry.paraId}.${entry.lineId}',
                           style: TextStyle(
-                            fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+                            fontSize: (pali.fontSize * 0.55).clamp(kDictionaryMinTextSize, 14.0),
                             color: colors.primary,
                             fontWeight: FontWeight.w500,
                             fontFamily: pali.fontFamily.fontFamily,

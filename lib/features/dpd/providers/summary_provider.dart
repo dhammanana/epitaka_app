@@ -1,24 +1,103 @@
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
 import '../models/lookup_results.dart';
+import '../models/dpd_source_id.dart';
 import '../models/summary_entry.dart';
 
-/// The summary lines for one lookup: headwords, then roots, then the
-/// secondary sources in the order the lookup gives them. Built from the DPD
-/// app's `buildSummaryEntries`; the source-visibility filter and the
-/// other-dictionaries lines come with the settings page (Phase 4).
+/// The summary lines for the DPD part of one lookup. With no [sources],
+/// headwords, then roots, then the secondary sources in the order the lookup
+/// gives them. With [sources], only those, in that order, as the DPD app's
+/// `buildSummaryEntries` does with the user's list.
+///
+/// With [withTargets] each line names the card it scrolls to
+/// (`hw_<id>`, `root_<root>`, `sec_<source>#<n>`); the Saṅkhitta level has no
+/// cards, so its lines have no target.
 List<SummaryEntry> buildSummaryEntries(
   List<DpdHeadwordWithRoot> headwords,
   List<RootWithFamilies> roots,
   List<Object> secondary, {
   bool showConstruction = true,
+  List<String>? sources,
+  bool withTargets = false,
 }) {
-  return [
-    for (final hw in headwords) _buildHeadwordEntry(hw, showConstruction),
-    for (final rwf in roots) _buildRootEntry(rwf),
-    for (final result in secondary) ?_buildSecondaryEntry(result),
-  ];
+  final ids = sources ??
+      [
+        'dpd_headwords',
+        'dpd_roots',
+        ...{for (final r in secondary) ?dpdSourceIdOf(r)},
+      ];
+  final out = <SummaryEntry>[];
+  for (final id in ids) {
+    if (id == 'dpd_headwords') {
+      for (final hw in headwords) {
+        out.add(
+          _buildHeadwordEntry(hw, showConstruction).withTarget(
+            withTargets ? 'hw_${hw.headword.id}' : '',
+          ),
+        );
+      }
+    } else if (id == 'dpd_roots') {
+      for (final rwf in roots) {
+        out.add(
+          _buildRootEntry(rwf).withTarget(
+            withTargets ? 'root_${rwf.root.root}' : '',
+          ),
+        );
+      }
+    } else {
+      var n = 0;
+      for (final result in secondary) {
+        if (dpdSourceIdOf(result) != id) continue;
+        final entry = _buildSecondaryEntry(result);
+        if (entry != null) {
+          out.add(entry.withTarget(withTargets ? secondaryTarget(id, n) : ''));
+        }
+        n++;
+      }
+    }
+  }
+  return out;
 }
+
+/// The anchor id of the [n]th result of a secondary source.
+String secondaryTarget(String sourceId, int n) => 'sec_$sourceId#$n';
+
+const _dictShortNames = {
+  'cone': 'Cone',
+  'cpd': 'CPD',
+  'dppn': 'DPPN',
+  'mw': 'MW',
+  'peu': 'PEU',
+  'bhs': 'BHS',
+  'apte': 'Apte',
+  'wordnet': 'WordNet',
+  'nyanatiloka': 'Nyanatiloka',
+  'pts': 'PTS',
+};
+
+/// A one-word name for an external dictionary, from the DPD app's
+/// `dictShortName`: the capitalised id for one that is not in the map.
+String dictShortName(String dictId) {
+  final known = _dictShortNames[dictId];
+  if (known != null) return known;
+  if (dictId.isEmpty) return dictId;
+  return dictId[0].toUpperCase() + dictId.substring(1);
+}
+
+/// The summary line of one dictionary that has an entry for the word:
+/// [shortName] is what the dictionary is called, [word] the entry's headword,
+/// and [targetId] the card it scrolls to.
+SummaryEntry dictionarySummaryLine({
+  required String shortName,
+  required String word,
+  required String targetId,
+}) => SummaryEntry(
+  type: SummaryEntryType.dict,
+  label: word,
+  typeLabel: '$shortName.',
+  meaning: '',
+  targetId: targetId,
+);
 
 SummaryEntry _buildHeadwordEntry(
   DpdHeadwordWithRoot hw,

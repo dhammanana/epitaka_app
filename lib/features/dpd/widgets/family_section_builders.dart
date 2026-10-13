@@ -30,8 +30,10 @@ Widget _richHeader(
                   onTap: onJumpTop,
                   child: Padding(
                     padding: const EdgeInsets.only(left: 4),
+                    // The line already scales this widget.
                     child: Text(
                       ' ⤴ ',
+                      textScaler: TextScaler.noScaling,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w700,

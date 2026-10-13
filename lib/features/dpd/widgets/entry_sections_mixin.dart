@@ -113,10 +113,15 @@ mixin EntrySectionsMixin<T extends ConsumerStatefulWidget>
         ? ref.watch(hasInternetProvider).valueOrNull ?? true
         : false;
     final sutta = _suttaInfo;
+    final voice = ref.watch(dpdSettingsProvider.select((s) => s.audioGender));
     return [
       if (hasInternet)
-        // The voice setting arrives with the other DPD options in Phase 4.
-        DpdPlayButton(lemma: h.lemma1, gender: 'male'),
+        // Keyed by the voice so a changed setting restarts the button's state.
+        DpdPlayButton(
+          key: ValueKey(voice),
+          lemma: h.lemma1,
+          gender: voice.name,
+        ),
       if (_full && _suttaLoaded && sutta != null)
         DpdSectionButton(
           label: sutta.isSamyutta
