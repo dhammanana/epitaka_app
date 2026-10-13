@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/dictionary_books_provider.dart';
 import '../../dpd/providers/dpd_lookup_provider.dart';
+import '../../dpd/providers/dpd_settings_provider.dart';
 import '../../dpd/widgets/dpd_results_view.dart';
 import '../../dpd/widgets/dpd_status_message.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -865,6 +866,7 @@ class _DpdSection extends ConsumerWidget {
     // Collapsed: header only. The entries are only built while expanded
     // (lazy), and the expand state persists across searches.
     final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
+    final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
     return DictionaryCollapsibleCard(
       dictionaryKey: _cardKey,
       title: AppLocalizations.of(context).dpdDictionary,
@@ -874,7 +876,11 @@ class _DpdSection extends ConsumerWidget {
           ? const SizedBox.shrink()
           : lookup.unavailable != null
           ? DpdStatusMessage(unavailable: lookup.unavailable!)
-          : DpdResultsView(lookup: lookup, onWordTap: onWordTap),
+          : DpdResultsView(
+              lookup: lookup,
+              level: level,
+              onWordTap: onWordTap,
+            ),
     );
   }
 }

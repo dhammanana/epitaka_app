@@ -4,9 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../models/lookup_results.dart';
 import '../providers/dpd_lookup_provider.dart';
+import '../providers/dpd_settings_provider.dart';
+import '../providers/summary_provider.dart';
 import 'inline_entry_card.dart';
+import 'inline_root_card.dart';
 import 'root_summary_card.dart';
 import 'secondary/secondary_result_cards.dart';
+import 'summary_section.dart';
 import 'tap_search_wrapper.dart';
 
 /// The DPD result stack for one lookup: headwords, roots and the secondary
@@ -17,10 +21,15 @@ class DpdResultsView extends ConsumerStatefulWidget {
   const DpdResultsView({
     super.key,
     required this.lookup,
+    required this.level,
     required this.onWordTap,
   });
 
   final DpdLookup lookup;
+
+  /// Passed in, not watched here, so the sheet and panel can put it in their
+  /// memo keys.
+  final DictionaryLevel level;
 
   /// A word tapped inside an entry, already cleaned and in Roman script.
   final void Function(String word) onWordTap;
@@ -72,16 +81,34 @@ class _DpdResultsViewState extends ConsumerState<DpdResultsView> {
     );
 
     // `secondary` is already in the DPD app's default order.
-    final children = <Widget>[
-      for (final hw in lookup.headwords)
-        InlineEntryCard(key: ValueKey(hw.headword.id), headword: hw),
-      for (final rwf in lookup.roots) RootSummaryCard(rwf: rwf),
-      for (final result in lookup.secondary)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-          child: _secondaryCard(result),
-        ),
-    ];
+    final children = widget.level == DictionaryLevel.sankhitta
+        ? <Widget>[
+            SummarySection(
+              entries: buildSummaryEntries(
+                lookup.headwords,
+                lookup.roots,
+                lookup.secondary,
+              ),
+            ),
+          ]
+        : <Widget>[
+            for (final hw in lookup.headwords)
+              InlineEntryCard(
+                key: ValueKey(hw.headword.id),
+                headword: hw,
+                level: widget.level,
+                lookupKey: lookup.query,
+              ),
+            for (final rwf in lookup.roots)
+              widget.level == DictionaryLevel.vitthara
+                  ? InlineRootCard(key: ValueKey(rwf.root.root), rwf: rwf)
+                  : RootSummaryCard(rwf: rwf),
+            for (final result in lookup.secondary)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                child: _secondaryCard(result),
+              ),
+          ];
 
     return Theme(
       data: theme.copyWith(textTheme: textTheme),

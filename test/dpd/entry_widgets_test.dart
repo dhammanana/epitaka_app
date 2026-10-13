@@ -55,7 +55,11 @@ void main() {
           ),
           home: Scaffold(
             body: SingleChildScrollView(
-              child: InlineEntryCard(headword: headword),
+              child: InlineEntryCard(
+                headword: headword,
+                level: DictionaryLevel.majjhima,
+                lookupKey: 'dhamma',
+              ),
             ),
           ),
         ),

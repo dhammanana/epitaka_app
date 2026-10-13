@@ -19,3 +19,9 @@ String buildMistakeUrl({String? word, int? headwordId, String? feedbackType}) {
   url.write('&entry.1433863141=${Uri.encodeComponent('ePitaka')}');
   return url.toString();
 }
+
+/// DPD's form for a word the dictionary is missing.
+String buildAddWordUrl() {
+  return 'https://docs.google.com/forms/d/e/1FAIpQLSfResxEUiRCyFITWPkzoQ2HhHEvUS5fyg68Rl28hFH6vhHlaA/viewform?usp=pp_url'
+      '&entry.1433863141=${Uri.encodeComponent('ePitaka')}';
+}

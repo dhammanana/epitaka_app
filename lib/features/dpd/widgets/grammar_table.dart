@@ -1,26 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
+import '../providers/internet_provider.dart';
 import '../theme/dpd_colors.dart';
 import '../utils/text_filters.dart';
 import 'entry_content.dart';
 import 'feedback_type.dart';
 
-class GrammarTable extends StatelessWidget {
+class GrammarTable extends ConsumerWidget {
   final DpdHeadwordWithRoot headword;
 
-  const GrammarTable({super.key, required this.headword});
+  /// Pronunciation buttons next to the IPA. Shown at Vitthāra only.
+  final bool audio;
+
+  const GrammarTable({super.key, required this.headword, this.audio = false});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     String n(String t) => context.nigg(t);
+    final hasInternet =
+        audio && (ref.watch(hasInternetProvider).valueOrNull ?? true);
 
     final rows = [
       _buildLemmaRow(context, headword, n),
       _buildLemmaTradRow(context, headword, n),
-      _buildLemmaIpaRow(context, headword),
+      _buildLemmaIpaRow(context, headword, hasInternet),
       _buildGrammarRow(context, headword, n),
       _buildFamilyRootRow(context, headword, n),
       _buildRootDetailsRow(context, headword, n),
@@ -91,10 +98,22 @@ class GrammarTable extends StatelessWidget {
     return buildKvTextRow(context, 'Traditional Lemma', lemmaTrad, filter: n);
   }
 
-  TableRow? _buildLemmaIpaRow(BuildContext context, DpdHeadwordWithRoot headword) {
+  TableRow? _buildLemmaIpaRow(
+    BuildContext context,
+    DpdHeadwordWithRoot headword,
+    bool hasInternet,
+  ) {
     final ipa = headword.headword.lemmaIpa;
     if (ipa == null || ipa.isEmpty) return null;
-    return buildKvRow(context, 'IPA', Text('/$ipa/'));
+    return buildKvRow(
+      context,
+      'IPA',
+      _IpaRowContent(
+        ipa: ipa,
+        lemma: headword.headword.lemma1,
+        hasInternet: hasInternet,
+      ),
+    );
   }
 
   TableRow? _buildGrammarRow(BuildContext context,
@@ -320,6 +339,34 @@ class GrammarTable extends StatelessWidget {
       context,
       'Sanskrit Root',
       Text(n(details), style: const TextStyle(fontStyle: FontStyle.italic)),
+    );
+  }
+}
+
+class _IpaRowContent extends StatelessWidget {
+  const _IpaRowContent({
+    required this.ipa,
+    required this.lemma,
+    required this.hasInternet,
+  });
+
+  final String ipa;
+  final String lemma;
+  final bool hasInternet;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 6,
+      children: [
+        Text('/$ipa/'),
+        if (hasInternet) ...[
+          DpdPlayButton(lemma: lemma, gender: 'male1', compact: true),
+          DpdPlayButton(lemma: lemma, gender: 'male2', compact: true),
+          DpdPlayButton(lemma: lemma, gender: 'female1', compact: true),
+        ],
+      ],
     );
   }
 }

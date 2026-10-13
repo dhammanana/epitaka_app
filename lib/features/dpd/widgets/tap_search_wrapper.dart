@@ -86,6 +86,9 @@ class _TapSearchWrapperState extends ConsumerState<TapSearchWrapper> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onWordTap(word);
     });
+    // A post-frame callback does not ask for a frame. On desktop nothing else
+    // does after a click, so without this the lookup waits for the next click.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   String? _getWordAtPosition(Offset globalPosition) {
