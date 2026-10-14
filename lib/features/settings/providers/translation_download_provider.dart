@@ -17,7 +17,6 @@ import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/providers/translation_registry_provider.dart';
-import '../../dpd/providers/dpd_database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/database_initializer.dart';
 
@@ -63,7 +62,12 @@ class TranslationDownloadNotifier
     extends StateNotifier<Map<String, TranslationDownloadState>> {
   final Map<String, CancelableCompleter> _cancelTokens = {};
 
-  TranslationDownloadNotifier() : super({});
+  TranslationDownloadNotifier([this._ref]) : super({});
+
+  /// The provider's own ref. It lives as long as the app, unlike the widget
+  /// ref a download is started with: a core download outlives the dialog or
+  /// screen that started it, and a closed widget's ref throws when used.
+  final Ref? _ref;
 
   /// Get the download state for a specific version key.
   TranslationDownloadState stateFor(String versionKey) {
@@ -163,6 +167,12 @@ class TranslationDownloadNotifier
   /// itself once no download or translation run needs it any more.
   Future<void> _fgsStop() async {
     await DownloadForegroundService.instance.hideDownload();
+  }
+
+  /// Sets the state of [key] from outside a download, e.g. while a release
+  /// is looked up before the download starts, or when that lookup fails.
+  void report(String key, TranslationDownloadState value) {
+    state = {...state, key: value};
   }
 
   /// Cancel an in-progress download for a version key.
@@ -427,6 +437,11 @@ class TranslationDownloadNotifier
 
   /// Download a core asset (epitaka, dpd_dictionary) from the given URL
   /// and save the extracted .db file to the database directory.
+  ///
+  /// [expectedZipSha256] is checked before extraction. [verify] sees the
+  /// extracted file before the old one is touched; throwing there keeps the
+  /// old database. [swap] wraps the rename, so an open database can be closed
+  /// around it. [dbDir] and [client] are for tests.
   Future<bool> downloadCoreAsset({
     required String url,
     required String filename,
@@ -434,6 +449,15 @@ class TranslationDownloadNotifier
     required WidgetRef ref,
     String? versionKey,
     int? expectedBytes,
+    String? expectedZipSha256,
+    Future<void> Function(File tmpDb)? verify,
+    Future<void> Function(
+      Future<void> Function() replace,
+      void Function(ProviderOrFamily provider) invalidate,
+    )?
+    swap,
+    Directory? dbDir,
+    http.Client? client,
   }) async {
     final key = versionKey ?? filename.replaceAll('.db', '');
     _cancelTokens.remove(key);
@@ -463,24 +487,27 @@ class TranslationDownloadNotifier
     }
     final cancelToken = CancelableCompleter();
     _cancelTokens[key] = cancelToken;
+    final invalidate = _ref?.invalidate ?? ref.invalidate;
+    File? zipFile;
+    File? tempFile;
 
     try {
-      final dbDir = await getDatabaseDirectory();
+      final dir = dbDir ?? await getDatabaseDirectory();
       // Stream the .zip straight to disk: the core databases are hundreds
       // of MB and holding them in memory OOM-kills low-RAM devices (the
       // main Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
-      final zipFile = File(p.join(dbDir.path, '$filename.zip.tmp'));
+      zipFile = File(p.join(dir.path, '$filename.zip.tmp'));
       if (await zipFile.exists()) await zipFile.delete();
-      final tmpDbPath = p.join(dbDir.path, '$filename.tmp');
+      final tmpDbPath = p.join(dir.path, '$filename.tmp');
 
-      final client = http.Client();
+      final httpClient = client ?? http.Client();
       var lastShownPct = -1;
       try {
         await _streamDownloadToFile(
           url: url,
           destZip: zipFile,
           cancelToken: cancelToken,
-          client: client,
+          client: httpClient,
           expectedBytes: expectedBytes ?? 0,
           onProgress: (progress) {
             final pct = (progress * 100).round().clamp(0, 100);
@@ -509,8 +536,20 @@ class TranslationDownloadNotifier
           },
         );
       } finally {
-        client.close();
+        if (client == null) httpClient.close();
       }
+
+      if (expectedZipSha256 != null && expectedZipSha256.isNotEmpty) {
+        final actual = await _sha256OfFile(zipFile);
+        if (!cancelToken.isCancelled &&
+            !_hexEquals(actual, expectedZipSha256)) {
+          throw FormatException(
+            'The download is damaged (checksum mismatch). Try again.',
+          );
+        }
+      }
+      // Stop counts until here, through the checksum pass; extraction and
+      // the swap then run to the end.
       _cancelTokens.remove(key);
 
       if (cancelToken.isCancelled) {
@@ -520,6 +559,7 @@ class TranslationDownloadNotifier
           ...state,
           key: const TranslationDownloadState(status: DownloadStatus.cancelled),
         };
+        await _deleteQuietly(zipFile);
         return false;
       }
 
@@ -545,20 +585,25 @@ class TranslationDownloadNotifier
       // held fully in memory. Throws with a human-readable message when the
       // zip has no .db or is corrupt.
       await _extractDbFromZip(zipPath: zipFile.path, tmpPath: tmpDbPath);
+      await _deleteQuietly(zipFile);
 
-      final destPath = p.join(dbDir.path, filename);
-      final tempFile = File(tmpDbPath);
+      final destPath = p.join(dir.path, filename);
+      final extracted = tempFile = File(tmpDbPath);
 
-      // Clean up stale WAL / SHM files
-      await cleanWalFiles(destPath);
+      if (verify != null) await verify(extracted);
 
-      // Atomically replace destination
-      await tempFile.rename(destPath);
+      Future<void> replace() async {
+        // Clean up stale WAL / SHM files
+        await cleanWalFiles(destPath);
 
-      // If the DPD database was just replaced on disk, drop the open handles
-      // so the next lookup reopens the new file.
-      if (filename == 'dpd-mobile.db') {
-        ref.invalidate(dpdDatabaseProvider);
+        // Atomically replace destination
+        await extracted.rename(destPath);
+      }
+
+      if (swap != null) {
+        await swap(replace, invalidate);
+      } else {
+        await replace();
       }
 
       await _fgsStop();
@@ -573,13 +618,16 @@ class TranslationDownloadNotifier
 
       // Invalidate translation-registry providers so the startup wizard
       // updates the continue button state after a core download finishes.
-      ref.invalidate(translationRegistryProvider);
-      ref.invalidate(localTranslationVersionsProvider);
+      invalidate(translationRegistryProvider);
+      invalidate(localTranslationVersionsProvider);
 
       return true;
     } catch (e) {
       await _fgsStop();
       _cancelTokens.remove(key);
+      if (zipFile != null) await _deleteQuietly(zipFile);
+      // A failed check or swap must not leave the extracted 1 GB behind.
+      if (tempFile != null) await _deleteQuietly(tempFile);
       if (cancelToken.isCancelled) {
         DownloadNotificationService.instance.dismissTranslation();
         state = {
@@ -587,17 +635,18 @@ class TranslationDownloadNotifier
           key: const TranslationDownloadState(status: DownloadStatus.cancelled),
         };
       } else {
+        final message = downloadErrorMessage(e);
         // Previously silent: the notification just vanished and the wizard
         // showed no reason, so failures looked like the download "closed".
         DownloadNotificationService.instance.showTranslationError(
           displayName,
-          e.toString(),
+          message,
         );
         state = {
           ...state,
           key: TranslationDownloadState(
             status: DownloadStatus.error,
-            errorMessage: e.toString(),
+            errorMessage: message,
           ),
         };
       }
@@ -770,6 +819,18 @@ class TranslationDownloadNotifier
   }
 }
 
+/// The error text a download shows. A full disk gets a plain message
+/// (ENOSPC is 28 on Linux, Android and macOS; ERROR_DISK_FULL is 112 on
+/// Windows); every other error keeps its own text.
+String downloadErrorMessage(Object error) {
+  if (error is FileSystemException) {
+    final code = error.osError?.errorCode;
+    if (code == 28 || code == 112) return 'Not enough storage';
+  }
+  if (error is FormatException) return error.message;
+  return error.toString();
+}
+
 /// Case-insensitive hex comparison for SHA-256 strings (the server emits
 /// lowercase; keep the comparison forgiving).
 bool _hexEquals(String a, String b) => a.toLowerCase() == b.toLowerCase();
@@ -835,4 +896,4 @@ final translationDownloadProvider =
     StateNotifierProvider<
       TranslationDownloadNotifier,
       Map<String, TranslationDownloadState>
-    >((ref) => TranslationDownloadNotifier());
+    >((ref) => TranslationDownloadNotifier(ref));

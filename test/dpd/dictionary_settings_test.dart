@@ -168,6 +168,8 @@ void main() {
       of: find.text('DPD Roots'),
       matching: find.byType(Row),
     ).first;
+    await tester.ensureVisible(rootsRow);
+    await settleShell(tester, frames: 3);
     await tester.tap(
       find.descendant(of: rootsRow, matching: find.byType(AnimatedContainer)),
     );

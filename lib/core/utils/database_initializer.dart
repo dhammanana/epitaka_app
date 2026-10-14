@@ -2,7 +2,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/services.dart'
-    show AssetManifest, MethodChannel, rootBundle;
+    show AssetBundle, AssetManifest, MethodChannel, rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -286,8 +286,14 @@ Future<void> _ensureDatabasesReadyInternal() async {
 /// [getDatabaseDirectory] where Drift (which needs a real writable file path)
 /// and the providers can open them — making the bundled DBs usable offline
 /// without re-downloading.
-Future<void> ensureBundledDatabases() async {
-  final appDir = await getDatabaseDirectory();
+///
+/// [targetDir] and [bundle] are for tests.
+Future<void> ensureBundledDatabases({
+  Directory? targetDir,
+  AssetBundle? bundle,
+}) async {
+  final assets = bundle ?? rootBundle;
+  final appDir = targetDir ?? await getDatabaseDirectory();
   final dbDir = Directory(appDir.path);
   if (!await dbDir.exists()) {
     await dbDir.create(recursive: true);
@@ -301,7 +307,7 @@ Future<void> ensureBundledDatabases() async {
   // this extracts them to the writable database directory.
   final bundledDbs = <String>{};
   try {
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final manifest = await AssetManifest.loadFromAssetBundle(assets);
     for (final asset in manifest.listAssets()) {
       if (asset.startsWith('assets/db/') && asset.endsWith('.db')) {
         bundledDbs.add(asset);
@@ -313,6 +319,9 @@ Future<void> ensureBundledDatabases() async {
 
   for (final assetPath in bundledDbs) {
     final filename = p.basename(assetPath);
+    // Builds may still bundle it (CI is the maintainer's to change), and a
+    // copy would come back on every launch after it is deleted.
+    if (filename == kRetiredDpdFile) continue;
     final destPath = p.join(appDir.path, filename);
     final destFile = File(destPath);
 
@@ -349,7 +358,7 @@ Future<void> ensureBundledDatabases() async {
         }
       }
 
-      final data = await rootBundle.load(assetPath);
+      final data = await assets.load(assetPath);
       // Skip 0-byte assets for the same reason as above.
       if (data.lengthInBytes == 0) continue;
       final tempPath = '$destPath.tmp';
@@ -420,47 +429,20 @@ File? _assetOnDisk(String assetPath) {
 /// re-downloaded and no data is lost. Only files that don't already exist in
 /// the target are copied, and each legacy location is best-effort (failures
 /// are logged, never fatal).
-Future<void> migrateLegacyDatabases() async {
+///
+/// [targetDir] and [legacyDirsForTest] are for tests.
+Future<void> migrateLegacyDatabases({
+  Directory? targetDir,
+  List<String>? legacyDirsForTest,
+}) async {
   if (Platform.isAndroid || Platform.isIOS) return;
 
-  final target = await getDatabaseDirectory();
+  final target = targetDir ?? await getDatabaseDirectory();
   if (!await target.exists()) {
     await target.create(recursive: true);
   }
 
-  final legacyDirs = <String>[
-    // The exe-adjacent data/ folder the old cwd heuristic could point at.
-    p.join(File(Platform.resolvedExecutable).parent.path, 'data'),
-  ];
-
-  // Documents was the old fallback when no cwd-relative data/ existed.
-  // Best-effort like the rest of the migration: path_provider's FFI can
-  // fail after a hot restart (dart-lang/native#3281).
-  try {
-    legacyDirs.insert(0, (await getApplicationDocumentsDirectory()).path);
-  } catch (e) {
-    developer.log(
-      '[DB_MIGRATE] Documents dir unavailable: $e',
-      name: 'epitaka.database',
-    );
-  }
-
-  // The sandboxed container location used by the packaged macOS app.
-  // `flutter run -d macos` is NOT sandboxed, so its canonical directory is
-  // the shared ~/Library/Application Support/<bundleId> — while everything
-  // downloaded in the installed app lives in the container
-  // (~/Library/Containers/<bundleId>/Data/…). When they differ, migrate
-  // from the container first (it holds the newest, complete set) so debug
-  // runs don't ask to re-download hundreds of MB. When running as the
-  // packaged app itself, target == container and the equality check below
-  // skips it, so this is a no-op there.
-  if (Platform.isMacOS) {
-    final containerDir = _macContainerAppSupportDir();
-    if (containerDir != null) {
-      legacyDirs.insert(0, containerDir.path);
-    }
-  }
-
+  final legacyDirs = legacyDirsForTest ?? await _legacyDatabaseDirs();
   final targetPath = p.normalize(target.path);
 
   for (final legacyPath in legacyDirs) {
@@ -488,7 +470,7 @@ Future<void> migrateLegacyDatabases() async {
         // The DPD app keeps its own dpd-mobile.db (and its WAL) in Documents.
         // Copying its side files next to ePitaka's own download pairs a
         // foreign WAL with it, and SQLite reports "disk image is malformed".
-        if (name == 'dpd-mobile.db' || name == 'dpd-dictionary.db') continue;
+        if (name == 'dpd-mobile.db' || name == kRetiredDpdFile) continue;
         for (final suffix in ['', '-wal', '-shm', '-journal']) {
           final src = File('${entry.path}$suffix');
           if (!await src.exists()) continue;
@@ -534,7 +516,64 @@ Future<void> migrateLegacyDatabases() async {
   }
 }
 
-/// Copies the core databases (epitaka.db, dpd-dictionary.db) out of the
+/// Where older desktop builds kept their databases.
+Future<List<String>> _legacyDatabaseDirs() async {
+  final legacyDirs = <String>[
+    // The exe-adjacent data/ folder the old cwd heuristic could point at.
+    p.join(File(Platform.resolvedExecutable).parent.path, 'data'),
+  ];
+
+  // Documents was the old fallback when no cwd-relative data/ existed.
+  // Best-effort like the rest of the migration: path_provider's FFI can
+  // fail after a hot restart (dart-lang/native#3281).
+  try {
+    legacyDirs.insert(0, (await getApplicationDocumentsDirectory()).path);
+  } catch (e) {
+    developer.log(
+      '[DB_MIGRATE] Documents dir unavailable: $e',
+      name: 'epitaka.database',
+    );
+  }
+
+  // The sandboxed container location used by the packaged macOS app.
+  // `flutter run -d macos` is NOT sandboxed, so its canonical directory is
+  // the shared ~/Library/Application Support/<bundleId> — while everything
+  // downloaded in the installed app lives in the container
+  // (~/Library/Containers/<bundleId>/Data/…). When they differ, migrate
+  // from the container first (it holds the newest, complete set) so debug
+  // runs don't ask to re-download hundreds of MB. When running as the
+  // packaged app itself, target == container and the equality check below
+  // skips it, so this is a no-op there.
+  if (Platform.isMacOS) {
+    final containerDir = _macContainerAppSupportDir();
+    if (containerDir != null) {
+      legacyDirs.insert(0, containerDir.path);
+    }
+  }
+  return legacyDirs;
+}
+
+/// The DPD file older versions used. This version never opens it: it is
+/// deleted once the new DPD file opens, and never copied back.
+const kRetiredDpdFile = 'dpd-dictionary.db';
+
+/// Deletes [kRetiredDpdFile] and its journal files from [dir]. A failure is
+/// logged and tried again on the next launch.
+Future<void> deleteRetiredDpdFiles(Directory dir) async {
+  for (final suffix in ['', '-wal', '-shm', '-journal']) {
+    final file = File(p.join(dir.path, '$kRetiredDpdFile$suffix'));
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      developer.log(
+        '[DB_INIT] Could not delete ${file.path}: $e',
+        name: 'epitaka.database',
+      );
+    }
+  }
+}
+
+/// Copies the core databases (epitaka.db, epitaka_en.db) out of the
 /// Android install-time Play Asset Delivery pack on first launch.
 ///
 /// The pack is delivered inside the AAB, so this works fully offline. The

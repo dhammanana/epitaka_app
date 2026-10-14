@@ -1,0 +1,638 @@
+[
+ {
+  "tag_name": "v0.4.20260926",
+  "name": "2026-09-26",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-09-26T14:43:59Z",
+  "assets": [
+   {
+    "name": "dpd-anki.apkg",
+    "size": 13617631,
+    "digest": "sha256:5646744d77f787b424519533c91df5a760182bcae9345243ff15aeb213482a66",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-anki.apkg"
+   },
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 34805943,
+    "digest": "sha256:c48a5a43bf7a0d8d6b0e86e0d974e94839614fe4e4f60899d7b8e0f26bcb568c",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 270602685,
+    "digest": "sha256:8280265aaed457de3b606e8f4b732d570ec7eb4b6318f5e4b8c739009b676395",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 28916448,
+    "digest": "sha256:ee77f0792a25cf1070a642c5746cc80b0c54dac53cc712a7723a6d5d8ec6d93e",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 77847488,
+    "digest": "sha256:bc895f76fe4f5f60a2e4df3c50727c03532a99104506c1fa95930b7bc10aaacd",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14261278,
+    "digest": "sha256:992088c9a03fd658932846eace6ba1c942c1f1651306606b82f6c5c6d29442a0",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 318367933,
+    "digest": "sha256:83ad448b48686696b7c29eafb25c0adf07b0dc5e0ac84e5f41d5fcfaf5db234c",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 209945935,
+    "digest": "sha256:6f274778e519237d5719dddd378f72bdb86ab4ae64f432b94c34bb6e02ff24a9",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-mobile-db.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 37503712,
+    "digest": "sha256:a956d169e88fa0a33cb6e2ac3d59303e85f73abdf7864a5ac2d1faf7b1226503",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-slob.zip",
+    "size": 294110074,
+    "digest": "sha256:7d6bdb4964b0208227936b9544fabebbea33f8622ed82b6113c49984d3e5afae",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-slob.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4256883,
+    "digest": "sha256:3bff6bca21978a3b954299d84ecf41404ae5825d00ee1be491801ded1a00efc7",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.xz",
+    "size": 169565896,
+    "digest": "sha256:cba32e51a1e0288a256711da0b5c9f0420361c90b6480a00c46ce53ba75ed540",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260926/dpd.db.tar.xz"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.4.20260728",
+  "name": "2026-07-28",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-07-28T15:11:06Z",
+  "assets": [
+   {
+    "name": "dpd-anki.apkg",
+    "size": 13483478,
+    "digest": "sha256:a060c922af76fbbba4597d59060206e04da0c52dc3cabc1a0fcc807812269a07",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-anki.apkg"
+   },
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 34693178,
+    "digest": "sha256:fb2c9bec7a5236e7f4ace95764362643a3551aad03500c82b422480ecb23000d",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 269861235,
+    "digest": "sha256:3b2aa841c519927ed47fcf4cb9ef1d29cf3fa21d9d38559ed754dda30198eb55",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18905324,
+    "digest": "sha256:a1c5e006b89848caac719435cf854e3adf16918b4fc585113d65f84378bdf888",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 74782520,
+    "digest": "sha256:b53281e94b741e425fd2881ae5ad2b694d79e40cc2e784a4485e2a409dd42be9",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14197032,
+    "digest": "sha256:c76e3b38a7dd88d2dca5857e9c13f4339bd9121b1852ad6a4a72610734237303",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 317380087,
+    "digest": "sha256:0025ad2dee57eb4cf882174b07d10cea16006709c86b1d5f622f8b87e213c453",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 209688836,
+    "digest": "sha256:9ce57d366982c4b38a66f45418b6a9fc499972e98e16424553a2df1d4b96ca4a",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-mobile-db.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 37337278,
+    "digest": "sha256:d154479c4cfc7f0b6f99065da86b10739d00139b96928fd5f211c498bfd00796",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-slob.zip",
+    "size": 293128873,
+    "digest": "sha256:00300722dce86db6db38c18acfc606df6e4b2a1f2c1300acb66cf9c9498d573a",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-slob.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4238085,
+    "digest": "sha256:becde63c19780dadb1cf7faac4f5195fd755aa7dbe433279b4c0261d2370f89f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.xz",
+    "size": 169043908,
+    "digest": "sha256:cd746f33633c087e514e8eed1f6939d9a8debb1e9dca5d8447fcc32fd343b7fe",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260728/dpd.db.tar.xz"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.4.20260612",
+  "name": "2026-06-12 mobile db update",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-06-12T03:21:58Z",
+  "assets": [
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 175060316,
+    "digest": "sha256:b07ad3451ee8e282244c1c79e0b8bb861377a99350d807eff94d8e30451c881f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260612/dpd-mobile-db.zip"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.4.20260531",
+  "name": "2026-05-31",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-05-31T12:03:22Z",
+  "assets": [
+   {
+    "name": "dpd-anki.apkg",
+    "size": 13181858,
+    "digest": "sha256:761509aab5e0b77536c9b02ab4897df21f69fa21313a4b8cf04b60437d93d142",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-anki.apkg"
+   },
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 34461296,
+    "digest": "sha256:994c78b16c3a2e231e38e53cf597cd85334f0cc58e36993417c8f2d25d32c5fc",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 273240083,
+    "digest": "sha256:6e9e7beb517614608bd43a892b442d35c54866db4eb25e0b724dec112f1b9512",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18699563,
+    "digest": "sha256:bb43aa26c89a5ecb5fbae25bcedc8d39932471d5224a6f469c264de1c1af6c90",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 73951955,
+    "digest": "sha256:6fd930d385b2ea7461fda90182800e8edec77064ea9e723e20c067828a8f2f0f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14104952,
+    "digest": "sha256:d95558c67a253ec38a3aa8b194fc533ca836283828d34669d99aff7a710f126f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 317650393,
+    "digest": "sha256:0b661c53611040a6d2fc9897d9153afc941f9227890145f3f040c0c152fc70f7",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 141212103,
+    "digest": "sha256:dd8d297eeb5db21d79bf692813657bc53f13bb27f6c767b2e4e9629549a2ac64",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-mobile-db.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35995667,
+    "digest": "sha256:45d0baafd9a4e63957404eeb39830c44a3590737082eb3177b6cbc079168ddbb",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-slob.zip",
+    "size": 302159520,
+    "digest": "sha256:d070835ad873bfcd9eca2d49b3efff2bba22606ddffd6d44ea1af12092c74fa7",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-slob.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4222830,
+    "digest": "sha256:03b38a141a1544d8f8d5ee68c663f1cb72d2963e83efa293941b081513d27b78",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 177270105,
+    "digest": "sha256:da13c75c875c28889f0e2cdab659f3006c256059457841687d9dd4a09134248f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260531/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.4.20260501",
+  "name": "2026-05-01",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-05-01T05:49:50Z",
+  "assets": [
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 34407561,
+    "digest": "sha256:b807e5d90410a93e5c5c9b1d5157f33a695ceba8a03467a642f94c7243d769f8",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 270802898,
+    "digest": "sha256:2ef1c305f4c38208182f631faaa72b95206254a3312a1e88c6c72daa2885ba18",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18570959,
+    "digest": "sha256:a13205ffe6d6d88e380028802195c49b0e6b3153e685357e02addb63ee64cb15",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 73537971,
+    "digest": "sha256:b0bb44d0c45f7049a9e379a9d57637a86bd0098126ad2810c76099dd20ba05d4",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14076806,
+    "digest": "sha256:9609aa21da4e16759fb6b45208455fa22f21d80cea422a09e0671cfc78840890",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 316550765,
+    "digest": "sha256:c29a161166ec8f2bde757a23e9fabc1170db7df3f3e20210a7712d790566ad29",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 140462236,
+    "digest": "sha256:b1410086bb4586bf901cbcf19810f78dba927e19ef90db7e4492fbe0a3f3216b",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-mobile-db.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35901673,
+    "digest": "sha256:573f4524d82e95569aff8bc306005f4bc93b0fb6b321d213f2a404220a006201",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-slob.zip",
+    "size": 299176934,
+    "digest": "sha256:b9078238add15733c0cc1e214191edecf7e33c676f4e483e5bc5bd80035eaf98",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-slob.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4229806,
+    "digest": "sha256:67dfcb80c927f6af6deffa1887b47ffa15fa755ef1bb8532dceac1ac406b37da",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 176651330,
+    "digest": "sha256:795f90dce960daca3cd67b76b0da9eef01950f1d0e398b7a19c9bfa2eb493f97",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.4.20260501/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.20260402",
+  "name": "2026-04-02",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-04-02T08:56:23Z",
+  "assets": [
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 34359155,
+    "digest": "sha256:07a40743087bc89949fcb4d37d3aa2bab56c3f6aa0861e13ad1e646ae57b8daa",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 270506197,
+    "digest": "sha256:dc6b2856fab52efea7db50cad069a4d07fa27dbd879797d95ddd4857a8b07033",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18356810,
+    "digest": "sha256:5ad4c2946508544c3d9924f0996aefd5a43a7b65affa3355f8c271387129824e",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 72513806,
+    "digest": "sha256:dabeaae0cda96e785bebb62088f6c8dc76996829274bb5ef12171b6725619a2e",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14052432,
+    "digest": "sha256:616753fe310ac4b66559699761df36bd32c72ab151cdf82b572933abb5bcc6a5",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 315302571,
+    "digest": "sha256:b7c175abc94f69a89b1eb50cf84d28a7158f11a1a0cc6e2b72733754888f6acb",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-mobile-db.zip",
+    "size": 123534461,
+    "digest": "sha256:b2044df9dd54a7d29c5460f2b53490752e581c8a218e2eb4a19490eedf8ea59b",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-mobile-db.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35654608,
+    "digest": "sha256:68873a428c69885ac30d0e32e3b18a70cb207df775d3c568c751ea6997829fe1",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4156263,
+    "digest": "sha256:46dd01cb51d40e7f79d89dcc5a0702867b33e11e2dc8e89310e37032422b2c20",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 151578527,
+    "digest": "sha256:9c310d2880a90e7aaa6614f133d1abe55fa74ab277907ed5abe01ee794e2975b",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260402/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.20260303",
+  "name": "2026-03-03",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-03-03T04:45:06Z",
+  "assets": [
+   {
+    "name": "dpd-apple.dictionary.zip",
+    "size": 32054592,
+    "digest": "sha256:45bc2f4a11755d645b4e25f880ebf0621fd6c6f39de2eac72d43783ea82078e2",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-apple.dictionary.zip"
+   },
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 270168344,
+    "digest": "sha256:df31ec81fa2e0d5e4ded650eae6d45e0b042b29d7c63d8afd3f4df867b0356a4",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18221669,
+    "digest": "sha256:f1f7cf95e15630e4937d7f9f85dc06a29d1ed5b7094094b9c546d26b152b0b54",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 72007477,
+    "digest": "sha256:0a345a9e6fd740815c7940eb4c52babd6e00efa7cb734473bded2342d510995f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 14017321,
+    "digest": "sha256:804e2bb68a4232250e63861b0186a1436ecf7a96f9b83c6c0bb10a44745b2fef",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 314514686,
+    "digest": "sha256:6e610420b654e5444992d1702a3f2d681909226300c87c1eeff1fc163fa6d694",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35447084,
+    "digest": "sha256:b3c61067f6dc0ab156218b8ff4ca07e8e68f486cb131d4be44b1bab87558a5dd",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4129634,
+    "digest": "sha256:77fcc1b3e55f6921f09611ccea52590fbb0625d67da3d13d8c92dbef8951bd52",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 151231428,
+    "digest": "sha256:7da0fde56a53a0eaff2fe18f11c54578d833f1bc47fc98d52622a571cb657227",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260303/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.20260202",
+  "name": "2026-02-02",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-02-02T03:59:14Z",
+  "assets": [
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 269196958,
+    "digest": "sha256:aefa8431648357b15d75f44128e1dd907c1977765e2f96060482330a1fb216b3",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 18019451,
+    "digest": "sha256:f392b8de57f3a1e961b315f89caa2efa7d28a57755f61172f7cb037e7e0af276",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 71065543,
+    "digest": "sha256:f22a49dc5b486f537ec82ceaacd1d4386907b5ae9774c022cdab5abfef48ca90",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 13965951,
+    "digest": "sha256:7dbdecfd89f40d64f4d72def13a8ce615a625e608ae83b3a94b47e61baf69b8a",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 313443498,
+    "digest": "sha256:76efeaf9bcfe8f3478d1f4ece3d18f2cb9bd8650aa13bc458436ffb8f39de963",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35000354,
+    "digest": "sha256:14c57bfcc3db41532d42cf6a67aa2dba715f479b384e8047cf8f975aa1f6b988",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4093345,
+    "digest": "sha256:89eeba2c42c89d3a86d0691f872ef7c681683b4b3169494dd7f6fa8b0b5431d5",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 150670573,
+    "digest": "sha256:0e0377c9f060686b7e4bd9421912b8ed0e08e1598e435eff58f88db2391afba6",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260202/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.20260103",
+  "name": "2026-01-03",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-01-03T05:45:41Z",
+  "assets": [
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 265482400,
+    "digest": "sha256:844ef5db4e08690a3eb06540db17134e46843bf46cc404537d29780c2a5faefa",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 14534854,
+    "digest": "sha256:24af3606a93db054b1fbef166602b6cee4dbca64a617109ba69a3dec88505316",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 55903362,
+    "digest": "sha256:fc657428fee262779caafa514d1e940651c744bf12bd94da361bea49f5d830f2",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 13153804,
+    "digest": "sha256:c43ea6ec446002cdcc8386920fe1385d507bd4f9e7834dd4942122bb85b5d209",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 309592313,
+    "digest": "sha256:fd006ddf2d4a0104563a6881a282204b7daa485a1c4a8a0a32da47b536cbd2de",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 35013522,
+    "digest": "sha256:d15fb4f79b14a58a9891eaa6e59b1f813eb352a71148d276ee5f60e212ca6587",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4074972,
+    "digest": "sha256:bbeb071797db614ff2d804d5aaaa3a72323dc7a43e323fedaf16f8ab9972f45d",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 168610333,
+    "digest": "sha256:f17c5eee8d77561d4fffcbdeffea22e2ad1ecc2a2e0afb4f2ff847af8b3b2163",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20260103/dpd.db.tar.bz2"
+   }
+  ]
+ },
+ {
+  "tag_name": "v0.3.20251205",
+  "name": "2025-12-05",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2025-12-05T09:33:36Z",
+  "assets": [
+   {
+    "name": "dpd-goldendict.zip",
+    "size": 257141718,
+    "digest": "sha256:c5a95601ff71b066663fc9ef4bda11653c1c4104df423066f0b27f5e344c002b",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-goldendict.zip"
+   },
+   {
+    "name": "dpd-kindle.epub",
+    "size": 14452012,
+    "digest": "sha256:26523408dcf6be40af7fa979319e370ce2a7dd0838a6e77aaf9f262042b13b64",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-kindle.epub"
+   },
+   {
+    "name": "dpd-kindle.mobi",
+    "size": 55531876,
+    "digest": "sha256:23acea462f4c18545c933c08ec543ccef917103bdbc2f171accc4cfed4216da9",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-kindle.mobi"
+   },
+   {
+    "name": "dpd-kobo.zip",
+    "size": 13088910,
+    "digest": "sha256:221c3e931b9dba2f8d71ffde7f08f0bf0f2ec8a1d5027415f7ff966ab449c26f",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-kobo.zip"
+   },
+   {
+    "name": "dpd-mdict.zip",
+    "size": 301269396,
+    "digest": "sha256:bc598a9c79998377803562efe868cca892f5c0b3e5afb72c385b34d756a610c1",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-mdict.zip"
+   },
+   {
+    "name": "dpd-pdf.zip",
+    "size": 34941522,
+    "digest": "sha256:64bc280cbe14d5e47ed5c8a84cd5dee4dc4a832f745dc7e5d67211aa857dbe87",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-pdf.zip"
+   },
+   {
+    "name": "dpd-txt.zip",
+    "size": 4036725,
+    "digest": "sha256:eb49e3dd07cfa490165f62d182eb8024fd186f3fe10381635f43ce0196e72224",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd-txt.zip"
+   },
+   {
+    "name": "dpd.db.tar.bz2",
+    "size": 216239725,
+    "digest": "sha256:33ce77a04e87be9485c0e473971771db8dfe3d871f09ea3eaa37a1c5c1f4e267",
+    "browser_download_url": "https://github.com/digitalpalidictionary/dpd-db/releases/download/v0.3.20251205/dpd.db.tar.bz2"
+   }
+  ]
+ }
+]

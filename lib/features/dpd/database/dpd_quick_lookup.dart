@@ -25,8 +25,13 @@ class DpdQuickLookup {
   final Database _db;
   final PreparedStatement _statement;
 
+  /// The reader reads the provider's value without waiting for a rebuild, so
+  /// right after a swap it can still hold this closed handle.
+  bool _disposed = false;
+
   /// Whether [word] has a `lookup` row with any non-empty content column.
   bool hasContent(String word) {
+    if (_disposed) return false;
     final key = word.trim().toLowerCase().replaceAll('ṁ', 'ṃ');
     if (key.isEmpty) return false;
     final rows = _statement.select([key]);
@@ -35,6 +40,8 @@ class DpdQuickLookup {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _statement.dispose();
     _db.dispose();
   }

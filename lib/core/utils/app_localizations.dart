@@ -1139,6 +1139,25 @@ class AppLocalizations {
   String get dpdExpectedFile => _t('Expected file');
   String dpdInstalledRelease(String release) =>
       '${_t('Installed release')}: $release';
+  String get dpdNewDatabaseTitle => _t('New DPD dictionary');
+  String get dpdNewDatabaseBody => _t(
+    'This version of ePitaka uses a new, fuller DPD dictionary database. '
+    'It must be downloaded before the app can open.',
+  );
+  String dpdDownloadSize(String size) => '${_t('Download size')}: $size';
+  String get dpdDownloading => _t('DPD is downloading');
+  String get dpdUnpacking => _t('Unpacking and checking…');
+  String get dpdUpdateTitle => _t('New DPD release');
+  String dpdUpdateBody(String release, String size) =>
+      '${_t('A newer DPD dictionary release is available')}: $release '
+      '($size).';
+  String dpdLastCheck(String date) => '${_t('Last checked')}: $date';
+  String get dpdNeverChecked => _t('Not checked yet');
+  String get dpdCheckNow => _t('Check now');
+  String get dpdUpToDate => _t('Up to date');
+  String dpdNewerRelease(String release, String size) =>
+      '${_t('Newer release')}: $release ($size)';
+  String get dpdReinstall => _t('Reinstall');
   String get compoundBreakdown => _t('Compound breakdown');
   String get englishMeaning => _t('English meaning');
   String get pinToSidePanel => _t('Pin to side panel');
