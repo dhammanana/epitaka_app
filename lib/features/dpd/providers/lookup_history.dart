@@ -144,8 +144,13 @@ class LookupHistory extends ChangeNotifier {
   }
 
   Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(wordsPrefsKey, jsonEncode(_words));
+    // Fire-and-forget from [_changed]: an error here has no caller to catch it.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(wordsPrefsKey, jsonEncode(_words));
+    } on Object catch (e) {
+      debugPrint('[DPD] lookup history not saved: $e');
+    }
   }
 }
 

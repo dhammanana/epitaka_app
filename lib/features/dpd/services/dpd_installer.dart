@@ -99,6 +99,11 @@ Future<bool> installDpdRelease(
     try {
       target = await (service ?? DpdReleaseService()).fetchLatest();
     } on DpdReleaseException catch (e) {
+      // A Stop during the lookup wins over the error it caused.
+      if (notifier.stateFor(kDpdDownloadKey).status ==
+          DownloadStatus.cancelled) {
+        return false;
+      }
       notifier.report(
         kDpdDownloadKey,
         TranslationDownloadState(

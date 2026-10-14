@@ -25,7 +25,6 @@ void main() {
     dir = await Directory.systemTemp.createTemp('suggestion_tiers_test');
     dbFile = buildDpdFixture(dir);
     final db = sqlite3.open(dbFile.path);
-    // A lookup key the fuzzy_key range cannot reach: only the last tier sees it.
     // A sutta code with no fuzzy key: the literal and fuzzy ranges (lower case)
     // cannot reach it, only the last tier's upper-case range can.
     db.execute("INSERT INTO lookup (lookup_key) VALUES ('SN99')");

@@ -67,6 +67,9 @@ void main() {
 
     final prefs = await tester.runAsync(SharedPreferences.getInstance);
     expect(prefs!.getDouble('settings_list_offset'), left);
+    // The stored value is wiped, so only the run's own memory can give the
+    // place back and the saved copy cannot stand in for it.
+    await tester.runAsync(() => prefs.setDouble('settings_list_offset', 0));
 
     // A new widget of the same type in the same place would keep the old
     // state, so the list is closed first.

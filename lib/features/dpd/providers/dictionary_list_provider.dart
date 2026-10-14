@@ -211,8 +211,12 @@ class DictionaryListStore extends StateNotifier<StoredDictionaryList?> {
 
   Future<void> _save(StoredDictionaryList next) async {
     state = next;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(dictionaryListPrefsKey, jsonEncode(next.toJson()));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(dictionaryListPrefsKey, jsonEncode(next.toJson()));
+    } on Object catch (e) {
+      debugPrint('[DPD] dictionary list not saved: $e');
+    }
   }
 
   /// Saves the order the user sees. Saved ids that are not shown now go to the

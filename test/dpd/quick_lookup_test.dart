@@ -44,7 +44,10 @@ void main() {
     expect(quick.hasContent('taṁ'), isTrue);
   });
 
-  test('opening leaves no side files', () {
+  // SQLite makes `-wal` and `-shm` files even for a read-only open of a
+  // WAL-mode file (checked), so this holds only for the plain-journal files
+  // the installer produces; `dpd_install_test` checks that conversion.
+  test('opening a plain-journal file leaves no side files', () {
     final names = dir.listSync().map((e) => e.uri.pathSegments.last).toList();
     expect(names, ['dpd-mobile.db']);
   });
