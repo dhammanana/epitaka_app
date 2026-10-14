@@ -6,6 +6,9 @@ import '../../dictionary/providers/dictionary_font_scale_provider.dart';
 import '../../dpd/providers/dictionary_list_provider.dart';
 import '../../dpd/providers/dpd_database_provider.dart';
 import '../../dpd/providers/dpd_settings_provider.dart';
+import '../../dpd/services/dpd_installer.dart';
+import '../../dpd/services/dpd_update_checker.dart';
+import '../../dpd/widgets/dpd_download_control.dart';
 import '../../../features/mdx_dictionary/widgets/mdx_settings_section.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -130,7 +133,8 @@ class _DpdLevelSection extends ConsumerWidget {
   }
 }
 
-/// Which DPD release is installed, or why there is none.
+/// Which DPD release is installed, or why there is none; the last check,
+/// Check now with its answer, and the download.
 class _DpdDatabaseSection extends ConsumerWidget {
   const _DpdDatabaseSection();
 
@@ -154,6 +158,15 @@ class _DpdDatabaseSection extends ConsumerWidget {
     );
     final path = state.valueOrNull?.path;
     final isReady = state.valueOrNull?.status == DpdDatabaseStatus.ready;
+    final update = ref.watch(dpdUpdateProvider);
+    final latest = update.latest;
+    final newer =
+        latest != null &&
+        (!isReady || latest.isNewerThan(state.valueOrNull?.releaseVersion));
+    final lastCheck = update.lastCheck;
+    final secondary = AppTypography.labelSmall.copyWith(
+      color: colors.onSurfaceVariant,
+    );
     return SettingsSection(
       title: loc.dpdDatabase,
       colors: colors,
@@ -178,6 +191,80 @@ class _DpdDatabaseSection extends ConsumerWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 8),
+              // The check date and its answer share a line, and so do the
+              // two buttons (user, 2026-10-14); each pair wraps when narrow.
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    lastCheck == null
+                        ? loc.dpdNeverChecked
+                        : loc.dpdLastCheck(_day(lastCheck)),
+                    style: secondary,
+                  ),
+                  if (update.error != null)
+                    SelectableText(
+                      update.error!,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.error,
+                      ),
+                    )
+                  else if (latest != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          newer ? Icons.new_releases_outlined : Icons.check,
+                          size: 16,
+                          color: newer ? colors.primary : colors.onSurface,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            newer
+                                ? loc.dpdNewerRelease(
+                                    latest.tag,
+                                    formatDpdSize(latest.size),
+                                  )
+                                : loc.dpdUpToDate,
+                            style: AppTypography.labelMedium.copyWith(
+                              color: newer ? colors.primary : colors.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: update.checking
+                        ? null
+                        : () =>
+                              ref.read(dpdUpdateProvider.notifier).checkNow(),
+                    icon: update.checking
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: Text(loc.dpdCheckNow),
+                  ),
+                  DpdDownloadControl(
+                    release: latest,
+                    label: isReady && !newer ? loc.dpdReinstall : null,
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -555,3 +642,8 @@ class _DictionaryTile extends StatelessWidget {
     );
   }
 }
+
+String _day(DateTime t) =>
+    '${t.year.toString().padLeft(4, '0')}-'
+    '${t.month.toString().padLeft(2, '0')}-'
+    '${t.day.toString().padLeft(2, '0')}';

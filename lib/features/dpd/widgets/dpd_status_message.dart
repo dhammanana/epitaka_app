@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../providers/dpd_database_provider.dart';
+import 'dpd_download_control.dart';
 
 /// Says why DPD has no answer: no file, or a file this build cannot read.
-/// The path is selectable, so it can be copied.
+/// The path is selectable, so it can be copied. With no file it also offers
+/// the download, and shows its progress while one runs.
 class DpdStatusMessage extends StatelessWidget {
   const DpdStatusMessage({super.key, required this.unavailable});
 
@@ -42,6 +44,10 @@ class DpdStatusMessage extends StatelessWidget {
                 color: colors.onSurfaceVariant,
               ),
             ),
+            if (state.status == DpdDatabaseStatus.notInstalled) ...[
+              const SizedBox(height: 16),
+              const DpdDownloadControl(centered: true),
+            ],
           ],
         ),
       ),

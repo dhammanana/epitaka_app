@@ -62,7 +62,7 @@ linux-run:
 android_pkg := "com.dn.epitaka"
 android_apk := "build/app/outputs/flutter-apk/app-prod-debug.apk"
 # Content databases: re-sent when the desktop copy changed since the last send.
-android_content_dbs := "epitaka.db epitaka_en.db dpd-dictionary.db dpd-mobile.db"
+android_content_dbs := "epitaka.db epitaka_en.db dpd-mobile.db"
 # User data (bookmarks, history, notes, search index): sent only when the
 # phone has none, never overwritten, so nothing added on the phone is lost.
 android_user_dbs := "app_data.db"
