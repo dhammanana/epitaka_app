@@ -88,7 +88,10 @@ class PageSummary extends ConsumerWidget {
             sources: [item.id],
             showConstruction: showConstruction,
             withTargets: withTargets,
-          ),
+            // Most secondary lines are a label pointing at their card. With
+            // no cards (Saṅkhitta) such a line says nothing, so it is left
+            // out (user, 2026-10-14).
+          ).where((e) => withTargets || e.meaning.isNotEmpty),
         );
         continue;
       }

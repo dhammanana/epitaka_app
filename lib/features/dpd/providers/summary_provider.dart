@@ -48,7 +48,7 @@ List<SummaryEntry> buildSummaryEntries(
       var n = 0;
       for (final result in secondary) {
         if (dpdSourceIdOf(result) != id) continue;
-        final entry = _buildSecondaryEntry(result);
+        final entry = _buildSecondaryEntry(result, withContent: !withTargets);
         if (entry != null) {
           out.add(entry.withTarget(withTargets ? secondaryTarget(id, n) : ''));
         }
@@ -126,7 +126,11 @@ SummaryEntry _buildRootEntry(RootWithFamilies rwf) {
   );
 }
 
-SummaryEntry? _buildSecondaryEntry(Object result) {
+/// [withContent] is for a summary with no cards (Saṅkhitta): a line that
+/// only labels its card says nothing there, so the deconstructor line carries
+/// the splits themselves, one per line: the only DPD content of most
+/// compounds.
+SummaryEntry? _buildSecondaryEntry(Object result, {bool withContent = false}) {
   switch (result) {
     case SeeResult r:
       return SummaryEntry(
@@ -182,7 +186,7 @@ SummaryEntry? _buildSecondaryEntry(Object result) {
         type: SummaryEntryType.deconstructor,
         label: r.headword,
         typeLabel: 'deconstructor.',
-        meaning: '',
+        meaning: withContent ? r.deconstructions.join('\n') : '',
       );
     case HelpResult r:
       return SummaryEntry(

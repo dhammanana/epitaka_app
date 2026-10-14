@@ -196,6 +196,9 @@ class _DictionaryFontSizeSection extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
     final scale = ref.watch(dictionaryFontScaleProvider);
     final percent = '${(scale * 100).round()}%';
+    final percentStyle = AppTypography.labelMedium.copyWith(
+      color: colors.onSurface,
+    );
     return SettingsSection(
       title: loc.dictionaryFontSize,
       colors: colors,
@@ -216,18 +219,32 @@ class _DictionaryFontSizeSection extends ConsumerWidget {
                       .setScale,
                 ),
               ),
-              ConstrainedBox(
-                // Wide enough for "100%" at any text size, and never wrapped.
-                constraints: const BoxConstraints(minWidth: 56),
-                child: Text(
-                  percent,
-                  maxLines: 1,
-                  softWrap: false,
-                  textAlign: TextAlign.end,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.onSurface,
+              // An invisible copy of the widest label holds the width, so the
+              // slider stays still as the percent changes length, at any text
+              // size. Never wrapped.
+              Stack(
+                alignment: Alignment.centerRight,
+                children: [
+                  Visibility(
+                    visible: false,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: Text(
+                      '${(kDictionaryFontScaleMax * 100).round()}%',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: percentStyle,
+                    ),
                   ),
-                ),
+                  Text(
+                    percent,
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.end,
+                    style: percentStyle,
+                  ),
+                ],
               ),
             ],
           ),

@@ -91,6 +91,23 @@ void main() {
     expect(_drawn(tester), isNot(contains('Fuzzy Results')));
   });
 
+  // At Saṅkhitta the results view draws nothing, so the tier must draw its
+  // headwords itself, or the heading stands over an empty space.
+  testWidgets('partial results at Saṅkhitta: summary lines under the heading', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      'ti',
+      configure: (s) {
+        sankhitta(s);
+        s.setShowPartialResults(true);
+      },
+    );
+    expect(_drawn(tester), contains('Partial Results'));
+    expect(_drawn(tester), contains('tithi'));
+  });
+
   testWidgets('no fuzzy results by default', (tester) async {
     await show(tester, 'kammaṃ');
     expect(_drawn(tester), isNot(contains('Fuzzy Results')));

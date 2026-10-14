@@ -14,6 +14,7 @@ import 'package:epitaka/features/dpd/models/inflection_table_data.dart';
 import 'package:epitaka/features/dpd/providers/dpd_settings_provider.dart';
 import 'package:epitaka/features/dpd/providers/template_cache_provider.dart';
 import 'package:epitaka/features/dpd/widgets/inflection_section.dart';
+import 'package:epitaka/features/dpd/widgets/inflection_table.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -162,6 +163,48 @@ void main() {
       );
       await settleShell(tester);
     }
+
+    // On a slow first Vitthāra lookup the section opens before the templates
+    // have loaded; the grey "does not occur" marks must still arrive.
+    testWidgets('templates that arrive late still mark the forms', (
+      tester,
+    ) async {
+      bigScreen(tester);
+      final c = await makeShellContainer(tester, dbFile);
+      // One tree, so the section keeps its state when the templates arrive.
+      final cache = ValueNotifier<Map<String, InflectionTemplate>>(const {});
+      addTearDown(cache.dispose);
+      await tester.pumpWidget(
+        wrapShell(
+          c,
+          SingleChildScrollView(
+            child: ValueListenableBuilder(
+              valueListenable: cache,
+              builder: (_, templates, _) =>
+                  InflectionSection(headword: dhamma, templateCache: templates),
+            ),
+          ),
+        ),
+      );
+      await settleShell(tester);
+      expect(find.byType(InflectionSection), findsOneWidget);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      cache.value = {'a masc': aMasc};
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump();
+
+      final table = tester.widget<InflectionTable>(find.byType(InflectionTable));
+      final forms = [
+        for (final r in table.data.rows)
+          for (final cell in r.$2) ...cell.forms,
+      ];
+      expect(forms.where((f) => !f.isOccurring), isNotEmpty);
+    });
 
     testWidgets('Majjhima has no declension button', (tester) async {
       await open(tester, DictionaryLevel.majjhima);

@@ -50,6 +50,18 @@ class _MultiFamilySectionState extends State<MultiFamilySection> {
     );
   }
 
+  @override
+  void didUpdateWidget(MultiFamilySection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The same section can be handed another headword's families.
+    final count = widget.subSections.length;
+    if (count != _sectionKeys.length) {
+      _sectionKeys
+        ..clear()
+        ..addAll(List.generate(count, (_) => GlobalKey()));
+    }
+  }
+
   void _scrollToSection(int index) {
     final ctx = _sectionKeys[index].currentContext;
     if (ctx != null) {

@@ -347,6 +347,41 @@ void main() {
       await settleShell(tester);
       expect(fieldTextOf(tester), 'ca');
     });
+
+    // A shell opened with no word shows the current word but must not look it
+    // up again: that moved a word the user had gone back to to the end of the
+    // list, and dropped the words ahead of it.
+    for (final reopenPanel in [true, false]) {
+      testWidgets(
+        'opening the ${reopenPanel ? 'panel' : 'sheet'} after going back keeps the order',
+        (tester) async {
+          bigView(tester);
+          final c = await caContainer(tester);
+          await tester.pumpWidget(
+            wrapShell(c, const DictionarySheet(initialWord: 'ca')),
+          );
+          await settleShell(tester);
+          await tapGrammar(tester);
+          await tester.tap(backButton());
+          await settleShell(tester);
+          expect(fieldTextOf(tester), 'ca');
+
+          await tester.pumpWidget(wrapShell(c, const SizedBox()));
+          await tester.pump();
+          await tester.pumpWidget(
+            wrapShell(
+              c,
+              reopenPanel ? const DictionaryPanel() : const DictionarySheet(),
+            ),
+          );
+          await settleShell(tester);
+
+          expect(fieldTextOf(tester), 'ca');
+          expect(c.read(lookupHistoryProvider).words, ['ca', 'grammar']);
+          expect(enabled(tester, forwardButton()), isTrue);
+        },
+      );
+    }
   });
 
   group('panel', () {

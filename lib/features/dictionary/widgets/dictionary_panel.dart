@@ -98,8 +98,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       _searchController.text = initial;
       _query = initial;
       _draft = initial;
-      _recordLookup(initial);
     }
+    // Only a handed-in word is a new lookup. Re-adding the current word would
+    // move it to the end of the history after the user had gone back.
+    if (handedIn.isNotEmpty) _recordLookup(handedIn);
     if (handedIn.isEmpty && widget.autoFocus) {
       // Focus the search field after the first frame so the keyboard can show.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -245,8 +247,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     if (!mounted) return KeyEventResult.ignored;
     // Flush the live textbox value: the draft is debounced, so without
     // this an arrow pressed right after typing would see stale state.
-    final live = _searchController.text.trim();
-    if (live != _draft) {
+    // Both sides cleaned: a typed draft is already clean, but a word put on
+    // screen by a tap or a chip is not, and must not count as new typing.
+    final live = cleanDpdQuery(_searchController.text);
+    if (live != cleanDpdQuery(_draft)) {
       _suggestDebounce?.cancel();
       setState(() {
         _draft = live;

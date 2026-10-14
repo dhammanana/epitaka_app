@@ -123,4 +123,50 @@ void main() {
           'the first one, straight from the textbox',
     );
   });
+
+  // The suggestions come from the cleaned text, so the arrow must compare the
+  // cleaned text too. Raw text that cleans differently (another script, an
+  // unfolded niggahīta, a question mark) used to empty the list on Down.
+  testWidgets('ArrowDown keeps the suggestions of text that needs cleaning', (
+    tester,
+  ) async {
+    await pumpPanel(tester);
+    await tester.enterText(find.byType(TextField), 'kam?');
+    await settleShell(tester);
+    expect(find.textContaining('kammaṃ', findRichText: true), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settleShell(tester);
+
+    expect(fieldText(tester), 'kamaṃ');
+  });
+
+  // A word put on screen by a tap or a chip is shown as stored, without the
+  // Velthuis pass typing gets (`kaam`, not `kām`). An arrow key must not read
+  // it as new typing and open the suggestions of the converted text.
+  testWidgets('ArrowDown on a shown word does not open suggestions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final container = await makeShellContainer(
+      tester,
+      dbFile,
+      prefixes: ['kām'],
+    );
+    await tester.pumpWidget(
+      wrapShell(container, const DictionaryPanel(initialWord: 'kaam')),
+    );
+    await settleShell(tester);
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await settleShell(tester);
+
+    expect(find.textContaining('kāmaṃ', findRichText: true), findsNothing);
+  });
 }

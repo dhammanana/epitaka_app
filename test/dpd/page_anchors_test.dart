@@ -54,6 +54,23 @@ void main() {
     expect(top, greaterThanOrEqualTo(0));
   });
 
+  // The summary can sit below a card; that card is then above the window and
+  // has no widget, so stepping down alone never finds it.
+  testWidgets('a card far above the window is reached', (tester) async {
+    await start(tester);
+    controller.jumpTo(10500);
+    await tester.pumpAndSettle();
+    expect(find.text('card 2'), findsNothing);
+
+    final done = anchors.jumpTo('card_2', controller);
+    await tester.pumpAndSettle();
+    await done;
+
+    final top = tester.getTopLeft(find.text('card 2')).dy;
+    expect(top, lessThan(100));
+    expect(top, greaterThanOrEqualTo(0));
+  });
+
   testWidgets('a card already on screen is reached', (tester) async {
     await start(tester);
     final done = anchors.jumpTo('card_1', controller);

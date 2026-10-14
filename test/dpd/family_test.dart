@@ -20,6 +20,7 @@ import 'package:epitaka/features/dpd/widgets/root_info_table.dart';
 import 'package:epitaka/features/dpd/widgets/root_matrix_builder.dart';
 import 'package:epitaka/features/dpd/widgets/root_matrix_table.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,6 +45,7 @@ void main() {
     'kāmaṃ 1': 21082, // root family, compound family, idiom
     'kamma 7': 20238, // root family, set
     'cittasamuṭṭhāna': 26640, // two compound families
+    'ca 2.3': 25664, // compound family, idiom, two sets
   };
 
   Future<DpdHeadwordWithRoot> word(String lemma1) async =>
@@ -259,6 +261,24 @@ void main() {
       expect(_plain(tester), contains('belong to the root family'));
       expect(_plain(tester), contains('idiomatic expression'));
     });
+
+    // Closing the compound section moved the sets section into its place,
+    // and the sets got the compound section's state, built for one family.
+    testWidgets('closing a section above a multi-family one does not break it',
+        (tester) async {
+      final container = await openCard(
+        tester,
+        await word('ca 2.3'),
+        DictionaryLevel.vitthara,
+      );
+      container.read(dpdSettingsProvider.notifier).setOneButtonAtATime(false);
+      await settleShell(tester, frames: 2);
+      await press(tester, 'compound family');
+      await press(tester, 'sets');
+      await press(tester, 'compound family');
+      expect(tester.takeException(), isNull);
+      expect(_plain(tester), contains('indeclinables'));
+    });
   });
 
   group('root card in the sheet', () {
@@ -342,6 +362,48 @@ void main() {
       await settleShell(tester);
       expect(find.byType(RootInfoTable), findsNothing);
       expect(find.byType(RootMatrixTable), findsOneWidget);
+    });
+
+    // The label column is sized by measuring the labels; measured unscaled,
+    // a label drawn at a larger system text size no longer fits.
+    testWidgets('matrix labels fit at system text size 200%', (tester) async {
+      bigScreen(tester);
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final matrix = buildRootMatrix(
+        await dao.getHeadwordsForRootMatrix('√dhar 1'),
+      );
+      final container = await makeShellContainer(tester, dbFile);
+      await tester.pumpWidget(
+        wrapShell(
+          container,
+          SingleChildScrollView(
+            child: RootMatrixTable(root: '√dhar 1', data: matrix),
+          ),
+        ),
+      );
+      await settleShell(tester, frames: 4);
+
+      final labels = tester
+          .renderObjectList<RenderParagraph>(
+            find.descendant(
+              of: find.byType(RootMatrixTable, skipOffstage: false),
+              matching: find.byWidgetPredicate(
+                (w) => w is RichText && w.maxLines == 1,
+                skipOffstage: false,
+              ),
+              skipOffstage: false,
+            ),
+          )
+          .toList();
+      expect(labels, isNotEmpty);
+      for (final p in labels) {
+        expect(
+          p.getMaxIntrinsicWidth(double.infinity),
+          lessThanOrEqualTo(p.size.width + 0.5),
+          reason: p.text.toPlainText(),
+        );
+      }
     });
   });
 }

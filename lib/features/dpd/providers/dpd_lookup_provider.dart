@@ -82,16 +82,20 @@ final dpdLookupProvider = FutureProvider.autoDispose
         );
       }
       final literal = await dao.searchExact(query);
-      // A word with no literal hit may still match once diacritics, aspirates
-      // and doubled consonants are folded (`kammam` for `kammaṃ`).
-      final headwords = literal.isEmpty
-          ? await dao.searchFuzzyExact(query)
-          : literal;
       final roots = await dao.searchRoots(query);
       final row = await dao.getLookupRow(query);
       final secondary = row == null
           ? const <Object>[]
           : SecondaryResultsProvider.parse(row.lookupKey, row);
+      // A word with no hit at all may still match once diacritics, aspirates
+      // and doubled consonants are folded (`kammam` for `kammaṃ`). A word that
+      // has a deconstruction or a variant is not misspelt: folding it would
+      // add strangers (`abba` gets `abbha`) and send the other dictionaries
+      // to the wrong word.
+      final headwords =
+          literal.isEmpty && roots.isEmpty && secondary.isEmpty
+          ? await dao.searchFuzzyExact(query)
+          : literal;
       final exactIds = {for (final h in headwords) h.headword.id};
       // The fuzzy tier leaves out partial hits too, so the partial list is
       // fetched when either tier is on.

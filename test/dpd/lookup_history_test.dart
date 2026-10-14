@@ -200,6 +200,16 @@ void main() {
       h.dispose();
     });
 
+    test('a saved list with a word twice keeps its newest place', () async {
+      SharedPreferences.setMockInitialValues({
+        'dict_lookup_nav': '["ca","dhamma","ca"]',
+      });
+      final h = LookupHistory(persist: true);
+      await h.load();
+      expect(h.words, ['dhamma', 'ca']);
+      h.dispose();
+    });
+
     test('a saved list of the wrong type starts an empty history', () async {
       SharedPreferences.setMockInitialValues({'dict_lookup_nav': 5});
       final h = LookupHistory(persist: true);

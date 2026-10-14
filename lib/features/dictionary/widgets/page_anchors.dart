@@ -16,10 +16,12 @@ class PageAnchors {
   bool has(String id) => _keys.containsKey(id);
 
   /// Scrolls [controller]'s list so that the widget for [id] is near the top.
-  /// Does nothing for an unknown id, and stops at the end of the list.
+  /// Does nothing for an unknown id, and stops when a pass from the top has
+  /// not found it either.
   Future<void> jumpTo(String id, ScrollController controller) async {
     final key = _keys[id];
     if (key == null) return;
+    var fromTop = false;
     // A page has a handful of screens; the limit only guards a bad state.
     for (var step = 0; step < 80; step++) {
       final context = key.currentContext;
@@ -34,7 +36,15 @@ class PageAnchors {
       }
       if (!controller.hasClients) return;
       final position = controller.position;
-      if (position.pixels >= position.maxScrollExtent - 1) return;
+      if (position.pixels >= position.maxScrollExtent - 1) {
+        // The card can sit above the screen, dropped by the lazy list when
+        // the summary is placed below it. Search once more from the top.
+        if (fromTop) return;
+        fromTop = true;
+        controller.jumpTo(0);
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
+      }
       controller.jumpTo(
         (position.pixels + position.viewportDimension * 0.8).clamp(
           0.0,
