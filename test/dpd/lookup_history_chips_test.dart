@@ -83,6 +83,26 @@ void main() {
     expect(r.right, lessThanOrEqualTo(300));
   });
 
+  // At the history's cap a new word drops the oldest, so the newest keeps the
+  // same position; the row must still come back to show it.
+  testWidgets('at the cap, a new newest word is scrolled into view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(39));
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(mouse.hover(tester.getCenter(chip('w38'))));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -2000)));
+    await tester.pump();
+    expect(chip('w39').hitTestable(), findsNothing);
+
+    final shifted = [for (var i = 1; i <= 40; i++) 'w$i'];
+    await tester.pumpWidget(app(39, list: shifted));
+    await tester.pumpAndSettle();
+    final r = tester.getRect(chip('w40'));
+    expect(r.left, greaterThanOrEqualTo(0));
+    expect(r.right, lessThanOrEqualTo(300));
+  });
+
   testWidgets('a tap hands over the word', (tester) async {
     String? tapped;
     await tester.pumpWidget(app(-1, onTap: (w) => tapped = w));

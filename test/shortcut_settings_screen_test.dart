@@ -27,7 +27,7 @@ Future<SettingsNotifier> _pumpPage(
   Map<ShortcutActivator, VoidCallback> rootBindings = const {},
   double width = 1200,
 }) async {
-  // Tall enough that the lazy list builds all 46 rows.
+  // Tall enough that the lazy list builds all 59 rows.
   tester.view.physicalSize = Size(width, 8000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -70,7 +70,7 @@ void main() {
   setUp(() => AppShortcuts.overrides = const {});
   tearDown(() => AppShortcuts.overrides = const {});
 
-  testWidgets('lists every shortcut under eight sections in order', (
+  testWidgets('lists every shortcut under nine sections in order', (
     tester,
   ) async {
     await _pumpPage(tester);
@@ -79,6 +79,7 @@ void main() {
       'Reading',
       'Tabs',
       'Text & display',
+      'Dictionary panel',
       'App',
       'Reader',
       'Search results',
@@ -90,7 +91,7 @@ void main() {
     for (var i = 1; i < tops.length; i++) {
       expect(tops[i], greaterThan(tops[i - 1]), reason: titles[i]);
     }
-    expect(find.byTooltip('Change'), findsNWidgets(46));
+    expect(find.byTooltip('Change'), findsNWidgets(59));
     expect(find.byTooltip('Restore default'), findsNothing);
   });
 
@@ -238,7 +239,11 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('None'), findsOneWidget);
+      // Find in Book reads None, beside the rows that ship with no keys.
+      final keyless = AppShortcuts.shortcutCatalog
+          .where((b) => b.activators.isEmpty)
+          .length;
+      expect(find.text('None'), findsNWidgets(keyless + 1));
       // Both messages start at the same left edge, under the row's name.
       final replacedLeft = tester
           .getTopLeft(find.text('Find in Book no longer has a shortcut'))

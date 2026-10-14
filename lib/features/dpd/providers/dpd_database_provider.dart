@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../../../core/utils/database_initializer.dart';
 import '../database/dpd_database.dart';
 import '../database/dpd_quick_lookup.dart';
+import '../utils/feedback_urls.dart';
 
 /// `db_info.db_schema_version` values this build can read.
 const kSupportedDpdSchemas = {'${DpdDatabase.schemaNumber}'};
@@ -76,6 +77,8 @@ bool isUnreadableDpdFile(Object error) =>
 final dpdDatabaseProvider = FutureProvider<DpdDatabaseState>((ref) async {
   final swapping = _swapping;
   if (swapping != null) await swapping.future;
+  // A missing or unreadable file must not leave the last release in reports.
+  setFeedbackDpdRelease(null);
   final file = await ref.watch(dpdDatabaseFileProvider.future);
   // Opening a missing path would create an empty database file there.
   if (!await file.exists()) {
@@ -104,6 +107,7 @@ final dpdDatabaseProvider = FutureProvider<DpdDatabaseState>((ref) async {
   try {
     schema = await dao.getDbValue('db_schema_version');
     release = await dao.getDbValue('dpd_release_version');
+    setFeedbackDpdRelease(release);
   } catch (e) {
     await close();
     if (!isUnreadableDpdFile(e)) rethrow;

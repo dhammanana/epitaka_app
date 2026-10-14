@@ -42,7 +42,15 @@ class _LookupHistoryChipsState extends State<LookupHistoryChips> {
   @override
   void didUpdateWidget(LookupHistoryChips old) {
     super.didUpdateWidget(old);
-    if (old.currentIndex != widget.currentIndex) {
+    final i = widget.currentIndex;
+    // At the history's cap a new word drops the oldest, so the position stays
+    // the same while the word at it changes.
+    final wordChanged =
+        i >= 0 &&
+        i < widget.words.length &&
+        i < old.words.length &&
+        old.words[i] != widget.words[i];
+    if (old.currentIndex != i || wordChanged) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _currentKey.currentContext;
         if (mounted && context != null) {

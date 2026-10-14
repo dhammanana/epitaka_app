@@ -570,6 +570,15 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     ref.listen(dictionaryHistoryRequestProvider, (_, _) {
       setState(() => _historyOpen = true);
     });
+    ref.listen(dictionaryBackRequestProvider, (_, _) {
+      _stepHistory(_lookupHistory.goBack());
+    });
+    ref.listen(dictionaryForwardRequestProvider, (_, _) {
+      _stepHistory(_lookupHistory.goForward());
+    });
+    ref.listen(dictionarySearchFocusRequestProvider, (_, _) {
+      _focusNode.requestFocus();
+    });
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
