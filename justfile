@@ -150,6 +150,14 @@ android-db:
         fi
     done
 
+# Same as android-build and android-install, but with hot reload: in this
+# terminal, r loads code changes in about a second, R restarts the app, q quits.
+# It uses the same debug build and app id, so the phone's data is kept. If the
+# installed app is signed with another key, run android-install once first.
+# Run the current source live on the phone, with hot reload
+android-run:
+    flutter run --flavor prod
+
 # Start the app on the phone
 android-start:
     adb shell monkey -p "{{android_pkg}}" -c android.intent.category.LAUNCHER 1 >/dev/null
