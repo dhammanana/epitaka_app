@@ -92,7 +92,15 @@ class LookupHistory extends ChangeNotifier {
   /// at the end, after the saved ones; it is saved again so it does not
   /// replace the saved list on disk.
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final SharedPreferences prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } on Object catch (e) {
+      // Nothing was read, so nothing may be written: a save would replace the
+      // saved list with only this run's words.
+      debugPrint('[DPD] lookup history not loaded: $e');
+      return;
+    }
     final saved = <String>[];
     try {
       final json = prefs.getString(wordsPrefsKey);
@@ -104,13 +112,19 @@ class LookupHistory extends ChangeNotifier {
               .reversed,
         );
       }
-    } on Object {
-      // Damaged prefs: start with no saved history.
+    } on Object catch (e) {
+      // Damaged prefs: start with no saved history. Thrown out of here, the
+      // error would leave the list unloaded, and nothing would be saved.
+      debugPrint('[DPD] lookup history not read: $e');
     }
     final early = [..._words];
     _words
       ..clear()
-      ..addAll(saved.where((w) => !early.contains(w)))
+      // A word is never in the list twice, even if the saved list says so; the
+      // newest copy stays, as a repeated lookup moves a word to the end.
+      ..addAll(
+        saved.reversed.toSet().toList().reversed.where((w) => !early.contains(w)),
+      )
       ..addAll(early);
     if (_words.length > maxWords) {
       _words.removeRange(0, _words.length - maxWords);

@@ -196,13 +196,24 @@ mixin FamilyStateMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     ];
   }
 
+  /// Keyed, so that closing one section does not hand its state to the next:
+  /// a compound, idiom and set section share one widget type, and a state
+  /// built for fewer sub-families would read past the end of its own list.
   List<Widget> buildFamilySections() {
     return [
-      if (_showRootFamily) _buildRootSection(),
-      if (_showWordFamily) _buildWordSection(),
-      if (_showCompoundFamilies) _buildCompoundSection(),
-      if (_showIdioms) _buildIdiomsSection(),
-      if (_showSets) _buildSetsSection(),
+      if (_showRootFamily)
+        KeyedSubtree(key: const ValueKey('family-root'), child: _buildRootSection()),
+      if (_showWordFamily)
+        KeyedSubtree(key: const ValueKey('family-word'), child: _buildWordSection()),
+      if (_showCompoundFamilies)
+        KeyedSubtree(
+          key: const ValueKey('family-compound'),
+          child: _buildCompoundSection(),
+        ),
+      if (_showIdioms)
+        KeyedSubtree(key: const ValueKey('family-idioms'), child: _buildIdiomsSection()),
+      if (_showSets)
+        KeyedSubtree(key: const ValueKey('family-sets'), child: _buildSetsSection()),
     ];
   }
 

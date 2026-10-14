@@ -133,7 +133,9 @@ void main() {
       addTearDown(tester.view.reset);
     }
 
-    testWidgets('Saṅkhitta draws every line and no grammar button', (
+    // A secondary line with no content is a label for a card, and Saṅkhitta
+    // has no cards, so it is left out (user, 2026-10-14).
+    testWidgets('Saṅkhitta draws every line with content and no grammar button', (
       tester,
     ) async {
       bigScreen(tester);
@@ -158,7 +160,11 @@ void main() {
         await settleShell(tester);
         final text = _drawn(tester);
         expect(find.byType(SummarySection), findsOneWidget, reason: word);
-        for (final line in summaryOf(lookup!)) {
+        final lines = summaryOf(lookup!);
+        for (final line in lines.where((l) => l.meaning.isEmpty)) {
+          expect(text, isNot(contains(line.typeLabel)), reason: word);
+        }
+        for (final line in lines.where((l) => l.meaning.isNotEmpty)) {
           // Homographs share one lemma heading, so the label is checked by
           // its lemma and the rest of the line is checked on its own.
           final lemma = splitSummaryLemma(line.label).lemma;
@@ -172,6 +178,29 @@ void main() {
         expect(find.text('grammar'), findsNothing);
         expect(find.text('example'), findsNothing);
       }
+    });
+
+    // `kkamaṃ` has only a deconstruction. Brief drops the lines that only
+    // label a card, but this one carries the splits, or the page is blank.
+    testWidgets('Saṅkhitta shows a deconstruction with its splits', (
+      tester,
+    ) async {
+      bigScreen(tester);
+      final container = await makeShellContainer(
+        tester,
+        dbFile,
+        words: ['kkamaṃ'],
+      );
+      container
+          .read(dpdSettingsProvider.notifier)
+          .setLevel(DictionaryLevel.sankhitta);
+      await tester.pumpWidget(
+        wrapShell(container, const DictionarySheet(initialWord: 'kkamaṃ')),
+      );
+      await settleShell(tester);
+      final text = _drawn(tester);
+      // The splits sit on their own line, under the word.
+      expect(text, contains('deconstructor.\nkamaṃ'));
     });
 
     testWidgets('changing the level in an open sheet changes the content', (

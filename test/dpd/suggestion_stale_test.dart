@@ -57,6 +57,47 @@ void main() {
     expect(find.byType(SuggestionTile), findsNothing);
   });
 
+  // Typing on: the answer for an older draft that arrives last must not
+  // replace the list of the newer draft (5C review).
+  testWidgets('a late answer for an older draft does not replace the list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final answers = {
+      'kam': Completer<List<String>>(),
+      'kamm': Completer<List<String>>(),
+    };
+    final container = await makeShellContainer(
+      tester,
+      dbFile,
+      overrides: [
+        dpdSuggestionsProvider.overrideWith(
+          (ref, prefix) => answers[prefix]?.future ?? Future.value(<String>[]),
+        ),
+      ],
+    );
+    await tester.pumpWidget(wrapShell(container, const DictionaryPanel()));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'kam');
+    await settleShell(tester);
+    await tester.enterText(find.byType(TextField), 'kamm');
+    await settleShell(tester);
+
+    answers['kamm']!.complete(['kammaṃ']);
+    await settleShell(tester);
+    answers['kam']!.complete(['kamaṃ', 'kāmaṃ']);
+    await settleShell(tester);
+
+    final tiles = tester
+        .widgetList<SuggestionTile>(find.byType(SuggestionTile))
+        .toList();
+    expect(tiles, hasLength(1));
+    expect(find.textContaining('kāmaṃ', findRichText: true), findsNothing);
+  });
+
   testWidgets('the same answer in time does show the list', (tester) async {
     tester.view.physicalSize = const Size(500, 900);
     tester.view.devicePixelRatio = 1.0;

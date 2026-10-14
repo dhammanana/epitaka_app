@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 
 import 'package:epitaka/core/providers/dictionary_books_provider.dart';
+import 'package:epitaka/features/dpd/database/dpd_dao_epitaka.dart';
 import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_database_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
@@ -33,6 +34,12 @@ void main() {
     db.execute(
       "INSERT INTO lookup (lookup_key, fuzzy_key) VALUES "
       "('dam','dam'), ('dama','dama'), ('dhammaṃ','damam'), ('dhammā','dama')",
+    );
+    // Real keys that sort before `dhammo` in key order but are longer.
+    db.execute(
+      "INSERT INTO lookup (lookup_key, fuzzy_key) VALUES "
+      "('dhammaabhiñño','damaabino'), ('dhammaadhikaraṇaṃ','damaadikaranam'), "
+      "('dhammaanuttarā','damaanutara'), ('dhammo','damo')",
     );
     db.dispose();
   });
@@ -67,9 +74,22 @@ void main() {
   test('words that start with the typed prefix come before the folded ones', () async {
     final c = await makeContainer();
     final found = await suggest(c, 'dhamm');
-    expect(found.take(3), unorderedEquals(['dhamma', 'dhammā', 'dhammaṃ']));
+    expect(
+      found.take(4),
+      unorderedEquals(['dhamma', 'dhammā', 'dhammaṃ', 'dhammo']),
+    );
     expect(found.indexOf('dhamma'), lessThan(found.indexOf('dam')));
     expect(found.indexOf('dhamma'), lessThan(found.indexOf('dama')));
+  });
+
+  // The real range `dhamm` holds 6,711 keys; in key order the first 100 are
+  // long compounds and `dhammo` is not among them.
+  test('the literal tier takes the shortest keys before its limit', () async {
+    final c = await makeContainer();
+    final dao = await c.read(dpdDaoProvider.future);
+    final found = await dao.searchLiteralPrefix('dhamm', limit: 3);
+    expect(found, contains('dhammo'));
+    expect(found, isNot(contains('dhammaadhikaraṇaṃ')));
   });
 
   test('tier 1: a prefix that is not a prefix of the spelling still matches', () async {

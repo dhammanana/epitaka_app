@@ -221,8 +221,14 @@ class _SummaryRow extends StatelessWidget {
                               text: ' ${entry.typeLabel}',
                               style: baseStyle,
                             ),
+                          // The splits read better under their word (user,
+                          // 2026-10-14).
                           if (entry.meaning.isNotEmpty)
-                            ...meaningSpans(' ${entry.meaning}'),
+                            ...meaningSpans(
+                              entry.type == SummaryEntryType.deconstructor
+                                  ? '\n${entry.meaning}'
+                                  : ' ${entry.meaning}',
+                            ),
                         ],
                       ),
                     ),

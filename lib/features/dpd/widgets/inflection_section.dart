@@ -50,6 +50,11 @@ class _InflectionSectionState extends ConsumerState<InflectionSection> {
     if (oldWidget.headword.id != widget.headword.id) {
       setState(() => _occurrenceSet = null);
       _loadOccurrences();
+    } else if (oldWidget.templateCache.isEmpty &&
+        widget.templateCache.isNotEmpty) {
+      // The section can open before the templates have loaded; the first try
+      // then found no template and gave up.
+      _loadOccurrences();
     }
   }
 

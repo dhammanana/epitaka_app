@@ -100,6 +100,16 @@ void main() {
       expect((await shown(open())).every((e) => e.enabled), isTrue);
     });
 
+    // Valid JSON of the wrong shape throws a TypeError, not a FormatException.
+    for (final bad in ['{"order":null}', '{"order":[1,2],"disabled":[]}']) {
+      test('a saved list of the wrong shape falls back to the defaults: $bad',
+          () async {
+        SharedPreferences.setMockInitialValues({dictionaryListPrefsKey: bad});
+        final ids = (await shown(open())).map((e) => e.item.id).toList();
+        expect(ids.take(kDpdSources.length), kDpdSources.map((s) => s.id));
+      });
+    }
+
     test('the old DPD block and the dropped books never appear', () async {
       final ids = (await shown(open())).map((e) => e.item.id);
       for (final hidden in ['book_11', 'book_5', 'book_6', 'book_8', 'book_9']) {

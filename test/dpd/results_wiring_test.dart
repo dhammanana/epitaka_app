@@ -118,6 +118,15 @@ void main() {
       expect(lookup.searchWord, 'kamma');
     });
 
+    // `kkamaṃ` has only a deconstruction, and its folded key `kamam` is shared
+    // by four headwords. They are not what the user looked up.
+    test('a word with a deconstruction is not folded into strangers', () async {
+      final lookup = await container.read(dpdLookupProvider('kkamaṃ').future);
+      expect(lookup.secondary.whereType<DeconstructorResult>(), isNotEmpty);
+      expect(lookup.headwords, isEmpty);
+      expect(lookup.searchWord, 'kkamaṃ');
+    });
+
     test('a word with no entry has no match', () async {
       final lookup = await container.read(dpdLookupProvider('zzzqx').future);
       expect(lookup.hasMatch, isFalse);

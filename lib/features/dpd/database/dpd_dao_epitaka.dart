@@ -16,8 +16,9 @@ int suggestionComparator(String a, String b) {
 
 extension DpdDaoEpitaka on DpdDao {
   /// Lookup keys that start with [prefix] exactly as typed (diacritics and
-  /// all), shortest first, so the typed word itself leads. The primary key is
-  /// the index, and a key sorts before the longer keys that start with it.
+  /// all), shortest first, so the typed word itself leads. The database
+  /// sorts by length before the limit: in key order the first 100 keys of a
+  /// wide range (`dhamm` has 6,711) miss short forms such as `dhammo`.
   Future<List<String>> searchLiteralPrefix(String prefix, {int limit = 100}) async {
     final typed = prefix.trim().toLowerCase();
     if (typed.length < 2) return [];
@@ -31,7 +32,10 @@ extension DpdDaoEpitaka on DpdDao {
                 lookup.lookupKey.isBiggerOrEqualValue(typed) &
                     lookup.lookupKey.isSmallerThanValue(next),
               )
-              ..orderBy([OrderingTerm.asc(lookup.lookupKey)])
+              ..orderBy([
+                OrderingTerm.asc(lookup.lookupKey.length),
+                OrderingTerm.asc(lookup.lookupKey),
+              ])
               ..limit(limit))
             .get();
     return rows.map((r) => r.read(lookup.lookupKey)!).toList()

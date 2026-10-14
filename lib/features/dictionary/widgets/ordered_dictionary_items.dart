@@ -162,28 +162,40 @@ List<Widget> buildOrderedDictionaryItems({
   flushRun();
 
   // The looser tiers, when their settings are on, come last as headword lines.
-  final headwordsOn = entries.any(
-    (e) => e.enabled && e.item.id == 'dpd_headwords',
-  );
-  if (lookup.unavailable == null && headwordsOn) {
+  final headwordsEntries = [
+    for (final e in entries)
+      if (e.enabled && e.item.id == 'dpd_headwords') e,
+  ];
+  if (lookup.unavailable == null && headwordsEntries.isNotEmpty) {
     void tier(ResultTier tier, List<DpdHeadwordWithRoot> headwords) {
       if (headwords.isEmpty) return;
+      final tierLookup = DpdLookup(
+        query: lookup.query,
+        headwords: headwords,
+        roots: const [],
+        secondary: const [],
+        timer: lookup.timer,
+      );
       widgets.add(TierDivider(key: ValueKey('tier:${tier.name}'), tier: tier));
+      // At Saṅkhitta the results view draws nothing (the summary is the whole
+      // DPD content), so the tier's headwords become summary lines.
       widgets.add(
-        DpdResultsView(
-          key: ValueKey('tier-results:${tier.name}'),
-          lookup: DpdLookup(
-            query: lookup.query,
-            headwords: headwords,
-            roots: const [],
-            secondary: const [],
-            timer: lookup.timer,
-          ),
-          level: level,
-          sources: const ['dpd_headwords'],
-          logFirstPaint: false,
-          onWordTap: onWordTap,
-        ),
+        level == DictionaryLevel.sankhitta
+            ? PageSummary(
+                key: ValueKey('tier-results:${tier.name}'),
+                entries: headwordsEntries,
+                lookup: tierLookup,
+                level: level,
+                searchWord: searchWord,
+              )
+            : DpdResultsView(
+                key: ValueKey('tier-results:${tier.name}'),
+                lookup: tierLookup,
+                level: level,
+                sources: const ['dpd_headwords'],
+                logFirstPaint: false,
+                onWordTap: onWordTap,
+              ),
       );
     }
 

@@ -96,8 +96,10 @@ class StoredDictionaryList {
 
   factory StoredDictionaryList.fromJson(Map<String, dynamic> json) =>
       StoredDictionaryList(
-        order: (json['order'] as List).cast<String>(),
-        disabled: (json['disabled'] as List).cast<String>().toSet(),
+        // Copied, not cast lazily, so a value of the wrong type throws here,
+        // inside the load's error guard, not later when the list is merged.
+        order: List<String>.from(json['order'] as List),
+        disabled: Set<String>.from(json['disabled'] as List),
       );
 }
 
@@ -182,8 +184,10 @@ class DictionaryListStore extends StateNotifier<StoredDictionaryList?> {
       } else {
         stored = await _migrateOldBooks(prefs) ?? stored;
       }
-    } on FormatException {
-      // Damaged prefs: start from the defaults.
+    } on Object catch (e) {
+      // Damaged prefs, or a value of the wrong shape: start from the defaults.
+      // Left uncaught, the state stays null and the lookup page never loads.
+      debugPrint('[DPD] dictionary list not read: $e');
     }
     if (mounted) state = stored;
   }

@@ -233,6 +233,50 @@ void main() {
     });
   });
 
+  // A DPD line jumps to its own headword card: here the last of the fifteen
+  // `dhamma` homographs, far below the window in the panel's lazy list (5C
+  // review: only a dictionary line's jump was tested).
+  testWidgets('a headword line scrolls the panel to its card', (tester) async {
+    shortView(tester);
+    final c = await makeShellContainer(
+      tester,
+      dbFile,
+      words: ['dhamma'],
+      summary: true,
+    );
+    await tester.pumpWidget(
+      wrapShell(c, const DictionaryPanel(initialWord: 'dhamma')),
+    );
+    await settleShell(tester);
+    final target = lines(tester)
+        .where((e) => e.type == SummaryEntryType.headword)
+        .last;
+    final id = int.parse(target.targetId.substring('hw_'.length));
+    final card = find.byWidgetPredicate(
+      (w) => w is InlineEntryCard && w.headword.headword.id == id,
+      skipOffstage: false,
+    );
+    expect(tester.getTopLeft(card).dy, greaterThan(_windowHeight));
+
+    // The last line is `dhammā`, the arahant nun; its meaning is unique.
+    expect(target.meaning, startsWith('name of an arahant nun'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SummarySection),
+        matching: find.textContaining(
+          'name of an arahant nun',
+          findRichText: true,
+        ),
+      ),
+    );
+    await settleShell(tester, frames: 40);
+
+    // The last card cannot reach the top of a short page: on screen is enough.
+    final top = tester.getTopLeft(card).dy;
+    expect(top, lessThan(_windowHeight - 40));
+    expect(top, greaterThanOrEqualTo(0));
+  });
+
   group('a line', () {
     // The same line at Saṅkhitta (no target, so no tap) and at the other
     // levels (a target) must wrap alike.

@@ -129,7 +129,12 @@ class RootMatrixTable extends StatelessWidget {
   /// plus padding (5px each side) and border (1px each side).
   double _measureMaxLabelWidth(BuildContext context, TextStyle? style) {
     double maxTextWidth = 0;
-    final painter = TextPainter(textDirection: TextDirection.ltr);
+    // Measured at the system text size, which the label Text draws at too;
+    // unscaled, a label is clipped when that size is above 100%.
+    final painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    );
 
     for (final cat in data.values) {
       for (final entry in cat.entries) {
@@ -142,7 +147,8 @@ class RootMatrixTable extends StatelessWidget {
 
     painter.dispose();
     // padding: 5px left + 5px right = 10px; border: 1px left + 1px right = 2px
-    return maxTextWidth + 10 + 2;
+    // margin: 2px right, inside the label's SizedBox.
+    return maxTextWidth + 10 + 2 + 2;
   }
 }
 

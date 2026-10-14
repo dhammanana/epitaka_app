@@ -226,7 +226,8 @@ void main() {
     Future<double> heightAt(double scale, String label) async {
       await notifier.setScale(scale);
       await tester.pump();
-      return tester.getSize(find.text(label)).height;
+      // `.last`: an invisible copy of the widest label sits under it.
+      return tester.getSize(find.text(label).last).height;
     }
 
     final two = await heightAt(0.95, '95%');
@@ -234,6 +235,27 @@ void main() {
     final high = await heightAt(1.2, '120%');
     expect(three, two);
     expect(high, two);
+  });
+
+  // The label's minimum width keeps the slider still while the percent
+  // changes length ("95%" to "100%"); without it the slider jumps.
+  testWidgets('the text size slider keeps its width as the percent changes', (
+    tester,
+  ) async {
+    bigView(tester);
+    final container = await makeShellContainer(tester, dbFile);
+    await tester.pumpWidget(wrapShell(container, const DictionarySettingsBody()));
+    await settleShell(tester);
+    final notifier = container.read(dictionaryFontScaleProvider.notifier);
+    Future<double> sliderWidthAt(double scale) async {
+      await notifier.setScale(scale);
+      await tester.pump();
+      return tester.getSize(find.byType(Slider)).width;
+    }
+
+    final at95 = await sliderWidthAt(0.95);
+    expect(await sliderWidthAt(1.0), at95);
+    expect(await sliderWidthAt(1.2), at95);
   });
 
   testWidgets('the sandhi option has the DPD app\'s name', (tester) async {
