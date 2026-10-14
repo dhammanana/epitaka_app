@@ -118,6 +118,30 @@ void main() {
       expect(lookup.searchWord, 'kamma');
     });
 
+    // `kāya` is also a form of `ka`, which sorts first, so the other
+    // dictionaries were searched for `ka`. The word the user typed leads when
+    // it is a headword of its own (real rows of the fixture: `vā` and `va`).
+    test('a typed word that is a headword is searched as itself', () async {
+      for (final word in ['vā', 'so', 'taṃ', 'kāmaṃ']) {
+        final lookup = await container.read(dpdLookupProvider(word).future);
+        expect(lookup.searchWord, word, reason: word);
+      }
+    });
+
+    test('the typed word leads however it is cased', () async {
+      final lookup = await container.read(dpdLookupProvider('Vā').future);
+      expect(lookup.searchWord, 'vā');
+    });
+
+    // The lookup drops hyphens and apostrophes from what was typed, so the
+    // comparison has to as well.
+    test('the typed word leads with a hyphen or an apostrophe in it', () async {
+      for (final typed in ['v-ā', "v'ā"]) {
+        final lookup = await container.read(dpdLookupProvider(typed).future);
+        expect(lookup.searchWord, 'vā', reason: typed);
+      }
+    });
+
     // `kkamaṃ` has only a deconstruction, and its folded key `kamam` is shared
     // by four headwords. They are not what the user looked up.
     test('a word with a deconstruction is not folded into strangers', () async {
