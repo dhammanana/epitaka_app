@@ -49,13 +49,18 @@ List<Widget> buildOrderedDictionaryItems({
   final summaryOnTop =
       level == DictionaryLevel.sankhitta && !(summaryEnabled && showSummary);
 
-  Widget summary() => PageSummary(
-    key: const ValueKey('page-summary'),
-    entries: entries,
-    lookup: lookup,
-    level: level,
-    searchWord: searchWord,
-    onJump: onJump,
+  // A tapped word in a line with no card to jump to (the DPD lines at
+  // Saṅkhitta) is looked up; a line that jumps keeps its own tap.
+  Widget summary() => _tappable(
+    onWordTap,
+    PageSummary(
+      key: const ValueKey('page-summary'),
+      entries: entries,
+      lookup: lookup,
+      level: level,
+      searchWord: searchWord,
+      onJump: onJump,
+    ),
   );
 
   /// [w] under the anchor of the list item [item], when the page has anchors.
@@ -181,12 +186,15 @@ List<Widget> buildOrderedDictionaryItems({
       // DPD content), so the tier's headwords become summary lines.
       widgets.add(
         level == DictionaryLevel.sankhitta
-            ? PageSummary(
-                key: ValueKey('tier-results:${tier.name}'),
-                entries: headwordsEntries,
-                lookup: tierLookup,
-                level: level,
-                searchWord: searchWord,
+            ? _tappable(
+                onWordTap,
+                PageSummary(
+                  key: ValueKey('tier-results:${tier.name}'),
+                  entries: headwordsEntries,
+                  lookup: tierLookup,
+                  level: level,
+                  searchWord: searchWord,
+                ),
               )
             : DpdResultsView(
                 key: ValueKey('tier-results:${tier.name}'),

@@ -81,6 +81,9 @@ class _TapSearchWrapperState extends ConsumerState<TapSearchWrapper> {
 
     final word = _getWordAtPosition(event.position);
     if (word == null || word.isEmpty) return;
+    // A number alone (a homograph's `1.01`, a frequency count) is not a word;
+    // a sutta code such as `SN1.16` has letters and is kept.
+    if (!word.contains(RegExp(r'\p{L}', unicode: true))) return;
     // After this frame: the tap itself must finish before the sheet rebuilds.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onWordTap(word);
