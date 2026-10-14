@@ -197,7 +197,8 @@ void main() {
       );
       expect(line, findsOneWidget);
       await tester.tap(line);
-      await settleShell(tester, frames: 40);
+      // A jump keeps checking its card for two seconds after it arrives.
+      await settleShell(tester, frames: 80);
     }
 
     testWidgets('scrolls the sheet to the card', (tester) async {
@@ -294,7 +295,7 @@ void main() {
         ),
       ),
     );
-    await settleShell(tester, frames: 40);
+    await settleShell(tester, frames: 80);
 
     // The last card cannot reach the top of a short page: on screen is enough.
     final top = tester.getTopLeft(card).dy;
