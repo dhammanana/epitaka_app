@@ -251,6 +251,27 @@ void main() {
     await expectOldStillAnswers();
   });
 
+  test('Stop pressed during a failing release lookup stays cancelled', () async {
+    final notifier = container.read(translationDownloadProvider.notifier);
+    final ok = await installDpdRelease(
+      _ContainerRef(container),
+      service: DpdReleaseService(
+        client: MockClient((_) async {
+          notifier.cancelDownload(kDpdDownloadKey);
+          return http.Response('', 403);
+        }),
+      ),
+      dbDir: dir,
+    );
+
+    expect(ok, isFalse);
+    expect(
+      container.read(translationDownloadProvider)[kDpdDownloadKey]?.status,
+      DownloadStatus.cancelled,
+    );
+    expect(errorMessage(), isNull);
+  });
+
   test('a full disk says so in plain words', () {
     expect(
       downloadErrorMessage(

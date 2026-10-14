@@ -94,11 +94,14 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('open'));
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    for (var i = 0; i < 10; i++) {
+    // The page waits on a real preferences read. A fixed wait is too short on
+    // a loaded machine, so poll up to 5 s and stop when the page shows.
+    for (var i = 0; i < 50; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
       await tester.pump(const Duration(milliseconds: 100));
+      if (find.byType(HelpScreenBody).evaluate().isNotEmpty) break;
     }
     expect(find.byType(HelpScreenBody), findsOneWidget);
   });
