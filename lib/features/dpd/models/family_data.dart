@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 class FamilyEntry {
   const FamilyEntry({
@@ -29,7 +30,8 @@ List<FamilyEntry> parseFamilyData(String? jsonData) {
         completion: tuple[3] as String,
       );
     }).toList();
-  } catch (_) {
+  } catch (e) {
+    developer.log('Family entries not parsed: $e', name: 'epitaka.dpd');
     return [];
   }
 }

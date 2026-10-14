@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 // ── DeconstructorResult ──────────────────────────────────────────────────────
 
@@ -19,7 +20,8 @@ class DeconstructorResult {
         headword: headword,
         deconstructions: decoded.map((e) => e as String).toList(),
       );
-    } catch (_) {
+    } catch (e) {
+      developer.log('DeconstructorResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -60,7 +62,8 @@ class GrammarDictResult {
         return GrammarDictEntry(headword: hw, pos: pos, components: components);
       }).toList();
       return GrammarDictResult(headword: headword, entries: entries);
-    } catch (_) {
+    } catch (e) {
+      developer.log('GrammarDictResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -121,7 +124,8 @@ class AbbreviationResult {
         example: example,
         explanation: explanation,
       );
-    } catch (_) {
+    } catch (e) {
+      developer.log('AbbreviationResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -169,7 +173,8 @@ class AbbreviationOtherResult {
           .toList();
       if (rows.isEmpty) return null;
       return AbbreviationOtherResult(headword: headword, rows: rows);
-    } catch (_) {
+    } catch (e) {
+      developer.log('AbbreviationOtherResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -189,7 +194,8 @@ class HelpResult {
       // Double-encoded: json.dumps("some string") → '"some string"'
       final decoded = jsonDecode(jsonString) as String;
       return HelpResult(headword: headword, helpText: decoded);
-    } catch (_) {
+    } catch (e) {
+      developer.log('HelpResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -228,7 +234,8 @@ class EpdResult {
         );
       }).toList();
       return EpdResult(headword: headword, entries: entries);
-    } catch (_) {
+    } catch (e) {
+      developer.log('EpdResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -262,7 +269,8 @@ class VariantResult {
         return MapEntry(corpus, books);
       });
       return VariantResult(headword: headword, variants: variants);
-    } catch (_) {
+    } catch (e) {
+      developer.log('VariantResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -284,7 +292,8 @@ class SpellingResult {
         headword: headword,
         spellings: decoded.map((e) => e as String).toList(),
       );
-    } catch (_) {
+    } catch (e) {
+      developer.log('SpellingResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }
@@ -306,7 +315,8 @@ class SeeResult {
         headword: headword,
         seeHeadwords: decoded.map((e) => e as String).toList(),
       );
-    } catch (_) {
+    } catch (e) {
+      developer.log('SeeResult not parsed: $e', name: 'epitaka.dpd');
       return null;
     }
   }

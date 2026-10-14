@@ -1120,6 +1120,18 @@ class AppLocalizations {
   String get dpdShowPartial => _t('Show partial results');
   String get dpdShowFuzzy => _t('Show fuzzy results');
   String get dpdShowSandhi => _t('Sandhi apostrophes');
+  String get dictionaryHeaderSummary => _t('Show or hide the summary');
+  String get dictionaryHeaderGrammar => _t('Open the grammar by default');
+  String get dictionaryHeaderExamples => _t('Open the examples by default');
+  String get dictionaryHeaderSmaller => _t('Smaller dictionary text');
+  String get dictionaryHeaderLarger => _t('Larger dictionary text');
+  String get dictionaryHeaderTop => _t('Jump to the top');
+  String get dictionaryHeaderHistory => _t('Search history');
+  String get dictionaryHeaderHide =>
+      _t('Hide these icons (show them again in Settings)');
+  String get dictionaryHeaderIconsShow =>
+      _t('Show the icons in the dictionary header');
+  String get dictionaryHeaderHistoryTitle => _t('Search history');
   String get dpdAudioVoice => _t('Pronunciation voice');
   String get dpdVoiceMale => _t('Male');
   String get dpdVoiceFemale => _t('Female');

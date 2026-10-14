@@ -136,6 +136,33 @@ void main() {
     expect(filesInDir(), ['dpd-mobile.db']);
   });
 
+  // A damaged file shows as "not installed", with the download button. The
+  // download has to be able to replace it.
+  test('a release replaces a damaged file', () async {
+    container.dispose();
+    File('${dir.path}/dpd-mobile.db')
+      ..deleteSync()
+      ..writeAsBytesSync([]);
+    container = ProviderContainer(
+      overrides: [
+        dpdDatabaseFileProvider.overrideWith(
+          (ref) async => File('${dir.path}/dpd-mobile.db'),
+        ),
+      ],
+    );
+    container.listen(dpdDatabaseProvider, (_, _) {});
+    final before = await container.read(dpdDatabaseProvider.future);
+    expect(before.status, DpdDatabaseStatus.notInstalled);
+
+    final zip = zipOf(buildDpdFixture(src, releaseVersion: _newRelease));
+    expect(await install(zip), isTrue);
+
+    final state = await container.read(dpdDatabaseProvider.future);
+    expect(state.status, DpdDatabaseStatus.ready);
+    expect(state.releaseVersion, _newRelease);
+    expect(filesInDir(), ['dpd-mobile.db']);
+  });
+
   test('the install finishes after the screen that started it closed', () async {
     final zip = zipOf(buildDpdFixture(src, releaseVersion: _newRelease));
 

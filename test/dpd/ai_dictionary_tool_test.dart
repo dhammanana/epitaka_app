@@ -54,4 +54,40 @@ void main() {
     final keys = found.map((e) => (e as Map)['lookup_key']).toList();
     expect(keys, ['satipaṭṭhāna']);
   });
+
+  test('a found word carries no error note', () async {
+    final result = await container
+        .read(aiQaToolServiceProvider)
+        .getDictionary({'term': 'dhamma'});
+    expect(jsonDecode(result.data), isNot(contains('dpd_error')));
+  });
+
+  // Empty lookups with no reason read as "the word is unknown". The model has
+  // to be told that the dictionary is missing.
+  test('a missing DPD file says so instead of an empty answer', () async {
+    final missing = ProviderContainer(
+      overrides: [
+        dpdDatabaseFileProvider.overrideWith(
+          (ref) async => File('${dir.path}/not-there.db'),
+        ),
+        paliDefinitionProvider.overrideWith((ref, word) async => []),
+      ],
+    );
+    addTearDown(missing.dispose);
+
+    final result = await missing
+        .read(aiQaToolServiceProvider)
+        .getDictionary({'term': 'dhamma'});
+    final data = jsonDecode(result.data) as Map<String, dynamic>;
+    expect(data['lookups'], isEmpty);
+    expect(data['dpd_error'], contains('not installed'));
+    // The note goes to the model and to MCP clients: no path of the user's.
+    expect(data['dpd_error'], isNot(contains(dir.path)));
+
+    final batch = await missing.read(aiQaToolServiceProvider).getDictionaryBatch({
+      'terms': ['dhamma'],
+    });
+    final entries = jsonDecode(batch.data) as List<dynamic>;
+    expect((entries.single as Map)['dpd_error'], contains('not installed'));
+  });
 }

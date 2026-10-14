@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -37,7 +38,7 @@ class FrequencySection extends StatelessWidget {
               const SizedBox(height: 8),
               _buildCorpusLegend(context),
               const SizedBox(height: 8),
-              _buildExplanationLink(context),
+              const _ExplanationLink(),
             ] else ...[
               const SizedBox(height: 5),
               const Text(
@@ -134,9 +135,43 @@ class FrequencySection extends StatelessWidget {
     );
   }
 
-  Widget _buildExplanationLink(BuildContext context) {
-    final style = DefaultTextStyle.of(context).style;
+  Widget _buildFooter() {
+    return DpdFooter(
+      messagePrefix: 'If something looks out of place,',
+      linkText: 'log it here.',
+      feedbackType: FeedbackType.frequency,
+      word: lemma1,
+      headwordId: headwordId,
+    );
+  }
+}
 
+/// The line that points to the explanation page. The link is a span of the
+/// line, not a widget placed in it: a widget inside a line takes its own font
+/// and sits off the baseline.
+class _ExplanationLink extends StatefulWidget {
+  const _ExplanationLink();
+
+  @override
+  State<_ExplanationLink> createState() => _ExplanationLinkState();
+}
+
+class _ExplanationLinkState extends State<_ExplanationLink> {
+  late final TapGestureRecognizer _tap = TapGestureRecognizer()
+    ..onTap = () => launchUrl(
+      Uri.parse('https://digitalpalidictionary.github.io/features/frequency/'),
+      mode: LaunchMode.externalApplication,
+    );
+
+  @override
+  void dispose() {
+    _tap.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = DefaultTextStyle.of(context).style;
     return Text.rich(
       TextSpan(
         style: style,
@@ -146,45 +181,18 @@ class FrequencySection extends StatelessWidget {
                 'For a detailed explanation of how this word frequency chart is calculated, '
                 "it's accuracies and inaccuracies, please refer to ",
           ),
-          WidgetSpan(
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: SelectionContainer.disabled(
-                child: GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse(
-                      'https://digitalpalidictionary.github.io/features/frequency/',
-                    ),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                  // The line already scales this widget; scaling the text
-                  // again drew the link far too big.
-                  child: Text(
-                    'this webpage',
-                    textScaler: TextScaler.noScaling,
-                    style: TextStyle(
-                      color: context.palette.primaryText,
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ),
-              ),
+          TextSpan(
+            text: 'this webpage',
+            recognizer: _tap,
+            mouseCursor: SystemMouseCursors.click,
+            style: style.copyWith(
+              color: context.palette.primaryText,
+              fontWeight: FontWeight.bold,
             ),
           ),
           const TextSpan(text: '.'),
         ],
       ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return DpdFooter(
-      messagePrefix: 'If something looks out of place,',
-      linkText: 'log it here.',
-      feedbackType: FeedbackType.frequency,
-      word: lemma1,
-      headwordId: headwordId,
     );
   }
 }

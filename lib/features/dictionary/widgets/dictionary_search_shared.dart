@@ -20,6 +20,11 @@ import 'dictionary_collapsible_card.dart';
 /// a blank results area rather than a noise card — intentional.
 const int kDictionarySuggestionMinLength = 3;
 
+/// The most words the suggestion box lists. The database hands over up to 100
+/// and 200; a longer list is not one anybody reads, and typing a letter more
+/// narrows it.
+const int kSuggestionMaxRows = 30;
+
 // ── HTML → plain text ─────────────────────────────────────────────────────
 
 /// Strips HTML tags and collapses whitespace so dictionary definitions from
@@ -97,11 +102,11 @@ class DictHtmlContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (html.trim().isEmpty) return const SizedBox.shrink();
 
-    // Same WidgetSpan merge-up hazard as DpdHtmlRichText above — this
-    // widget renders raw HTML from arbitrary dictionary books via
-    // flutter_html, so it's just as exposed to the semantics '!conflict'
-    // assertion. This content isn't independently tappable, so excluding
-    // it from semantics is a straightforward safety measure.
+    // A WidgetSpan in rendered HTML can merge up into the semantics tree and
+    // trip its '!conflict' assertion. This widget renders raw HTML from
+    // arbitrary dictionary books via flutter_html, so it is exposed to that.
+    // This content isn't independently tappable, so excluding it from
+    // semantics is a straightforward safety measure.
     return ExcludeSemantics(
       child: Html(
         data: html,
@@ -454,6 +459,8 @@ class SuggestionTile extends ConsumerWidget {
       ),
       child: InkWell(
         onTap: onTap,
+        // The same tint as the recent-word chips show under the pointer.
+        hoverColor: colors.onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

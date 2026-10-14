@@ -10,7 +10,7 @@ import '../database/dpd_database.dart';
 import '../database/dpd_quick_lookup.dart';
 
 /// `db_info.db_schema_version` values this build can read.
-const kSupportedDpdSchemas = {'7'};
+const kSupportedDpdSchemas = {'${DpdDatabase.schemaNumber}'};
 
 enum DpdDatabaseStatus { notInstalled, unsupportedSchema, ready }
 
@@ -59,6 +59,20 @@ Completer<void>? _swapping;
 /// without awaiting them, and Windows cannot rename over an open file.
 Future<void> _lastClose = Future.value();
 
+final _unreadableFile = RegExp(
+  r'SqliteException.*(\(code (26|11)\)|no such table)',
+  dotAll: true,
+);
+
+/// Whether [error] says the file is not a DPD database: not a database at all
+/// (code 26), corrupt (code 11), or missing the tables (an empty file reads as
+/// an empty database). A busy or locked file, a full disk or a read error is
+/// not, and must not offer a download over a good file. It reads the text of
+/// the error because on a phone drift runs the database in a worker isolate,
+/// and the error arrives as a `DriftRemoteException` that holds only that text.
+bool isUnreadableDpdFile(Object error) =>
+    _unreadableFile.hasMatch(error.toString());
+
 final dpdDatabaseProvider = FutureProvider<DpdDatabaseState>((ref) async {
   final swapping = _swapping;
   if (swapping != null) await swapping.future;
@@ -90,9 +104,16 @@ final dpdDatabaseProvider = FutureProvider<DpdDatabaseState>((ref) async {
   try {
     schema = await dao.getDbValue('db_schema_version');
     release = await dao.getDbValue('dpd_release_version');
-  } catch (_) {
+  } catch (e) {
     await close();
-    rethrow;
+    if (!isUnreadableDpdFile(e)) rethrow;
+    // Cut short, zero bytes, not a database, or without the DPD tables. The
+    // download screen can replace it, which a raw error on the page cannot.
+    developer.log('DPD file unreadable: $e', name: 'epitaka.dpd');
+    return DpdDatabaseState(
+      status: DpdDatabaseStatus.notInstalled,
+      path: file.path,
+    );
   }
 
   if (!kSupportedDpdSchemas.contains(schema)) {

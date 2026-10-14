@@ -18,7 +18,10 @@ import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
+import '../providers/dictionary_header_provider.dart';
+import '../providers/dictionary_sheet_open_provider.dart';
 import 'lookup_history_buttons.dart';
+import 'lookup_history_list.dart';
 import 'lookup_history_chips.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
@@ -55,6 +58,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
 
+  /// The history list drawn over the results (the header's history icon).
+  bool _historyOpen = false;
+
   /// Where each summary line of the results jumps to.
   final PageAnchors _anchors = PageAnchors();
   Timer? _suggestDebounce;
@@ -71,6 +77,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   // field, otherwise the highlighted suggestion index (Enter accepts it).
   int _suggestIndex = -1;
   final Map<int, GlobalKey> _suggestKeys = {};
+  final _suggestScroll = ScrollController();
   // Arrow pressed while suggestions were still loading: 0 = none,
   // 1 = highlight first row, -1 = highlight last row once rows arrive.
   int _suggestPending = 0;
@@ -168,12 +175,16 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    _suggestScroll.dispose();
     _suggestDebounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
     if (_isConverting) return;
+    // The suggestions drop down under the history list; typing means the user
+    // is done with the list.
+    if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
     final converted = velthuis(value);
@@ -216,7 +227,11 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _performSearch(String value) {
-    final converted = cleanDpdQuery(value);
+    // A word a chip, a tap or the reader put in the field was not typed, and
+    // Velthuis would turn its real double vowel (`aa`) into a macron.
+    final converted = value.trim() == _query
+        ? cleanShownWord(value)
+        : cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -242,6 +257,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     setState(() {
       _query = word;
       _draft = word;
+      _historyOpen = false;
       _suggestIndex = -1;
       _suggestPending = 0;
       _suggestKeys.clear();
@@ -329,11 +345,27 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-      if (ctx != null) Scrollable.ensureVisible(ctx);
+      if (mounted) _revealSuggestion();
     });
     return KeyEventResult.handled;
+  }
+
+  /// Scrolls the suggestion box to the selected row. The box is a lazy list:
+  /// the row the arrow jumps to from the text field (the last one) has no
+  /// widget until the list is at its end, so go there first.
+  void _revealSuggestion() {
+    final ctx = _suggestKeys[_suggestIndex]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx);
+      return;
+    }
+    // No row selected: the arrow went back up to the text field.
+    if (_suggestIndex < 0 || !_suggestScroll.hasClients) return;
+    _suggestScroll.jumpTo(_suggestScroll.position.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final built = _suggestKeys[_suggestIndex]?.currentContext;
+      if (mounted && built != null) Scrollable.ensureVisible(built);
+    });
   }
 
   void _selectWord(String word) {
@@ -427,6 +459,16 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     // NOT on provider changes — so without this listener the panel only
     // picked up a new word when something else (a window resize) happened to
     // rebuild it. React to the provider change explicitly instead.
+    // A sheet over the reader owns the icon row's requests; the docked panel
+    // under it must not scroll or open a list nobody asked it for.
+    ref.listen(dictionaryScrollTopRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    });
+    ref.listen(dictionaryHistoryRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      setState(() => _historyOpen = true);
+    });
     ref.listen(sidePanelProvider, (prev, next) {
       final slot = next.left.openPanel == SidePanelType.dictionary
           ? next.left
@@ -526,16 +568,38 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
         const SizedBox(height: 4),
         const Divider(height: 1),
 
-        if (_draft.isNotEmpty &&
-            _draft != _query &&
-            (_draft.length >= kDictionarySuggestionMinLength || hasMdxDicts))
-          _buildSuggestionBox(colors),
-
-        // Results (only for the submitted word)
+        // Results (only for the submitted word). The suggestion box drops down
+        // over them, as tall as its words, up to the whole area.
         Expanded(
-          child: _query.isEmpty
-              ? _buildIdleState(colors)
-              : _buildResults(colors),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: _query.isEmpty
+                    ? _buildIdleState(colors)
+                    : _buildResults(colors),
+              ),
+              if (_draft.isNotEmpty &&
+                  _draft != _query &&
+                  (_draft.length >= kDictionarySuggestionMinLength ||
+                      hasMdxDicts))
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: _buildSuggestionBox(colors),
+                ),
+              if (_historyOpen)
+                Positioned.fill(
+                  child: LookupHistoryList(
+                    words: _lookupHistory.words,
+                    colors: colors,
+                    onTap: (word) {
+                      _focusNode.unfocus();
+                      _selectWord(word);
+                    },
+                    onClose: () => setState(() => _historyOpen = false),
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -554,7 +618,6 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     final mdxAsync = ref.watch(mdxSuggestionsProvider(_draft));
     final exactAsync = ref.watch(mdxExactHitProvider(_draft));
     return Container(
-      constraints: const BoxConstraints(maxHeight: 220),
       margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
@@ -575,11 +638,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               if (!mounted) return;
               setState(() => _suggestIndex = pending > 0 ? 0 : last);
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-                if (ctx != null) {
-                  Scrollable.ensureVisible(ctx);
-                }
+                if (mounted) _revealSuggestion();
               });
             });
           }
@@ -599,6 +658,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             return const SizedBox.shrink();
           }
           return ListView.builder(
+            controller: _suggestScroll,
             shrinkWrap: true,
             padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: tiles.length,
@@ -619,7 +679,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     final items =
         <({String word, String search, String? preview, bool isExact})>[];
     void add(String word, String search, String? preview, bool isExact) {
-      if (seen.add(word.toLowerCase()) && items.length < 10) {
+      if (seen.add(word.toLowerCase()) && items.length < kSuggestionMaxRows) {
         items.add((
           word: word,
           search: search,

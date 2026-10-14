@@ -90,6 +90,30 @@ void main() {
       expect(_shownLevel(tester), DictionaryLevel.sankhitta);
     });
 
+    testWidgets('a level control on the sheet changes the shown level', (
+      tester,
+    ) async {
+      bigScreen(tester);
+      final container = await makeShellContainer(
+        tester,
+        dbFile,
+        words: ['dhamma'],
+      );
+      await tester.pumpWidget(
+        wrapShell(container, const DictionarySheet(initialWord: 'dhamma')),
+      );
+      await settleShell(tester);
+      expect(_shownLevel(tester), DictionaryLevel.majjhima);
+
+      await tester.tap(find.byIcon(Icons.density_large));
+      await settleShell(tester);
+      expect(_shownLevel(tester), DictionaryLevel.vitthara);
+
+      await tester.tap(find.byIcon(Icons.density_small));
+      await settleShell(tester);
+      expect(_shownLevel(tester), DictionaryLevel.sankhitta);
+    });
+
     testWidgets('the panel passes a changed level to the results', (
       tester,
     ) async {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../dictionary/providers/dictionary_font_scale_provider.dart';
+import '../../dictionary/providers/dictionary_header_provider.dart';
 import '../../dpd/providers/dictionary_list_provider.dart';
 import '../../dpd/providers/dpd_database_provider.dart';
 import '../../dpd/providers/dpd_settings_provider.dart';
@@ -127,6 +128,12 @@ class _DpdLevelSection extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+        _OptionTile(
+          title: loc.dictionaryHeaderIconsShow,
+          value: ref.watch(dictionaryHeaderIconsProvider),
+          onChanged: ref.read(dictionaryHeaderIconsProvider.notifier).set,
+          colors: colors,
         ),
       ],
     );
