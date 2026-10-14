@@ -219,6 +219,7 @@ class AppLocalizations {
   String get shortcutsReader => _t('Reader');
   String get shortcutsSearchResults => _t('Search results');
   String get shortcutsChat => _t('Vīmaṃsā chat');
+  String get shortcutsDictionary => _t('Dictionary panel');
   String get shortcutsAnywhere => _t('Anywhere in the app');
   String get shortcutsReaderWhere => _t('When the reading cursor is active');
   String get shortcutsSearchResultsWhere =>

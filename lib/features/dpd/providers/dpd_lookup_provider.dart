@@ -20,6 +20,8 @@ class DpdLookup {
     this.unavailable,
     this.partial = const [],
     this.fuzzy = const [],
+    this.dictPartial = const {},
+    this.dictFuzzy = const {},
   });
 
   final String query;
@@ -34,6 +36,14 @@ class DpdLookup {
   /// Headwords that sound like the query, when the setting is on. Never holds
   /// a headword that is in [headwords] or [partial].
   final List<DpdHeadwordWithRoot> fuzzy;
+
+  /// The extra dictionaries' rows that start with the query, by dictionary
+  /// id, when the partial setting is on. Never holds what the exact cards show.
+  final Map<String, List<DictEntry>> dictPartial;
+
+  /// The extra dictionaries' rows that only share the query's fuzzy key, by
+  /// dictionary id, when the fuzzy setting is on.
+  final Map<String, List<DictEntry>> dictFuzzy;
 
   /// Started when the lookup began, read at the first frame after it draws.
   final Stopwatch timer;
@@ -50,7 +60,12 @@ class DpdLookup {
   /// inflected form), without the homograph number; with no headword, what the
   /// user typed. The typed word has to lead: `kāya` is also a form of `ka`,
   /// which sorts first.
-  String get searchWord {
+  String get searchWord => searchWordFor(query, headwords);
+
+  static String searchWordFor(
+    String query,
+    List<DpdHeadwordWithRoot> headwords,
+  ) {
     if (headwords.isEmpty) return query;
     final typed = _same(query);
     for (final h in headwords) {
@@ -132,6 +147,17 @@ final dpdLookupProvider = FutureProvider.autoDispose
                   h,
             ]
           : const <DpdHeadwordWithRoot>[];
+      final dictLoose = wantPartial || wantFuzzy
+          ? await dao.withDefinitions(
+              splitDictLoose(
+                query: query,
+                exactWord: DpdLookup.searchWordFor(query, headwords),
+                rows: await dao.searchDictLoose([
+                  for (final m in await dao.getAllDictMeta()) m.dictId,
+                ], query),
+              ),
+            )
+          : const DictLoose();
       return DpdLookup(
         query: query,
         headwords: headwords,
@@ -140,6 +166,8 @@ final dpdLookupProvider = FutureProvider.autoDispose
         timer: timer,
         partial: wantPartial ? partialAll : const [],
         fuzzy: fuzzy,
+        dictPartial: wantPartial ? dictLoose.partial : const {},
+        dictFuzzy: wantFuzzy ? dictLoose.fuzzy : const {},
       );
     });
 

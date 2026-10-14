@@ -38,3 +38,9 @@ class DictionaryHeaderIconsNotifier extends StateNotifier<bool> {
 /// listens and does the work, so a closed one is never touched.
 final dictionaryScrollTopRequestProvider = StateProvider<int>((ref) => 0);
 final dictionaryHistoryRequestProvider = StateProvider<int>((ref) => 0);
+
+/// The same for the keyboard shortcuts that have no icon: back, forward and
+/// the search field.
+final dictionaryBackRequestProvider = StateProvider<int>((ref) => 0);
+final dictionaryForwardRequestProvider = StateProvider<int>((ref) => 0);
+final dictionarySearchFocusRequestProvider = StateProvider<int>((ref) => 0);

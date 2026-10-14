@@ -469,6 +469,18 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       if (ref.read(dictionarySheetOpenProvider) > 0) return;
       setState(() => _historyOpen = true);
     });
+    ref.listen(dictionaryBackRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _stepHistory(_lookupHistory.goBack());
+    });
+    ref.listen(dictionaryForwardRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _stepHistory(_lookupHistory.goForward());
+    });
+    ref.listen(dictionarySearchFocusRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _focusNode.requestFocus();
+    });
     ref.listen(sidePanelProvider, (prev, next) {
       final slot = next.left.openPanel == SidePanelType.dictionary
           ? next.left

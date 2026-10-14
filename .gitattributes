@@ -6,3 +6,4 @@
 # Parsed by the tests; a stray \r would change the stored text.
 test/fixtures/*.sql text eol=lf
 test/fixtures/*.json text eol=lf
+test/fixtures/*.tsv text eol=lf
