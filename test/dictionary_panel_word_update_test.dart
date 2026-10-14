@@ -1,6 +1,7 @@
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
+import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -185,5 +186,29 @@ void main() {
     notifier.open(SidePanelType.dictionary, data: 'dhamma');
     await tester.pump();
     expect(searchText(tester), 'dhamma');
+  });
+
+  // A word a chip, a tap or the reader put in the field was not typed, so
+  // Enter must not run Velthuis on it: `aa` is a real double vowel there.
+  testWidgets('Enter on a shown word with a double vowel keeps the word', (
+    tester,
+  ) async {
+    final container = await makeContainer();
+    await pumpPanel(tester, container);
+    container
+        .read(sidePanelProvider.notifier)
+        .open(SidePanelType.dictionary, data: 'dhammaabhiñño');
+    await tester.pump();
+    expect(searchText(tester), 'dhammaabhiñño');
+
+    // Focus the field without changing its text, as a key press on it would.
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.pump();
+
+    expect(searchText(tester), 'dhammaabhiñño');
+    expect(container.read(lookupHistoryProvider).current, 'dhammaabhiñño');
   });
 }

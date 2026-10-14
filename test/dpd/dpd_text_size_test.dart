@@ -4,7 +4,8 @@ library;
 
 import 'dart:io';
 
-import 'package:epitaka/core/providers/settings_provider.dart' show ThemePreference;
+import 'package:epitaka/core/providers/settings_provider.dart'
+    show ThemePreference;
 import 'package:epitaka/core/theme/app_theme.dart';
 import 'package:epitaka/features/dpd/models/frequency_data.dart';
 import 'package:epitaka/features/dpd/utils/text_size.dart';
@@ -42,11 +43,13 @@ void main() {
     dir = Directory.systemTemp.createTempSync('dpd_text_size_test');
     final file = buildDpdFixture(dir);
     final db = sqlite3.open(file.path);
-    final json = db
-        .select('SELECT freq_data FROM dpd_headwords WHERE id = 34626')
-        .first
-        .values
-        .first as String;
+    final json =
+        db
+                .select('SELECT freq_data FROM dpd_headwords WHERE id = 34626')
+                .first
+                .values
+                .first
+            as String;
     db.dispose();
     data = parseFrequencyData(json)!;
   });
@@ -120,6 +123,20 @@ void main() {
       expect(one.height, closeTo(38 * 30, 1));
       expect(big.width / one.width, closeTo(1.2, 0.02));
       expect(big.height / one.height, closeTo(1.2, 0.02));
+    });
+
+    testWidgets('centres the M, A and Ṭ titles on their columns', (
+      tester,
+    ) async {
+      await sizeAt(tester, 1.0);
+      final left = tester.getTopLeft(find.byType(FrequencyTable)).dx;
+      // Columns start after the 30 px vertical label and the 132 px row
+      // label; a cell is 56 px wide.
+      double centre(String label, int nth) =>
+          tester.getCenter(find.text(label).at(nth)).dx - left;
+      expect(centre('M', 0), closeTo(30 + 132 + 28, 0.5));
+      expect(centre('A', 0), closeTo(30 + 132 + 56 + 28, 0.5));
+      expect(centre('Ṭ', 0), closeTo(30 + 132 + 112 + 28, 0.5));
     });
 
     testWidgets('puts the room inside the cells, not between them', (

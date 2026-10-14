@@ -1954,6 +1954,16 @@ class AiQaToolService {
       result['lookups'] = lookupResults;
     } catch (e) {
       debugPrint('[AI_QA] get_dictionary: DPD lookup unavailable: $e');
+      // Empty lookups alone read as "the word is unknown". The note goes to
+      // the model and to MCP clients, so it names no file path.
+      result['dpd_error'] = e is DpdUnavailable
+          ? switch (e.state.status) {
+              DpdDatabaseStatus.notInstalled => 'DPD database not installed',
+              DpdDatabaseStatus.unsupportedSchema =>
+                'DPD database not supported by this version of ePitaka',
+              DpdDatabaseStatus.ready => 'DPD database unavailable',
+            }
+          : 'DPD lookup failed (${e.runtimeType})';
     }
 
     // 2. Canon occurrences from pali_definition — the SAME search the app

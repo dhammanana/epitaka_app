@@ -17,6 +17,9 @@ import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
+import '../providers/dictionary_header_provider.dart';
+import 'dictionary_header_icons.dart';
+import 'lookup_history_list.dart';
 import 'lookup_history_buttons.dart';
 import 'lookup_history_chips.dart';
 import '../providers/dictionary_expanded_provider.dart';
@@ -107,6 +110,12 @@ class DictionarySheet extends ConsumerStatefulWidget {
 class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
+
+  /// The history list drawn over the results (the icon row's history icon).
+  bool _historyOpen = false;
+
+  /// The sheet's own scroll controller, kept for the jump-to-top icon.
+  ScrollController? _sheetScroll;
   final _sheetController = DraggableScrollableController();
   Timer? _suggestDebounce;
   bool _isConverting = false;
@@ -132,6 +141,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   // field, otherwise the highlighted suggestion index (Enter accepts it).
   int _suggestIndex = -1;
   final Map<int, GlobalKey> _suggestKeys = {};
+  final _suggestScroll = ScrollController();
   // Arrow pressed while suggestions were still loading: 0 = none,
   // 1 = highlight first row, -1 = highlight last row once rows arrive.
   int _suggestPending = 0;
@@ -160,6 +170,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   DictionaryLevel? _cachedResultsLevel;
   double? _cachedResultsFontScale;
   bool? _cachedResultsShowSummary;
+  ColorScheme? _cachedResultsColors;
 
   /// Where each summary line of the results jumps to.
   final PageAnchors _anchors = PageAnchors();
@@ -199,12 +210,16 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _searchController.dispose();
     _focusNode.dispose();
     _sheetController.dispose();
+    _suggestScroll.dispose();
     _suggestDebounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
     if (_isConverting) return;
+    // The suggestions drop down under the history list; typing means the user
+    // is done with the list.
+    if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
     final converted = velthuis(value);
@@ -248,7 +263,11 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _performSearch(String value) {
-    final converted = cleanDpdQuery(value);
+    // A word a chip, a tap or the reader put in the field was not typed, and
+    // Velthuis would turn its real double vowel (`aa`) into a macron.
+    final converted = value.trim() == _query
+        ? cleanShownWord(value)
+        : cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -280,6 +299,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     setState(() {
       _query = word;
       _draft = word;
+      _historyOpen = false;
       _suggestIndex = -1;
       _suggestPending = 0;
       _suggestKeys.clear();
@@ -388,13 +408,27 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(ctx);
-      }
+      if (mounted) _revealSuggestion();
     });
     return KeyEventResult.handled;
+  }
+
+  /// Scrolls the suggestion box to the selected row. The box is a lazy list:
+  /// the row the arrow jumps to from the text field (the last one) has no
+  /// widget until the list is at its end, so go there first.
+  void _revealSuggestion() {
+    final ctx = _suggestKeys[_suggestIndex]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx);
+      return;
+    }
+    // No row selected: the arrow went back up to the text field.
+    if (_suggestIndex < 0 || !_suggestScroll.hasClients) return;
+    _suggestScroll.jumpTo(_suggestScroll.position.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final built = _suggestKeys[_suggestIndex]?.currentContext;
+      if (mounted && built != null) Scrollable.ensureVisible(built);
+    });
   }
 
   /// Toolbar shown when the user selects text inside a dictionary result.
@@ -529,6 +563,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     // also change. No PopScope here: a tap on the barrier above the sheet and
     // the back key both pop the route, and both must close the sheet.
     ref.watch(lookupHistoryProvider);
+    ref.listen(dictionaryScrollTopRequestProvider, (_, _) {
+      final controller = _sheetScroll;
+      if (controller != null && controller.hasClients) controller.jumpTo(0);
+    });
+    ref.listen(dictionaryHistoryRequestProvider, (_, _) {
+      setState(() => _historyOpen = true);
+    });
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
@@ -589,6 +630,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             // reach [_sheetCloseExtent] and close the sheet from any height.
             snap: false,
             builder: (context, scrollController) {
+              _sheetScroll = scrollController;
               return Container(
                 decoration: BoxDecoration(
                   color: colors.surface,
@@ -649,6 +691,19 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                               ),
                             ),
                           ),
+
+                          // The icon row, unless the user hid it.
+                          if (ref.watch(dictionaryHeaderIconsProvider))
+                            const Padding(
+                              padding: EdgeInsets.only(right: 12),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: DictionaryHeaderIcons(),
+                                ),
+                              ),
+                            ),
 
                           // Search bar row
                           Padding(
@@ -766,7 +821,28 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
                     // Content area (uses the sheet's scroll controller so the
                     // sheet resizes while the content scrolls).
-                    Expanded(child: _buildContent(colors, scrollController)),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _buildContent(colors, scrollController),
+                          ),
+                          if (_historyOpen)
+                            Positioned.fill(
+                              child: LookupHistoryList(
+                                words: _lookupHistory.words,
+                                colors: colors,
+                                onTap: (word) {
+                                  _focusNode.unfocus();
+                                  _selectWord(word);
+                                },
+                                onClose: () =>
+                                    setState(() => _historyOpen = false),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
 
                     // Clear the system navigation bar.
                     SizedBox(height: bottomPadding),
@@ -792,25 +868,30 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     if (_query.isEmpty && !showSuggestions) {
       return _buildIdleState(colors, scrollController);
     }
-    return Column(
+    // The suggestion box drops down over the results, as tall as its words, up
+    // to the whole area.
+    return Stack(
       children: [
-        if (showSuggestions) _buildSuggestionBox(colors),
-        if (_query.isNotEmpty)
-          Expanded(child: _buildResults(colors, scrollController))
-        else
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  AppLocalizations.of(context).dictIdlePrompt,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyTranslation.copyWith(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+        Positioned.fill(
+          child: _query.isNotEmpty
+              ? _buildResults(colors, scrollController)
+              : Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      AppLocalizations.of(context).dictIdlePrompt,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyTranslation.copyWith(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
+        ),
+        if (showSuggestions)
+          Align(
+            alignment: Alignment.topCenter,
+            child: _buildSuggestionBox(colors),
           ),
       ],
     );
@@ -829,7 +910,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     final mdxAsync = ref.watch(mdxSuggestionsProvider(_draft));
     final exactAsync = ref.watch(mdxExactHitProvider(_draft));
     return Container(
-      constraints: const BoxConstraints(maxHeight: 260),
       margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
@@ -850,11 +930,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
               if (!mounted) return;
               setState(() => _suggestIndex = pending > 0 ? 0 : last);
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-                if (ctx != null) {
-                  Scrollable.ensureVisible(ctx);
-                }
+                if (mounted) _revealSuggestion();
               });
             });
           }
@@ -874,6 +950,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             return const SizedBox.shrink();
           }
           return ListView.builder(
+            controller: _suggestScroll,
             shrinkWrap: true,
             padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: tiles.length,
@@ -894,7 +971,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     final items =
         <({String word, String search, String? preview, bool isExact})>[];
     void add(String word, String search, String? preview, bool isExact) {
-      if (seen.add(word.toLowerCase()) && items.length < 10) {
+      if (seen.add(word.toLowerCase()) && items.length < kSuggestionMaxRows) {
         items.add((
           word: word,
           search: search,
@@ -1179,7 +1256,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             // flutter_html definitions each time is the dictionary's biggest
             // per-frame cost.
             final listKey = entries
-                .map((e) => '${e.item.id}:${e.enabled}:${e.item.ready}')
+                .map(
+                  (e) => '${e.item.id}:${e.item.label}:${e.enabled}:${e.item.ready}',
+                )
                 .join('|');
             final expandedKey = [
               for (final e in entries)
@@ -1198,7 +1277,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 _cachedResultsExpandedKey == expandedKey &&
                 _cachedResultsLevel == level &&
                 _cachedResultsFontScale == fontScale &&
-                _cachedResultsShowSummary == showSummary) {
+                _cachedResultsShowSummary == showSummary &&
+                _cachedResultsColors == colors) {
               return _cachedResultsWidget!;
             }
 
@@ -1250,6 +1330,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             _cachedResultsLevel = level;
             _cachedResultsFontScale = fontScale;
             _cachedResultsShowSummary = showSummary;
+            _cachedResultsColors = colors;
             return built;
           },
         );

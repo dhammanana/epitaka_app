@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 class FrequencyData {
   const FrequencyData({
@@ -53,7 +54,8 @@ FrequencyData? parseFrequencyData(String? jsonData) {
   if (jsonData == null || jsonData.isEmpty) return null;
   try {
     return FrequencyData.fromJson(jsonData);
-  } catch (_) {
+  } catch (e) {
+    developer.log('FrequencyData not parsed: $e', name: 'epitaka.dpd');
     return null;
   }
 }

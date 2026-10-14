@@ -260,13 +260,7 @@ class FrequencyTable extends StatelessWidget {
         child: SizedBox(
           width: _cellW,
           height: _cellH,
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.only(right: 8 * scale),
-              child: Text(label, style: TextStyle(fontSize: _font)),
-            ),
-          ),
+          child: Center(child: Text(label, style: TextStyle(fontSize: _font))),
         ),
       ),
     );

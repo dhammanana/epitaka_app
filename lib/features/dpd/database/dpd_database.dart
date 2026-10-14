@@ -28,9 +28,9 @@ part 'dpd_database.g.dart';
 class DpdDatabase extends _$DpdDatabase {
   /// Bump when the Drift schema changes and a matching DB export is required.
   /// The exported DB must set `db_schema_version` in the `db_info` table to
-  /// the same value. When the on-device DB has a lower value, the app forces
-  /// a blocking re-download before any queries run.
-  static const requiredDbSchemaVersion = 7;
+  /// the same value. A file with another value is refused (see
+  /// `kSupportedDpdSchemas`).
+  static const schemaNumber = 7;
 
   /// Opens the downloaded DPD file without ever writing to it. The export
   /// leaves `user_version` at 0, which Drift would read as a new database and
@@ -49,5 +49,5 @@ class DpdDatabase extends _$DpdDatabase {
   DpdDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => schemaNumber;
 }

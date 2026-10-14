@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:drift/drift.dart';
 
@@ -493,13 +492,6 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
     return rows.map((r) => r.lookupKey).toSet();
   }
 
-  Future<Set<String>> getAllLookupKeys() async {
-    final rows = await (selectOnly(
-      lookup,
-    )..addColumns([lookup.lookupKey])).get();
-    return rows.map((r) => r.read(lookup.lookupKey)!).toSet();
-  }
-
   Future<LookupData?> getLookupRow(String key) async {
     // Abbreviation keys are stored capitalised (e.g. "VVa", "DN", "NIDD1a"),
     // so try the lower-cased query first (normal words), then the query as
@@ -517,12 +509,6 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
       if (row != null) return row;
     }
     return null;
-  }
-
-  Future<DpdRoot?> getRoot(String rootKey) {
-    return (select(
-      dpdRoots,
-    )..where((t) => t.root.equals(rootKey))).getSingleOrNull();
   }
 
   // ── DB metadata ───────────────────────────────────────────────────────────
@@ -614,32 +600,6 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
       dbInfo,
     )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
-  }
-
-  // ── Autocomplete index ───────────────────────────────────────────────────
-
-  Future<List<String>> getAllLemmas() async {
-    final rows = await (selectOnly(
-      dpdHeadwords,
-      distinct: true,
-    )..addColumns([dpdHeadwords.lemma1])).get();
-    return rows.map((r) => r.read(dpdHeadwords.lemma1)!).toList();
-  }
-
-  Future<List<String>> getAllRoots() async {
-    final rows = await (selectOnly(
-      dpdRoots,
-      distinct: true,
-    )..addColumns([dpdRoots.root])).get();
-    return rows.map((r) => r.read(dpdRoots.root)!).toList();
-  }
-
-  Future<List<String>> getAllRootFamilies() async {
-    final rows = await (selectOnly(
-      familyRoot,
-      distinct: true,
-    )..addColumns([familyRoot.rootFamily])).get();
-    return rows.map((r) => r.read(familyRoot.rootFamily)!).toList();
   }
 
   // ── Root search ─────────────────────────────────────────────────────────
@@ -784,21 +744,6 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
     return rows.where((row) => row.word.toLowerCase() == normalized).toList();
   }
 
-  Future<List<DictEntry>> searchDictPartial(String rawWord, {int limit = 50}) {
-    final word = _foldNiggahita(rawWord);
-    return (select(dictEntries)
-          ..where((t) => t.word.like('$word%') & t.word.equals(word).not())
-          ..limit(limit))
-        .get();
-  }
-
-  Future<List<DictEntry>> searchDictFuzzy(String fuzzyKey, {int limit = 50}) {
-    return (select(dictEntries)
-          ..where((t) => t.wordFuzzy.like('$fuzzyKey%'))
-          ..limit(limit))
-        .get();
-  }
-
   /// Exact-prefix suggestions from the enabled external dictionaries, for the
   /// autocomplete dropdown's second fallback tier. One range query per dict id
   /// so each can seek the composite `(dict_id, word)` index — a single
@@ -836,46 +781,8 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
     return words.toList();
   }
 
-  Future<DictMetaData?> getDictMeta(String dictId) {
-    return (select(
-      dictMeta,
-    )..where((t) => t.dictId.equals(dictId))).getSingleOrNull();
-  }
-
   Future<List<DictMetaData>> getAllDictMeta() {
     return select(dictMeta).get();
-  }
-
-  Future<DpdHeadwordWithRoot?> fetchRandomWord() async {
-    final isEligible =
-        dpdHeadwords.ebtCount.isBiggerThanValue(0) &
-            dpdHeadwords.meaning1.isNotNull() &
-            dpdHeadwords.meaning1.isNotValue('') &
-            dpdHeadwords.source1.isNotNull() &
-            dpdHeadwords.source1.isNotValue('');
-
-    final countQuery = await (selectOnly(dpdHeadwords)
-          ..addColumns([dpdHeadwords.id.count()])
-          ..where(isEligible))
-        .getSingle();
-    final total = countQuery.read(dpdHeadwords.id.count()) ?? 0;
-    if (total == 0) return null;
-
-    final idx = Random().nextInt(total);
-
-    final row = await (select(dpdHeadwords).join([
-      leftOuterJoin(dpdRoots, dpdRoots.root.equalsExp(dpdHeadwords.rootKey)),
-    ])
-          ..where(isEligible)
-          ..orderBy([OrderingTerm(expression: dpdHeadwords.id)])
-          ..limit(1, offset: idx))
-        .getSingleOrNull();
-
-    if (row == null) return null;
-    return DpdHeadwordWithRoot(
-      row.readTable(dpdHeadwords),
-      row.readTableOrNull(dpdRoots),
-    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
