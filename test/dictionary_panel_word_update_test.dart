@@ -111,4 +111,79 @@ void main() {
     await tester.pump();
     expect(searchText(tester), 'dhamma');
   });
+
+  Future<void> typeAndSubmit(WidgetTester tester, String word) async {
+    await tester.enterText(find.byType(TextField), word);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+  }
+
+  testWidgets('a change of the slot does not bring back the reader word', (
+    tester,
+  ) async {
+    final container = await makeContainer();
+    await pumpPanel(tester, container);
+    container
+        .read(sidePanelProvider.notifier)
+        .open(SidePanelType.dictionary, data: 'dhamma');
+    await tester.pump();
+    await typeAndSubmit(tester, 'kamma');
+    expect(searchText(tester), 'kamma');
+
+    container
+        .read(sidePanelProvider.notifier)
+        .setPinned(SidePanelType.dictionary, true);
+    await tester.pump();
+    expect(searchText(tester), 'kamma');
+  });
+
+  testWidgets('the same reader word tapped again still moves the panel', (
+    tester,
+  ) async {
+    final container = await makeContainer();
+    await pumpPanel(tester, container);
+    container
+        .read(sidePanelProvider.notifier)
+        .open(SidePanelType.dictionary, data: 'dhamma');
+    await tester.pump();
+    await typeAndSubmit(tester, 'kamma');
+    expect(searchText(tester), 'kamma');
+
+    container.read(sidePanelProvider.notifier).updateDictionaryWord('dhamma');
+    await tester.pump();
+    expect(searchText(tester), 'dhamma');
+  });
+
+  testWidgets('a panel built again does not bring back the reader word', (
+    tester,
+  ) async {
+    final container = await makeContainer();
+    await pumpPanel(tester, container);
+    container
+        .read(sidePanelProvider.notifier)
+        .open(SidePanelType.dictionary, data: 'dhamma');
+    await tester.pump();
+    await typeAndSubmit(tester, 'kamma');
+
+    // Moving the sidebar to the other side builds a new panel.
+    await tester.pumpWidget(const SizedBox());
+    await pumpPanel(tester, container);
+    expect(searchText(tester), isNot('dhamma'));
+  });
+
+  testWidgets('closing and opening the panel with the same word applies it', (
+    tester,
+  ) async {
+    final container = await makeContainer();
+    final notifier = container.read(sidePanelProvider.notifier);
+    await pumpPanel(tester, container);
+    notifier.open(SidePanelType.dictionary, data: 'dhamma');
+    await tester.pump();
+    await typeAndSubmit(tester, 'kamma');
+    notifier.close(SidePanelType.dictionary);
+    await tester.pump();
+    notifier.open(SidePanelType.dictionary, data: 'dhamma');
+    await tester.pump();
+    expect(searchText(tester), 'dhamma');
+  });
 }

@@ -62,6 +62,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   // Submitted word (meanings shown) vs live draft (suggestions only).
   String _query = '';
+  // didChangeDependencies runs again on theme or locale changes; the mount
+  // word is read once.
+  bool _mountWordApplied = false;
   String _draft = '';
 
   // Keyboard navigation over the suggestion dropdown: -1 = caret in the
@@ -118,15 +121,27 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     // is a read (not a watch): subsequent word updates arrive through the
     // [ref.listen] in build, and watching here would rebuild the whole panel
     // on every sidePanelProvider change (e.g. panel-width drags) for nothing.
+    if (_mountWordApplied) return;
+    _mountWordApplied = true;
     final panels = ref.read(sidePanelProvider);
-    final panelData = panels.left.openPanel == SidePanelType.dictionary
-        ? panels.left.panelData
+    final slot = panels.left.openPanel == SidePanelType.dictionary
+        ? panels.left
         : panels.right.openPanel == SidePanelType.dictionary
-        ? panels.right.panelData
+        ? panels.right
         : null;
-    if (panelData != null) {
-      _syncPanelWord(panelData);
-    }
+    if (slot != null) _applySlotWord(slot);
+  }
+
+  /// Apply the slot's word unless this or an earlier panel already did. The
+  /// slot still holds its last word after the user went back, and moving the
+  /// sidebar to the other side builds a new panel, so a width drag or a move
+  /// must not bring that word back.
+  void _applySlotWord(SidePanelState slot) {
+    final word = slot.panelData;
+    final notifier = ref.read(sidePanelProvider.notifier);
+    if (word == null || slot.dataSeq == notifier.appliedDataSeq) return;
+    notifier.appliedDataSeq = slot.dataSeq;
+    _syncPanelWord(word);
   }
 
   /// Apply a dictionary word coming from [SidePanelProvider] to the search
@@ -413,12 +428,12 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     // picked up a new word when something else (a window resize) happened to
     // rebuild it. React to the provider change explicitly instead.
     ref.listen(sidePanelProvider, (prev, next) {
-      final word = next.left.openPanel == SidePanelType.dictionary
-          ? next.left.panelData
+      final slot = next.left.openPanel == SidePanelType.dictionary
+          ? next.left
           : next.right.openPanel == SidePanelType.dictionary
-          ? next.right.panelData
+          ? next.right
           : null;
-      if (word != null) _syncPanelWord(word);
+      if (slot != null) _applySlotWord(slot);
     });
 
     return Column(
