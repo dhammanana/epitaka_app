@@ -215,6 +215,31 @@ void main() {
       expect(after, greaterThanOrEqualTo(0));
     });
 
+    // At Saṅkhitta the summary looks a tapped DPD word up (Q11); a dictionary
+    // line has a card, so it keeps its jump.
+    testWidgets('at Saṅkhitta a dictionary line still jumps', (tester) async {
+      // Saṅkhitta draws no DPD cards, so the page is short: a short window.
+      const height = 500.0;
+      tester.view.physicalSize = const Size(900, height);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final c = await open(tester);
+      c.read(dpdSettingsProvider.notifier).setLevel(DictionaryLevel.sankhitta);
+      // The panel fills the window; the sheet opens at 70% of it.
+      await show(tester, c, panel: true);
+      expect(titleTop(tester, _ptsTitle), greaterThan(height));
+
+      await tapPtsLine(tester);
+
+      final after = titleTop(tester, _ptsTitle);
+      expect(after, lessThan(height - 40));
+      expect(after, greaterThanOrEqualTo(0));
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        _word,
+      );
+    });
+
     testWidgets('scrolls the panel to the card', (tester) async {
       shortView(tester);
       final c = await open(tester);

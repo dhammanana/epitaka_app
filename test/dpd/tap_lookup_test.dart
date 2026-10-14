@@ -9,6 +9,8 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_search_shared.dar
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dpd/database/dpd_database.dart';
 import 'package:epitaka/features/dpd/providers/dict_entries_provider.dart';
+import 'package:epitaka/features/dpd/providers/dpd_settings_provider.dart';
+import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:epitaka/features/dpd/widgets/dict_html_card.dart';
 import 'package:epitaka/features/dpd/widgets/tap_search_wrapper.dart';
 import 'package:flutter/material.dart';
@@ -84,6 +86,46 @@ void main() {
     );
     await settleShell(tester);
     expect(fieldTextOf(tester), 'grammar');
+  });
+
+  // At Saṅkhitta a DPD line has no card to jump to, so a word in it is looked
+  // up, as in an entry (Q11). `kkamaṃ` has only a deconstruction: `kamaṃ`.
+  testWidgets('a word in a Brief summary line', (tester) async {
+    bigView(tester);
+    final c = await makeShellContainer(
+      tester,
+      dbFile,
+      words: ['kkamaṃ', 'kamaṃ'],
+    );
+    c.read(dpdSettingsProvider.notifier).setLevel(DictionaryLevel.sankhitta);
+    await tester.pumpWidget(
+      wrapShell(c, const DictionarySheet(initialWord: 'kkamaṃ')),
+    );
+    await settleShell(tester);
+
+    // `\n`: the split under the label, not the `kamaṃ` inside `kkamaṃ`.
+    await tester.tapAt(pointInWord(tester, 'deconstructor.', '\nkamaṃ'));
+    await settleShell(tester);
+    expect(fieldTextOf(tester), 'kamaṃ');
+    expect(c.read(lookupHistoryProvider).words.last, 'kamaṃ');
+  });
+
+  // A homograph number is not a word: tapping it looks nothing up.
+  testWidgets('a homograph number in a Brief line looks nothing up', (
+    tester,
+  ) async {
+    bigView(tester);
+    final c = await makeShellContainer(tester, dbFile, words: ['dhamma']);
+    c.read(dpdSettingsProvider.notifier).setLevel(DictionaryLevel.sankhitta);
+    await tester.pumpWidget(
+      wrapShell(c, const DictionarySheet(initialWord: 'dhamma')),
+    );
+    await settleShell(tester);
+
+    await tester.tapAt(pointInWord(tester, '1.01 ', '1.01'));
+    await settleShell(tester);
+    expect(fieldTextOf(tester), 'dhamma');
+    expect(c.read(lookupHistoryProvider).words, ['dhamma']);
   });
 
   testWidgets('an ePitaka book', (tester) async {
