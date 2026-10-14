@@ -3,8 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/utils/pali_script_converter.dart';
-import '../../reader/utils/reader_word_hit_test.dart' show cleanPali;
+import '../utils/query_cleaning.dart';
 
 /// Expands [offset] outwards to the surrounding word.
 ///
@@ -109,7 +108,7 @@ class _TapSearchWrapperState extends ConsumerState<TapSearchWrapper> {
           target.text.toPlainText(),
           textPosition.offset,
         );
-        return cleanPali(convertToRomanPali(raw));
+        return cleanTappedWord(raw);
       }
     }
     return null;

@@ -32,6 +32,9 @@ void main() {
   final suggestionsOverride = dpdSuggestionsProvider.overrideWith(
     (ref, String prefix) async => <String>[],
   );
+  final closestOverride = dpdClosestMatchesProvider.overrideWith(
+    (ref, String query) async => <String>[],
+  );
   // The real books provider reads the epitaka database, which never resolves
   // in the widget-test environment; stub it with an empty list instead.
   final booksOverride = dictionaryBooksProvider.overrideWith(
@@ -50,6 +53,7 @@ void main() {
       overrides: [
         lookupOverride,
         suggestionsOverride,
+        closestOverride,
         booksOverride,
         listOverride,
       ],

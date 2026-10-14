@@ -113,6 +113,56 @@ void main() {
     expect(fieldTextOf(tester), 'sample');
   });
 
+  testWidgets('a tapped English word is not turned into Velthuis', (
+    tester,
+  ) async {
+    bigView(tester);
+    final c = await makeShellContainer(
+      tester,
+      dbFile,
+      words: ['ca', 'vacuum'],
+      overrides: [
+        dictionaryBooksProvider.overrideWith(
+          (ref) async => const [
+            DictionaryBook(id: 1, name: 'Book', userOrder: 1, userChoice: true),
+          ],
+        ),
+        dictionaryDefinitionProvider.overrideWith(
+          (ref, key) async => [
+            {'definition': '<p>an empty vacuum bookword</p>'},
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(wrapShell(c, const DictionarySheet(initialWord: 'ca')));
+    await settleShell(tester);
+
+    await tester.tapAt(pointInWord(tester, 'an empty vacuum', 'vacuum'));
+    await settleShell(tester);
+    expect(fieldTextOf(tester), 'vacuum', reason: 'not vacūm');
+  });
+
+  testWidgets('a sutta number keeps its dot', (tester) async {
+    bigView(tester);
+    final c = await makeShellContainer(tester, dbFile);
+    final looked = <String>[];
+    await tester.pumpWidget(
+      wrapShell(
+        c,
+        SingleChildScrollView(
+          child: TapSearchWrapper(
+            onWordTap: looked.add,
+            child: const Text('as in SN1.16, the sutta on the flood'),
+          ),
+        ),
+      ),
+    );
+    await settleShell(tester);
+    await tester.tapAt(pointInWord(tester, 'as in SN1.16', 'SN1.16'));
+    await tester.pump();
+    expect(looked, ['SN1.16']);
+  });
+
   testWidgets('a link inside a card opens its tooltip and looks nothing up', (
     tester,
   ) async {

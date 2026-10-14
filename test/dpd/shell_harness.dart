@@ -31,12 +31,14 @@ Future<void> preloadDictionaryList(ProviderContainer container) async {
 ///
 /// Real file work never finishes on the test's fake clock, so every lookup in
 /// [words] and every suggestion list in [prefixes] is loaded first, inside
-/// `runAsync`, and kept alive for the widget to read.
+/// `runAsync`, and kept alive for the widget to read. [closest] lists the
+/// misses whose "Did you mean" matches are loaded the same way.
 Future<ProviderContainer> makeShellContainer(
   WidgetTester tester,
   File dbFile, {
   List<String> words = const [],
   List<String> prefixes = const [],
+  List<String> closest = const [],
   WordLookupGesture? gesture,
   bool online = false,
   List<Override> overrides = const [],
@@ -71,6 +73,10 @@ Future<ProviderContainer> makeShellContainer(
     for (final p in prefixes) {
       container.listen(dpdSuggestionsProvider(p), (_, _) {});
       await container.read(dpdSuggestionsProvider(p).future);
+    }
+    for (final q in closest) {
+      container.listen(dpdClosestMatchesProvider(q), (_, _) {});
+      await container.read(dpdClosestMatchesProvider(q).future);
     }
   });
   return container;

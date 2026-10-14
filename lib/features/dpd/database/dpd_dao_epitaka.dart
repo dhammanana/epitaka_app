@@ -15,6 +15,29 @@ int suggestionComparator(String a, String b) {
 }
 
 extension DpdDaoEpitaka on DpdDao {
+  /// Lookup keys that start with [prefix] exactly as typed (diacritics and
+  /// all), shortest first, so the typed word itself leads. The primary key is
+  /// the index, and a key sorts before the longer keys that start with it.
+  Future<List<String>> searchLiteralPrefix(String prefix, {int limit = 100}) async {
+    final typed = prefix.trim().toLowerCase();
+    if (typed.length < 2) return [];
+    final next =
+        typed.substring(0, typed.length - 1) +
+        String.fromCharCode(typed.codeUnitAt(typed.length - 1) + 1);
+    final rows =
+        await (selectOnly(lookup)
+              ..addColumns([lookup.lookupKey])
+              ..where(
+                lookup.lookupKey.isBiggerOrEqualValue(typed) &
+                    lookup.lookupKey.isSmallerThanValue(next),
+              )
+              ..orderBy([OrderingTerm.asc(lookup.lookupKey)])
+              ..limit(limit))
+            .get();
+    return rows.map((r) => r.read(lookup.lookupKey)!).toList()
+      ..sort(suggestionComparator);
+  }
+
   /// Lookup keys whose folded form starts with [prefix] folded the same way,
   /// so `dhamm` finds `dhammā` and `satip` finds `satipaṭṭhāna`. The range
   /// runs on the indexed `fuzzy_key`. Lower-case first: `stripDiacritics`

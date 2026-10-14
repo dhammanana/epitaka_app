@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
@@ -16,6 +15,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../dpd/providers/lookup_history.dart';
+import '../../dpd/utils/query_cleaning.dart';
+import 'lookup_history_buttons.dart';
+import 'lookup_history_chips.dart';
 import '../providers/dictionary_expanded_provider.dart';
 import '../providers/dictionary_font_scale_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart'
@@ -161,53 +164,32 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// Where each summary line of the results jumps to.
   final PageAnchors _anchors = PageAnchors();
 
-  // Search history
-  late final List<String> _searchHistory = [];
-  static const _historyPrefsKey = 'dict_search_history';
-  static const _historyMaxLen = 100;
+  /// Back and forward over the words looked up in this sheet.
+  LookupHistory get _lookupHistory => ref.read(lookupHistoryProvider);
+
+  /// A provider cannot change inside `initState` or `didChangeDependencies`,
+  /// which is where a word handed to this widget arrives, so the add waits one
+  /// microtask.
+  void _recordLookup(String word) => Future.microtask(() {
+    if (mounted) _lookupHistory.navigateTo(word);
+  });
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
-    final initial = widget.initialWord.trim();
+    // With no word handed in, carry on from the word the panel or an earlier
+    // sheet left current.
+    final handedIn = cleanShownWord(widget.initialWord);
+    final initial = handedIn.isNotEmpty
+        ? handedIn
+        : (_lookupHistory.current ?? '');
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
       _draft = initial;
-      _addToHistory(initial);
+      _recordLookup(initial);
     }
     _focusNode.onKeyEvent = _handleSearchKey;
-  }
-
-  Future _loadHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList(_historyPrefsKey) ?? [];
-    if (mounted) {
-      setState(() {
-        _searchHistory
-          ..clear()
-          ..addAll(saved);
-      });
-    }
-  }
-
-  void _addToHistory(String word) {
-    final w = word.trim();
-    if (w.isEmpty) return;
-    setState(() {
-      _searchHistory.remove(w);
-      _searchHistory.insert(0, w);
-      if (_searchHistory.length > _historyMaxLen) {
-        _searchHistory.removeLast();
-      }
-    });
-    _saveHistory();
-  }
-
-  Future<void> _saveHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_historyPrefsKey, _searchHistory);
   }
 
   @override
@@ -237,9 +219,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       _isConverting = false;
     }
 
-    final trimmed = converted.trim();
+    final trimmed = foldDpdQuery(converted).trim();
     if (trimmed.isEmpty) {
       setState(() {
+        _lookupHistory.resetPosition();
         _draft = '';
         _query = '';
         _suggestIndex = -1;
@@ -263,11 +246,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _performSearch(String value) {
-    final converted = velthuis(value).trim();
+    final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
-    _addToHistory(converted);
     _initiateSearch(converted);
   }
 
@@ -280,6 +262,18 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
+    _recordLookup(word);
+    _showWord(word);
+  }
+
+  /// Back and forward put a word on screen without adding it to any list.
+  void _stepHistory(String? word) {
+    if (word == null) return;
+    _searchController.text = word;
+    _showWord(word);
+  }
+
+  void _showWord(String word) {
     _suggestDebounce?.cancel();
     setState(() {
       _query = word;
@@ -303,10 +297,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _selectWord(String word) {
-    final converted = velthuis(word).trim();
+    final converted = cleanShownWord(word);
     if (converted.isEmpty) return;
     _searchController.text = converted;
-    _addToHistory(converted);
     _initiateSearch(converted);
   }
 
@@ -528,6 +521,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   @override
   Widget build(BuildContext context) {
+    // The chips and the arrows read the shared history, which the panel can
+    // also change. No PopScope here: a tap on the barrier above the sheet and
+    // the back key both pop the route, and both must close the sheet.
+    ref.watch(lookupHistoryProvider);
     final colors = Theme.of(context).colorScheme;
     final settings = ref.watch(settingsProvider);
     final pali = settings.typography.pali;
@@ -538,6 +535,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     // causing the expensive dictionary results to rebuild per frame.
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final paliSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
+    // The same chip size as the desktop panel, so the rows look alike.
+    final chipSize = (pali.fontSize * 0.55).clamp(9.0, 14.0);
 
     // Strip the keyboard view insets so the Scaffold created by
     // showModalBottomSheet does not resize when the keyboard opens.
@@ -707,6 +706,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                     onSubmitted: _performSearch,
                                   ),
                                 ),
+                                LookupHistoryButtons(
+                                                    onBack: () =>
+                                      _stepHistory(_lookupHistory.goBack()),
+                                  onForward: () =>
+                                      _stepHistory(_lookupHistory.goForward()),
+                                ),
                                 // Pin to right side panel (desktop only). When pinned,
                                 // the lookup moves to the docked panel and this sheet
                                 // closes.
@@ -723,38 +728,28 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                             ),
                           ),
                           // Search history row
-                          if (_searchHistory.isNotEmpty)
+                          if (_lookupHistory.words.isNotEmpty)
                             Container(
-                              height: 40,
+                              height: 32,
                               margin: const EdgeInsets.only(
                                 top: 8,
                                 left: 16,
                                 right: 16,
                               ),
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _searchHistory.length,
-                                separatorBuilder: (context, index) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, index) {
-                                  return ActionChip(
-                                    label: Text(_searchHistory[index]),
-                                    labelStyle: AppTypography.labelSmall
-                                        .copyWith(
-                                          color: colors.onSurfaceVariant,
-                                        ),
-                                    backgroundColor:
-                                        colors.surfaceContainerHighest,
-                                    side: BorderSide.none,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    onPressed: () {
-                                      _searchController.text =
-                                          _searchHistory[index];
-                                      _performSearch(_searchHistory[index]);
-                                    },
-                                  );
+                              child: LookupHistoryChips(
+                                words: _lookupHistory.words,
+                                currentIndex: _lookupHistory.currentIndex,
+                                colors: colors,
+                                labelStyle: AppTypography.labelSmall.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                  fontSize: chipSize,
+                                  fontFamily: pali.fontFamily.fontFamily,
+                                ),
+                                // A word that is already in the history is
+                                // searched as it is stored, not read as Velthuis.
+                                onTap: (word) {
+                                  _focusNode.unfocus();
+                                  _selectWord(word);
                                 },
                               ),
                             ),
@@ -1043,7 +1038,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
     final didYouMeanSize = (pali.fontSize * 0.64).clamp(kDictionaryMinTextSize, 18.0);
     return ref
-        .watch(dpdSuggestionsProvider(_query))
+        .watch(dpdClosestMatchesProvider(_query))
         .when(
           loading: () => [
             const SliverToBoxAdapter(
@@ -1169,7 +1164,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         // provider; watch it here (instead of inside a cached subtree) so a
         // resolve invalidates the memoized results and rebuilds them.
         final suggestionsAsync = includePrefixSuggestions
-            ? ref.watch(dpdSuggestionsProvider(_query))
+            ? ref.watch(dpdClosestMatchesProvider(_query))
             : null;
         return listAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
