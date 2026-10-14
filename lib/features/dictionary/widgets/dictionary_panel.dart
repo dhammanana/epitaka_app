@@ -16,6 +16,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../dpd/providers/lookup_history.dart';
+import '../../dpd/utils/query_cleaning.dart';
+import 'lookup_history_buttons.dart';
+import 'lookup_history_chips.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
@@ -67,7 +71,16 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   // Arrow pressed while suggestions were still loading: 0 = none,
   // 1 = highlight first row, -1 = highlight last row once rows arrive.
   int _suggestPending = 0;
-  final List<String> _searchHistory = [];
+
+  /// Back and forward over the words looked up in this panel.
+  LookupHistory get _lookupHistory => ref.read(lookupHistoryProvider);
+
+  /// A provider cannot change inside `initState` or `didChangeDependencies`,
+  /// which is where a word handed to this widget arrives, so the add waits one
+  /// microtask.
+  void _recordLookup(String word) => Future.microtask(() {
+    if (mounted) _lookupHistory.navigateTo(word);
+  });
 
   /// The last selection made inside the results, tracked via the
   /// SelectionArea's `onSelectionChanged` (SelectableRegionState exposes no
@@ -77,13 +90,17 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialWord.trim();
+    final handedIn = cleanShownWord(widget.initialWord);
+    // With no word handed in, carry on from the word the sheet or an earlier
+    // panel left current.
+    final initial = handedIn.isNotEmpty ? handedIn : (_lookupHistory.current ?? '');
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
       _draft = initial;
-      _addToHistory(initial);
-    } else if (widget.autoFocus) {
+      _recordLookup(initial);
+    }
+    if (handedIn.isEmpty && widget.autoFocus) {
       // Focus the search field after the first frame so the keyboard can show.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _focusNode.requestFocus();
@@ -113,7 +130,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   /// Apply a dictionary word coming from [SidePanelProvider] to the search
   /// field, ignoring repeats of the current query.
   void _syncPanelWord(String word) {
-    final trimmed = word.trim();
+    final trimmed = cleanShownWord(word);
     if (trimmed.isEmpty || trimmed == _query) return;
     _searchController.text = trimmed;
     _initiateSearch(trimmed);
@@ -122,8 +139,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void didUpdateWidget(DictionaryPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newWord = widget.initialWord.trim();
-    if (newWord.isNotEmpty && newWord != oldWidget.initialWord.trim()) {
+    final newWord = cleanShownWord(widget.initialWord);
+    if (newWord.isNotEmpty && newWord != cleanShownWord(oldWidget.initialWord)) {
       _searchController.text = newWord;
       _initiateSearch(newWord);
     }
@@ -136,18 +153,6 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _scrollController.dispose();
     _suggestDebounce?.cancel();
     super.dispose();
-  }
-
-  void _addToHistory(String word) {
-    final w = word.trim();
-    if (w.isEmpty) return;
-    setState(() {
-      _searchHistory.remove(w);
-      _searchHistory.insert(0, w);
-      if (_searchHistory.length > 10) {
-        _searchHistory.removeLast();
-      }
-    });
   }
 
   void _onSearchChanged(String value) {
@@ -167,9 +172,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       _isConverting = false;
     }
 
-    final trimmed = converted.trim();
+    final trimmed = foldDpdQuery(converted).trim();
     if (trimmed.isEmpty) {
       setState(() {
+        _lookupHistory.resetPosition();
         _draft = '';
         _query = '';
         _suggestIndex = -1;
@@ -193,7 +199,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _performSearch(String value) {
-    final converted = velthuis(value).trim();
+    final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -202,8 +208,19 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
+    _recordLookup(word);
+    _showWord(word);
+  }
+
+  /// Back and forward put a word on screen without adding it to any list.
+  void _stepHistory(String? word) {
+    if (word == null) return;
+    _searchController.text = word;
+    _showWord(word);
+  }
+
+  void _showWord(String word) {
     _suggestDebounce?.cancel();
-    _addToHistory(word);
     DictionaryPanelMemory.saveWord(word);
     setState(() {
       _query = word;
@@ -301,7 +318,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _selectWord(String word) {
-    final converted = velthuis(word).trim();
+    final converted = cleanShownWord(word);
     if (converted.isEmpty) return;
     _searchController.text = converted;
     _initiateSearch(converted);
@@ -373,6 +390,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // The recent chips and the arrows read the history the sheet also writes.
+    ref.watch(lookupHistoryProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
@@ -408,77 +427,79 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             AppDimensions.sm,
             0,
           ),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _focusNode,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: loc.searchPali,
-              isDense: true,
-              prefixIcon: Icon(
-                Icons.search,
-                size: 18,
-                color: colors.onSurfaceVariant,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _focusNode,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: loc.searchPali,
+                    isDense: true,
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              _onSearchChanged('');
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: colors.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppDimensions.radiusLg,
+                      ),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppDimensions.sm,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontSize: searchSize,
+                    fontFamily: pali.fontFamily.fontFamily,
+                  ),
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _performSearch,
+                ),
               ),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: colors.surfaceContainerHighest,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-                borderSide: BorderSide.none,
+              LookupHistoryButtons(
+                onBack: () => _stepHistory(_lookupHistory.goBack()),
+                onForward: () => _stepHistory(_lookupHistory.goForward()),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.sm,
-                vertical: 8,
-              ),
-            ),
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.onSurface,
-              fontSize: searchSize,
-              fontFamily: pali.fontFamily.fontFamily,
-            ),
-            onChanged: _onSearchChanged,
-            onSubmitted: _performSearch,
+            ],
           ),
         ),
 
         // Search history chips
-        if (_searchHistory.isNotEmpty)
+        if (_lookupHistory.words.isNotEmpty)
           Container(
             height: 32,
             margin: const EdgeInsets.only(top: 4, left: 8, right: 8),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _searchHistory.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 4),
-              itemBuilder: (context, index) {
-                return ActionChip(
-                  label: Text(_searchHistory[index]),
-                  labelStyle: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: chipSize,
-                    fontFamily: pali.fontFamily.fontFamily,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  backgroundColor: colors.surfaceContainerHighest,
-                  side: BorderSide.none,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  onPressed: () {
-                    _searchController.text = _searchHistory[index];
-                    _performSearch(_searchHistory[index]);
-                  },
-                );
+            child: LookupHistoryChips(
+              words: _lookupHistory.words,
+              currentIndex: _lookupHistory.currentIndex,
+              colors: colors,
+              labelStyle: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontSize: chipSize,
+                fontFamily: pali.fontFamily.fontFamily,
+              ),
+              // A word that is already in the history is searched as it is
+              // stored, not read as Velthuis.
+              onTap: (word) {
+                _focusNode.unfocus();
+                _selectWord(word);
               },
             ),
           ),
@@ -691,7 +712,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   List<Widget> _prefixSuggestionChildren(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
     return ref
-        .watch(dpdSuggestionsProvider(_query))
+        .watch(dpdClosestMatchesProvider(_query))
         .when(
           loading: () => [
             const Padding(
@@ -791,7 +812,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                 onJump: (id) => _anchors.jumpTo(id, _scrollController),
                 showSummary: showSummary,
               ),
-              if (includePrefixSuggestions) ..._prefixSuggestionChildren(colors),
+              if (includePrefixSuggestions)
+                ..._prefixSuggestionChildren(colors),
               const SizedBox(height: 24),
             ];
             // Select-and-search: same treatment as the dictionary sheet — a

@@ -42,8 +42,8 @@ void main() {
         tester,
         dbFile,
         words: ['dhamma', 'character'],
-        // `character` has no DPD entry, so the sheet asks for suggestions.
-        prefixes: ['character'],
+        // `character` has no DPD entry, so the sheet asks for closest matches.
+        closest: ['character'],
         gesture: WordLookupGesture.doubleTap,
       );
 

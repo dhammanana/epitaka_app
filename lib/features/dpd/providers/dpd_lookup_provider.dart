@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/dpd_dao_epitaka.dart';
 import '../database/dpd_database.dart';
 import '../database/dpd_headword_extensions.dart';
+import 'dictionary_list_provider.dart';
 import 'dpd_database_provider.dart';
 import 'dpd_settings_provider.dart';
 import 'secondary_results_provider.dart';
@@ -120,10 +121,46 @@ final dpdLookupProvider = FutureProvider.autoDispose
       );
     });
 
+/// What to offer when nothing matches the typed word: the nearest lookup keys,
+/// found by trimming the word from the end (DPD `searchClosestMatches`).
+final dpdClosestMatchesProvider = FutureProvider.autoDispose
+    .family<List<String>, String>((ref, query) async {
+      final dao = await ref.watch(dpdDaoProvider.future);
+      return dao.searchClosestMatches(query);
+    });
+
 /// Words that start like the typed text, for the suggestion list.
+///
+/// The first group that is not empty ends the search: the DPD list below, then
+/// the enabled external dictionaries, then the lookup keys. Inside the DPD
+/// list the words that start with exactly what the user typed come first, then
+/// the exact fuzzy-key matches (a typed `-` or a missing macron), then the
+/// rest of the fuzzy prefix range. A late answer cannot reach the screen: the
+/// family is keyed by the draft, and the shell stops watching a draft once the
+/// user submits it.
 final dpdSuggestionsProvider = FutureProvider.autoDispose
     .family<List<String>, String>((ref, prefix) async {
       if (prefix.trim().length < 2) return [];
       final dao = await ref.watch(dpdDaoProvider.future);
-      return dao.searchSuggestions(prefix);
+
+      final dpd = <String>{
+        ...await dao.searchLiteralPrefix(prefix),
+        ...await dao.searchFuzzyExactKeyMatches(prefix),
+        ...await dao.searchSuggestions(prefix),
+      };
+      if (dpd.isNotEmpty) return dpd.toList();
+
+      final enabled = ref.watch(dictionaryListProvider).valueOrNull ?? const [];
+      final dictIds = [
+        for (final e in enabled)
+          if (e.enabled && e.item.kind == DictionaryItemKind.external)
+            e.item.id,
+      ];
+      final dictWords = await dao.searchDictWordsPrefix(dictIds, prefix);
+      if (dictWords.isNotEmpty) {
+        return dictWords..sort(suggestionComparator);
+      }
+
+      final keys = await dao.searchLookupKeysPrefix(prefix);
+      return keys..sort(suggestionComparator);
     });

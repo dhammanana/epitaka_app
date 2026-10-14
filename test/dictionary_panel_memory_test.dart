@@ -27,6 +27,9 @@ void main() {
     dpdSuggestionsProvider.overrideWith(
       (ref, String prefix) async => <String>[],
     ),
+    dpdClosestMatchesProvider.overrideWith(
+      (ref, String query) async => <String>[],
+    ),
     dictionaryBooksProvider.overrideWith(
       (ref) async => const <DictionaryBook>[],
     ),
