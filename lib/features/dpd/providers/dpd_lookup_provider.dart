@@ -45,10 +45,28 @@ class DpdLookup {
   bool get hasMatch =>
       headwords.isNotEmpty || roots.isNotEmpty || secondary.isNotEmpty;
 
-  /// The word the other dictionaries are searched with: the first headword's
-  /// lemma without its homograph number, else what the user typed.
-  String get searchWord =>
-      headwords.isEmpty ? query : headwords.first.headword.lemmaClean;
+  /// The word the other dictionaries are searched with: the headword whose
+  /// lemma is what the user typed, else the first headword's lemma (an
+  /// inflected form), without the homograph number; with no headword, what the
+  /// user typed. The typed word has to lead: `kāya` is also a form of `ka`,
+  /// which sorts first.
+  String get searchWord {
+    if (headwords.isEmpty) return query;
+    final typed = _same(query);
+    for (final h in headwords) {
+      if (_same(h.headword.lemmaClean) == typed) return h.headword.lemmaClean;
+    }
+    return headwords.first.headword.lemmaClean;
+  }
+
+  // The same folding the lookup applies to what was typed.
+  static String _same(String word) => word
+      .trim()
+      .toLowerCase()
+      .replaceAll("'", '')
+      .replaceAll('-', '')
+      .replaceAll('ṁ', 'ṃ')
+      .replaceAll('ŋ', 'ṃ');
 }
 
 final dpdLookupProvider = FutureProvider.autoDispose
