@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -77,8 +79,26 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
   /// resolve to the same index skip the (expensive) list jump.
   int? _lastDragJumpIndex;
 
+  /// The list follows the thumb at most this often while dragging. Each jump
+  /// builds a fresh screen of paragraphs; jumping on every pointer move (about
+  /// 330 jumps in a 3 s drag of Pācity-y) put the worst 10% of frames at
+  /// 26–28 ms on a Pixel 8 Pro. The thumb and tooltip still move every frame.
+  static const Duration _kDragJumpInterval = Duration(milliseconds: 100);
+
+  /// Runs while a jump's interval lasts; when it ends, the list catches up
+  /// with the thumb if it moved meanwhile.
+  Timer? _dragJumpCooldown;
+
+  /// The paragraph under the thumb, not yet shown while the cooldown runs.
+  int? _pendingDragIndex;
+
   /// The heading currently shown in the tooltip during drag.
   String? _tooltipHeading;
+
+  // For the `[PERF] drag` line: pointer moves against list jumps.
+  Stopwatch? _dragSw;
+  int _dragMoves = 0;
+  int _dragJumps = 0;
 
   @override
   void initState() {
@@ -102,6 +122,10 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     if (oldWidget.readerState.paragraphs.length !=
         widget.readerState.paragraphs.length) {
       _cachedMarks = null;
+      // A pending jump was computed for the old paragraph count; a reload
+      // can also hide the thumb mid-drag, so no drag end ever cancels it.
+      _dragJumpCooldown?.cancel();
+      _pendingDragIndex = null;
       final positions = widget.itemPositionsListener?.itemPositions.value;
       if (positions != null) {
         _updateScrollRatio(positions);
@@ -111,6 +135,7 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
 
   @override
   void dispose() {
+    _dragJumpCooldown?.cancel();
     widget.itemPositionsListener?.itemPositions.removeListener(
       _onPositionsChanged,
     );
@@ -211,6 +236,9 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
 
   void _onDragStart(DragStartDetails details) {
     _lastDragJumpIndex = null;
+    _dragSw = Stopwatch()..start();
+    _dragMoves = 0;
+    _dragJumps = 0;
     setState(() {
       _dragOffset = details.localPosition.dy - _thumbHeight / 2;
       // Immediately update tooltip based on position
@@ -222,6 +250,7 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
 
   void _onDragUpdate(DragUpdateDetails details) {
     if (_dragOffset == null) return;
+    _dragMoves++;
     final newOffset = _dragOffset! + details.delta.dy;
     setState(() {
       _dragOffset = newOffset.clamp(0.0, _availableDragHeight);
@@ -243,16 +272,36 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
     // Ratio is clamped above, so the rounded index is always in range.
     final targetIndex = (ratio * (total - 1)).round();
 
+    _pendingDragIndex = targetIndex;
+    if (_dragJumpCooldown?.isActive ?? false) return;
+    _jumpToPending();
+  }
+
+  /// Jumps the list to the paragraph under the thumb, unless it is already
+  /// there, and starts the interval before the next jump.
+  void _jumpToPending() {
+    if (!mounted) return;
+    final index = _pendingDragIndex;
     // Drag updates fire per pointer event; jumping the list is the most
     // expensive part of the drag, so skip it when the index is unchanged.
-    if (targetIndex == _lastDragJumpIndex) return;
-    _lastDragJumpIndex = targetIndex;
-
-    widget.itemScrollController?.jumpTo(index: targetIndex, alignment: 0.0);
+    if (index == null || index == _lastDragJumpIndex) return;
+    _lastDragJumpIndex = index;
+    _dragJumps++;
+    widget.itemScrollController?.jumpTo(index: index, alignment: 0.0);
+    _dragJumpCooldown = Timer(_kDragJumpInterval, _jumpToPending);
   }
 
   void _onDragEnd(DragEndDetails details) {
+    // The release shows the exact paragraph under the thumb at once.
+    _dragJumpCooldown?.cancel();
+    _jumpToPending();
+    _dragJumpCooldown?.cancel();
+    _pendingDragIndex = null;
     _lastDragJumpIndex = null;
+    debugPrint(
+      '[PERF] drag ms=${_dragSw?.elapsedMilliseconds} moves=$_dragMoves '
+      'jumps=$_dragJumps paras=${widget.readerState.paragraphs.length}',
+    );
     setState(() {
       _dragOffset = null;
       _tooltipHeading = null;
