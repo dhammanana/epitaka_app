@@ -43,11 +43,17 @@ class BuiltSearchRows {
     final step = selected < first
         ? -position.viewportDimension
         : position.viewportDimension;
+    // A selection thousands of rows away is more than 100 screens off, so
+    // the first jump goes by the row's share of the list. The extent is an
+    // estimate for a lazy list; the one-screen steps after it finish the job.
+    final target = attempt == 0 && nav.rows.length > 1
+        ? position.minScrollExtent +
+              (position.maxScrollExtent - position.minScrollExtent) *
+                  selected /
+                  (nav.rows.length - 1)
+        : position.pixels + step;
     position.jumpTo(
-      (position.pixels + step).clamp(
-        position.minScrollExtent,
-        position.maxScrollExtent,
-      ),
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
     );
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => reveal(

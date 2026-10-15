@@ -22,9 +22,9 @@ class _FixedSearchNotifier extends SearchNotifier {
   }
 }
 
-SearchResults _results() {
+SearchResults _results(int hitCount) {
   final items = [
-    for (var p = 1; p <= _hitCount; p++)
+    for (var p = 1; p <= hitCount; p++)
       SearchResultItem(
         bookId: 'b1',
         paraId: p,
@@ -35,11 +35,11 @@ SearchResults _results() {
   ];
   return SearchResults(
     query: 'dhamma',
-    totalResults: _hitCount,
+    totalResults: hitCount,
     bookSummaries: [
       BookResultSummary(
         book: BookInfo(id: 1, bookId: 'b1', bookName: 'Book One'),
-        totalCount: _hitCount,
+        totalCount: hitCount,
         isExpanded: true,
         loadedPages: [
           for (var i = 0; i < items.length; i += kSearchPageSize)
@@ -69,8 +69,8 @@ bool _isHighlighted(WidgetTester tester, int paraId) {
   return color != null && color != Colors.transparent;
 }
 
-Future<FocusNode> _pump(WidgetTester tester) async {
-  final results = _results();
+Future<FocusNode> _pump(WidgetTester tester, {int hitCount = _hitCount}) async {
+  final results = _results(hitCount);
   final focus = FocusNode();
   addTearDown(focus.dispose);
   await tester.pumpWidget(
@@ -176,5 +176,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('§2'), findsOneWidget);
     expect(_isHighlighted(tester, 2), isTrue);
+  });
+
+  testWidgets('a selection thousands of rows away still comes back into view', (
+    tester,
+  ) async {
+    // About 300 screens of rows: more than the 100 one-screen steps the
+    // reveal may take, so a first jump toward the row must do most of it.
+    final focus = await _pump(tester, hitCount: 6000);
+    focus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.text('§2', skipOffstage: false), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(find.text('§2'), findsOneWidget);
   });
 }

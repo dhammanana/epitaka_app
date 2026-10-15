@@ -71,9 +71,6 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   /// Debounce timer for search.
   Timer? _searchTimer;
 
-  /// Most recent query sent to [_runSearch], used to ignore stale results.
-  String _lastSearchQuery = '';
-
   /// Bumped by every search and every close. A search that waited for a
   /// background build writes nothing once the bar has closed (a tab switch
   /// closes it too), even when the same word is typed again.
@@ -293,7 +290,6 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     // must be converted to Roman before it can match.
     final romanQuery = velthuis(query);
 
-    _lastSearchQuery = romanQuery;
     final gen = ++_searchGen;
 
     if (romanQuery.trim().isEmpty) {
@@ -380,9 +376,6 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
           }
         }
       }
-
-      // Guard against stale results
-      if (_lastSearchQuery != romanQuery) return;
 
       // Store the Roman query so the paragraph highlight can convert it
       // back to the display script for matching (see

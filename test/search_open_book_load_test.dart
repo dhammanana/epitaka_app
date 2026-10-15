@@ -124,7 +124,7 @@ void main() {
     await epiDb.close();
   });
 
-  test('the open book gets every hit in page-loop order, in two publishes', () async {
+  ProviderContainer makeContainer() {
     final container = ProviderContainer(
       overrides: [
         appDbProvider.overrideWith((ref) async => appDb),
@@ -148,6 +148,11 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
+    return container;
+  }
+
+  test('the open book gets every hit in page-loop order, in two publishes', () async {
+    final container = makeContainer();
 
     // Count the publishes that change the open book's loaded hits.
     var publishes = 0;
@@ -180,6 +185,31 @@ void main() {
       _expectedParaIds,
     );
     expect(publishes, lessThanOrEqualTo(2));
+  });
+
+  test('a book collapsed while the rest of its hits load stays collapsed', () async {
+    final container = makeContainer();
+    final notifier = container.read(searchProvider.notifier);
+
+    // Collapse the open book as soon as its first window shows. The rest of
+    // its hits are still being fetched at that moment.
+    var collapsed = false;
+    container.listen<SearchState>(searchProvider, (_, next) {
+      if (collapsed || next is! SearchResults) return;
+      final first = next.bookSummaries.first;
+      if (first.loadedPages.isEmpty) return;
+      collapsed = true;
+      Future.microtask(() => notifier.collapseBook(0));
+    });
+
+    await notifier.search(query: 'dhamma');
+
+    expect(collapsed, isTrue);
+    final summary = (container.read(searchProvider) as SearchResults)
+        .bookSummaries
+        .first;
+    expect(summary.isExpanded, isFalse, reason: 'the late commit re-expanded it');
+    expect(summary.loadedPages, isEmpty, reason: 'page 1 would be missing');
   });
 }
 

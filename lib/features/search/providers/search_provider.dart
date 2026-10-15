@@ -658,7 +658,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
     ])).single;
     if (gen != _searchGen) return done();
     if (firstItems.isEmpty) return done();
-    _commitBookPages(bookId, [firstItems]);
+    if (!_commitBookPages(bookId, [firstItems], expectedPageCount: point.pageCount)) {
+      return done();
+    }
     pages++;
     hits += firstItems.length;
     commits++;
@@ -700,7 +702,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
       if (built[i].length < windows[i].pageSize) break;
     }
     if (accepted.isEmpty) return done();
-    _commitBookPages(bookId, accepted);
+    if (!_commitBookPages(bookId, accepted, expectedPageCount: point.pageCount)) {
+      return done();
+    }
     pages += accepted.length;
     hits += accepted.fold<int>(0, (n, p) => n + p.length);
     commits++;
@@ -749,7 +753,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
     ];
   }
 
-  bool _commitBookPages(String bookId, List<List<SearchResultItem>> pages) {
+  /// Appends [pages] to the book's loaded pages, but only when the book still
+  /// holds [expectedPageCount] pages, the count the windows were cut from. A
+  /// collapse or a "Load more" during the fetch changes that count, and the
+  /// late pages would then re-open the book or repeat a page.
+  bool _commitBookPages(
+    String bookId,
+    List<List<SearchResultItem>> pages, {
+    required int expectedPageCount,
+  }) {
     final current = state;
     if (current is! SearchResults) return false;
     final idx = current.bookSummaries.indexWhere(
@@ -758,6 +770,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     if (idx < 0) return false;
     final summaries = [...current.bookSummaries];
     final summary = summaries[idx];
+    if (summary.loadedPages.length != expectedPageCount) return false;
     summaries[idx] = BookResultSummary(
       book: summary.book,
       totalCount: summary.totalCount,
@@ -1399,7 +1412,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
   // cannot be sent to another isolate. Cleaning 38,069 titles is too long
   // for one frame on a phone.
   static Future<List<String>> _headingKeysInBackground(List<String> titles) =>
-      Isolate.run(() => [for (final t in titles) normalizePaliFuzzy(t)]);
+      titles.isEmpty
+      ? Future.value(const <String>[])
+      : Isolate.run(() => [for (final t in titles) normalizePaliFuzzy(t)]);
 
   int _headingsBuildCount = 0;
 
