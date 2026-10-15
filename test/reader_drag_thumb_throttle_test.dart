@@ -1,7 +1,7 @@
 /// Dragging the scroll thumb moves the reader at most every 100 ms. Each jump
 /// builds a fresh screen of paragraphs; jumping on every pointer move (about
-/// 330 jumps in a 3 s drag of Pācity-y) put the worst 10% of frames at
-/// 26–28 ms on a Pixel 8 Pro. The thumb itself still follows every move, the
+/// 330 jumps in a 3 s drag of Pācity-y) gave 18 slow frames per drag on a
+/// Pixel 8 Pro, against 9 with 31 jumps. The thumb itself still follows every move, the
 /// reader catches up when the finger rests, and the release shows the exact
 /// paragraph under the thumb.
 library;

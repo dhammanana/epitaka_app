@@ -539,8 +539,9 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     // ── Get sentences for all para_ids ───────────────────────────────
     final sentSw = Stopwatch()..start();
     // Query by book_id only (indexed), and only the columns the reader
-    // uses: every row is copied to the main isolate and read there, which
-    // was most of a large book's main-isolate time on a phone.
+    // uses: every row is copied to the main isolate and read there, so each
+    // column left out saves that copy (main-isolate busy time on a phone
+    // went from 171 to 132 ms for Pācity-y).
     final sentences = await db
         .customSelect(
           'SELECT para_id, line_id, pali, vripage, ptspage, thaipage, mypage '
@@ -993,8 +994,8 @@ class _RawLine {
 ///
 /// A whole book stays in memory while it is in a tab and is released when
 /// its last tab closes; a kept book also reloads on every translation or
-/// page-system change. A book read while in no tab is kept, as before:
-/// callers such as a jump may still be waiting for it to load.
+/// page-system change. A book read while in no tab is kept, as before, so
+/// code that reads a book outside the tabs never finds it released.
 final readerDataProvider = StateNotifierProvider.autoDispose
     .family<ReaderDataNotifier, ReaderDataState, String>((ref, bookId) {
       KeepAliveLink? link = ref.keepAlive();

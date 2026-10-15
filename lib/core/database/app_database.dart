@@ -177,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
   @visibleForTesting
   static int indexReadChunk = 2000;
 
-  /// The most rows one read returned during the last index build.
+  /// The most rows one read returned since the test last reset it.
   @visibleForTesting
   static int indexLargestRead = 0;
 
@@ -2523,7 +2523,7 @@ class BookFilterOption {
 }
 
 /// One `[PERF] index` line: elapsed time, rows, and the app's memory now and
-/// at its peak, because the index build holds the whole text in memory.
+/// at its peak, to show how far the index build's memory climbs.
 void _perfIndex(String area, String step, Stopwatch sw, int rows) {
   debugPrint(
     '[PERF] index $area step=$step ms=${sw.elapsedMilliseconds} rows=$rows '

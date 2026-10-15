@@ -81,8 +81,9 @@ class _ReaderDragThumbState extends State<ReaderDragThumb> {
 
   /// The list follows the thumb at most this often while dragging. Each jump
   /// builds a fresh screen of paragraphs; jumping on every pointer move (about
-  /// 330 jumps in a 3 s drag of Pācity-y) put the worst 10% of frames at
-  /// 26–28 ms on a Pixel 8 Pro. The thumb and tooltip still move every frame.
+  /// 330 jumps in a 3 s drag of Pācity-y) gave 18 slow frames per drag on a
+  /// Pixel 8 Pro, against 9 with 31 jumps. The thumb and tooltip still move
+  /// every frame.
   static const Duration _kDragJumpInterval = Duration(milliseconds: 100);
 
   /// Runs while a jump's interval lasts; when it ends, the list catches up

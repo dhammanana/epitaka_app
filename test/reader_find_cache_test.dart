@@ -139,7 +139,7 @@ void main() {
       expect(
         find.cachedLineCount,
         0,
-        reason: 'the build must not run on the main isolate',
+        reason: 'the bar opening must not normalize the lines in the same call',
       );
       await _waitFor(() => find.cachedLineCount == _lines.length);
     });
