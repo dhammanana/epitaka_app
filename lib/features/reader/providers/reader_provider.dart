@@ -12,6 +12,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/startup_timing.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
+import 'reader_tabs_provider.dart';
 
 /// One row from a translation database's `translation_remarks` table.
 ///
@@ -307,6 +308,8 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       }
 
       final result = await _loadAllParagraphs();
+      // Released while loading: its tab closed (see [readerDataProvider]).
+      if (!mounted) return;
 
       // ── Guard: discard if a newer load has started ────────────────
       if (gen != _loadGeneration) {
@@ -350,7 +353,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         'book load FAILED: $_bookId (loadMs=${sw.elapsedMilliseconds})',
       );
       // Only set error state if this is still the latest generation
-      if (gen == _loadGeneration) {
+      if (mounted && gen == _loadGeneration) {
         state = state.copyWith(
           isLoading: false,
           isLoaded: true,
@@ -510,6 +513,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       name: 'epitaka.reader',
     );
 
+    if (!mounted) return null;
     if (book != null) {
       state = state.copyWith(
         bookName: book.bookName,
@@ -539,6 +543,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         '[LOAD] No paragraphs found for bookId=$_bookId',
         name: 'epitaka.reader',
       );
+      if (!mounted) return null;
       state = state.copyWith(
         isLoading: false,
         isLoaded: true,
@@ -907,6 +912,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         remarksByLine[paraId]!.putIfAbsent(lineId, () => []).add(remark);
       }
 
+      if (!mounted) return;
       // Patch each paragraph's lines' remarks maps for this language.
       final patched = state.paragraphs.map((p) {
         final paraRemarks = remarksByLine[p.paraId];
@@ -968,10 +974,29 @@ class _RawLine {
 }
 
 /// Provider that loads reader data for a given book (all paragraphs at once).
-final readerDataProvider =
-    StateNotifierProvider.family<ReaderDataNotifier, ReaderDataState, String>(
-      (ref, bookId) => ReaderDataNotifier(ref, bookId),
-    );
+///
+/// A whole book stays in memory while it is in a tab and is released when
+/// its last tab closes; a kept book also reloads on every translation or
+/// page-system change. A book read while in no tab is kept, as before:
+/// callers such as a jump may still be waiting for it to load.
+final readerDataProvider = StateNotifierProvider.autoDispose
+    .family<ReaderDataNotifier, ReaderDataState, String>((ref, bookId) {
+      KeepAliveLink? link = ref.keepAlive();
+      ref.listen<bool>(
+        readerTabsProvider.select(
+          (s) => s.tabs.any((t) => t.bookId == bookId),
+        ),
+        (_, inTab) {
+          if (inTab) {
+            link ??= ref.keepAlive();
+          } else {
+            link?.close();
+            link = null;
+          }
+        },
+      );
+      return ReaderDataNotifier(ref, bookId);
+    });
 
 // ---------------------------------------------------------------------------
 // Helpers
