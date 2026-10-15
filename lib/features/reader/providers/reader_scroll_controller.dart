@@ -549,7 +549,9 @@ class ReaderScrollController {
         // may be gone but this controller's flags must not leak — a leaked
         // hold wedges the app bar collapsed and the bottom toolbar
         // off-screen. endControlledScroll is mount-safe.
-        if (!isMounted()) {
+        // A closed tab's book has been released (readerDataProvider); a retry
+        // would read it back in and keep it loaded with no tab showing it.
+        if (!isMounted() || !_isInTab(bookId)) {
           endControlledScroll();
           return;
         }
@@ -1003,7 +1005,7 @@ class ReaderScrollController {
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!isMounted()) {
+        if (!isMounted() || !_isInTab(bookId)) {
           // Screen went away mid-retry: still release this jump's hold
           // (mount-safe) so the flags can never leak.
           finish();
@@ -1138,6 +1140,9 @@ class ReaderScrollController {
       saveReadingHistory(bookId, bookName);
     });
   }
+
+  bool _isInTab(String bookId) =>
+      ref.read(readerTabsProvider).tabs.any((t) => t.bookId == bookId);
 
   /// Cancel timers and detach all per-book listeners/subscriptions.
   void dispose() {

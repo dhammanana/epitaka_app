@@ -73,13 +73,34 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   /// Most recent query sent to [_runSearch], used to ignore stale results.
   String _lastSearchQuery = '';
 
+  /// Normalized text of every line of the last searched book, in reading
+  /// order, so later queries skip the normalization (over a second per
+  /// query in the largest books on a fast phone). Weak, so the cache never
+  /// keeps a closed book's paragraphs in memory.
+  WeakReference<List<ParagraphData>>? _normalizedSource;
+  bool? _normalizedHideVariants;
+  List<String> _normalizedLines = const [];
+  String? _normalizedBookId;
+
   /// Text editing controller for the search field.
   final TextEditingController searchController = TextEditingController();
 
   /// Focus node for the search field.
   final FocusNode searchFocusNode = FocusNode();
 
-  ReaderSearchNotifier(this._ref) : super(const InBookSearchState());
+  ReaderSearchNotifier(this._ref) : super(const InBookSearchState()) {
+    // A book leaves memory when its last tab closes (readerDataProvider);
+    // its normalized text, about the size of the book, goes with it.
+    _ref.listen(readerTabsProvider, (_, tabs) {
+      final bookId = _normalizedBookId;
+      if (bookId != null && !tabs.tabs.any((t) => t.bookId == bookId)) {
+        _normalizedSource = null;
+        _normalizedHideVariants = null;
+        _normalizedLines = const [];
+        _normalizedBookId = null;
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -212,20 +233,38 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         }
       }
 
+      // A reload or remarks refresh replaces the paragraph list, and the
+      // variant toggle changes what a line contains; either one makes the
+      // cached strings wrong.
+      if (!identical(_normalizedSource?.target, readerState.paragraphs) ||
+          _normalizedHideVariants != hideVariants) {
+        final normalizedLines = <String>[];
+        for (final para in readerState.paragraphs) {
+          for (final line in para.lines) {
+            // Normalized text is computed on-demand (normalizedText is
+            // always empty today — pre-computation during book load was
+            // removed as an optimization).
+            if (line.normalizedText.isEmpty) _lastNormalizedCount++;
+            normalizedLines.add(
+              line.normalizedText.isEmpty
+                  ? _normalizeLine(
+                      line.paliText,
+                      line.translations,
+                      hideVariants: hideVariants,
+                    )
+                  : line.normalizedText,
+            );
+          }
+        }
+        _normalizedLines = normalizedLines;
+        _normalizedSource = WeakReference(readerState.paragraphs);
+        _normalizedHideVariants = hideVariants;
+        _normalizedBookId = activeTab.bookId;
+      }
+
       for (final para in readerState.paragraphs) {
         for (final line in para.lines) {
-          linesSeen++;
-          // Normalized text is computed on-demand (normalizedText is
-          // always empty today — pre-computation during book load was
-          // removed as an optimization).
-          if (line.normalizedText.isEmpty) _lastNormalizedCount++;
-          final normalized = line.normalizedText.isEmpty
-              ? _normalizeLine(
-                  line.paliText,
-                  line.translations,
-                  hideVariants: hideVariants,
-                )
-              : line.normalizedText;
+          final normalized = _normalizedLines[linesSeen++];
           if (normalized.isEmpty) continue;
 
           bool allMatch = true;
@@ -307,6 +346,10 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   /// that a repeat query needs none.
   @visibleForTesting
   int get lastNormalizedCount => _lastNormalizedCount;
+
+  /// How many normalized lines the cache holds.
+  @visibleForTesting
+  int get cachedLineCount => _normalizedLines.length;
 
   /// Test seam for [_normalizeLine] (private): lets tests assert that the
   /// variant-content mode follows the settings toggle.
