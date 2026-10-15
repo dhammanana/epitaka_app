@@ -24,6 +24,7 @@ import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
+import 'search_row_list.dart';
 
 /// The shared results list for a completed [SearchResults] state.
 ///
@@ -82,49 +83,16 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
     final row = _searchNav.selectedRow;
     if (row == null || identical(row, _lastSelectedRow)) return;
     _lastSelectedRow = row;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _revealSelected());
-  }
-
-  /// Rows the list has built, by row index; see [_BuiltRow].
-  final Map<int, BuildContext> _builtRows = {};
-
-  /// Scrolls the selected row into view. The list builds only the rows near
-  /// the screen, so after a mouse scroll the selected row may not exist yet:
-  /// then move one screen toward it per frame until it is built.
-  void _revealSelected([int attempt = 0]) {
-    if (!mounted) return;
-    final ctx = _selectedRowKey.currentContext;
-    if (ctx != null && ctx.mounted) {
-      Scrollable.ensureVisible(
-        ctx,
-        alignment: 0.25,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-      );
-      return;
-    }
-    // The load-more row carries no key and never scrolled into view.
-    if (_searchNav.selectedRow?.kind == SearchRowKind.loadMore) return;
-    if (attempt >= 100 || _builtRows.isEmpty) return;
-    final built = _builtRows.keys;
-    final selected = _searchNav.selected;
-    final first = built.reduce((a, b) => a < b ? a : b);
-    final last = built.reduce((a, b) => a > b ? a : b);
-    if (selected >= first && selected <= last) return;
-    final position = Scrollable.of(_builtRows[first]!).position;
-    final step = selected < first
-        ? -position.viewportDimension
-        : position.viewportDimension;
-    position.jumpTo(
-      (position.pixels + step).clamp(
-        position.minScrollExtent,
-        position.maxScrollExtent,
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _builtRows.reveal(
+        selectedKey: _selectedRowKey,
+        nav: _searchNav,
+        isMounted: () => mounted,
       ),
     );
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _revealSelected(attempt + 1),
-    );
   }
+
+  final BuiltSearchRows _builtRows = BuiltSearchRows();
 
   void _syncNavigator() {
     if (!identical(widget.state, _lastNavState)) {
@@ -214,10 +182,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
         // are built. A book used to be one item holding every loaded hit,
         // which built thousands of tiles per redraw for a common word.
         itemCount: rows.length,
-        itemBuilder: (context, index) => _BuiltRow(
-          index: index,
-          registry: _builtRows,
-          child: _buildRow(context, index, rows, state, colors, loc),
+        itemBuilder: (context, index) => _builtRows.track(
+          index,
+          _buildRow(context, index, rows, state, colors, loc),
         ),
       ),
     );
@@ -292,16 +259,17 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
         );
     }
 
-    return _BookCardSlice(
+    return BookCardSlice(
       isFirst: row.kind == SearchRowKind.bookHeader,
       isLast:
           index + 1 >= rows.length ||
           rows[index + 1].kind == SearchRowKind.bookHeader,
+      radius: AppDimensions.radiusMd,
       colors: colors,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _GroupRowHighlight(
+          GroupRowHighlight(
             // The load-more row never carried the scroll key.
             key: row.kind == SearchRowKind.loadMore ? null : selectedKey,
             selected: isSelected,
@@ -732,149 +700,6 @@ class _SearchRowHighlight extends StatelessWidget {
             ? colors.primary.withValues(alpha: 0.10)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: selected
-              ? colors.primary.withValues(alpha: 0.6)
-              : Colors.transparent,
-          width: 1.2,
-        ),
-      ),
-      child: child,
-    );
-  }
-}
-
-/// Records its row index in [registry] while it is built, so the view knows
-/// which rows exist when a keyboard selection needs scrolling into view.
-class _BuiltRow extends StatefulWidget {
-  final int index;
-  final Map<int, BuildContext> registry;
-  final Widget child;
-
-  const _BuiltRow({
-    required this.index,
-    required this.registry,
-    required this.child,
-  });
-
-  @override
-  State<_BuiltRow> createState() => _BuiltRowState();
-}
-
-class _BuiltRowState extends State<_BuiltRow> {
-  @override
-  void initState() {
-    super.initState();
-    widget.registry[widget.index] = context;
-  }
-
-  @override
-  void didUpdateWidget(_BuiltRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.index != widget.index) {
-      if (identical(oldWidget.registry[oldWidget.index], context)) {
-        oldWidget.registry.remove(oldWidget.index);
-      }
-      widget.registry[widget.index] = context;
-    }
-  }
-
-  @override
-  void dispose() {
-    if (identical(widget.registry[widget.index], context)) {
-      widget.registry.remove(widget.index);
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
-}
-
-/// One row's slice of a book's card. Stacked slices look like the single
-/// card a book used to be: the header slice has the top border and corners,
-/// the last slice the bottom ones and the gap to the next book.
-class _BookCardSlice extends StatelessWidget {
-  final bool isFirst;
-  final bool isLast;
-  final ColorScheme colors;
-  final Widget child;
-
-  const _BookCardSlice({
-    required this.isFirst,
-    required this.isLast,
-    required this.colors,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const radius = Radius.circular(AppDimensions.radiusMd);
-    final side = BorderSide(
-      color: colors.outlineVariant.withValues(alpha: 0.3),
-    );
-    final borderRadius = BorderRadius.vertical(
-      top: isFirst ? radius : Radius.zero,
-      bottom: isLast ? radius : Radius.zero,
-    );
-    // The border is drawn over the content, as the card drew its outline,
-    // so it does not pad the row the way a Container's border would.
-    Widget slice = DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: borderRadius,
-      ),
-      child: DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-          border: Border(
-            left: side,
-            right: side,
-            top: isFirst ? side : BorderSide.none,
-            bottom: isLast ? side : BorderSide.none,
-          ),
-          borderRadius: borderRadius,
-        ),
-        // The tiles' ink splashes paint on the nearest Material; without
-        // this one they would draw on the screen's Material, under the
-        // background above.
-        child: Material(type: MaterialType.transparency, child: child),
-      ),
-    );
-    if (isFirst || isLast) {
-      slice = ClipRRect(borderRadius: borderRadius, child: slice);
-    }
-    return Padding(
-      padding: EdgeInsets.only(bottom: isLast ? 6 : 0),
-      child: slice,
-    );
-  }
-}
-
-/// Inner highlight for a row inside a grouped book card — no outer margin
-/// so header and results span the full card width consistently.
-class _GroupRowHighlight extends StatelessWidget {
-  final bool selected;
-  final ColorScheme colors;
-  final Widget child;
-
-  const _GroupRowHighlight({
-    super.key,
-    required this.selected,
-    required this.colors,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-      decoration: BoxDecoration(
-        color: selected
-            ? colors.primary.withValues(alpha: 0.10)
-            : Colors.transparent,
         border: Border.all(
           color: selected
               ? colors.primary.withValues(alpha: 0.6)

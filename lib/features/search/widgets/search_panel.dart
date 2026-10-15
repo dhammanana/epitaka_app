@@ -22,6 +22,7 @@ import '../providers/search_provider.dart';
 import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
+import 'search_row_list.dart';
 
 /// A search panel that can be shown in a sidebar.
 ///
@@ -95,19 +96,16 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final row = _searchNav.selectedRow;
     if (row == null || identical(row, _lastSelectedRow)) return;
     _lastSelectedRow = row;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _selectedRowKey.currentContext;
-      if (ctx != null && ctx.mounted) {
-        Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.25,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _builtRows.reveal(
+        selectedKey: _selectedRowKey,
+        nav: _searchNav,
+        isMounted: () => mounted,
+      ),
+    );
   }
+
+  final BuiltSearchRows _builtRows = BuiltSearchRows();
 
   /// Keep the navigator in sync with the provider state.
   void _syncNavigator(SearchState searchState) {
@@ -802,117 +800,104 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     }
 
     final rows = _searchNav.rows;
-    int rowIndexOf(SearchRowKind kind, int summaryIndex, [int? paraId]) {
-      return rows.indexWhere(
-        (r) =>
-            r.kind == kind &&
-            r.summaryIndex == summaryIndex &&
-            (paraId == null || r.item?.paraId == paraId),
-      );
-    }
-
     return ListView.builder(
       controller: _resultsScrollController,
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 24),
-      itemCount: summaries.length,
-      itemBuilder: (context, summaryIndex) {
-        final summary = summaries[summaryIndex];
-        final headerIndex = rowIndexOf(SearchRowKind.bookHeader, summaryIndex);
-        final loadMoreIndex = rowIndexOf(SearchRowKind.loadMore, summaryIndex);
-        final items = summary.loadedPages.expand((p) => p).toList();
+      // One list item per navigator row, so only the rows near the screen
+      // are built. A book used to be one item holding every loaded hit,
+      // which built thousands of tiles per redraw for a common word.
+      itemCount: rows.length,
+      itemBuilder: (context, index) => _builtRows.track(
+        index,
+        _buildRow(index, rows, colors, query, loc),
+      ),
+    );
+  }
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 6),
-          elevation: 0,
-          color: colors.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-            side: BorderSide(
-              color: colors.outlineVariant.withValues(alpha: 0.3),
+  Widget _buildRow(
+    int index,
+    List<SearchResultRow> rows,
+    ColorScheme colors,
+    String query,
+    AppLocalizations loc,
+  ) {
+    final row = rows[index];
+    final isSelected = index == _searchNav.selected;
+    final summaryIndex = row.summaryIndex;
+
+    final Widget content;
+    final bool dividerBelow;
+    switch (row.kind) {
+      case SearchRowKind.headingCard:
+        return const SizedBox.shrink(); // the panel never renders heading rows
+      case SearchRowKind.bookHeader:
+        final summary = row.summary!;
+        dividerBelow = summary.isExpanded;
+        content = _BookResultHeader(
+          summary: summary,
+          colors: colors,
+          query: query,
+          onToggleExpanded: () {
+            final notifier = ref.read(searchProvider.notifier);
+            if (summary.isExpanded) {
+              notifier.collapseBook(summaryIndex);
+            } else {
+              notifier.expandBook(summaryIndex);
+            }
+          },
+        );
+      case SearchRowKind.resultItem:
+        final summary = row.summary!;
+        final item = row.item!;
+        dividerBelow = true;
+        content = _ResultItemTile(
+          item: item,
+          colors: colors,
+          query: query,
+          onTap: () => _onResultTap(summary, item),
+        );
+      case SearchRowKind.loadMore:
+        final summary = row.summary!;
+        dividerBelow = false;
+        content = SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            onPressed: () =>
+                ref.read(searchProvider.notifier).loadMoreForBook(summaryIndex),
+            icon: const Icon(Icons.expand_more, size: 14),
+            label: Text(
+              loc.showNMore(summary.totalCount - summary.loadedCount),
+              style: AppTypography.labelSmall.copyWith(
+                color: colors.primary,
+                fontSize: 10,
+              ),
             ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _GroupRowHighlight(
-                key: headerIndex == _searchNav.selected
-                    ? _selectedRowKey
-                    : null,
-                selected: headerIndex == _searchNav.selected,
-                colors: colors,
-                child: _BookResultHeader(
-                  summary: summary,
-                  colors: colors,
-                  query: query,
-                  onToggleExpanded: () {
-                    final notifier = ref.read(searchProvider.notifier);
-                    if (summary.isExpanded) {
-                      notifier.collapseBook(summaryIndex);
-                    } else {
-                      notifier.expandBook(summaryIndex);
-                    }
-                  },
-                ),
-              ),
-              if (summary.isExpanded) ...[
-                const Divider(height: 1, indent: 8, endIndent: 8),
-                for (final item in items)
-                  Builder(
-                    builder: (context) {
-                      final itemIndex = rowIndexOf(
-                        SearchRowKind.resultItem,
-                        summaryIndex,
-                        item.paraId,
-                      );
-                      final isSelected = itemIndex == _searchNav.selected;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _GroupRowHighlight(
-                            key: isSelected ? _selectedRowKey : null,
-                            selected: isSelected,
-                            colors: colors,
-                            child: _ResultItemTile(
-                              item: item,
-                              colors: colors,
-                              query: query,
-                              onTap: () => _onResultTap(summary, item),
-                            ),
-                          ),
-                          const Divider(height: 1, indent: 8, endIndent: 8),
-                        ],
-                      );
-                    },
-                  ),
-                if (loadMoreIndex >= 0)
-                  _GroupRowHighlight(
-                    selected: loadMoreIndex == _searchNav.selected,
-                    colors: colors,
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: TextButton.icon(
-                        onPressed: () => ref
-                            .read(searchProvider.notifier)
-                            .loadMoreForBook(summaryIndex),
-                        icon: const Icon(Icons.expand_more, size: 14),
-                        label: Text(
-                          loc.showNMore(
-                            summary.totalCount - summary.loadedCount,
-                          ),
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.primary,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ],
-          ),
         );
-      },
+    }
+
+    return BookCardSlice(
+      isFirst: row.kind == SearchRowKind.bookHeader,
+      isLast:
+          index + 1 >= rows.length ||
+          rows[index + 1].kind == SearchRowKind.bookHeader,
+      radius: AppDimensions.radiusSm,
+      colors: colors,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GroupRowHighlight(
+            // The load-more row never carried the scroll key.
+            key: row.kind == SearchRowKind.loadMore || !isSelected
+                ? null
+                : _selectedRowKey,
+            selected: isSelected,
+            colors: colors,
+            child: content,
+          ),
+          if (dividerBelow) const Divider(height: 1, indent: 8, endIndent: 8),
+        ],
+      ),
     );
   }
 }
@@ -1038,42 +1023,6 @@ class _BookResultHeader extends ConsumerWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Inner highlight for a row inside a grouped book card — no outer margin
-/// so every row spans the full card width consistently.
-class _GroupRowHighlight extends StatelessWidget {
-  final bool selected;
-  final ColorScheme colors;
-  final Widget child;
-
-  const _GroupRowHighlight({
-    super.key,
-    required this.selected,
-    required this.colors,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-      decoration: BoxDecoration(
-        color: selected
-            ? colors.primary.withValues(alpha: 0.10)
-            : Colors.transparent,
-        border: Border.all(
-          color: selected
-              ? colors.primary.withValues(alpha: 0.6)
-              : Colors.transparent,
-          width: 1.2,
-        ),
-      ),
-      child: child,
     );
   }
 }

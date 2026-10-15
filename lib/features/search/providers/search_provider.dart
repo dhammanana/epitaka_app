@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -1335,7 +1336,17 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<List<RawHeading>> _allHeadings(EpitakaDatabase epitakaDb) async {
     final cached = _cachedHeadings;
     if (cached != null) return cached;
+    // The warm-up and the first search usually ask at the same time; on a
+    // Pixel 8 Pro they built the list twice, 300 ms apart.
+    return _headingsBuild ??= _buildHeadings(
+      epitakaDb,
+    ).whenComplete(() => _headingsBuild = null);
+  }
 
+  Future<List<RawHeading>>? _headingsBuild;
+
+  Future<List<RawHeading>> _buildHeadings(EpitakaDatabase epitakaDb) async {
+    _headingsBuildCount++;
     final headingsSw = Stopwatch()..start();
     // Skip `level = 10` rows: those are pure numeric section markers
     // (122k of them in the real corpus — "1", "2", …), not titles a user
@@ -1349,17 +1360,29 @@ class SearchNotifier extends StateNotifier<SearchState> {
           'ORDER BY book_id, para_id',
         )
         .get();
+    final sqlMs = headingsSw.elapsedMilliseconds;
 
+    // The main-isolate share of the build after the query: what is left
+    // to freeze a frame once the cleaning runs elsewhere.
+    final mainSw = Stopwatch()..start();
+    final titles = [
+      for (final row in rows) (row.data['title'] as String?) ?? '',
+    ];
+    final keysFuture = _headingKeysInBackground(titles);
+    mainSw.stop();
+    final keys = await keysFuture;
+    mainSw.start();
     final headings = <RawHeading>[
-      for (final row in rows)
+      for (var i = 0; i < rows.length; i++)
         (
-          bookId: row.data['book_id'] as String,
-          paraId: row.data['para_id'] as int,
-          title: (row.data['title'] as String?) ?? '',
-          level: row.data['level'] as int?,
-          key: normalizePaliFuzzy((row.data['title'] as String?) ?? ''),
+          bookId: rows[i].data['book_id'] as String,
+          paraId: rows[i].data['para_id'] as int,
+          title: titles[i],
+          level: rows[i].data['level'] as int?,
+          key: keys[i],
         ),
     ];
+    mainSw.stop();
     // Don't cache an empty result — a concurrent database swap may have
     // raced this query; an empty cache would poison every later search.
     if (headings.isNotEmpty) {
@@ -1367,10 +1390,26 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
     debugPrint(
       '[PERF] search headings ms=${headingsSw.elapsedMilliseconds} '
-      'rows=${headings.length}',
+      'rows=${headings.length} sql=$sqlMs main=${mainSw.elapsedMilliseconds}',
     );
     return headings;
   }
+
+  // Static, so the isolate's closure cannot capture the notifier, which
+  // cannot be sent to another isolate. Cleaning 38,069 titles is too long
+  // for one frame on a phone.
+  static Future<List<String>> _headingKeysInBackground(List<String> titles) =>
+      Isolate.run(() => [for (final t in titles) normalizePaliFuzzy(t)]);
+
+  int _headingsBuildCount = 0;
+
+  /// How many times the heading list was read and cleaned.
+  @visibleForTesting
+  int get headingsBuildCount => _headingsBuildCount;
+
+  @visibleForTesting
+  Future<List<RawHeading>> headingsForTesting() async =>
+      _allHeadings(await _epitakaDb());
 
   /// Get suggestions for autocomplete.
   ///
