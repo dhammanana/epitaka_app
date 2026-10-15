@@ -1129,7 +1129,10 @@ class AppLocalizations {
   String get dictionaryHeaderTop => _t('Jump to the top');
   String get dictionaryHeaderHistory => _t('Search history');
   String get dictionaryHeaderHide =>
-      _t('Hide these icons (show them again in Settings)');
+      _t('Hide these icons (show them again in Dictionary Settings)');
+  String get dictionaryHeaderHideTitle => _t('Hide the icons?');
+  String get dictionaryHeaderHideMessage =>
+      _t('You can show them again in Dictionary Settings.');
   String get dictionaryHeaderIconsShow =>
       _t('Show the icons in the dictionary header');
   String get dictionaryHeaderHistoryTitle => _t('Search history');

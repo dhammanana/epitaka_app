@@ -91,11 +91,40 @@ class DictionaryHeaderIcons extends ConsumerWidget {
         DictionaryHeaderIconButton(
           icon: Icons.visibility_off_outlined,
           tooltip: loc.dictionaryHeaderHide,
-          onTap: () =>
-              ref.read(dictionaryHeaderIconsProvider.notifier).set(false),
+          onTap: () => _hide(context, ref),
         ),
       ],
     );
+  }
+
+  /// Hides the row. The first time, a dialog says where to show it again: a
+  /// phone has no hover, so the button's tooltip alone is never seen there.
+  Future<void> _hide(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(dictionaryHeaderIconsProvider.notifier);
+    if (!await notifier.hideConfirmed()) {
+      if (!context.mounted) return;
+      final loc = AppLocalizations.of(context);
+      final hide = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(loc.dictionaryHeaderHideTitle),
+          content: Text(loc.dictionaryHeaderHideMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(loc.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(loc.hideLabel),
+            ),
+          ],
+        ),
+      );
+      if (hide != true) return;
+      await notifier.setHideConfirmed();
+    }
+    await notifier.set(false);
   }
 }
 
