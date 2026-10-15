@@ -15,6 +15,7 @@ import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:epitaka/features/settings/screens/dictionary_settings_screen.dart';
 import 'package:epitaka/features/settings/widgets/settings_section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -234,6 +235,196 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'kam');
       await settleShell(tester, frames: 3);
       expect(find.byType(LookupHistoryList), findsNothing);
+    });
+  });
+
+  group('history list keys', () {
+    void keyboardInput() {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(
+        () => FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic,
+      );
+    }
+
+    FocusNode searchNode(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField).first).focusNode!;
+
+    Future<void> openList(WidgetTester tester, ProviderContainer c) async {
+      c.read(dictionaryHistoryRequestProvider.notifier).state++;
+      await settleShell(tester, frames: 3);
+      expect(find.byType(LookupHistoryList), findsOneWidget);
+    }
+
+    testWidgets('Down then Enter looks up the next word at once', (
+      tester,
+    ) async {
+      keyboardInput();
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await settleShell(tester);
+      expect(find.byType(LookupHistoryList), findsNothing);
+      expect(fieldText(tester), 'kamma');
+    });
+
+    testWidgets('Escape closes the list and the field gets its focus back', (
+      tester,
+    ) async {
+      keyboardInput();
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+      expect(searchNode(tester).hasFocus, isFalse);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await settleShell(tester, frames: 3);
+      expect(find.byType(LookupHistoryList), findsNothing);
+      expect(searchNode(tester).hasFocus, isTrue);
+      expect(fieldText(tester), 'dhamma');
+    });
+
+    testWidgets('Escape closes the list in the sheet too', (tester) async {
+      keyboardInput();
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, const DictionarySheet(initialWord: 'dhamma')),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await settleShell(tester, frames: 3);
+      expect(find.byType(LookupHistoryList), findsNothing);
+      expect(searchNode(tester).hasFocus, isTrue);
+    });
+
+    testWidgets('Down keeps going through a list longer than the window', (
+      tester,
+    ) async {
+      keyboardInput();
+      screen(tester, h: 400);
+      final c = await makeShellContainer(tester, dbFile, words: ['dhamma']);
+      final history = c.read(lookupHistoryProvider);
+      for (var i = 0; i < 40; i++) {
+        history.navigateTo('w${i.toString().padLeft(2, '0')}');
+      }
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+
+      // Row 0 is dhamma, the word just looked up; row i is w(40 - i).
+      for (var i = 0; i < 30; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      final row = FocusManager.instance.primaryFocus!.context!
+          .findAncestorWidgetOfExactType<SuggestionTile>();
+      expect(row?.word, 'w10');
+    });
+
+    testWidgets(
+      'Escape does not hand focus to a node that has left the screen',
+      (tester) async {
+        keyboardInput();
+        screen(tester);
+        final c = await container(tester);
+        final before = FocusNode();
+        addTearDown(before.dispose);
+        late StateSetter set;
+        var holderShown = true;
+        var listOpen = false;
+        await tester.pumpWidget(
+          wrapShell(
+            c,
+            StatefulBuilder(
+              builder: (context, setState) {
+                set = setState;
+                return Column(
+                  children: [
+                    if (holderShown)
+                      Focus(
+                        focusNode: before,
+                        child: const SizedBox(height: 10),
+                      ),
+                    if (listOpen)
+                      Expanded(
+                        child: LookupHistoryList(
+                          words: const ['kamma'],
+                          colors: Theme.of(context).colorScheme,
+                          onTap: (_) {},
+                          onClose: () => setState(() => listOpen = false),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+        before.requestFocus();
+        await tester.pump();
+        set(() => listOpen = true);
+        await settleShell(tester, frames: 3);
+        expect(before.hasFocus, isFalse);
+
+        set(() => holderShown = false);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await settleShell(tester, frames: 3);
+        expect(find.byType(LookupHistoryList), findsNothing);
+
+        // The node comes back later: it must not grab focus by an old request.
+        set(() => holderShown = true);
+        await settleShell(tester, frames: 3);
+        expect(before.hasFocus, isFalse);
+      },
+    );
+
+    testWidgets('a touch device keeps its focus when the list opens', (
+      tester,
+    ) async {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.alwaysTouch;
+      addTearDown(
+        () => FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic,
+      );
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+
+      expect(searchNode(tester).hasFocus, isTrue);
     });
   });
 
