@@ -1240,6 +1240,7 @@ class AppDatabase extends _$AppDatabase {
         )
         .get();
 
+    _perfIndex('pali', 'read', stopwatch, pageRows.length);
     debugPrint('[INDEX] Found ${pageRows.length} para_id groups to index');
     final totalPages = pageRows.length;
     onProgress?.call(0.02, 'Indexing $totalPages Pāli pages…');
@@ -1409,6 +1410,7 @@ class AppDatabase extends _$AppDatabase {
     debugPrint(
       '[INDEX] Pāli index built: $insertedPages pages, $wordCount words in ${stopwatch.elapsed.inSeconds}s',
     );
+    _perfIndex('pali', 'done', stopwatch, insertedPages);
     return (pages: insertedPages, words: wordCount);
   }
 
@@ -1435,6 +1437,7 @@ class AppDatabase extends _$AppDatabase {
         )
         .get();
 
+    _perfIndex(langCode, 'read', stopwatch, sentenceRows.length);
     debugPrint(
       '[INDEX] Found ${sentenceRows.length} $langCode paragraphs to index',
     );
@@ -1593,6 +1596,7 @@ class AppDatabase extends _$AppDatabase {
       '[INDEX] $langCode translation index built: $count paragraphs, '
       '${wordCounts.length} words in ${stopwatch.elapsed.inSeconds}s',
     );
+    _perfIndex(langCode, 'done', stopwatch, count);
     return count;
   }
 
@@ -2457,4 +2461,13 @@ class BookFilterOption {
     this.nikaya,
     this.selected = true,
   });
+}
+
+/// One `[PERF] index` line: elapsed time, rows, and the app's memory now and
+/// at its peak, because the index build holds the whole text in memory.
+void _perfIndex(String area, String step, Stopwatch sw, int rows) {
+  debugPrint(
+    '[PERF] index $area step=$step ms=${sw.elapsedMilliseconds} rows=$rows '
+    'rssMB=${ProcessInfo.currentRss >> 20} maxRssMB=${ProcessInfo.maxRss >> 20}',
+  );
 }

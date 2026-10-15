@@ -439,6 +439,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // Books, the headings bulk load, and both count queries run
       // concurrently so a cold headings cache overlaps the FTS counts
       // instead of stalling behind them.
+      final countSw = Stopwatch()..start();
       final epitakaDbFuture = _epitakaDb();
       final headingsFuture = epitakaDbFuture.then<List<RawHeading>>(
         (db) => _allHeadings(db),
@@ -489,6 +490,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
               (combinedCounts[entry.key] ?? 0) + entry.value;
         }
       }
+
+      debugPrint(
+        '[PERF] search count ms=${countSw.elapsedMilliseconds} '
+        'books=${combinedCounts.length} '
+        'hits=${combinedCounts.values.fold<int>(0, (a, b) => a + b)}',
+      );
 
       // ── Search headings ───────────────────────────────────────────
       final headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
@@ -603,21 +610,37 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   Future<void> _loadBookPages(String bookId, {bool fetchAll = false}) async {
+    final sw = Stopwatch()..start();
+    final loaded = await _loadBookPagesLoop(bookId, fetchAll: fetchAll);
+    if (fetchAll && loaded.pages > 0) {
+      debugPrint(
+        '[PERF] search open-book book=$bookId ms=${sw.elapsedMilliseconds} '
+        'hits=${loaded.hits} pages=${loaded.pages} commits=${loaded.pages}',
+      );
+    }
+  }
+
+  Future<({int pages, int hits})> _loadBookPagesLoop(
+    String bookId, {
+    bool fetchAll = false,
+  }) async {
     final gen = _searchGen;
+    var pages = 0;
+    var hits = 0;
     while (true) {
-      if (gen != _searchGen) return;
+      if (gen != _searchGen) return (pages: pages, hits: hits);
       final current = state;
-      if (current is! SearchResults) return;
+      if (current is! SearchResults) return (pages: pages, hits: hits);
       final idx = current.bookSummaries.indexWhere(
         (s) => s.book.bookId == bookId,
       );
-      if (idx < 0) return;
+      if (idx < 0) return (pages: pages, hits: hits);
       final summary = current.bookSummaries[idx];
-      if (summary.fullyLoaded) return;
+      if (summary.fullyLoaded) return (pages: pages, hits: hits);
 
       final offset = summary.loadedPages.length * kSearchPageSize;
       final remaining = summary.totalCount - offset;
-      if (remaining <= 0) return;
+      if (remaining <= 0) return (pages: pages, hits: hits);
       final pageSize = remaining < kSearchPageSize
           ? remaining
           : kSearchPageSize;
@@ -629,10 +652,14 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query: current.query,
         distance: current.distance,
       );
-      if (gen != _searchGen) return;
-      if (items.isEmpty) return;
+      if (gen != _searchGen) return (pages: pages, hits: hits);
+      if (items.isEmpty) return (pages: pages, hits: hits);
       _commitBookPageItems(bookId, items);
-      if (!fetchAll || items.length < pageSize) return;
+      pages++;
+      hits += items.length;
+      if (!fetchAll || items.length < pageSize) {
+        return (pages: pages, hits: hits);
+      }
     }
   }
 
@@ -1187,6 +1214,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     final cached = _cachedHeadings;
     if (cached != null) return cached;
 
+    final headingsSw = Stopwatch()..start();
     // Skip `level = 10` rows: those are pure numeric section markers
     // (122k of them in the real corpus — "1", "2", …), not titles a user
     // would search for, and they'd flood the results. The app's section
@@ -1215,6 +1243,10 @@ class SearchNotifier extends StateNotifier<SearchState> {
     if (headings.isNotEmpty) {
       _cachedHeadings = headings;
     }
+    debugPrint(
+      '[PERF] search headings ms=${headingsSw.elapsedMilliseconds} '
+      'rows=${headings.length}',
+    );
     return headings;
   }
 
