@@ -170,6 +170,17 @@ class ReadingHistory extends Table {
   tables: [Bookmarks, ReadingHistory, TtsReplacements, Annotations],
 )
 class AppDatabase extends _$AppDatabase {
+  /// Paragraphs per read while building a search index. One read of the
+  /// whole canon peaked at 1,303 MB on a Pixel 8 Pro; reading 2,000
+  /// paragraphs (about 1 MB of Pāli text) at a time peaked at 455 MB, with
+  /// the whole build 7% slower (one run each).
+  @visibleForTesting
+  static int indexReadChunk = 2000;
+
+  /// The most rows one read returned during the last index build.
+  @visibleForTesting
+  static int indexLargestRead = 0;
+
   // ── Chat Threads & Messages (raw SQL tables) ──────────────────────────
 
   /// Ensure chat_* tables exist (called on first use).
@@ -1209,6 +1220,56 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// How many (book_id, para_id) paragraphs of `sentences` match [where].
+  Future<int> _countParagraphs(GeneratedDatabase db, String where) async {
+    final row = await db
+        .customSelect(
+          'SELECT count(*) AS c FROM (SELECT 1 FROM sentences '
+          'WHERE $where GROUP BY book_id, para_id)',
+        )
+        .getSingle();
+    return row.data['c'] as int;
+  }
+
+  /// The paragraphs of `sentences` matching [where], grouped by
+  /// (book_id, para_id) with [select]'s columns, in that order, at most
+  /// [indexReadChunk] at a time. Each page starts after the last paragraph
+  /// of the one before (keyset paging), so no paragraph is split or read
+  /// twice.
+  Stream<List<QueryRow>> _paragraphPages(
+    GeneratedDatabase db,
+    String select,
+    String where,
+  ) async* {
+    String? lastBook;
+    int? lastPara;
+    while (true) {
+      final rows = await db
+          .customSelect(
+            '$select FROM sentences WHERE $where '
+            '${lastBook == null ? '' : 'AND (book_id, para_id) > (?, ?) '}'
+            'GROUP BY book_id, para_id ORDER BY book_id, para_id LIMIT ?',
+            variables: [
+              if (lastBook != null) ...[
+                Variable.withString(lastBook),
+                Variable.withInt(lastPara!),
+              ],
+              Variable.withInt(indexReadChunk),
+            ],
+          )
+          .get();
+      if (rows.isEmpty) return;
+      if (rows.length > indexLargestRead) indexLargestRead = rows.length;
+      // Taken before the caller sees the page: the caller skips rows that
+      // clean to nothing, and the next page must start after the last row
+      // read, not the last row kept.
+      lastBook = rows.last.data['book_id'] as String;
+      lastPara = rows.last.data['para_id'] as int;
+      yield rows;
+      if (rows.length < indexReadChunk) return;
+    }
+  }
+
   /// Build the full-text search index from the main Tipitaka database.
   /// This should be called once after the app database is first opened.
   /// Returns the number of indexed pages and the number of unique words.
@@ -1219,30 +1280,24 @@ class AppDatabase extends _$AppDatabase {
     debugPrint('[INDEX] Building Pāli search index…');
     final stopwatch = Stopwatch()..start();
 
-    // Get all sentences grouped by (book_id, para_id) BEFORE opening the
-    // write transaction below, since epitakaDb is a different connection
-    // and we don't want to hold our own transaction open while waiting on
-    // another database.
-    //
     // Indexing by para_id (rather than the old vripage/page grouping)
     // means each FTS row is one paragraph, so a match points straight at
     // its paragraph instead of the whole page — no separate pali_definition
     // JOIN is needed afterwards to work out where on the page the match
     // actually occurred.
+    //
+    // The paragraphs are read a page at a time inside the transaction
+    // below; reading the whole canon first peaked at 1,303 MB on a phone.
+    // epitakaDb is a different connection, so its reads never wait on this
+    // database's transaction.
     debugPrint('[INDEX] Querying sentences from epitaka.db…');
-    final pageRows = await epitakaDb
-        .customSelect(
-          "SELECT book_id, para_id, group_concat(pali, ' ') as pali_text "
-          'FROM sentences '
-          'WHERE para_id IS NOT NULL '
-          'GROUP BY book_id, para_id '
-          'ORDER BY book_id, para_id',
-        )
-        .get();
+    const paliSelect =
+        "SELECT book_id, para_id, group_concat(pali, ' ') as pali_text";
+    const paliWhere = 'para_id IS NOT NULL';
+    final totalPages = await _countParagraphs(epitakaDb, paliWhere);
 
-    _perfIndex('pali', 'read', stopwatch, pageRows.length);
-    debugPrint('[INDEX] Found ${pageRows.length} para_id groups to index');
-    final totalPages = pageRows.length;
+    _perfIndex('pali', 'read', stopwatch, totalPages);
+    debugPrint('[INDEX] Found $totalPages para_id groups to index');
     onProgress?.call(0.02, 'Indexing $totalPages Pāli pages…');
 
     int insertedPages = 0;
@@ -1298,53 +1353,59 @@ class AppDatabase extends _$AppDatabase {
       int yieldCounter = 0;
       final ftsBuffer = <Object?>[]; // flat book_id, para_id, pali_text tuples
 
-      for (final row in pageRows) {
-        final bookId = row.data['book_id'] as String;
-        final paraId = row.data['para_id'] as int;
-        var paliText = row.data['pali_text'] as String;
+      await for (final pageRows in _paragraphPages(
+        epitakaDb,
+        paliSelect,
+        paliWhere,
+      )) {
+        for (final row in pageRows) {
+          final bookId = row.data['book_id'] as String;
+          final paraId = row.data['para_id'] as int;
+          var paliText = row.data['pali_text'] as String;
 
-        // Lowercase BEFORE cleaning/indexing so "Citta" and "citta" become
-        // the same FTS token and the same search_words entry. Without
-        // this, suggestions treated them as two unrelated words.
-        paliText = _cleanPaliText(paliText.toLowerCase());
-        if (paliText.isEmpty) continue;
+          // Lowercase BEFORE cleaning/indexing so "Citta" and "citta" become
+          // the same FTS token and the same search_words entry. Without
+          // this, suggestions treated them as two unrelated words.
+          paliText = _cleanPaliText(paliText.toLowerCase());
+          if (paliText.isEmpty) continue;
 
-        ftsBuffer
-          ..add(bookId)
-          ..add(paraId)
-          ..add(paliText);
-        insertedPages++;
-        yieldCounter++;
+          ftsBuffer
+            ..add(bookId)
+            ..add(paraId)
+            ..add(paliText);
+          insertedPages++;
+          yieldCounter++;
 
-        for (final w in paliText.split(RegExp(r'\s+'))) {
-          if (w.isNotEmpty) {
-            wordCounts[w] = (wordCounts[w] ?? 0) + 1;
+          for (final w in paliText.split(RegExp(r'\s+'))) {
+            if (w.isNotEmpty) {
+              wordCounts[w] = (wordCounts[w] ?? 0) + 1;
+            }
           }
-        }
 
-        if (insertedPages % 50 == 0 || insertedPages == totalPages) {
-          final p = 0.02 + (insertedPages / totalPages) * 0.50;
-          onProgress?.call(
-            p.clamp(0.02, 0.52),
-            'Indexing Pāli texts… $insertedPages / $totalPages pages',
-          );
-        }
+          if (insertedPages % 50 == 0 || insertedPages == totalPages) {
+            final p = 0.02 + (insertedPages / totalPages) * 0.50;
+            onProgress?.call(
+              p.clamp(0.02, 0.52),
+              'Indexing Pāli texts… $insertedPages / $totalPages pages',
+            );
+          }
 
-        if (ftsBuffer.length >= insertChunk * 3) {
-          await _flushBatchInsert(
-            'search_fts',
-            'book_id, para_id, pali_text',
-            ftsBuffer,
-            3,
-          );
-        }
+          if (ftsBuffer.length >= insertChunk * 3) {
+            await _flushBatchInsert(
+              'search_fts',
+              'book_id, para_id, pali_text',
+              ftsBuffer,
+              3,
+            );
+          }
 
-        // Yielding inside a transaction still keeps the UI responsive
-        // (this is cooperative multitasking on the same isolate) without
-        // giving up the atomicity of the transaction itself.
-        if (yieldCounter >= yieldInterval) {
-          await Future.delayed(Duration.zero);
-          yieldCounter = 0;
+          // Yielding inside a transaction still keeps the UI responsive
+          // (this is cooperative multitasking on the same isolate) without
+          // giving up the atomicity of the transaction itself.
+          if (yieldCounter >= yieldInterval) {
+            await Future.delayed(Duration.zero);
+            yieldCounter = 0;
+          }
         }
       }
       await _flushBatchInsert(
@@ -1427,23 +1488,15 @@ class AppDatabase extends _$AppDatabase {
     final tableName = 'search_fts_$langCode';
 
     debugPrint('[INDEX] Querying $langCode translation sentences…');
-    final sentenceRows = await translationDb
-        .customSelect(
-          "SELECT book_id, para_id, group_concat(translation, ' ') as translation_text "
-          'FROM sentences '
-          "WHERE translation IS NOT NULL AND translation != '' "
-          'GROUP BY book_id, para_id '
-          'ORDER BY book_id, para_id',
-        )
-        .get();
+    const transSelect =
+        "SELECT book_id, para_id, group_concat(translation, ' ') as translation_text";
+    const transWhere = "translation IS NOT NULL AND translation != ''";
+    final totalRows = await _countParagraphs(translationDb, transWhere);
 
-    _perfIndex(langCode, 'read', stopwatch, sentenceRows.length);
-    debugPrint(
-      '[INDEX] Found ${sentenceRows.length} $langCode paragraphs to index',
-    );
-    if (sentenceRows.isEmpty) return 0;
+    _perfIndex(langCode, 'read', stopwatch, totalRows);
+    debugPrint('[INDEX] Found $totalRows $langCode paragraphs to index');
+    if (totalRows == 0) return 0;
 
-    final totalRows = sentenceRows.length;
     onProgress?.call(
       0.0,
       'Indexing $totalRows ${langCode.toUpperCase()} translation paragraphs…',
@@ -1489,64 +1542,70 @@ class AppDatabase extends _$AppDatabase {
       final ftsBuffer =
           <Object?>[]; // flat book_id, para_id, translation tuples
 
-      for (final row in sentenceRows) {
-        final bookId = row.data['book_id'] as String;
-        final paraId = row.data['para_id'] as int;
-        var translationText = row.data['translation_text'] as String;
+      await for (final sentenceRows in _paragraphPages(
+        translationDb,
+        transSelect,
+        transWhere,
+      )) {
+        for (final row in sentenceRows) {
+          final bookId = row.data['book_id'] as String;
+          final paraId = row.data['para_id'] as int;
+          var translationText = row.data['translation_text'] as String;
 
-        // Lowercase up front (same fix as the Pāli index) so "Citta" and
-        // "citta" collapse into one suggestion entry.
-        translationText = translationText
-            .toLowerCase()
-            .replaceAll(RegExp(r'<[^>]*>'), '')
-            .replaceAll(
-              RegExp(
-                r'[\[\](){}⟨⟩:;.,!?…—–\-"«»“”'
-                "'"
-                r']',
-              ),
-              '',
-            )
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim();
-        if (translationText.isEmpty) continue;
+          // Lowercase up front (same fix as the Pāli index) so "Citta" and
+          // "citta" collapse into one suggestion entry.
+          translationText = translationText
+              .toLowerCase()
+              .replaceAll(RegExp(r'<[^>]*>'), '')
+              .replaceAll(
+                RegExp(
+                  r'[\[\](){}⟨⟩:;.,!?…—–\-"«»“”'
+                  "'"
+                  r']',
+                ),
+                '',
+              )
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .trim();
+          if (translationText.isEmpty) continue;
 
-        ftsBuffer
-          ..add(bookId)
-          ..add(paraId)
-          ..add(translationText);
-        count++;
-        yieldCounter++;
+          ftsBuffer
+            ..add(bookId)
+            ..add(paraId)
+            ..add(translationText);
+          count++;
+          yieldCounter++;
 
-        for (final w in translationText.split(' ')) {
-          if (w.length > 1) {
-            wordCounts[w] = (wordCounts[w] ?? 0) + 1;
+          for (final w in translationText.split(' ')) {
+            if (w.length > 1) {
+              wordCounts[w] = (wordCounts[w] ?? 0) + 1;
+            }
           }
-        }
 
-        // Report progress every 50 rows — reporting every 10 (as before)
-        // meant firing a Riverpod state update roughly 10x more often
-        // than necessary, which itself was a meaningful chunk of the
-        // "translation indexing is slow" complaint.
-        if (count % 50 == 0 || count == totalRows) {
-          final p = (count / totalRows).clamp(0.0, 1.0);
-          onProgress?.call(
-            p,
-            'Indexing ${langCode.toUpperCase()} translation… $count / $totalRows paragraphs',
-          );
-        }
+          // Report progress every 50 rows — reporting every 10 (as before)
+          // meant firing a Riverpod state update roughly 10x more often
+          // than necessary, which itself was a meaningful chunk of the
+          // "translation indexing is slow" complaint.
+          if (count % 50 == 0 || count == totalRows) {
+            final p = (count / totalRows).clamp(0.0, 1.0);
+            onProgress?.call(
+              p,
+              'Indexing ${langCode.toUpperCase()} translation… $count / $totalRows paragraphs',
+            );
+          }
 
-        if (ftsBuffer.length >= insertChunk * 3) {
-          await _flushBatchInsert(
-            tableName,
-            'book_id, para_id, translation_text',
-            ftsBuffer,
-            3,
-          );
-        }
-        if (yieldCounter >= yieldInterval) {
-          await Future.delayed(Duration.zero);
-          yieldCounter = 0;
+          if (ftsBuffer.length >= insertChunk * 3) {
+            await _flushBatchInsert(
+              tableName,
+              'book_id, para_id, translation_text',
+              ftsBuffer,
+              3,
+            );
+          }
+          if (yieldCounter >= yieldInterval) {
+            await Future.delayed(Duration.zero);
+            yieldCounter = 0;
+          }
         }
       }
       await _flushBatchInsert(

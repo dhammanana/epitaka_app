@@ -2,13 +2,14 @@ import 'dart:developer' as developer;
 import 'dart:io' show ProcessInfo;
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kProfileMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/stall_meter.dart';
 import '../../../core/utils/startup_timing.dart';
 import '../data/book_link_data.dart';
 import '../services/book_link_service.dart';
@@ -307,7 +308,21 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
         );
       }
 
-      final result = await _loadAllParagraphs();
+      // Profile builds only: the meter's 1 ms timer would outlive a test
+      // whose load never finishes.
+      final meter = kProfileMode ? StallMeter() : null;
+      final ({List<ParagraphData> paragraphs, BookLinksMap bookLinks})? result;
+      try {
+        result = await _loadAllParagraphs();
+      } finally {
+        final stall = meter?.stop();
+        if (stall != null) {
+          debugPrint(
+            '[PERF] book open main book=$_bookId '
+            'busy=${stall.busyMs} stallMax=${stall.maxGapMs}',
+          );
+        }
+      }
       // Released while loading: its tab closed (see [readerDataProvider]).
       if (!mounted) return;
 
@@ -521,20 +536,29 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       );
     }
 
-    // ── Get all distinct para_ids (no LIMIT/OFFSET) ──────────────────
-    final paraSw = Stopwatch()..start();
-    final paraRows = await db
+    // ── Get sentences for all para_ids ───────────────────────────────
+    final sentSw = Stopwatch()..start();
+    // Query by book_id only (indexed), and only the columns the reader
+    // uses: every row is copied to the main isolate and read there, which
+    // was most of a large book's main-isolate time on a phone.
+    final sentences = await db
         .customSelect(
-          'SELECT para_id FROM sentences WHERE book_id = ? '
-          'GROUP BY para_id ORDER BY para_id',
+          'SELECT para_id, line_id, pali, vripage, ptspage, thaipage, mypage '
+          'FROM sentences WHERE book_id = ? ORDER BY para_id, line_id',
           variables: [Variable(_bookId)],
         )
         .get();
-    final paraIds = paraRows.map((r) => r.data['para_id'] as int).toList();
-    paraSw.stop();
+    sentSw.stop();
+    // The distinct para_ids in order, from the rows already read (a
+    // separate GROUP BY query read the same rows again).
+    final paraIds = <int>[];
+    for (final s in sentences) {
+      final paraId = s.data['para_id'] as int;
+      if (paraIds.isEmpty || paraIds.last != paraId) paraIds.add(paraId);
+    }
     developer.log(
-      '[LOAD] para_id query: ${paraSw.elapsedMilliseconds}ms, '
-      'paraCount=${paraIds.length}',
+      '[LOAD] Sentence query: ${sentSw.elapsedMilliseconds}ms, '
+      'sentenceCount=${sentences.length}, paraCount=${paraIds.length}',
       name: 'epitaka.reader',
     );
 
@@ -553,26 +577,6 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       return null;
     }
 
-    // ── Get sentences for all para_ids ───────────────────────────────
-    final sentSw = Stopwatch()..start();
-    // Query by book_id only (indexed). The paraIds we computed above are
-    // exactly the distinct para_ids for this book, so an extra
-    // `para_id IN (...)` (2477 entries) clause only slows SQLite down.
-    final sentences =
-        await (db.select(db.sentences)
-              ..where((s) => s.bookId.equals(_bookId))
-              ..orderBy([
-                (s) => OrderingTerm(expression: s.paraId),
-                (s) => OrderingTerm(expression: s.lineId),
-              ]))
-            .get();
-    sentSw.stop();
-    developer.log(
-      '[LOAD] Sentence query: ${sentSw.elapsedMilliseconds}ms, '
-      'sentenceCount=${sentences.length}',
-      name: 'epitaka.reader',
-    );
-
     // ── Group into paraId -> lines ───────────────────────────────────
     // Read all four page number columns from each sentence row, not just
     // the one matching the selected page system. This way the quote citation
@@ -580,12 +584,16 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     // a copy of VRI page).
     final groupSw = Stopwatch()..start();
     final paraLines = <int, List<_RawLine>>{};
-    for (final s in sentences) {
+    for (final row in sentences) {
+      final s = row.data;
+      final paraId = s['para_id'] as int;
+      final lineId = s['line_id'] as int;
+      final pali = s['pali'] as String?;
       final pageNumbers = <String, String>{
-        'vri': (s as dynamic).vripage as String? ?? '',
-        'pts': (s as dynamic).ptspage as String? ?? '',
-        'thai': (s as dynamic).thaipage as String? ?? '',
-        'my': (s as dynamic).mypage as String? ?? '',
+        'vri': s['vripage'] as String? ?? '',
+        'pts': s['ptspage'] as String? ?? '',
+        'thai': s['thaipage'] as String? ?? '',
+        'my': s['mypage'] as String? ?? '',
       };
       // Remove empty entries
       pageNumbers.removeWhere((_, v) => v.isEmpty);
@@ -602,20 +610,20 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
               ? 'my'
               : 'vri'];
 
-      paraLines.putIfAbsent(s.paraId, () => []);
-      if (s.pali != null && s.pali!.trim().isNotEmpty) {
-        paraLines[s.paraId]!.add(
+      paraLines.putIfAbsent(paraId, () => []);
+      if (pali != null && pali.trim().isNotEmpty) {
+        paraLines[paraId]!.add(
           _RawLine(
-            lineId: s.lineId,
-            paliText: s.pali!,
+            lineId: lineId,
+            paliText: pali,
             pageNumbers: pageNumbers,
           ),
         );
       } else if (preferredPage != null && preferredPage.isNotEmpty) {
-        if (paraLines[s.paraId]!.isEmpty) {
-          paraLines[s.paraId]!.add(
+        if (paraLines[paraId]!.isEmpty) {
+          paraLines[paraId]!.add(
             _RawLine(
-              lineId: s.lineId,
+              lineId: lineId,
               paliText: null,
               pageNumbers: pageNumbers,
             ),
@@ -678,21 +686,29 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
               ? paraIds as Set<int>
               : paraIds.toSet();
           final tSw = Stopwatch()..start();
-          final transSentences = await (translationDb.select(
-            translationDb.translationSentences,
-          )..where((t) => t.bookId.equals(_bookId))).get();
+          // Only the three columns used; the full row also carried a second
+          // copy of the Pāli text, copied to the main isolate for nothing.
+          final transSentences = await translationDb
+              .customSelect(
+                'SELECT para_id, line_id, translation FROM sentences '
+                'WHERE book_id = ?',
+                variables: [Variable(_bookId)],
+              )
+              .get();
           tSw.stop();
 
           final langMap = <int, Map<int, String>>{};
-          for (final t in transSentences) {
-            if (t.translation == null) continue;
+          for (final row in transSentences) {
+            final translation = row.data['translation'] as String?;
+            if (translation == null) continue;
+            final paraId = row.data['para_id'] as int;
             // Skip para_ids that aren't part of this book's Pāli text.
-            if (!paraIdSet.contains(t.paraId)) continue;
-            langMap.putIfAbsent(t.paraId, () => {});
-            langMap[t.paraId]!.update(
-              t.lineId,
-              (existing) => '$existing ${t.translation}',
-              ifAbsent: () => t.translation!,
+            if (!paraIdSet.contains(paraId)) continue;
+            langMap.putIfAbsent(paraId, () => {});
+            langMap[paraId]!.update(
+              row.data['line_id'] as int,
+              (existing) => '$existing $translation',
+              ifAbsent: () => translation,
             );
           }
           transByLang[langCode] = langMap;
@@ -871,7 +887,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     );
     debugPrint(
       '[PERF] book open book=$_bookId ms=${totalSw.elapsedMilliseconds} '
-      'sql=${bookSw.elapsedMilliseconds + paraSw.elapsedMilliseconds + sentSw.elapsedMilliseconds} '
+      'sql=${bookSw.elapsedMilliseconds + sentSw.elapsedMilliseconds} '
       'trans=${transSw.elapsedMilliseconds} build=${buildSw.elapsedMilliseconds} '
       'lines=$lineCount transRows=$transRowCount '
       'rssMB=${ProcessInfo.currentRss >> 20}',
