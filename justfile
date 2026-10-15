@@ -150,6 +150,13 @@ android-db:
         fi
     done
 
+# Profile build: compiled like a release, so timings are real; the plugin signs it
+# with the debug key, so it updates the installed app in place and keeps its data.
+# Build a profile APK and install it on the phone (never uninstalls)
+android-profile:
+    flutter build apk --profile --flavor prod
+    adb install -r build/app/outputs/flutter-apk/app-prod-profile.apk
+
 # Same as android-build and android-install, but with hot reload: in this
 # terminal, r loads code changes in about a second, R restarts the app, q quits.
 # It uses the same debug build and app id, so the phone's data is kept. If the

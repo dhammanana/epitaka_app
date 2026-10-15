@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
+import 'dart:io' show ProcessInfo;
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/app_models.dart';
@@ -262,6 +264,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
           next.pageNumberingSystem,
         ]);
         if (prevHash != nextHash) {
+          debugPrint('[PERF] book reload book=$_bookId');
           _headings = null; // Reset headings to force clean reload
           _l10Headings = null;
           _loadBook();
@@ -483,6 +486,7 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
     final db = await _ref.read(epitakaDbProvider.future);
     final settings = _ref.read(settingsProvider);
 
+    final totalSw = Stopwatch()..start();
     final pageColumn = _pageColumnName(settings.pageNumberingSystem);
 
     final enabledLangs = settings.enabledTranslations.isNotEmpty
@@ -852,6 +856,20 @@ class ReaderDataNotifier extends StateNotifier<ReaderDataState> {
       '[LOAD] Book links loaded: ${linkSw.elapsedMilliseconds}ms, '
       'paraCount=${bookLinks.length}',
       name: 'epitaka.reader',
+    );
+
+    totalSw.stop();
+    final lineCount = paragraphs.fold<int>(0, (n, p) => n + p.lines.length);
+    final transRowCount = transByLang.values.fold<int>(
+      0,
+      (n, byPara) => n + byPara.values.fold<int>(0, (m, l) => m + l.length),
+    );
+    debugPrint(
+      '[PERF] book open book=$_bookId ms=${totalSw.elapsedMilliseconds} '
+      'sql=${bookSw.elapsedMilliseconds + paraSw.elapsedMilliseconds + sentSw.elapsedMilliseconds} '
+      'trans=${transSw.elapsedMilliseconds} build=${buildSw.elapsedMilliseconds} '
+      'lines=$lineCount transRows=$transRowCount '
+      'rssMB=${ProcessInfo.currentRss >> 20}',
     );
 
     // ── Return data for the caller to emit (after generation check) ──

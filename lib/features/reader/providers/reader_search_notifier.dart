@@ -162,6 +162,9 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
       return;
     }
 
+    final perfSw = Stopwatch()..start();
+    int linesSeen = 0;
+    _lastNormalizedCount = 0;
     try {
       final words = romanQuery
           .trim()
@@ -211,9 +214,11 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
 
       for (final para in readerState.paragraphs) {
         for (final line in para.lines) {
+          linesSeen++;
           // Normalized text is computed on-demand (normalizedText is
           // always empty today — pre-computation during book load was
           // removed as an optimization).
+          if (line.normalizedText.isEmpty) _lastNormalizedCount++;
           final normalized = line.normalizedText.isEmpty
               ? _normalizeLine(
                   line.paliText,
@@ -247,6 +252,10 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         matchParaIds: matchParas,
         matchLineIds: matchLines,
         matchIndex: matchParas.isEmpty ? -1 : 0,
+      );
+      debugPrint(
+        '[PERF] find ms=${perfSw.elapsedMilliseconds} lines=$linesSeen '
+        'normalized=$_lastNormalizedCount matches=${matchParas.length}',
       );
     } catch (e) {
       developer.log('[SEARCH] Error: $e', name: 'epitaka.reader.search');
@@ -291,6 +300,13 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     if (parts.isEmpty) return '';
     return parts.join(' ');
   }
+
+  int _lastNormalizedCount = 0;
+
+  /// How many lines the last query had to normalize; the cache test asserts
+  /// that a repeat query needs none.
+  @visibleForTesting
+  int get lastNormalizedCount => _lastNormalizedCount;
 
   /// Test seam for [_normalizeLine] (private): lets tests assert that the
   /// variant-content mode follows the settings toggle.
