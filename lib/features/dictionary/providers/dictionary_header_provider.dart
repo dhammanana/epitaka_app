@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const dictionaryHeaderIconsPrefsKey = 'dictionary_header_icons';
+const dictionaryHeaderHideConfirmedPrefsKey =
+    'dictionary_header_hide_confirmed';
 
 /// Whether the dictionary's icon row shows. The user sets the dictionary up
 /// once and may hide the row; Settings shows it again.
@@ -29,6 +31,24 @@ class DictionaryHeaderIconsNotifier extends StateNotifier<bool> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(dictionaryHeaderIconsPrefsKey, visible);
+    } catch (_) {}
+  }
+
+  /// Whether the user has once said yes to the dialog that tells them where
+  /// to show the row again. After that, the hide button hides at once.
+  Future<bool> hideConfirmed() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(dictionaryHeaderHideConfirmedPrefsKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> setHideConfirmed() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(dictionaryHeaderHideConfirmedPrefsKey, true);
     } catch (_) {}
   }
 }

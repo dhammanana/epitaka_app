@@ -214,7 +214,9 @@ void main() {
     final c = await pump(tester, sidebar(SidePanelType.dictionary));
     expect(find.byIcon(Icons.vertical_align_top), findsOneWidget);
     await tester.tap(find.byIcon(Icons.visibility_off_outlined));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hide'));
+    await tester.pumpAndSettle();
     expect(c.read(dictionaryHeaderIconsProvider), isFalse);
     expect(find.byIcon(Icons.vertical_align_top), findsNothing);
     expect(find.text('Header title'), findsOneWidget);
@@ -222,6 +224,41 @@ void main() {
     c.read(dictionaryHeaderIconsProvider.notifier).set(true);
     await tester.pump();
     expect(find.byIcon(Icons.vertical_align_top), findsOneWidget);
+  });
+
+  testWidgets('the first hide asks once, later hides are instant', (
+    tester,
+  ) async {
+    final c = await pump(tester, const DictionaryHeaderIcons());
+    Future<void> tapHide() async {
+      await tester.tap(find.byIcon(Icons.visibility_off_outlined));
+      await tester.pumpAndSettle();
+    }
+
+    // Cancel keeps the row, and the next tap asks again.
+    await tapHide();
+    expect(
+      find.text('You can show them again in Dictionary Settings.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(c.read(dictionaryHeaderIconsProvider), isTrue);
+
+    await tapHide();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.text('Hide'));
+    await tester.pumpAndSettle();
+    expect(c.read(dictionaryHeaderIconsProvider), isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(dictionaryHeaderHideConfirmedPrefsKey), isTrue);
+
+    // Shown again from Settings, the row now hides with no dialog.
+    await c.read(dictionaryHeaderIconsProvider.notifier).set(true);
+    await tester.pump();
+    await tapHide();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(c.read(dictionaryHeaderIconsProvider), isFalse);
   });
 
   test('the row is saved and read back', () async {
