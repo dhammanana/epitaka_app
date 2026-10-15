@@ -1,3 +1,4 @@
+import 'package:epitaka/core/models/context_menu_action.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/services/reader_copy_service.dart';
@@ -97,6 +98,13 @@ void main() {
       addTearDown(container.dispose);
       final prefs = await SharedPreferences.getInstance();
       container.read(settingsProvider.notifier).init(prefs);
+      // Look Up is off by default outside iOS/macOS; the user can switch it on.
+      await container
+          .read(settingsProvider.notifier)
+          .setContextMenuActionEnabled(
+            'builtin:${ContextMenuBuiltins.lookUp}',
+            true,
+          );
 
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -138,6 +146,55 @@ void main() {
       await tester.tap(find.text('Look Up'));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
+
+  testWidgets(
+    'Look Up context-menu item is absent by default on a non-Apple platform',
+    // The default reads the host OS, and Look Up is on by default on Apple.
+    skip: isAppleMenuPlatform,
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final prefs = await SharedPreferences.getInstance();
+      container.read(settingsProvider.notifier).init(prefs);
+
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final hitTestKey = GlobalKey();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            locale: const Locale('en'),
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizationsDelegate(),
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: Scaffold(
+              body: Center(
+                child: _ContextMenuHarness(hitTestKey: hitTestKey),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final textPos = tester.getCenter(find.text('bhagavā'));
+      await _doubleTapAt(tester, textPos);
+      await tester.pumpAndSettle();
+
+      // The Dictionary item proves the toolbar is up and wide enough.
+      expect(find.text('Dictionary'), findsOneWidget);
+      expect(find.text('Look Up'), findsNothing,
+          reason: 'Look Up is Apple-only and off by default elsewhere');
     },
   );
 

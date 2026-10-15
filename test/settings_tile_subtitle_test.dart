@@ -43,23 +43,30 @@ void main() {
         ),
       ),
     );
-    // The localization delegate loads asynchronously; settle so the screen
-    // is actually built before asserting.
-    await tester.pumpAndSettle();
+    // The localization delegate loads asynchronously; pump so the screen is
+    // actually built before asserting. Not pumpAndSettle: the storage tile's
+    // spinner waits on a real platform call that never ends on the fake
+    // clock, so the screen never settles.
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
+  /// The settings list is lazy: bring the tile into the built range.
+  Future<void> scrollToContextMenu(WidgetTester tester) async {
+    await tester.scrollUntilVisible(
+      find.text('Context Menu'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
   }
 
   testWidgets('long subtitle is stripped on a narrow screen', (tester) async {
     // Tall window so every section's tiles are inflated (the System section
     // with the longest subtitle is near the bottom of the list).
-    await pumpApp(tester, const Size(260, 1800));
+    await pumpApp(tester, const Size(300, 1800));
 
-    final texts = tester
-        .widgetList<Text>(find.byType(Text))
-        .map((t) => t.data)
-        .where((d) => d != null)
-        .toList();
-    // ignore: avoid_print
-    print('TEXTS: $texts');
+    await scrollToContextMenu(tester);
     // 'Context Menu' tile has the longest English subtitle. On a narrow row
     // it must be stripped so the title keeps the full space.
     expect(find.text('Context Menu'), findsOneWidget);
@@ -69,6 +76,7 @@ void main() {
 
   testWidgets('subtitle is shown when there is room', (tester) async {
     await pumpApp(tester, const Size(900, 1800));
+    await scrollToContextMenu(tester);
 
     expect(find.text('Context Menu'), findsOneWidget);
     expect(find.text('Customize the selection toolbar'), findsOneWidget,
@@ -83,6 +91,7 @@ void main() {
     tester.platformDispatcher.textScaleFactorTestValue = 2.0;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await pumpApp(tester, const Size(900, 1800));
+    await scrollToContextMenu(tester);
 
     expect(find.text('Context Menu'), findsOneWidget);
     expect(find.text('Customize the selection toolbar'), findsNothing,
