@@ -421,6 +421,9 @@ class SuggestionTile extends ConsumerWidget {
   /// current position is visible before pressing Enter.
   final bool selected;
 
+  /// Lets a list give the row keyboard focus (the history list does).
+  final FocusNode? focusNode;
+
   const SuggestionTile({
     super.key,
     required this.word,
@@ -430,6 +433,7 @@ class SuggestionTile extends ConsumerWidget {
     this.highlightQuery,
     this.isExact = false,
     this.selected = false,
+    this.focusNode,
   });
 
   @override
@@ -458,6 +462,7 @@ class SuggestionTile extends ConsumerWidget {
         ),
       ),
       child: InkWell(
+        focusNode: focusNode,
         onTap: onTap,
         // The same tint as the recent-word chips show under the pointer.
         hoverColor: colors.onSurface.withValues(alpha: 0.08),
