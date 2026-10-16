@@ -12,7 +12,9 @@ path, so it compiles once and failing names still say which file they are from.
     uv run scripts/combine_tests.py   # then: flutter test test/_combined/shard_*.dart
 
 Passing the folder instead runs every *_test.dart in test/, one file per
-process, because flutter test keeps only *_test.dart files from a folder.
+process: flutter test keeps only *_test.dart files from a folder, finds none,
+and falls back to all of test/, test/mdx_repro_test.dart included (it hangs
+where its dictionary file exists).
 
 The shards are named without `_test` so a plain `flutter test` or a one-file
 run never picks them up a second time. `just test` runs this before each run,
