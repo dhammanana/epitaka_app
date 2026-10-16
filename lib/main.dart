@@ -14,6 +14,7 @@ import 'package:window_manager/window_manager.dart';
 import 'app.dart';
 import 'core/services/app_analytics.dart';
 import 'core/utils/app_initializer.dart';
+import 'core/utils/frame_stats.dart';
 import 'core/utils/platform_info.dart';
 import 'core/utils/startup_timing.dart';
 import 'features/desktop/single_instance.dart';
@@ -115,6 +116,7 @@ Future<void> main() async {
   // spinner until the DB copies + check finish, and cloud/analytics features
   // degrade gracefully until their init completes.
   runApp(ProviderScope(overrides: overrides, child: const EpitakaApp()));
+  if (!kReleaseMode) FrameStats.start();
   unawaited(loadFeedbackAppVersion());
   WidgetsBinding.instance.addPostFrameCallback(
     (_) => StartupTiming.mark('first frame painted'),

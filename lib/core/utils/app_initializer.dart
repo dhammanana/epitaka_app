@@ -33,12 +33,14 @@ class AppInitializer {
 
     // 1. Audio service (must be before runApp for notification to work)
     await initAudioServiceOnce();
+    StartupTiming.mark('audio service ready');
 
     // 2. App shortcuts (register once globally)
     _registerAppShortcutsOnce();
 
     // 3. Load settings from SharedPreferences (needed for theme, font, etc.)
     await _loadSettingsOnce();
+    StartupTiming.mark('preferences opened');
   }
 
   /// Initialize non-critical services in the background after first frame.

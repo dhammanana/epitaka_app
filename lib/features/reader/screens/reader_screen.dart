@@ -553,6 +553,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             name: 'epitaka.reader.ui',
           );
           StartupTiming.mark('book first visible: $bookId (paraId=$paraId)');
+          debugPrint('[PERF] tab visible book=$bookId ms=$posElapsed');
           _tabSwitchStartMs = null; // one-shot
         }
       },

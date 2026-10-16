@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/database/epitaka_database.dart';
+import '../../../core/database/nissaya_database.dart';
 import '../../../core/models/app_models.dart';
 import '../../../core/models/translation_version.dart';
 import '../../../core/providers/app_db_provider.dart';
@@ -439,6 +441,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // Books, the headings bulk load, and both count queries run
       // concurrently so a cold headings cache overlaps the FTS counts
       // instead of stalling behind them.
+      final countSw = Stopwatch()..start();
       final epitakaDbFuture = _epitakaDb();
       final headingsFuture = epitakaDbFuture.then<List<RawHeading>>(
         (db) => _allHeadings(db),
@@ -489,6 +492,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
               (combinedCounts[entry.key] ?? 0) + entry.value;
         }
       }
+
+      debugPrint(
+        '[PERF] search count ms=${countSw.elapsedMilliseconds} '
+        'books=${combinedCounts.length} '
+        'hits=${combinedCounts.values.fold<int>(0, (a, b) => a + b)}',
+      );
 
       // ── Search headings ───────────────────────────────────────────
       final headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
@@ -603,40 +612,156 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   Future<void> _loadBookPages(String bookId, {bool fetchAll = false}) async {
-    final gen = _searchGen;
-    while (true) {
-      if (gen != _searchGen) return;
-      final current = state;
-      if (current is! SearchResults) return;
-      final idx = current.bookSummaries.indexWhere(
-        (s) => s.book.bookId == bookId,
+    final sw = Stopwatch()..start();
+    final loaded = await _loadBookPagesLoop(bookId, fetchAll: fetchAll);
+    if (fetchAll && loaded.pages > 0) {
+      debugPrint(
+        '[PERF] search open-book book=$bookId ms=${sw.elapsedMilliseconds} '
+        'hits=${loaded.hits} pages=${loaded.pages} commits=${loaded.commits}',
       );
-      if (idx < 0) return;
-      final summary = current.bookSummaries[idx];
-      if (summary.fullyLoaded) return;
-
-      final offset = summary.loadedPages.length * kSearchPageSize;
-      final remaining = summary.totalCount - offset;
-      if (remaining <= 0) return;
-      final pageSize = remaining < kSearchPageSize
-          ? remaining
-          : kSearchPageSize;
-
-      final items = await _fetchBookPageItems(
-        bookId: bookId,
-        offset: offset,
-        pageSize: pageSize,
-        query: current.query,
-        distance: current.distance,
-      );
-      if (gen != _searchGen) return;
-      if (items.isEmpty) return;
-      _commitBookPageItems(bookId, items);
-      if (!fetchAll || items.length < pageSize) return;
     }
   }
 
-  bool _commitBookPageItems(String bookId, List<SearchResultItem> items) {
+  /// Loads the next page of [bookId]'s hits and, with [fetchAll], every
+  /// page after it.
+  ///
+  /// A page is a 30-row window of the Pāli hits plus the same window of the
+  /// translation hits, in rank order. The first page is fetched and
+  /// published on its own so the first hits show at once. The rest come
+  /// from one query per index, cut in memory into the same windows, and are
+  /// published together: re-running both queries per page took minutes for
+  /// a common word on a phone, and each publish redrew the whole list.
+  Future<({int pages, int hits, int commits})> _loadBookPagesLoop(
+    String bookId, {
+    bool fetchAll = false,
+  }) async {
+    final gen = _searchGen;
+    var pages = 0;
+    var hits = 0;
+    var commits = 0;
+    ({int pages, int hits, int commits}) done() =>
+        (pages: pages, hits: hits, commits: commits);
+
+    var point = _bookLoadPoint(bookId);
+    if (point == null) return done();
+    final first = _bookWindows(point.pageCount, point.totalCount).first;
+    final firstRows = await _fetchBookRows(
+      bookId: bookId,
+      query: point.query,
+      distance: point.distance,
+      offset: first.offset,
+      limit: first.pageSize,
+    );
+    if (gen != _searchGen) return done();
+    final firstItems = (await _buildWindowItems(bookId, point.query, [
+      firstRows,
+    ])).single;
+    if (gen != _searchGen) return done();
+    if (firstItems.isEmpty) return done();
+    if (!_commitBookPages(bookId, [firstItems], expectedPageCount: point.pageCount)) {
+      return done();
+    }
+    pages++;
+    hits += firstItems.length;
+    commits++;
+    if (!fetchAll || firstItems.length < first.pageSize) return done();
+
+    point = _bookLoadPoint(bookId);
+    if (point == null) return done();
+    final windows = _bookWindows(point.pageCount, point.totalCount);
+    final start = windows.first.offset;
+    // A negative LIMIT means no limit in SQLite.
+    final restRows = await _fetchBookRows(
+      bookId: bookId,
+      query: point.query,
+      distance: point.distance,
+      offset: start,
+      limit: -1,
+    );
+    if (gen != _searchGen) return done();
+    List<SearchResultRow> cut(List<SearchResultRow> rows, int offset, int n) {
+      final from = (offset - start).clamp(0, rows.length);
+      return rows.sublist(from, (from + n).clamp(0, rows.length));
+    }
+
+    final built = await _buildWindowItems(bookId, point.query, [
+      for (final w in windows)
+        (
+          pali: cut(restRows.pali, w.offset, w.pageSize),
+          trans: cut(restRows.trans, w.offset, w.pageSize),
+        ),
+    ]);
+    if (gen != _searchGen) return done();
+
+    // The same stop rules as one fetch per page: an empty page ends the
+    // book, and so does a page shorter than its window.
+    final accepted = <List<SearchResultItem>>[];
+    for (var i = 0; i < windows.length; i++) {
+      if (built[i].isEmpty) break;
+      accepted.add(built[i]);
+      if (built[i].length < windows[i].pageSize) break;
+    }
+    if (accepted.isEmpty) return done();
+    if (!_commitBookPages(bookId, accepted, expectedPageCount: point.pageCount)) {
+      return done();
+    }
+    pages += accepted.length;
+    hits += accepted.fold<int>(0, (n, p) => n + p.length);
+    commits++;
+    return done();
+  }
+
+  /// Where [bookId]'s next page starts, or `null` when the book is gone
+  /// from the results or fully loaded.
+  ({String query, int distance, int pageCount, int totalCount})?
+  _bookLoadPoint(String bookId) {
+    final current = state;
+    if (current is! SearchResults) return null;
+    final idx = current.bookSummaries.indexWhere(
+      (s) => s.book.bookId == bookId,
+    );
+    if (idx < 0) return null;
+    final summary = current.bookSummaries[idx];
+    if (summary.fullyLoaded) return null;
+    return (
+      query: current.query,
+      distance: current.distance,
+      pageCount: summary.loadedPages.length,
+      totalCount: summary.totalCount,
+    );
+  }
+
+  /// The page windows after the first [pageCount] pages: each starts at
+  /// `page * kSearchPageSize`, and the last is cut to the hits that remain.
+  /// Not empty when [_bookLoadPoint] returned a point.
+  List<({int offset, int pageSize})> _bookWindows(
+    int pageCount,
+    int totalCount,
+  ) {
+    return [
+      for (
+        var offset = pageCount * kSearchPageSize;
+        offset < totalCount;
+        offset += kSearchPageSize
+      )
+        (
+          offset: offset,
+          pageSize: totalCount - offset < kSearchPageSize
+              ? totalCount - offset
+              : kSearchPageSize,
+        ),
+    ];
+  }
+
+  /// Appends [pages] to the book's loaded pages, but only when the book still
+  /// holds [expectedPageCount] pages, the count the windows were cut from. A
+  /// collapse or a "Load more" during the fetch changes that count, and the
+  /// late pages would then re-open the book or repeat a page.
+  bool _commitBookPages(
+    String bookId,
+    List<List<SearchResultItem>> pages, {
+    required int expectedPageCount,
+  }) {
     final current = state;
     if (current is! SearchResults) return false;
     final idx = current.bookSummaries.indexWhere(
@@ -645,11 +770,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
     if (idx < 0) return false;
     final summaries = [...current.bookSummaries];
     final summary = summaries[idx];
+    if (summary.loadedPages.length != expectedPageCount) return false;
     summaries[idx] = BookResultSummary(
       book: summary.book,
       totalCount: summary.totalCount,
       isExpanded: true,
-      loadedPages: [...summary.loadedPages, items],
+      loadedPages: [...summary.loadedPages, ...pages],
       forceFullyLoaded: summary.forceFullyLoaded,
     );
     state = SearchResults(
@@ -664,18 +790,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
     return true;
   }
 
-  Future<List<SearchResultItem>> _fetchBookPageItems({
+  /// The Pāli and translation FTS rows of [bookId] in rank order, [limit]
+  /// rows of each from [offset].
+  Future<({List<SearchResultRow> pali, List<SearchResultRow> trans})>
+  _fetchBookRows({
     required String bookId,
-    required int offset,
-    required int pageSize,
     required String query,
     required int distance,
+    required int offset,
+    required int limit,
   }) async {
     final appDb = await _ref.read(appDbProvider.future);
     final activeLang = _activeTranslationLang();
-    final searchWords = normalizePaliFuzzy(
-      query,
-    ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
     // Get matching para_ids from BOTH Pali and translation FTS
     final detailFutures = <Future<List<SearchResultRow>>>[
@@ -683,7 +809,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         bookId,
         query,
         distance: distance,
-        limit: pageSize,
+        limit: limit,
         offset: offset,
       ),
     ];
@@ -694,7 +820,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
           bookId,
           query,
           distance: distance,
-          limit: pageSize,
+          limit: limit,
           offset: offset,
         ),
       );
@@ -703,46 +829,74 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
 
     final detailResults = await Future.wait(detailFutures);
-    final paliRows = detailResults[0];
-    final transRows = detailResults.length > 1
-        ? detailResults[1]
-        : <SearchResultRow>[];
+    return (pali: detailResults[0], trans: detailResults[1]);
+  }
 
-    // Merge para_ids from both Pali and translation results
-    final seenParaIds = <int>{};
-    final allSnippets = <int, SearchResultRow>{};
+  /// Builds one page of [SearchResultItem]s per window of FTS rows. Each
+  /// page lists its Pāli paragraphs, then its translation-only ones, as a
+  /// page always has; the lines of every page are fetched together.
+  Future<List<List<SearchResultItem>>> _buildWindowItems(
+    String bookId,
+    String query,
+    List<({List<SearchResultRow> pali, List<SearchResultRow> trans})> windows,
+  ) async {
+    final activeLang = _activeTranslationLang();
+    final searchWords = normalizePaliFuzzy(
+      query,
+    ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
-    for (final row in paliRows) {
-      if (row.firstParaId == null) continue;
-      seenParaIds.add(row.firstParaId!);
-      allSnippets[row.firstParaId!] = row;
-    }
-    for (final row in transRows) {
-      if (row.firstParaId == null) continue;
-      if (seenParaIds.add(row.firstParaId!)) {
-        // Translation-only match — store snippet
+    final windowParaIds = <List<int>>[];
+    final windowSnippets = <Map<int, SearchResultRow>>[];
+    for (final (:pali, :trans) in windows) {
+      // Merge para_ids from both Pali and translation results
+      final seenParaIds = <int>{};
+      final allSnippets = <int, SearchResultRow>{};
+
+      for (final row in pali) {
+        if (row.firstParaId == null) continue;
+        seenParaIds.add(row.firstParaId!);
         allSnippets[row.firstParaId!] = row;
       }
+      for (final row in trans) {
+        if (row.firstParaId == null) continue;
+        if (seenParaIds.add(row.firstParaId!)) {
+          // Translation-only match — store snippet
+          allSnippets[row.firstParaId!] = row;
+        }
+      }
+      windowParaIds.add(seenParaIds.toList());
+      windowSnippets.add(allSnippets);
     }
 
-    final matchingParaIds = seenParaIds.toList();
-    if (matchingParaIds.isEmpty) return [];
+    final allParaIds = {for (final ids in windowParaIds) ...ids}.toList();
+    if (allParaIds.isEmpty) return [for (final _ in windows) []];
 
-    // Fetch individual lines from epitaka_db.sentences for matching para_ids
-    final placeholders = matchingParaIds.map((_) => '?').join(',');
+    // Fetch individual lines from epitaka_db.sentences for matching para_ids,
+    // a bounded number of ids per query.
+    const chunkSize = 500;
+    final chunks = [
+      for (var i = 0; i < allParaIds.length; i += chunkSize)
+        allParaIds.sublist(i, (i + chunkSize).clamp(0, allParaIds.length)),
+    ];
     final epitakaDb = await _epitakaDb();
-    final lineRows = await epitakaDb
-        .customSelect(
-          'SELECT para_id, line_id, pali '
-          'FROM sentences '
-          'WHERE book_id = ? AND para_id IN ($placeholders) '
-          'ORDER BY para_id, line_id',
-          variables: [
-            Variable.withString(bookId),
-            ...matchingParaIds.map((id) => Variable.withInt(id)),
-          ],
-        )
-        .get();
+    final lineRows = <QueryRow>[];
+    for (final ids in chunks) {
+      final placeholders = ids.map((_) => '?').join(',');
+      lineRows.addAll(
+        await epitakaDb
+            .customSelect(
+              'SELECT para_id, line_id, pali '
+              'FROM sentences '
+              'WHERE book_id = ? AND para_id IN ($placeholders) '
+              'ORDER BY para_id, line_id',
+              variables: [
+                Variable.withString(bookId),
+                ...ids.map((id) => Variable.withInt(id)),
+              ],
+            )
+            .get(),
+      );
+    }
 
     // Fetch translations for those para_ids
     final transLineMap = <int, Map<int, String>>{};
@@ -754,11 +908,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
             nissayaDbByFilenameProvider(filename).future,
           );
           if (nissayaDb != null) {
-            final perPara = await Future.wait(
-              matchingParaIds.map((pid) => nissayaDb.getSentences(bookId, pid)),
-            );
-            for (var i = 0; i < matchingParaIds.length; i++) {
-              final pid = matchingParaIds[i];
+            // At most one page's worth of lookups at a time, as when each
+            // page was fetched on its own.
+            final perPara = <List<NissayaSentenceLine>>[];
+            for (var i = 0; i < allParaIds.length; i += 60) {
+              perPara.addAll(
+                await Future.wait(
+                  allParaIds
+                      .sublist(i, (i + 60).clamp(0, allParaIds.length))
+                      .map((pid) => nissayaDb.getSentences(bookId, pid)),
+                ),
+              );
+            }
+            for (var i = 0; i < allParaIds.length; i++) {
+              final pid = allParaIds[i];
               for (final s in perPara[i]) {
                 final t = s.formattedText;
                 if (t.isNotEmpty) {
@@ -772,24 +935,27 @@ class SearchNotifier extends StateNotifier<SearchState> {
             translationDbProvider(activeLang).future,
           );
           if (transDb != null) {
-            final tRows = await transDb
-                .customSelect(
-                  'SELECT para_id, line_id, translation '
-                  'FROM sentences '
-                  'WHERE book_id = ? AND para_id IN ($placeholders) '
-                  'ORDER BY para_id, line_id',
-                  variables: [
-                    Variable.withString(bookId),
-                    ...matchingParaIds.map((id) => Variable.withInt(id)),
-                  ],
-                )
-                .get();
-            for (final row in tRows) {
-              final pid = row.data['para_id'] as int;
-              final lid = row.data['line_id'] as int;
-              final t = row.data['translation'] as String?;
-              if (t != null && t.isNotEmpty) {
-                transLineMap.putIfAbsent(pid, () => {})[lid] = t;
+            for (final ids in chunks) {
+              final placeholders = ids.map((_) => '?').join(',');
+              final tRows = await transDb
+                  .customSelect(
+                    'SELECT para_id, line_id, translation '
+                    'FROM sentences '
+                    'WHERE book_id = ? AND para_id IN ($placeholders) '
+                    'ORDER BY para_id, line_id',
+                    variables: [
+                      Variable.withString(bookId),
+                      ...ids.map((id) => Variable.withInt(id)),
+                    ],
+                  )
+                  .get();
+              for (final row in tRows) {
+                final pid = row.data['para_id'] as int;
+                final lid = row.data['line_id'] as int;
+                final t = row.data['translation'] as String?;
+                if (t != null && t.isNotEmpty) {
+                  transLineMap.putIfAbsent(pid, () => {})[lid] = t;
+                }
               }
             }
           }
@@ -831,24 +997,21 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
 
     // Build SearchResultItems — only include paras that had lines
-    final items = <SearchResultItem>[];
-    for (final pid in matchingParaIds) {
-      final lines = paraLines[pid];
-      if (lines == null || lines.isEmpty) continue;
-
-      final snippet = allSnippets[pid];
-      items.add(
-        SearchResultItem(
-          bookId: bookId,
-          paraId: pid,
-          lines: lines,
-          paliSnippet: snippet?.snippet.isNotEmpty == true
-              ? snippet!.snippet
-              : null,
-        ),
-      );
-    }
-    return items;
+    return [
+      for (var w = 0; w < windows.length; w++)
+        [
+          for (final pid in windowParaIds[w])
+            if (paraLines[pid]?.isNotEmpty ?? false)
+              SearchResultItem(
+                bookId: bookId,
+                paraId: pid,
+                lines: paraLines[pid]!,
+                paliSnippet: windowSnippets[w][pid]?.snippet.isNotEmpty == true
+                    ? windowSnippets[w][pid]!.snippet
+                    : null,
+              ),
+        ],
+    ];
   }
 
   /// Expand a book summary and load its first page of results.
@@ -1186,7 +1349,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<List<RawHeading>> _allHeadings(EpitakaDatabase epitakaDb) async {
     final cached = _cachedHeadings;
     if (cached != null) return cached;
+    // The warm-up and the first search usually ask at the same time; on a
+    // Pixel 8 Pro they built the list twice, 300 ms apart.
+    return _headingsBuild ??= _buildHeadings(
+      epitakaDb,
+    ).whenComplete(() => _headingsBuild = null);
+  }
 
+  Future<List<RawHeading>>? _headingsBuild;
+
+  Future<List<RawHeading>> _buildHeadings(EpitakaDatabase epitakaDb) async {
+    _headingsBuildCount++;
+    final headingsSw = Stopwatch()..start();
     // Skip `level = 10` rows: those are pure numeric section markers
     // (122k of them in the real corpus — "1", "2", …), not titles a user
     // would search for, and they'd flood the results. The app's section
@@ -1199,24 +1373,58 @@ class SearchNotifier extends StateNotifier<SearchState> {
           'ORDER BY book_id, para_id',
         )
         .get();
+    final sqlMs = headingsSw.elapsedMilliseconds;
 
+    // The main-isolate share of the build after the query: what is left
+    // to freeze a frame once the cleaning runs elsewhere.
+    final mainSw = Stopwatch()..start();
+    final titles = [
+      for (final row in rows) (row.data['title'] as String?) ?? '',
+    ];
+    final keysFuture = _headingKeysInBackground(titles);
+    mainSw.stop();
+    final keys = await keysFuture;
+    mainSw.start();
     final headings = <RawHeading>[
-      for (final row in rows)
+      for (var i = 0; i < rows.length; i++)
         (
-          bookId: row.data['book_id'] as String,
-          paraId: row.data['para_id'] as int,
-          title: (row.data['title'] as String?) ?? '',
-          level: row.data['level'] as int?,
-          key: normalizePaliFuzzy((row.data['title'] as String?) ?? ''),
+          bookId: rows[i].data['book_id'] as String,
+          paraId: rows[i].data['para_id'] as int,
+          title: titles[i],
+          level: rows[i].data['level'] as int?,
+          key: keys[i],
         ),
     ];
+    mainSw.stop();
     // Don't cache an empty result — a concurrent database swap may have
     // raced this query; an empty cache would poison every later search.
     if (headings.isNotEmpty) {
       _cachedHeadings = headings;
     }
+    debugPrint(
+      '[PERF] search headings ms=${headingsSw.elapsedMilliseconds} '
+      'rows=${headings.length} sql=$sqlMs main=${mainSw.elapsedMilliseconds}',
+    );
     return headings;
   }
+
+  // Static, so the isolate's closure cannot capture the notifier, which
+  // cannot be sent to another isolate. Cleaning 38,069 titles is too long
+  // for one frame on a phone.
+  static Future<List<String>> _headingKeysInBackground(List<String> titles) =>
+      titles.isEmpty
+      ? Future.value(const <String>[])
+      : Isolate.run(() => [for (final t in titles) normalizePaliFuzzy(t)]);
+
+  int _headingsBuildCount = 0;
+
+  /// How many times the heading list was read and cleaned.
+  @visibleForTesting
+  int get headingsBuildCount => _headingsBuildCount;
+
+  @visibleForTesting
+  Future<List<RawHeading>> headingsForTesting() async =>
+      _allHeadings(await _epitakaDb());
 
   /// Get suggestions for autocomplete.
   ///
