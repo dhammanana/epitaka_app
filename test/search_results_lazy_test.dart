@@ -178,12 +178,12 @@ void main() {
     expect(_isHighlighted(tester, 2), isTrue);
   });
 
-  testWidgets('a selection thousands of rows away still comes back into view', (
+  testWidgets('a selection over 100 screens away still comes back into view', (
     tester,
   ) async {
-    // About 300 screens of rows: more than the 100 one-screen steps the
+    // About 120 screens of rows: more than the 100 one-screen steps the
     // reveal may take, so a first jump toward the row must do most of it.
-    final focus = await _pump(tester, hitCount: 6000);
+    final focus = await _pump(tester, hitCount: 1000);
     focus.requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -195,6 +195,13 @@ void main() {
     position.jumpTo(position.maxScrollExtent);
     await tester.pumpAndSettle();
     expect(find.text('§2', skipOffstage: false), findsNothing);
+    // 123 screens at the row height of 2026-10-16. Shorter rows could bring
+    // the list under the 100 steps, and the test would no longer need the
+    // first jump.
+    expect(
+      position.maxScrollExtent / position.viewportDimension,
+      greaterThan(110),
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
