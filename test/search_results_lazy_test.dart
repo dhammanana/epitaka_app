@@ -195,9 +195,9 @@ void main() {
     position.jumpTo(position.maxScrollExtent);
     await tester.pumpAndSettle();
     expect(find.text('§2', skipOffstage: false), findsNothing);
-    // 123 screens at the row height of 2026-10-16. Shorter rows could bring
-    // the list under the 100 steps, and the test would no longer need the
-    // first jump.
+    // Measured 123 screens (rows about 73 px, viewport 600 px, 2026-10-16).
+    // Shorter rows could bring the list under the 100 steps, and the test
+    // would no longer need the first jump.
     expect(
       position.maxScrollExtent / position.viewportDimension,
       greaterThan(110),
