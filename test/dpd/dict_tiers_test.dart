@@ -15,6 +15,7 @@ import 'package:epitaka/features/dpd/providers/dpd_settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'dpd_fixture.dart';
@@ -119,6 +120,9 @@ void main() {
     });
 
     tearDownAll(() async {
+      // These tests save the partial and fuzzy switches. Files share a
+      // process in `just test`, so leave the store empty for the next file.
+      SharedPreferences.setMockInitialValues({});
       await dir.delete(recursive: true);
     });
 
