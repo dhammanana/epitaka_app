@@ -282,6 +282,7 @@ class _SectionHeader extends StatelessWidget {
       ShortcutSection.reading => loc.shortcutsReading,
       ShortcutSection.tabs => loc.shortcutsTabs,
       ShortcutSection.textDisplay => loc.shortcutsTextDisplay,
+      ShortcutSection.dictionary => loc.shortcutsDictionary,
       ShortcutSection.app => loc.shortcutsApp,
       ShortcutSection.reader => loc.shortcutsReader,
       ShortcutSection.searchResults => loc.shortcutsSearchResults,

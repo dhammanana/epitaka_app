@@ -11,6 +11,9 @@ import '../../core/utils/startup_timing.dart';
 import '../../features/guide/widgets/feature_guide_while_waiting.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
 import '../../features/settings/widgets/color_picker_section.dart';
+import '../dpd/providers/dpd_database_provider.dart';
+import '../dpd/services/dpd_installer.dart';
+import '../dpd/widgets/dpd_download_control.dart';
 import 'index_controller.dart';
 import 'index_state.dart';
 import 'indexing_provider.dart';
@@ -90,6 +93,17 @@ class _IndexGateState extends ConsumerState<IndexGate>
     });
 
     if (state.isBuilt) {
+      // An upgrade from a version that used the old DPD file: the new one is
+      // downloaded before the app opens, with no way past (user decision).
+      // A reload keeps the previous value, so a later swap never closes the
+      // app behind this screen.
+      final dpd = ref.watch(dpdFileInstalledProvider);
+      if (dpd.valueOrNull == false) {
+        return _gateShell(_buildDpdRequired());
+      }
+      if (!dpd.hasValue && !dpd.hasError) {
+        return _gateShell(_buildLoadingScreen());
+      }
       if (!_gateOpenedLogged) {
         _gateOpenedLogged = true;
         StartupTiming.mark('index gate opened (app ready)');
@@ -169,6 +183,60 @@ class _IndexGateState extends ConsumerState<IndexGate>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDpdRequired() {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    final release = ref.watch(dpdLatestReleaseProvider).valueOrNull;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppDimensions.marginMobile),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Icon(Icons.menu_book, size: 48, color: colors.primary),
+                  const SizedBox(height: AppDimensions.md),
+                  Text(
+                    loc.dpdNewDatabaseTitle,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppDimensions.sm),
+                  Text(
+                    loc.dpdNewDatabaseBody,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  if (release != null) ...[
+                    const SizedBox(height: AppDimensions.sm),
+                    Text(
+                      loc.dpdDownloadSize(formatDpdSize(release.size)),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AppDimensions.lg),
+                  DpdDownloadControl(release: release, centered: true),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -716,6 +784,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
         downloadState.status == DownloadStatus.downloading ||
         downloadState.status == DownloadStatus.extracting;
     final isComplete = downloadState.status == DownloadStatus.completed;
+    final isDpd = asset.slug == kDpdDownloadKey;
+    final dpdRelease = isDpd
+        ? ref.watch(dpdLatestReleaseProvider).valueOrNull
+        : null;
+    final size = asset.size ?? dpdRelease?.size;
 
     return Container(
       padding: const EdgeInsets.all(AppDimensions.md),
@@ -800,11 +873,11 @@ class _IndexGateState extends ConsumerState<IndexGate>
                         : colors.onSurfaceVariant,
                   ),
                 ),
-                if (asset.size != null && !isComplete && !isActive)
+                if (size != null && !isComplete && !isActive)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      _formatSize(asset.size!),
+                      _formatSize(size),
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                         fontSize: 11,
@@ -863,6 +936,10 @@ class _IndexGateState extends ConsumerState<IndexGate>
                 : IconButton.filledTonal(
                     tooltip: loc.download,
                     onPressed: () {
+                      if (isDpd) {
+                        installDpdRelease(ref, release: dpdRelease);
+                        return;
+                      }
                       final filename =
                           asset.filename ??
                           '${asset.slug.replaceAll('_', '-')}.db';

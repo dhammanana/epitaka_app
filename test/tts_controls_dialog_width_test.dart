@@ -9,6 +9,7 @@ import 'package:epitaka/features/reader/widgets/reader_tts_controls_dialog.dart'
 import 'package:epitaka/features/reader/widgets/reader_tts_widgets.dart';
 import 'package:epitaka/features/settings/providers/tts_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,17 @@ void main() {
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
+
+      // The dialog starts the speech engine. Without a plugin, its stop() on
+      // dispose fails after the test ends, and the failure is reported
+      // against this test once another test keeps the process alive.
+      // Registered before the container's tear-down so it is removed after
+      // the dispose.
+      const ttsChannel = MethodChannel('flutter_tts');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(ttsChannel, (call) async => null);
+      addTearDown(() => messenger.setMockMethodCallHandler(ttsChannel, null));
 
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();

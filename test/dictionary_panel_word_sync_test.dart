@@ -1,12 +1,15 @@
-import 'package:epitaka/core/database/dpd_dictionary_database.dart';
 import 'package:epitaka/core/providers/dictionary_books_provider.dart';
-import 'package:epitaka/core/providers/dpd_dictionary_provider.dart';
+import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/features/desktop/desktop_shell.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
+import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
+import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Verifies the desktop dictionary panel receives words routed through
 /// [sidePanelProvider].
@@ -14,24 +17,36 @@ import 'package:flutter_test/flutter_test.dart';
 /// Word lookups from the reader (double-click/tap on a Pāli word, context
 /// menu) land in the LEFT sidebar slot: [SidePanelNotifier.open] with data,
 /// or [SidePanelNotifier.updateDictionaryWord] when the panel is already
-/// open. The panel must read `left.panelData` — reading the right slot (a
-/// leftover from an earlier refactor) opened the sidebar with an empty
-/// search field.
+/// open. The panel reads the left slot first, then the right one; nothing in
+/// the app puts the dictionary in the right slot today, so that is a
+/// fallback. The dictionary drawn on the right side of the window still lives
+/// in the left slot: the desktop shell only draws that slot on the right.
 void main() {
-  // Stub the DPD lookup so no database file is touched; an exact headword
-  // match also avoids the "Did you mean?" prefix-search provider.
-  final lookupOverride = dpdDictionaryLookupProvider.overrideWith(
-    (ref, String word) async => DpdFullLookup(
-      searchedKey: word,
-      headwords: [
-        DpdHeadwordRow(id: 1, lemma1: word, meaningHtml: '<p>test</p>'),
-      ],
+  // Stub the DPD lookup and its suggestions so no database file is touched.
+  // An empty lookup is a plain miss, which is all these tests need.
+  final lookupOverride = dpdLookupProvider.overrideWith(
+    (ref, String word) async => DpdLookup(
+      query: word,
+      headwords: const [],
+      roots: const [],
+      secondary: const [],
+      timer: Stopwatch(),
     ),
   );
-  // The real books notifier reads the epitaka database, which never resolves
+  final suggestionsOverride = dpdSuggestionsProvider.overrideWith(
+    (ref, String prefix) async => <String>[],
+  );
+  final closestOverride = dpdClosestMatchesProvider.overrideWith(
+    (ref, String query) async => <String>[],
+  );
+  // The real books provider reads the epitaka database, which never resolves
   // in the widget-test environment; stub it with an empty list instead.
-  final booksOverride = dictionaryBooksNotifierProvider.overrideWith(
-    (ref) => _EmptyBooksNotifier(ref),
+  final booksOverride = dictionaryBooksProvider.overrideWith(
+    (ref) async => const <DictionaryBook>[],
+  );
+  // The list also waits on the DPD file, which never resolves here either.
+  final listOverride = dictionaryListProvider.overrideWithValue(
+    const AsyncData(<DictionaryListEntry>[]),
   );
 
   Future<ProviderContainer> pumpPanel(
@@ -39,7 +54,13 @@ void main() {
     required SidePanelsState initialPanels,
   }) async {
     final container = ProviderContainer(
-      overrides: [lookupOverride, booksOverride],
+      overrides: [
+        lookupOverride,
+        suggestionsOverride,
+        closestOverride,
+        booksOverride,
+        listOverride,
+      ],
     );
     addTearDown(container.dispose);
     container.read(sidePanelProvider.notifier).state = initialPanels;
@@ -113,33 +134,77 @@ void main() {
   );
 
   testWidgets(
-    'panel does not read the word from the right sidebar slot',
+    'panel shows the word passed when the dictionary is in the right sidebar '
+    'slot',
     (tester) async {
       await pumpPanel(
         tester,
         initialPanels: const SidePanelsState(
           right: SidePanelState(
             openPanel: SidePanelType.dictionary,
-            panelData: 'wrong-slot',
+            panelData: 'bhagavā',
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(textFieldText(tester), isEmpty,
-          reason: 'the dictionary lives in the left slot; right-slot data '
-              'must be ignored');
+      expect(textFieldText(tester), 'bhagavā',
+          reason: 'the dictionary can live in the right slot too');
     },
   );
-}
 
-class _EmptyBooksNotifier extends DictionaryBooksNotifier {
-  _EmptyBooksNotifier(super.ref) : super() {
-    state = const AsyncData(<DictionaryBook>[]);
-  }
+  testWidgets(
+    'the dictionary drawn on the right side of the desktop shell shows its '
+    'word',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({'sidebar_on_right': true});
+      final prefs = await SharedPreferences.getInstance();
 
-  @override
-  Future<void> load() async {
-    // No-op: never touch the epitaka database in tests.
-  }
+      final container = ProviderContainer(
+        overrides: [
+          lookupOverride,
+          suggestionsOverride,
+          closestOverride,
+          booksOverride,
+          listOverride,
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(settingsProvider.notifier).init(prefs);
+      container.read(sidePanelProvider.notifier).state = const SidePanelsState(
+        left: SidePanelState(
+          openPanel: SidePanelType.dictionary,
+          isPinned: true,
+          panelData: 'bhagavā',
+        ),
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: const [AppLocalizationsDelegate()],
+            home: const DesktopShell(child: SizedBox()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<DesktopSidebar>(find.byType(DesktopSidebar)).onRight,
+          isTrue);
+      expect(tester.getTopLeft(find.byType(DictionaryPanel)).dx,
+          greaterThan(800),
+          reason: 'the saved setting puts the sidebar on the right');
+      expect(textFieldText(tester), 'bhagavā');
+
+      // A word looked up while the sidebar is already on the right.
+      container.read(sidePanelProvider.notifier).updateDictionaryWord('kamma');
+      await tester.pumpAndSettle();
+      expect(textFieldText(tester), 'kamma');
+    },
+  );
 }

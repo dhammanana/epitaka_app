@@ -219,6 +219,7 @@ class AppLocalizations {
   String get shortcutsReader => _t('Reader');
   String get shortcutsSearchResults => _t('Search results');
   String get shortcutsChat => _t('Vīmaṃsā chat');
+  String get shortcutsDictionary => _t('Dictionary panel');
   String get shortcutsAnywhere => _t('Anywhere in the app');
   String get shortcutsReaderWhere => _t('When the reading cursor is active');
   String get shortcutsSearchResultsWhere =>
@@ -650,10 +651,6 @@ class AppLocalizations {
   String get dictionarySettingDesc => _t(
     'Enable, disable, and reorder dictionaries.\nDictionaries appear in this order in the dictionary panel.',
   );
-  String get enabledDictionaries => _t('Enabled Dictionaries');
-  String get disabledDictionaries => _t('Disabled Dictionaries');
-  String get noDictEnabled =>
-      _t('No dictionaries enabled. Tap a dictionary below to enable it.');
   String get errorLoadingDict => _t('Error loading dictionaries:');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1114,6 +1111,69 @@ class AppLocalizations {
   String translationTitle(String langName) => '$langName ${_t('Translation')}';
 
   String get dpdDictionary => _t('DPD Dictionary');
+  String get dpdDatabase => _t('DPD database');
+  String get dpdLevel => _t('Level');
+  String get dictionaryFontSize => _t('Dictionary text size');
+  String get dpdPartialResults => _t('Partial Results');
+  String get dpdFuzzyResults => _t('Fuzzy Results');
+  String get dpdShowConstruction => _t('Show the construction in the brief summary');
+  String get dpdShowSummary => _t('Show the summary at the top');
+  String get dpdShowPartial => _t('Show partial results');
+  String get dpdShowFuzzy => _t('Show fuzzy results');
+  String get dpdShowSandhi => _t('Sandhi apostrophes');
+  String get dictionaryHeaderSummary => _t('Show or hide the summary');
+  String get dictionaryHeaderGrammar => _t('Open the grammar by default');
+  String get dictionaryHeaderExamples => _t('Open the examples by default');
+  String get dictionaryHeaderSmaller => _t('Smaller dictionary text');
+  String get dictionaryHeaderLarger => _t('Larger dictionary text');
+  String get dictionaryHeaderTop => _t('Jump to the top');
+  String get dictionaryHeaderHistory => _t('Search history');
+  String get dictionaryHeaderHide =>
+      _t('Hide these icons (show them again in Dictionary Settings)');
+  String get dictionaryHeaderHideTitle => _t('Hide the icons?');
+  String get dictionaryHeaderHideMessage =>
+      _t('You can show them again in Dictionary Settings.');
+  String get dictionaryHeaderIconsShow =>
+      _t('Show the icons in the dictionary header');
+  String get dictionaryHeaderHistoryTitle => _t('Search history');
+  String get dpdAudioVoice => _t('Pronunciation voice');
+  String get dpdVoiceMale => _t('Male');
+  String get dpdVoiceFemale => _t('Female');
+  String get dictionaryListTitle => _t('Dictionaries');
+  String get dictionaryListHelp =>
+      _t('Drag to set the order of the lookup page. Tick to show a dictionary.');
+  String get dpdOptionsTitle => _t('DPD display');
+  String get dpdGrammarOpen => _t('Open the grammar by default');
+  String get dpdExamplesOpen => _t('Open the examples by default');
+  String get dpdOneSectionAtATime => _t('Show one section at a time');
+  String get dpdLevelHelp =>
+      _t('How much of each DPD entry to show. Other dictionaries are not affected.');
+  String get dpdNotInstalled => _t('The DPD database is not installed.');
+  String dpdUnsupportedSchema(String? schema) =>
+      '${_t('This DPD database uses a format this version of ePitaka cannot read')}'
+      ' (${_t('schema')} ${schema ?? '?'}). ${_t('Update ePitaka to use it.')}';
+  String get dpdExpectedFile => _t('Expected file');
+  String dpdInstalledRelease(String release) =>
+      '${_t('Installed release')}: $release';
+  String get dpdNewDatabaseTitle => _t('New DPD dictionary');
+  String get dpdNewDatabaseBody => _t(
+    'This version of ePitaka uses a new, fuller DPD dictionary database. '
+    'It must be downloaded before the app can open.',
+  );
+  String dpdDownloadSize(String size) => '${_t('Download size')}: $size';
+  String get dpdDownloading => _t('DPD is downloading');
+  String get dpdUnpacking => _t('Unpacking and checking…');
+  String get dpdUpdateTitle => _t('New DPD release');
+  String dpdUpdateBody(String release, String size) =>
+      '${_t('A newer DPD dictionary release is available')}: $release '
+      '($size).';
+  String dpdLastCheck(String date) => '${_t('Last checked')}: $date';
+  String get dpdNeverChecked => _t('Not checked yet');
+  String get dpdCheckNow => _t('Check now');
+  String get dpdUpToDate => _t('Up to date');
+  String dpdNewerRelease(String release, String size) =>
+      '${_t('Newer release')}: $release ($size)';
+  String get dpdReinstall => _t('Reinstall');
   String get compoundBreakdown => _t('Compound breakdown');
   String get englishMeaning => _t('English meaning');
   String get pinToSidePanel => _t('Pin to side panel');

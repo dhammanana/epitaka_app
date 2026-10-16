@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../dpd/providers/dpd_database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
@@ -784,13 +784,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // the DB provider is awaited at startup, so the routing below still
     // happens before any selection clearing. If the DB is not yet loaded,
     // the bare word is routed unchanged.
+    final quick = ref.read(dpdQuickLookupProvider).valueOrNull;
     final lookupWord = pickLookupWord(
       word,
       hit?.joinedWord,
-      ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(word),
-      (hit?.joinedWord == null)
-          ? null
-          : ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(hit!.joinedWord!),
+      (w) => quick?.hasContent(w) ?? false,
     );
     if (lookupWord != word) {
       developer.log('[DBG] quote-run join: "$word" → "$lookupWord"', name: 'epitaka.dict');

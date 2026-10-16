@@ -32,92 +32,14 @@ class DictionaryBook {
   }
 }
 
-/// Provider that reads dictionary_books from epitaka.db.
+/// Provider that reads dictionary_books from epitaka.db. Read only: the order
+/// and switches the user sets live in the dictionary list's own preferences.
 final dictionaryBooksProvider = FutureProvider<List<DictionaryBook>>((
   ref,
 ) async {
   final db = await ref.watch(epitakaDbProvider.future);
   return _loadDictionaryBooks(db);
 });
-
-/// Provider that watches dictionary books and re-fetches when invalidated.
-/// This allows the settings screen to update the list after changes.
-final dictionaryBooksNotifierProvider =
-    StateNotifierProvider<
-      DictionaryBooksNotifier,
-      AsyncValue<List<DictionaryBook>>
-    >((ref) => DictionaryBooksNotifier(ref));
-
-class DictionaryBooksNotifier
-    extends StateNotifier<AsyncValue<List<DictionaryBook>>> {
-  final Ref _ref;
-
-  DictionaryBooksNotifier(this._ref) : super(const AsyncLoading()) {
-    load();
-  }
-
-  /// Load dictionary books from the database.
-  Future<void> load() async {
-    state = const AsyncLoading();
-    try {
-      final db = await _ref.read(epitakaDbProvider.future);
-      final books = await _loadDictionaryBooks(db);
-      state = AsyncData(books);
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
-  }
-
-  /// Toggle a dictionary's enabled/disabled state.
-  Future<void> toggleEnabled(int id, bool enabled) async {
-    try {
-      final db = await _ref.read(epitakaDbProvider.future);
-      await db.customStatement(
-        'UPDATE dictionary_books SET user_choice = ${enabled ? 1 : 0} WHERE id = $id',
-      );
-      await load();
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
-  }
-
-  /// Reorder dictionaries by setting user_order values.
-  ///
-  /// Applies an optimistic synchronous state update first so the
-  /// ReorderableListView reflects the new order on the next rebuild
-  /// (it needs an immediate update to avoid snapping the item back on
-  /// release). The DB write then persists the change in the background;
-  /// we intentionally do NOT call [load] afterwards, since that would
-  /// flip state to AsyncLoading and cause a visible flicker, and the
-  /// optimistic state already matches what a reload would produce.
-  Future<void> reorder(List<int> orderedIds) async {
-    final previous = state;
-    if (previous is AsyncData<List<DictionaryBook>>) {
-      final byId = {for (final b in previous.value) b.id: b};
-      final reordered = <DictionaryBook>[
-        for (final id in orderedIds)
-          if (byId.containsKey(id)) byId[id]!,
-      ];
-      // Safety net: append any books not present in orderedIds.
-      for (final b in previous.value) {
-        if (!orderedIds.contains(b.id)) reordered.add(b);
-      }
-      state = AsyncData(reordered);
-    }
-
-    try {
-      final db = await _ref.read(epitakaDbProvider.future);
-      for (int i = 0; i < orderedIds.length; i++) {
-        await db.customStatement(
-          'UPDATE dictionary_books SET user_order = $i WHERE id = ${orderedIds[i]}',
-        );
-      }
-    } catch (e) {
-      // Revert to the previous state on failure.
-      state = previous;
-    }
-  }
-}
 
 Future<List<DictionaryBook>> _loadDictionaryBooks(EpitakaDatabase db) async {
   final rows = await db

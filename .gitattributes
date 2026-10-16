@@ -2,3 +2,8 @@
 # core.autocrlf is on by default on the CI runners. A CRLF shebang and CRLF
 # `case` patterns both break silently under Git Bash.
 *.sh text eol=lf
+
+# Parsed by the tests; a stray \r would change the stored text.
+test/fixtures/*.sql text eol=lf
+test/fixtures/*.json text eol=lf
+test/fixtures/*.tsv text eol=lf

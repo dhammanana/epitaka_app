@@ -17,13 +17,13 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
-import '../../../core/providers/dpd_dictionary_provider.dart';
 import '../../../core/providers/pali_definition_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/pali_search_utils.dart' show normalizePaliFuzzy;
+import '../../dpd/database/dpd_headword_extensions.dart';
+import '../../dpd/providers/dpd_database_provider.dart';
 import '../../reader/services/jump_service.dart';
 import 'section_index_service.dart';
 
@@ -1922,36 +1922,48 @@ class AiQaToolService {
 
     // 1. DPD dictionary: exact lookup first, then prefix fallback.
     try {
-      final dpdDb = await _ref.read(dpdDictionaryDbProvider.future);
-      final normalized = term.toLowerCase();
+      final dao = await _ref.read(dpdDaoProvider.future);
 
-      final lookups = <DpdLookupRow>[];
-      final exact = dpdDb.getLookup(normalized);
-      if (exact != null) {
-        lookups.add(exact);
-      } else {
-        lookups.addAll(dpdDb.searchLookup(normalized, limit: 5));
-      }
+      // An exact row wins; otherwise up to five keys that start with the term.
+      final row = await dao.getLookupRow(term);
+      final keys = row != null
+          ? [row.lookupKey]
+          : await dao.searchLookupKeysPrefix(term, limit: 5);
 
       final lookupResults = <Map<String, dynamic>>[];
-      for (final lr in lookups) {
-        final headwords = dpdDb.getHeadwordsByIds(lr.headwords);
+      for (final key in keys) {
+        final headwords = await dao.searchExact(key);
         lookupResults.add({
-          'lookup_key': lr.lookupKey,
-          'headwords': headwords
-              .map(
-                (h) => {
-                  'id': h.id,
-                  'lemma': h.cleanLemma1,
-                  'meaning': _plainMeaning(h.meaningHtml ?? ''),
-                },
-              )
-              .toList(),
+          'lookup_key': key,
+          'headwords': headwords.map((hw) {
+            final h = hw.headword;
+            final meaning = h.meaning1?.isNotEmpty == true
+                ? h.meaning1!
+                : (h.meaning2 ?? '');
+            final construction = h.constructionSummary;
+            return {
+              'id': h.id,
+              'lemma': h.lemmaClean,
+              'meaning': _plainMeaning(
+                construction.isEmpty ? meaning : '$meaning [$construction]',
+              ),
+            };
+          }).toList(),
         });
       }
       result['lookups'] = lookupResults;
     } catch (e) {
       debugPrint('[AI_QA] get_dictionary: DPD lookup unavailable: $e');
+      // Empty lookups alone read as "the word is unknown". The note goes to
+      // the model and to MCP clients, so it names no file path.
+      result['dpd_error'] = e is DpdUnavailable
+          ? switch (e.state.status) {
+              DpdDatabaseStatus.notInstalled => 'DPD database not installed',
+              DpdDatabaseStatus.unsupportedSchema =>
+                'DPD database not supported by this version of ePitaka',
+              DpdDatabaseStatus.ready => 'DPD database unavailable',
+            }
+          : 'DPD lookup failed (${e.runtimeType})';
     }
 
     // 2. Canon occurrences from pali_definition — the SAME search the app

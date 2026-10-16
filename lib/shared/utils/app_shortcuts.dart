@@ -10,7 +10,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/utils/responsive_breakpoint.dart';
 import '../../router/app_router.dart' show AppRoutes;
+import '../../features/dictionary/providers/dictionary_font_scale_provider.dart';
+import '../../features/dictionary/providers/dictionary_header_provider.dart';
 import '../../features/dictionary/widgets/dictionary_sheet.dart';
+import '../../features/dpd/providers/dpd_settings_provider.dart';
 import '../../features/library/widgets/library_dialog.dart';
 import '../../features/reader/providers/reader_action_controller.dart';
 import '../../features/reader/providers/reader_keyboard_bridge.dart';
@@ -110,6 +113,7 @@ enum ShortcutSection {
   reading,
   tabs,
   textDisplay,
+  dictionary,
   app,
   reader,
   searchResults,
@@ -485,6 +489,85 @@ class AppShortcuts {
         SingleActivator(LogicalKeyboardKey.digit3, control: true, alt: true),
         SingleActivator(LogicalKeyboardKey.digit3, meta: true, alt: true),
       ],
+    ),
+    // No default keys: the user binds the ones they want (Phase 9).
+    ShortcutBinding(
+      id: 'dict-level-sankhitta',
+      label: 'Level Saṅkhitta · Brief',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-level-majjhima',
+      label: 'Level Majjhima · Standard',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-level-vitthara',
+      label: 'Level Vitthāra · Full',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-summary',
+      label: 'Show or hide the summary',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-grammar',
+      label: 'Open the grammar by default',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-examples',
+      label: 'Open the examples by default',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-text-larger',
+      label: 'Larger dictionary text',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-text-smaller',
+      label: 'Smaller dictionary text',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-top',
+      label: 'Jump to the top',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-history',
+      label: 'Search history',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-back',
+      label: 'Back',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-forward',
+      label: 'Forward',
+      section: ShortcutSection.dictionary,
+      activators: [],
+    ),
+    ShortcutBinding(
+      id: 'dict-search',
+      label: 'Search field',
+      section: ShortcutSection.dictionary,
+      activators: [],
     ),
     // ── In-place shortcuts (checked by one place's own key handler) ──
     ShortcutBinding(
@@ -1070,6 +1153,14 @@ class AppShortcuts {
           .setTranslationDisplayMode(TranslationDisplayMode.sideBySide);
     }
 
+    DpdSettingsNotifier dpd() => ref.read(dpdSettingsProvider.notifier);
+    void textSize(double by) => ref
+        .read(dictionaryFontScaleProvider.notifier)
+        .setScale(ref.read(dictionaryFontScaleProvider) + by);
+    // The open panel or sheet does these; see dictionary_header_provider.
+    void request(StateProvider<int> counter) =>
+        ref.read(counter.notifier).state++;
+
     // Attach each catalog entry to its action. The invokes are keyed by the
     // entry's unique [ShortcutBinding.id], so two entries can share a label
     // (e.g. the N and L library shortcuts).
@@ -1106,6 +1197,22 @@ class AppShortcuts {
       'display-hide': hideTranslation,
       'display-line': viewLineByLine,
       'display-side': viewSideBySide,
+      'dict-level-sankhitta': () => dpd().setLevel(DictionaryLevel.sankhitta),
+      'dict-level-majjhima': () => dpd().setLevel(DictionaryLevel.majjhima),
+      'dict-level-vitthara': () => dpd().setLevel(DictionaryLevel.vitthara),
+      'dict-summary': () =>
+          dpd().setShowSummary(!ref.read(dpdSettingsProvider).showSummary),
+      'dict-grammar': () =>
+          dpd().setGrammarOpen(!ref.read(dpdSettingsProvider).grammarOpen),
+      'dict-examples': () =>
+          dpd().setExamplesOpen(!ref.read(dpdSettingsProvider).examplesOpen),
+      'dict-text-larger': () => textSize(kDictionaryFontScaleStep),
+      'dict-text-smaller': () => textSize(-kDictionaryFontScaleStep),
+      'dict-top': () => request(dictionaryScrollTopRequestProvider),
+      'dict-history': () => request(dictionaryHistoryRequestProvider),
+      'dict-back': () => request(dictionaryBackRequestProvider),
+      'dict-forward': () => request(dictionaryForwardRequestProvider),
+      'dict-search': () => request(dictionarySearchFocusRequestProvider),
     };
     return [
       for (final binding
