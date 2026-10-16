@@ -9,8 +9,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/contents_provider.dart';
 
@@ -242,6 +244,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                   ? TextField(
                       controller: _searchController,
                       focusNode: _searchFocusNode,
+                      inputFormatters: const [VelthuisInputFormatter()],
                       autofocus: true,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.onSurface,
@@ -250,15 +253,21 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                         hintText: loc.searchContents,
                         isDense: true,
                         border: InputBorder.none,
-                        suffixIcon: IconButton(
-                          icon: Icon(Icons.close, size: 18),
-                          onPressed: () {
-                            setState(() {
-                              _searchActive = false;
-                              _searchQuery = '';
-                              _searchController.clear();
-                            });
-                          },
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _searchActive = false;
+                                  _searchQuery = '';
+                                  _searchController.clear();
+                                });
+                              },
+                            ),
+                            const VelthuisHelpIcon(),
+                          ],
                         ),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v),

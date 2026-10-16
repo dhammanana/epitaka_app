@@ -13,6 +13,8 @@ import 'package:epitaka/core/providers/database_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/library/widgets/library_browser.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'helpers/type_keys.dart';
 
 Future<EpitakaDatabase> _seedDatabase() async {
   final db = EpitakaDatabase(NativeDatabase.memory());
@@ -124,6 +126,25 @@ void main() {
 
     expect(tester.takeException(), isNull,
         reason: 'searching the library threw an exception');
+  });
+
+  testWidgets('Velthuis turns into diacritics; the help icon shows',
+      (tester) async {
+    await pumpBrowser(tester);
+    await revealSearch(tester);
+    final help = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(VelthuisHelpIcon),
+    );
+    expect(help, findsOneWidget);
+
+    await typeKeys(tester, find.byType(TextField), 'diigha');
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'dīgha',
+    );
+    expect(help, findsOneWidget);
   });
 
   testWidgets('non-matching query shows the empty state, no error',

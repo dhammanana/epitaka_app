@@ -3,7 +3,7 @@
 /// This is NOT a pass/fail functional test — it measures wall-clock time for
 /// the operations that dominate the reader's per-frame work (Pāli script
 /// conversion, HTML parsing, paragraph widget builds) and the dictionary
-/// sheet's per-keystroke work (velthuis conversion, HTML stripping).
+/// sheet's per-keystroke work (script-to-Roman conversion, HTML stripping).
 ///
 /// Run with:
 ///   flutter test test/reader_performance_benchmark_test.dart
@@ -15,14 +15,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/utils/pali_script_converter.dart';
-import '../lib/core/utils/pali_text_utils.dart';
-import '../lib/core/utils/velthuis.dart';
-import '../lib/features/dictionary/widgets/dictionary_search_shared.dart';
-import '../lib/features/reader/providers/reader_provider.dart'
+import 'package:epitaka/core/utils/pali_script_converter.dart';
+import 'package:epitaka/core/utils/pali_text_utils.dart';
+import 'package:epitaka/features/dictionary/widgets/dictionary_search_shared.dart';
+import 'package:epitaka/features/reader/providers/reader_provider.dart'
     show LineData, ParagraphData, ParagraphHeading;
-import '../lib/shared/utils/html_text_parser.dart';
-import '../lib/shared/widgets/reading_paragraph.dart';
+import 'package:epitaka/shared/utils/html_text_parser.dart';
+import 'package:epitaka/shared/widgets/reading_paragraph.dart';
 
 /// A realistic Pāli line as stored in the database (with HTML markup).
 const _paliLineWithHtml = 'evaṃ me sutaṃ — <b>ekaṃ samayaṃ</b> bhagavā '
@@ -115,16 +114,19 @@ void main() {
   });
 
   group('dictionary textbox flow', () {
-    test('velthuis ×20000 (per keystroke conversion)', () {
+    test('convertToRomanPali ×20000 (per keystroke conversion)', () {
       final sw = Stopwatch()..start();
       for (var i = 0; i < 20000; i++) {
-        velthuis('dhamma.m');
-        velthuis('evam me sutam');
-        velthuis('rājagaha');
+        convertToRomanPali('dhamma.m');
+        convertToRomanPali('evam me sutam');
+        convertToRomanPali('rājagaha');
       }
       sw.stop();
       // ignore: avoid_print
-      print('[BENCH] velthuis: ${sw.elapsedMicroseconds ~/ 20000}µs/3-calls');
+      print(
+        '[BENCH] convertToRomanPali: '
+        '${sw.elapsedMicroseconds ~/ 20000}µs/3-calls',
+      );
     });
   });
 

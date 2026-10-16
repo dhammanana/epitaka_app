@@ -9,8 +9,10 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
 
@@ -187,6 +189,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                       child: TextField(
                         controller: _filterController,
                         focusNode: _filterFocusNode,
+                        inputFormatters: const [VelthuisInputFormatter()],
                         style: AppTypography.labelMedium.copyWith(
                           fontSize: 13,
                           color: colors.onSurface,
@@ -199,15 +202,20 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                             size: 16,
                             color: colors.onSurfaceVariant,
                           ),
-                          suffixIcon: _filterQuery.isEmpty
-                              ? null
-                              : IconButton(
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_filterQuery.isNotEmpty)
+                                IconButton(
                                   icon: Icon(Icons.clear, size: 16),
                                   onPressed: () {
                                     _filterController.clear();
                                     setState(() => _filterQuery = '');
                                   },
                                 ),
+                              const VelthuisHelpIcon(),
+                            ],
+                          ),
                           filled: true,
                           fillColor: colors.surfaceContainerHighest,
                           border: OutlineInputBorder(

@@ -1,5 +1,4 @@
 import '../../../core/utils/pali_script_converter.dart';
-import '../../../core/utils/velthuis.dart';
 
 /// Folds niggahīta (`ṁ`, `ŋ` → `ṃ`) and drops `?` and `!`, so one word has
 /// one spelling in the history, the suggestion keys and the lookup.
@@ -9,9 +8,13 @@ String foldDpdQuery(String text) => text
     .replaceAll('?', '')
     .replaceAll('!', '');
 
-/// What the sheet and the panel search with. [velthuis] turns any script into
-/// Roman first, so the field itself can keep what the user typed.
-String cleanDpdQuery(String raw) => foldDpdQuery(velthuis(raw)).trim();
+/// What the sheet and the panel look up, whether the word was typed, tapped,
+/// chosen from the suggestions or handed in by the reader. Any script becomes
+/// Roman and niggahīta is folded. Velthuis is not applied here: the field
+/// converts typing as it happens, and any other word keeps its own spelling
+/// (a real `aa`, or English such as `vacuum`).
+String cleanDpdQuery(String raw) =>
+    foldDpdQuery(convertToRomanPali(raw)).trim();
 
 /// The word under a tap inside an entry, ready to look up: any script turned
 /// into Roman, punctuation dropped, niggahīta folded. A dot between two digits
@@ -24,10 +27,3 @@ String cleanTappedWord(String raw) {
   final dots = stripped.replaceAll(RegExp(r'(?<!\d)\.|\.(?!\d)'), '');
   return foldDpdQuery(dots).trim();
 }
-
-/// A word that was not typed here: one tapped inside an entry, chosen from the
-/// suggestions, or handed in by the reader. Any script becomes Roman and
-/// niggahīta is folded, but [velthuis] is NOT applied: it would turn the English
-/// `vacuum` into `vacūm` and `aardvark` into `ārdvark`.
-String cleanShownWord(String raw) =>
-    foldDpdQuery(convertToRomanPali(raw)).trim();

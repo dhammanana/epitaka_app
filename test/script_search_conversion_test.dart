@@ -1,7 +1,8 @@
 /// Regression tests for script → Roman Pāli conversion, which is the
 /// foundation of cross-script search and dictionary lookup:
 ///
-///   * in-book search   — the query is converted to Roman via [velthuis]
+///   * in-book search   — the query is converted to Roman via
+///                        [convertToRomanPali]
 ///   * global search    — the search textbox converts any script to Roman
 ///   * double-tap dict  — [convertToRomanPali] turns the displayed word
 ///                        (Myanmar, Tamil, …) into a Roman headword
@@ -11,14 +12,12 @@
 /// silently skipped and the original script text was kept.
 library;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/utils/pali_script_converter.dart';
-import '../lib/core/utils/pali_search_utils.dart';
-import '../lib/core/utils/pali_text_utils.dart';
-import '../lib/core/utils/velthuis.dart';
-import '../lib/features/reader/utils/reader_word_hit_test.dart' show cleanPali;
+import 'package:epitaka/core/utils/pali_script_converter.dart';
+import 'package:epitaka/core/utils/pali_search_utils.dart';
+import 'package:epitaka/core/utils/pali_text_utils.dart';
+import 'package:epitaka/features/reader/utils/reader_word_hit_test.dart' show cleanPali;
 
 void main() {
   group('TextProcessor.convertFromMixed (root cause)', () {
@@ -40,71 +39,36 @@ void main() {
     });
   });
 
-  group('velthuis — any script to Roman', () {
+  group('convertToRomanPali — any script to Roman (search queries)', () {
     test('Myanmar → Roman', () {
-      expect(velthuis('ဓမ္မ'), 'dhamma');
-      expect(velthuis('နမော'), 'namo');
+      expect(convertToRomanPali('ဓမ္မ'), 'dhamma');
+      expect(convertToRomanPali('နမော'), 'namo');
     });
 
     test('Tamil (with superscripts) → Roman', () {
-      expect(velthuis('த⁴ம்ம'), 'dhamma');
-      expect(velthuis('ப⁴க³வதோ'), 'bhagavato');
+      expect(convertToRomanPali('த⁴ம்ம'), 'dhamma');
+      expect(convertToRomanPali('ப⁴க³வதோ'), 'bhagavato');
     });
 
     test('Thai (virama form used by the app display) → Roman', () {
       // The app renders Pali in the traditional virama spelling (ธมฺม),
       // which round-trips through the character maps.
-      expect(velthuis('ธมฺม'), 'dhamma');
+      expect(convertToRomanPali('ธมฺม'), 'dhamma');
     });
 
     test('Sinhala → Roman', () {
-      expect(velthuis('ධම්ම'), 'dhamma');
+      expect(convertToRomanPali('ධම්ම'), 'dhamma');
     });
 
     test('mixed text → Roman', () {
-      expect(velthuis('namo ဓမ္မ'), 'namo dhamma');
-      expect(velthuis('namo த⁴ம்ம'), 'namo dhamma');
+      expect(convertToRomanPali('namo ဓမ္မ'), 'namo dhamma');
+      expect(convertToRomanPali('namo த⁴ம்ம'), 'namo dhamma');
     });
 
     test('already-Roman text is unchanged', () {
-      expect(velthuis('dhammaṃ'), 'dhammaṃ');
-      expect(velthuis('rāga'), 'rāga');
+      expect(convertToRomanPali('dhammaṃ'), 'dhammaṃ');
+      expect(convertToRomanPali('rāga'), 'rāga');
     });
-  });
-
-  group('velthuisDiacritics / convertedTextEditingValue (textbox display)', () {
-    test('diacritics-only pass keeps the typed script unchanged', () {
-      expect(velthuisDiacritics('ဓမ္မ'), 'ဓမ္မ');
-      expect(velthuisDiacritics('နမော tassa'), 'နမော tassa');
-    });
-
-    test('diacritics-only pass still renders Velthuis notation', () {
-      expect(velthuisDiacritics('dhamma.m'), 'dhammaṃ');
-      expect(velthuisDiacritics('raaga'), 'rāga');
-    });
-
-    test('convertedTextEditingValue keeps the typed script and the cursor', () {
-      const value = TextEditingValue(
-        text: 'ဓမ္မ',
-        selection: TextSelection.collapsed(offset: 3),
-      );
-      final result = convertedTextEditingValue(value);
-      expect(result.text, 'ဓမ္မ');
-      expect(result.selection.baseOffset, 3);
-    });
-
-    test(
-      'convertedTextEditingValue renders Velthuis notation with cursor math',
-      () {
-        const value = TextEditingValue(
-          text: 'dhamma.m',
-          selection: TextSelection.collapsed(offset: 8),
-        );
-        final result = convertedTextEditingValue(value);
-        expect(result.text, 'dhammaṃ');
-        expect(result.selection.baseOffset, 7);
-      },
-    );
   });
 
   group('convertToRomanPali (double-tap dictionary lookup)', () {
@@ -153,7 +117,7 @@ void main() {
     test('a Myanmar query normalizes to the same key as the Roman text', () {
       // Mirrors reader_search_notifier._runSearch.
       String keyFor(String raw) =>
-          normalizePaliFuzzy(cleanPaliForIndexing(velthuis(raw)));
+          normalizePaliFuzzy(cleanPaliForIndexing(convertToRomanPali(raw)));
 
       expect(keyFor('ဓမ္မ'), keyFor('dhamma'));
       expect(keyFor('த⁴ம்ம'), keyFor('dhamma'));
@@ -163,7 +127,9 @@ void main() {
 
     test('a converted query is contained in normalized line text', () {
       final line = normalizePaliFuzzy(cleanPaliForIndexing('dhammaṃ khetta'));
-      final term = normalizePaliFuzzy(cleanPaliForIndexing(velthuis('ဓမ္မ')));
+      final term = normalizePaliFuzzy(
+        cleanPaliForIndexing(convertToRomanPali('ဓမ္မ')),
+      );
       expect(line.contains(term), isTrue);
     });
   });

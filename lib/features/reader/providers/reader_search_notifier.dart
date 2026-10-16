@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/settings_provider.dart' show settingsProvider;
 import '../../../core/utils/pali_search_utils.dart';
-import '../../../core/utils/velthuis.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 
@@ -283,12 +283,12 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     final activeTab = _ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
 
-    // Convert the query from any Pali script (and Velthuis notation) to
-    // Roman IAST. The reader always searches against Roman-script text
-    // (the database stores Pāli in romanised form regardless of the
-    // display script), so a word typed in Myanmar, Thai, Tamil, etc.
-    // must be converted to Roman before it can match.
-    final romanQuery = velthuis(query);
+    // Convert the query from any Pali script to Roman IAST (the find box
+    // converts Velthuis itself, as it is typed). The reader always searches
+    // against Roman-script text (the database stores Pāli in romanised form
+    // regardless of the display script), so a word typed in Myanmar, Thai,
+    // Tamil, etc. must be converted to Roman before it can match.
+    final romanQuery = convertToRomanPali(query);
 
     final gen = ++_searchGen;
 

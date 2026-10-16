@@ -13,12 +13,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/models/app_models.dart';
-import '../lib/core/providers/settings_provider.dart';
-import '../lib/core/utils/app_localizations.dart';
-import '../lib/features/contents/providers/contents_provider.dart';
-import '../lib/features/contents/screens/contents_screen.dart';
-import '../lib/features/contents/widgets/contents_panel.dart';
+import 'package:epitaka/core/models/app_models.dart';
+import 'package:epitaka/core/providers/settings_provider.dart';
+import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/features/contents/providers/contents_provider.dart';
+import 'package:epitaka/features/contents/screens/contents_screen.dart';
+import 'package:epitaka/features/contents/widgets/contents_panel.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'helpers/type_keys.dart';
 
 /// 20 headings with ascending paraIds — mirrors how `contentsProvider`
 /// orders rows (`ORDER BY para_id`), which `_currentHeadingIndex` relies on.
@@ -174,6 +176,38 @@ void main() {
         greaterThan(0),
         reason: 'panel auto-scrolled to the current heading',
       );
+    });
+  });
+
+  group('Contents search — Velthuis and the help icon', () {
+    Future<void> typeIn(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      final help = find.descendant(
+        of: find.byType(TextField),
+        matching: find.byType(VelthuisHelpIcon),
+      );
+      expect(help, findsOneWidget);
+      await typeKeys(tester, find.byType(TextField), 'paali');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'pāli',
+      );
+      expect(help, findsOneWidget);
+    }
+
+    testWidgets('phone screen', (tester) async {
+      await tester.pumpWidget(_build(const ContentsScreen(bookId: 'dn1')));
+      await typeIn(tester);
+    });
+
+    testWidgets('desktop panel', (tester) async {
+      await tester.pumpWidget(
+        _build(const Scaffold(body: ContentsPanel(bookId: 'dn1'))),
+      );
+      await typeIn(tester);
     });
   });
 }
