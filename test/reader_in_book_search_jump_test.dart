@@ -24,6 +24,8 @@ import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/reader/widgets/reader_keyboard_navigation.dart';
 import 'package:epitaka/router/app_router.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'helpers/type_keys.dart';
 
 const _paraCount = 40;
 const _linesPerPara = 8;
@@ -166,6 +168,7 @@ void main() {
     Size size = const Size(600, 800),
     String word = _word,
     int expectedMatches = 2,
+    bool keyByKey = false,
   }) async {
     final container = ProviderContainer(
       overrides: [
@@ -219,8 +222,12 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    // Enter the word the way a paste does: one text change, no Enter.
-    await tester.enterText(find.byType(TextField).first, word);
+    // One text change, as a paste makes, or key by key; no Enter.
+    if (keyByKey) {
+      await typeKeys(tester, find.byType(TextField).first, word);
+    } else {
+      await tester.enterText(find.byType(TextField).first, word);
+    }
     // Past the 300 ms debounce.
     await pumpUntil(
       tester,
@@ -378,6 +385,67 @@ void main() {
 
     expect(container.read(inBookSearchProvider).matchIndex, 1);
     expect(paragraphOnScreen(tester, _secondMatch.para), isTrue);
+  });
+
+  testWidgets('Velthuis typing turns into diacritics in the find box',
+      (tester) async {
+    // The seed has "pāli $_word" on exactly the two match lines.
+    final container = await openFindAndType(
+      tester,
+      word: 'paali $_word',
+      keyByKey: true,
+    );
+    final controller =
+        container.read(inBookSearchProvider.notifier).searchController;
+
+    expect(container.read(inBookSearchProvider).matchCount, 2);
+    expect(controller.text, 'pāli $_word');
+    expect(
+      find.descendant(
+        of: find.byType(TextField).first,
+        matching: find.byType(VelthuisHelpIcon),
+      ),
+      findsOneWidget,
+    );
+
+    // A second "a" typed in the middle, after "pa": the caret must stay
+    // after the new "ā", not jump to the end.
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'pa $_word',
+        selection: TextSelection.collapsed(offset: 2),
+      ),
+    );
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'paa $_word',
+        selection: TextSelection.collapsed(offset: 3),
+      ),
+    );
+    await tester.pump();
+    expect(controller.text, 'pā $_word');
+    expect(controller.selection.baseOffset, 2);
+    await settle(tester);
+  });
+
+  testWidgets('a vowel typed three times is searched as the double vowel',
+      (tester) async {
+    final container = await openFindAndType(
+      tester,
+      word: 'qqaaa',
+      expectedMatches: 0,
+      keyByKey: true,
+    );
+    await pumpUntil(
+      tester,
+      () => container.read(inBookSearchProvider).query.isNotEmpty,
+    );
+    final controller =
+        container.read(inBookSearchProvider.notifier).searchController;
+    expect(controller.text, 'qqaa');
+    expect(container.read(inBookSearchProvider).query, 'qqaa',
+        reason: 'the search must not turn the typed "aa" back into "ā"');
   });
 
   testWidgets('switching to another book closes the find bar', (tester) async {

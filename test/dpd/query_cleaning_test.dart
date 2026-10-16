@@ -16,8 +16,11 @@ void main() {
       expect(cleanDpdQuery('  dhamma  '), 'dhamma');
     });
 
-    test('still reads Velthuis', () {
-      expect(cleanDpdQuery('dhamma.m'), 'dhammaṃ');
+    test('leaves Velthuis alone: the field converts typing, not the lookup',
+        () {
+      // A pasted word keeps its own spelling, a double vowel included.
+      expect(cleanDpdQuery('theraapadāna'), 'theraapadāna');
+      expect(cleanDpdQuery('dhamma.m'), 'dhamma.m');
     });
 
     test('a query of only ? is empty', () {

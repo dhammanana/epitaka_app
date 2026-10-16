@@ -775,6 +775,8 @@ class AppLocalizations {
   String get openInReader => _t('Open in Reader');
   String get noHeadingFound => _t('No heading found for this result');
   String get failedToLoadPreview => _t('Failed to load preview:');
+  String get velthuisTyping => _t('Velthuis typing');
+  String get sanskrit => _t('Sanskrit');
   String get sectionHeadings => _t('Section headings');
 
   /// `N found` (heading results card badge)

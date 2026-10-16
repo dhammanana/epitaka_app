@@ -9,12 +9,14 @@ import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/widgets/search_screen.dart';
 import 'package:epitaka/router/app_router.dart';
 import 'package:epitaka/shared/utils/app_navigation.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/type_keys.dart';
 
 class _FakeSearchNotifier extends SearchNotifier {
   _FakeSearchNotifier(super.ref);
@@ -87,6 +89,27 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField).first);
     expect(field.controller!.text, 'dhamma vinaya');
     expect(fake.calls, [(query: 'dhamma vinaya', distance: 3)]);
+  });
+
+  testWidgets(
+      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      (tester) async {
+    await _pumpSearch(tester, null);
+    final help = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(VelthuisHelpIcon),
+    );
+    expect(help, findsOneWidget);
+
+    await typeKeys(tester, find.byType(TextField).first, 'paali');
+    // The box redraws after the 120 ms suggestion pause.
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(help, findsOneWidget);
+    expect(find.byIcon(Icons.clear), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      'pāli',
+    );
   });
 
   testWidgets('no initial query runs no search', (tester) async {

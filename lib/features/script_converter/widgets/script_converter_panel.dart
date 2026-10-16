@@ -19,6 +19,8 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show paliReadingFontFamily, scriptFontFamily;
+import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../services/script_conversion.dart';
 
 /// Desktop sidebar panel: convert Pāli text between any of the app's scripts.
@@ -85,6 +87,7 @@ class _ScriptConverterPanelState extends ConsumerState<ScriptConverterPanel> {
           ),
           child: TextField(
             controller: _input,
+            inputFormatters: const [VelthuisInputFormatter()],
             minLines: 2,
             maxLines: 5,
             onChanged: (_) => setState(() {}),
@@ -105,6 +108,7 @@ class _ScriptConverterPanelState extends ConsumerState<ScriptConverterPanel> {
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.all(10),
+              suffixIcon: const VelthuisHelpIcon(),
             ),
           ),
         ),

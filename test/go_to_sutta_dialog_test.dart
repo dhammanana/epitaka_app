@@ -5,11 +5,13 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/sutta_jump/widgets/go_to_sutta_dialog.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers/type_keys.dart';
 
 // headings.sc_id cells as scripts/import_sutta_codes.py writes them.
 Future<EpitakaDatabase> _seedDatabase() async {
@@ -159,6 +161,29 @@ void main() {
     expect(tab.bookId, 'M-i');
     expect(tab.initialParaId, 280);
     expect(find.byType(GoToSuttaDialog), findsNothing);
+  });
+
+  testWidgets('a Velthuis name turns into diacritics and finds the sutta',
+      (tester) async {
+    await pumpHost(tester);
+    expect(
+      find.descendant(
+        of: find.byType(TextField),
+        matching: find.byType(VelthuisHelpIcon),
+      ),
+      findsOneWidget,
+    );
+    await typeKeys(tester, find.byType(TextField), 'satipa.t.thaana');
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'satipaṭṭhāna',
+    );
+    expect(find.textContaining('MN10 · '), findsOneWidget);
+    await closeWithEscape(tester);
   });
 
   testWidgets('a range member with no token opens its covering range',

@@ -13,8 +13,10 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_shortcuts.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import '../../shared/services/ai_model_service.dart';
 import '../../shared/widgets/ai_error_card.dart';
@@ -91,9 +93,9 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   /// Whether the mention overlay is currently showing.
   bool _mentionActive = false;
 
-  /// Prevents re-entry while the controller text is being updated after
-  /// Velthuis conversion (the value setter notifies listeners synchronously).
-  bool _isConverting = false;
+  /// Set while [_stripMentionToken] rewrites the field, so the text listener
+  /// does not run the mention search again for that edit.
+  bool _isStrippingMention = false;
 
   /// Whether we have checked the mention index status at least once.
   bool _mentionIndexChecked = false;
@@ -138,26 +140,12 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   }
 
   void _onTextChanged() {
-    // Prevent re-entry when updating the controller text after conversion.
-    if (_isConverting) return;
+    // Skip the edit _stripMentionToken makes.
+    if (_isStrippingMention) return;
 
-    // Apply Velthuis conversion on-the-fly so users can type Velthuis
-    // notation (dhamma.m → dhammaṃ). For non-Roman scripts (Sinhala,
-    // Thai, Myanmar, …) leave the controller untouched so the user
-    // keeps seeing their native script; the mention search still receives
-    // the Roman-converted result below.
-    final raw = _textController.text;
-    final converted = velthuis(raw);
-    if (isRomanScript(raw) && converted != raw) {
-      _isConverting = true;
-      _textController.value = convertedTextEditingValue(_textController.value);
-      _isConverting = false;
-    }
-
-    // Read the post-conversion text. For non-Roman scripts the field still
-    // shows the original script, so convert to Roman here — the mention
-    // index is stored in IAST — before the mention search sees it.
-    final text = velthuis(_textController.text);
+    // The mention index is stored in IAST, so a word in a non-Roman script
+    // goes to Roman first.
+    final text = convertToRomanPali(_textController.text);
     ref.read(mentionSearchProvider.notifier).onTextChanged(text);
 
     final isActive = ref.read(mentionSearchProvider).isActive;
@@ -191,13 +179,13 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
       next = next.replaceAll(RegExp(r' {2,}'), ' ');
     }
     // Guarded: don't re-trigger the mention search for this edit.
-    _isConverting = true;
+    _isStrippingMention = true;
     _textController.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: idx.clamp(0, next.length)),
       composing: TextRange.empty,
     );
-    _isConverting = false;
+    _isStrippingMention = false;
   }
 
   Future<void> _checkMentionIndex() async {
@@ -226,9 +214,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
   }
 
   Future<void> _sendMessage() async {
-    // Convert one more time for safety (idempotent — the on-the-fly
-    // conversion in _onTextChanged already keeps the field converted).
-    final text = velthuis(_textController.text).trim();
+    final text = convertToRomanPali(_textController.text).trim();
     if (text.isEmpty) return;
 
     // Collect attachments and clear input immediately
@@ -501,7 +487,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
               .when(
                 data: (t) => t?.isPinned ?? false,
                 loading: () => false,
-                error: (_, __) => false,
+                error: (_, _) => false,
               )
         : false;
 
@@ -1043,7 +1029,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
     final notBuilt = mentionIndexAsync.when(
       data: (ready) => !ready,
       loading: () => false,
-      error: (_, __) => true,
+      error: (_, _) => true,
     );
     if (!notBuilt) return const SizedBox.shrink();
 
@@ -1140,7 +1126,7 @@ class _VimamsaScreenState extends ConsumerState<VimamsaScreen> {
         return const SizedBox.shrink();
       },
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -2178,7 +2164,7 @@ class _ModelPickerSheetState extends ConsumerState<_ModelPickerSheet> {
                   return ListView.separated(
                     shrinkWrap: true,
                     itemCount: models.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (c, i) {
                       final m = models[i];
                       final selected = m == widget.current;
@@ -2257,7 +2243,7 @@ class _AiQaInputBar extends ConsumerWidget {
               .when(
                 data: (thread) => thread?.isFull ?? false,
                 loading: () => false,
-                error: (_, __) => false,
+                error: (_, _) => false,
               )
         : false;
 
@@ -2285,6 +2271,9 @@ class _AiQaInputBar extends ConsumerWidget {
                 child: TextField(
                   controller: textController,
                   focusNode: focusNode,
+                  inputFormatters: const [
+                    VelthuisInputFormatter(sanskrit: false),
+                  ],
                   maxLines: 5,
                   minLines: 1,
                   textInputAction: TextInputAction.send,
@@ -2312,6 +2301,7 @@ class _AiQaInputBar extends ConsumerWidget {
                       horizontal: 18,
                       vertical: 12,
                     ),
+                    suffixIcon: const VelthuisHelpIcon(sanskrit: false),
                   ),
                 ),
               ),

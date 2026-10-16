@@ -6,10 +6,12 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/type_keys.dart';
 
 /// Verifies the desktop dictionary panel receives words routed through
 /// [sidePanelProvider].
@@ -80,6 +82,37 @@ void main() {
 
   String textFieldText(WidgetTester tester) =>
       tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+  testWidgets(
+      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      (tester) async {
+    await pumpPanel(
+      tester,
+      initialPanels: const SidePanelsState(
+        left: SidePanelState(
+          openPanel: SidePanelType.dictionary,
+          isPinned: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final help = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(VelthuisHelpIcon),
+    );
+    expect(textFieldText(tester), isEmpty);
+    expect(help, findsOneWidget);
+
+    await typeKeys(tester, find.byType(TextField), 'paali');
+    // The panel redraws after its 300 ms suggestion pause.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(help, findsOneWidget);
+    expect(find.byIcon(Icons.clear), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'pāli',
+    );
+  });
 
   testWidgets(
     'panel shows the word passed when the dictionary is opened in the left '

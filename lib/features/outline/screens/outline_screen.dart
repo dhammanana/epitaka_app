@@ -19,8 +19,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../router/app_router.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../models/outline_models.dart';
 import '../providers/outline_provider.dart';
 import '../widgets/outline_section_sheet.dart';
@@ -324,6 +326,7 @@ class _OutlineHeader extends ConsumerWidget {
           ? TextField(
               controller: searchController,
               focusNode: searchFocusNode,
+              inputFormatters: const [VelthuisInputFormatter()],
               autofocus: true,
               style: AppTypography.bodyTranslation.copyWith(
                 color: colors.onSurface,
@@ -335,9 +338,15 @@ class _OutlineHeader extends ConsumerWidget {
                   color: colors.onSurfaceVariant,
                 ),
                 prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: onCloseSearch,
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: onCloseSearch,
+                    ),
+                    const VelthuisHelpIcon(),
+                  ],
                 ),
                 isDense: true,
                 border: OutlineInputBorder(

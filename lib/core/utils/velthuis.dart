@@ -1,110 +1,130 @@
-import 'package:flutter/material.dart';
-import 'pali_script_converter.dart';
+import 'package:flutter/services.dart';
 
-/// Returns true when [text] contains only Roman/Latin characters
-/// (no Devanagari, Sinhala, Thai, Myanmar, Khmer, etc.).
+/// The Pāli Velthuis rules, as typed → as shown. The help icon in the search
+/// boxes lists the lowercase ones straight from here, so the card and the
+/// converter agree.
+const velthuisRules = [
+  // Long vowels (lowercase)
+  ('aa', 'ā'),
+  ('ii', 'ī'),
+  ('uu', 'ū'),
+  // Velar nasal
+  ('"n', 'ṅ'),
+  // Palatal nasal
+  ('~n', 'ñ'),
+  // Retroflex / dental specials (dot notation)
+  ('.t', 'ṭ'),
+  ('.d', 'ḍ'),
+  ('.n', 'ṇ'),
+  ('.m', 'ṃ'),
+  ('.l', 'ḷ'),
+  // Uppercase long vowels
+  ('AA', 'Ā'),
+  ('II', 'Ī'),
+  ('UU', 'Ū'),
+  // Uppercase consonants
+  ('"N', 'Ṅ'),
+  ('~N', 'Ñ'),
+  ('.T', 'Ṭ'),
+  ('.D', 'Ḍ'),
+  ('.N', 'Ṇ'),
+  ('.M', 'Ṃ'),
+  ('.L', 'Ḷ'),
+];
+
+/// The Sanskrit letters Pāli lacks, in standard Velthuis. The help card lists
+/// them under the Pāli rows.
+const velthuisSanskritRules = [
+  ('"s', 'ś'),
+  ('.s', 'ṣ'),
+  ('.r', 'ṛ'),
+  ('.rr', 'ṝ'),
+  ('.ll', 'ḹ'),
+  ('.h', 'ḥ'),
+  ('"S', 'Ś'),
+  ('.S', 'Ṣ'),
+  ('.R', 'Ṛ'),
+  ('.RR', 'Ṝ'),
+  ('.LL', 'Ḹ'),
+];
+
+/// Typing a vowel three times gives the plain double vowel, for words the
+/// canon spells that way (`Dutiyaanuruddha`, `theraapadāna`). The card lists
+/// these under the Pāli rows.
+const velthuisDoubleVowels = [('aaa', 'aa'), ('iii', 'ii'), ('uuu', 'uu')];
+
+/// The rules as they meet the cursor. Typing goes one key at a time, so by
+/// the last key part of the rule is already converted: `.rr` is `ṛ` when the
+/// second `r` comes, and `aaa` is `ā` when the third `a` comes.
+const _paliFixups = [
+  ('āa', 'aa'),
+  ('īi', 'ii'),
+  ('ūu', 'uu'),
+  ('ĀA', 'AA'),
+  ('ĪI', 'II'),
+  ('ŪU', 'UU'),
+];
+const _sanskritFixups = [
+  ('ṛr', 'ṝ'),
+  ('ḷl', 'ḹ'),
+  ('ṚR', 'Ṝ'),
+  ('ḶL', 'Ḹ'),
+];
+const _paliTyping = [..._paliFixups, ...velthuisRules];
+const _allTyping = [
+  ..._paliFixups,
+  ..._sanskritFixups,
+  ...velthuisRules,
+  ...velthuisSanskritRules,
+];
+
+/// The one way a box where Pāli is typed turns Velthuis into diacritics:
+/// `inputFormatters: const [VelthuisInputFormatter()]`.
 ///
-/// Used by input fields to decide whether Velthuis diacritic conversion
-/// should be applied to the display text: for non-Roman scripts the
-/// controller is left untouched so the user keeps seeing their native
-/// script, while the search/lookup still receives the Roman-converted
-/// result from [velthuis].
-bool isRomanScript(String text) => !isNonLatinScript(text);
+/// Only typing converts: an edit that adds one character at the cursor, and
+/// only the rule whose key that character completes. A paste stays exactly
+/// as pasted, so the canon's own spellings (`theraapadāna`) survive. It runs
+/// before `onChanged`, so the box's own code already sees the result.
+/// Every key is plain Latin, so Myanmar, Thai, … typing completes no rule and
+/// stays as typed; the search turns it into Roman with `convertToRomanPali`.
+class VelthuisInputFormatter extends TextInputFormatter {
+  /// Off for boxes where English is typed: there `"sati"` must stay a quoted
+  /// word, not become `śati"`.
+  final bool sanskrit;
 
-/// Velthuis-to-Unicode Pāḷi converter.
-///
-/// Converts ASCII representations of Pāḷi diacritics into proper Unicode.
-/// Also converts text from any supported script (Devanagari, Sinhala, Thai,
-/// Myanmar, Khmer, etc.) to Pāli Roman (IAST) before applying the Velthuis
-/// conversion, so users typing in any script can search.
-///
-/// Examples:
-/// - `aa` → `ā`, `ii` → `ī`, `uu` → `ū`
-/// - `".t"` → `ṭ`, `".d"` → `ḍ`, `".n"` → `ṇ`, `".m"` → `ṃ`, `".l"` → `ḷ`
-/// - `"~n"` → `ñ`, `"\"n"` → `ṅ`
-/// - `"dhamma.m"` → `"dhammaṃ"`, `"raaga"` → `"rāga"`
-/// - `धम्म` (Devanagari) → `"dhamma"`
-/// - `ධම්ම` (Sinhala) → `"dhamma"`
-/// - `ธรรม` (Thai) → `"dhamma"`
-/// - `ធម្ម` (Khmer) → `"dhamma"`
-/// - Already-correct IAST text passes through unchanged.
-String velthuis(String input) {
-  if (input.isEmpty) return input;
+  const VelthuisInputFormatter({this.sanskrit = true});
 
-  // Phase 1: Convert any non-Roman script to Roman (IAST).
-  input = convertToRomanPali(input);
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    final cursor = newValue.selection.baseOffset;
+    if (!newValue.selection.isCollapsed || cursor < 1) return newValue;
 
-  // Phase 2: Velthuis diacritic conversion
-  return _velthuisDiacritics(input);
-}
+    // One key typed where the old cursor was, or over the old selection. The
+    // text must match exactly: a backspace after a paste can leave the same
+    // letters at the cursor, and must not convert them.
+    final old = oldValue.text;
+    final selStart = oldValue.selection.start;
+    final selEnd = oldValue.selection.end;
+    if (selStart != cursor - 1 ||
+        selEnd < selStart ||
+        selEnd > old.length ||
+        old.replaceRange(selStart, selEnd, text[cursor - 1]) != text) {
+      return newValue;
+    }
 
-/// Applies only the Velthuis diacritic pass of [velthuis] (Phase 2):
-/// ASCII notation like `aa` → `ā` or `dhamma.m` → `dhammaṃ` becomes
-/// proper Unicode diacritics.
-///
-/// Unlike [velthuis], it does **not** convert non-Latin scripts to Roman.
-/// Use this when updating the *displayed* text of an input field, so a user
-/// typing in Myanmar (or any other Pāli script) keeps seeing their own script
-/// on screen; use [velthuis] when the text is actually searched.
-String velthuisDiacritics(String input) {
-  if (input.isEmpty) return input;
-  return _velthuisDiacritics(input);
-}
-
-String _velthuisDiacritics(String input) => input
-    // Long vowels (lowercase)
-    .replaceAll('aa', 'ā')
-    .replaceAll('ii', 'ī')
-    .replaceAll('uu', 'ū')
-    // Velar nasal
-    .replaceAll('"n', 'ṅ')
-    // Palatal nasal
-    .replaceAll('~n', 'ñ')
-    // Retroflex / dental specials (dot notation)
-    .replaceAll('.t', 'ṭ')
-    .replaceAll('.d', 'ḍ')
-    .replaceAll('.n', 'ṇ')
-    .replaceAll('.m', 'ṃ')
-    .replaceAll('.l', 'ḷ')
-    .replaceAll('.h', 'ḥ')
-    // Uppercase long vowels
-    .replaceAll('AA', 'Ā')
-    .replaceAll('II', 'Ī')
-    .replaceAll('UU', 'Ū')
-    // Uppercase consonants
-    .replaceAll('"N', 'Ṅ')
-    .replaceAll('~N', 'Ñ')
-    .replaceAll('.T', 'Ṭ')
-    .replaceAll('.D', 'Ḍ')
-    .replaceAll('.N', 'Ṇ')
-    .replaceAll('.M', 'Ṃ')
-    .replaceAll('.L', 'Ḷ');
-
-/// Converts [value] for display in an input field while keeping the cursor in
-/// a sensible place, instead of always snapping it to the end of the text.
-///
-/// Only the Velthuis diacritic pass ([velthuisDiacritics]) is applied, so the
-/// field keeps whatever script the user typed (e.g. Myanmar) — script-to-Roman
-/// conversion happens solely behind the scenes when the text is searched via
-/// [velthuis]. Velthuis ASCII notation (`dhamma.m` → `dhammaṃ`) still renders
-/// as Unicode diacritics in the field.
-TextEditingValue convertedTextEditingValue(TextEditingValue value) {
-  final oldOffset = value.selection.baseOffset < 0
-      ? value.text.length
-      : value.selection.baseOffset;
-
-  final converted = velthuisDiacritics(value.text);
-
-  final beforeCursor = value.text.substring(
-    0,
-    oldOffset.clamp(0, value.text.length),
-  );
-  final newOffset = velthuisDiacritics(
-    beforeCursor,
-  ).length.clamp(0, converted.length);
-
-  return TextEditingValue(
-    text: converted,
-    selection: TextSelection.collapsed(offset: newOffset),
-  );
+    final before = text.substring(0, cursor);
+    for (final (from, to) in sanskrit ? _allTyping : _paliTyping) {
+      if (!before.endsWith(from)) continue;
+      final start = cursor - from.length;
+      return TextEditingValue(
+        text: text.substring(0, start) + to + text.substring(cursor),
+        selection: TextSelection.collapsed(offset: start + to.length),
+      );
+    }
+    return newValue;
+  }
 }
