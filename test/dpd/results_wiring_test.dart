@@ -104,6 +104,10 @@ void main() {
     late ProviderContainer container;
 
     setUp(() {
+      // Saved settings outlive a test file when files share a process. A
+      // partial or fuzzy switch left on by an earlier file makes this
+      // unwatched lookup fail with "disposed during loading state".
+      SharedPreferences.setMockInitialValues({});
       container = ProviderContainer(
         overrides: [dpdDatabaseFileProvider.overrideWith((ref) async => dbFile)],
       );

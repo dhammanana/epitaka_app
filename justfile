@@ -162,3 +162,17 @@ android-run:
 android-start:
     adb shell monkey -p "{{android_pkg}}" -c android.intent.category.LAUNCHER 1 >/dev/null
     @echo "ePitaka started on the phone"
+
+# The files share eight processes, so the compiler is not the queue. A leak
+# between files can show here; `just test-files` is the check before a PR.
+# Run every test through the combined files (the routine full run)
+test:
+    uv run scripts/combine_tests.py
+    mkdir -p build
+    flutter test --file-reporter json:build/test_combined.json test/_combined/shard_*.dart
+
+# One process per file, as before. Slow, but no file can affect another.
+# Run every test file on its own (once before each PR)
+test-files:
+    mkdir -p build
+    flutter test --file-reporter json:build/test_files.json $(find test -name "*_test.dart" ! -name mdx_repro_test.dart ! -path "test/_combined/*" | sort)
