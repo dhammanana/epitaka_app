@@ -18,6 +18,7 @@ import 'package:epitaka/features/settings/screens/dictionary_settings_screen.dar
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dpd_fixture.dart';
 import 'shell_harness.dart';
@@ -59,6 +60,10 @@ void main() {
     late DpdLookup lookup;
 
     setUpAll(() async {
+      // Saved settings outlive a test file when files share a process. A
+      // partial or fuzzy switch left on by an earlier file makes this
+      // unwatched lookup fail with "disposed during loading state".
+      SharedPreferences.setMockInitialValues({});
       final c = ProviderContainer(
         overrides: [dpdDatabaseFileProvider.overrideWith((ref) async => dbFile)],
       );
