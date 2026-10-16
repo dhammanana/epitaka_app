@@ -6,7 +6,7 @@
 //
 //     input (any script) ──convertFromMixed──▶ Sinhala ──convert──▶ target
 //
-// The same path powers `velthuis()`, `convertToRomanPali()`, dictionary
+// The same path powers `convertToRomanPali()`, dictionary
 // lookups and search, so results here match every other surface.
 
 import '../../../core/utils/pali_script_converter.dart';

@@ -1,11 +1,13 @@
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/type_keys.dart';
 
 /// Verifies the mobile dictionary is the modal bottom sheet again — the
 /// classic bottom-sheet behaviors must work: opening from a word lookup,
@@ -92,6 +94,27 @@ void main() {
       expect(find.text('open'), findsOneWidget);
     },
   );
+
+  testWidgets(
+      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      (tester) async {
+    await pumpApp(tester);
+    await openSheet(tester);
+    final help = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(VelthuisHelpIcon),
+    );
+    expect(help, findsOneWidget);
+
+    await typeKeys(tester, find.byType(TextField), 'paali');
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(help, findsOneWidget);
+    expect(find.byIcon(Icons.clear), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'pāli',
+    );
+  });
 
   testWidgets('tapping outside closes the dictionary sheet', (tester) async {
     await pumpApp(tester);

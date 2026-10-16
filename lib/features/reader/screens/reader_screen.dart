@@ -12,10 +12,10 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/startup_timing.dart';
-import '../../../core/utils/velthuis.dart';
 import '../../annotations/providers/annotations_provider.dart';
 import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -2033,7 +2033,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onSubmitted: (v) {
         final notifier = ref.read(inBookSearchProvider.notifier);
         final searchState = ref.read(inBookSearchProvider);
-        if (searchState.hasMatches && searchState.query == velthuis(v)) {
+        if (searchState.hasMatches &&
+            searchState.query == convertToRomanPali(v)) {
           // A search still waiting on the debounce would re-run later and
           // jump back to the first match.
           notifier.cancelPendingSearch();

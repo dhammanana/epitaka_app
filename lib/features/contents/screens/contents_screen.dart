@@ -9,7 +9,9 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/contents_provider.dart';
 
@@ -396,6 +398,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
           child: TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
+            inputFormatters: const [VelthuisInputFormatter()],
             autofocus: true,
             style: AppTypography.headlineSmall.copyWith(
               fontSize: 16,
@@ -410,6 +413,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
               ),
               border: InputBorder.none,
               isDense: true,
+              suffixIcon: const VelthuisHelpIcon(),
             ),
             onChanged: (value) => setState(() => _searchQuery = value),
           ),

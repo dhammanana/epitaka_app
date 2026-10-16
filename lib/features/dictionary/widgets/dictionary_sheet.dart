@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:epitaka/core/utils/responsive_breakpoint.dart'
     show ResponsiveBreakpoint;
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:epitaka/shared/widgets/wide_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -14,6 +15,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
@@ -118,7 +120,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   ScrollController? _sheetScroll;
   final _sheetController = DraggableScrollableController();
   Timer? _suggestDebounce;
-  bool _isConverting = false;
 
   // ── Swipe-down-to-close tracking ──────────────────────────────────
   // DraggableScrollableSheet reports no drag velocity, so we sample the
@@ -190,7 +191,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     super.initState();
     // With no word handed in, carry on from the word the panel or an earlier
     // sheet left current.
-    final handedIn = cleanShownWord(widget.initialWord);
+    final handedIn = cleanDpdQuery(widget.initialWord);
     final initial = handedIn.isNotEmpty
         ? handedIn
         : (_lookupHistory.current ?? '');
@@ -216,25 +217,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _onSearchChanged(String value) {
-    if (_isConverting) return;
     // The suggestions drop down under the history list; typing means the user
     // is done with the list.
     if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
-    final converted = velthuis(value);
-
-    // Only update the display for Roman-script input; non-Roman
-    // scripts (Sinhala, Thai, Myanmar, …) pass through unchanged.
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _searchController.value = convertedTextEditingValue(
-        _searchController.value,
-      );
-      _isConverting = false;
-    }
+    final converted = convertToRomanPali(value);
 
     final trimmed = foldDpdQuery(converted).trim();
     if (trimmed.isEmpty) {
@@ -263,11 +251,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _performSearch(String value) {
-    // A word a chip, a tap or the reader put in the field was not typed, and
-    // Velthuis would turn its real double vowel (`aa`) into a macron.
-    final converted = value.trim() == _query
-        ? cleanShownWord(value)
-        : cleanDpdQuery(value);
+    final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -319,7 +303,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _selectWord(String word) {
-    final converted = cleanShownWord(word);
+    final converted = cleanDpdQuery(word);
     if (converted.isEmpty) return;
     _searchController.text = converted;
     _initiateSearch(converted);
@@ -728,6 +712,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                   child: TextField(
                                     controller: _searchController,
                                     focusNode: _focusNode,
+                                    inputFormatters: const [
+                                      VelthuisInputFormatter(),
+                                    ],
                                     autofocus: _shouldAutofocus,
                                     textInputAction: TextInputAction.search,
                                     decoration: InputDecoration(
@@ -738,17 +725,21 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                         Icons.search,
                                         color: colors.onSurfaceVariant,
                                       ),
-                                      suffixIcon:
-                                          _searchController.text.isNotEmpty
-                                          ? IconButton(
+                                      suffixIcon: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_searchController.text.isNotEmpty)
+                                            IconButton(
                                               icon: const Icon(Icons.clear),
                                               onPressed: () {
                                                 _searchController.clear();
                                                 _onSearchChanged('');
                                                 _focusNode.requestFocus();
                                               },
-                                            )
-                                          : null,
+                                            ),
+                                          const VelthuisHelpIcon(),
+                                        ],
+                                      ),
                                       filled: true,
                                       fillColor: colors.surfaceContainerHighest,
                                       border: OutlineInputBorder(

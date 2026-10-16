@@ -26,6 +26,8 @@ import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart'
     show paliReadingFontFamily, scriptFontFamily;
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../services/script_conversion.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 
@@ -285,6 +287,7 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
         children: [
           TextField(
             controller: _input,
+            inputFormatters: const [VelthuisInputFormatter()],
             // A roomy input — the main working area of the converter.
             minLines: 6,
             maxLines: 14,
@@ -306,6 +309,7 @@ class _ScriptConverterScreenState extends ConsumerState<ScriptConverterScreen> {
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.all(12),
+              suffixIcon: const VelthuisHelpIcon(),
             ),
           ),
           const SizedBox(height: 8),

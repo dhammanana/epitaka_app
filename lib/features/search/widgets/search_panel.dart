@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/app_database.dart' hide SearchResultRow;
@@ -16,6 +15,7 @@ import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
@@ -49,7 +49,6 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   /// matches, so a fetch that finishes after the user pressed Enter can
   /// never pop the suggestion panel over the results.
   int _suggestSeq = 0;
-  bool _isConverting = false;
   int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
@@ -149,19 +148,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   }
 
   void _onSearchChanged(String value) {
-    if (_isConverting) return;
-    final converted = velthuis(value);
-    // Only update the display for Roman-script input; non-Roman
-    // scripts (Sinhala, Thai, Myanmar, …) pass through unchanged.
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _searchController.value = convertedTextEditingValue(
-        _searchController.value,
-      );
-      _isConverting = false;
-    }
+    final converted = convertToRomanPali(value);
 
     final effectiveValue = converted;
     final wordCount = effectiveValue.trim().isEmpty
@@ -218,7 +205,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     _debounce?.cancel();
     _suggestSeq++;
     final rawQuery = _searchController.text;
-    final query = velthuis(rawQuery);
+    final query = convertToRomanPali(rawQuery);
     setState(() => _showSuggestions = false);
     _focusNode.unfocus();
     ref
@@ -311,6 +298,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           child: TextField(
             controller: _searchController,
             focusNode: _focusNode,
+            inputFormatters: const [VelthuisInputFormatter()],
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: loc.searchPaliShort,
@@ -320,26 +308,27 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                 size: 18,
                 color: colors.onSurfaceVariant,
               ),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.search, size: 18),
-                          color: colors.primary,
-                          onPressed: _executeSearch,
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            _onSearchChanged('');
-                            ref.read(searchProvider.notifier).clear();
-                          },
-                        ),
-                      ],
-                    )
-                  : null,
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_searchController.text.isNotEmpty) ...[
+                    IconButton(
+                      icon: Icon(Icons.search, size: 18),
+                      color: colors.primary,
+                      onPressed: _executeSearch,
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                        ref.read(searchProvider.notifier).clear();
+                      },
+                    ),
+                  ],
+                  const VelthuisHelpIcon(),
+                ],
+              ),
               filled: true,
               fillColor: colors.surfaceContainerHighest,
               border: OutlineInputBorder(

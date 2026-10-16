@@ -4,15 +4,18 @@
 /// "dhamma" with Paṭṭh-v open held about 1.28 GB in the Linux app.
 library;
 
+import 'package:epitaka/core/database/app_database.dart';
 import 'package:epitaka/core/models/app_models.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/widgets/search_panel.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers/type_keys.dart';
 
 const _hitCount = 500;
 
@@ -23,6 +26,9 @@ class _FixedSearchNotifier extends SearchNotifier {
 
   @override
   Future<void> ensureIndexBuilt() async {}
+
+  @override
+  Future<List<SearchSuggestion>> getSuggestions(String prefix) async => [];
 }
 
 SearchResults _results() {
@@ -124,6 +130,27 @@ Future<void> _focusResults(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      (tester) async {
+    await _pump(tester);
+    final help = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(VelthuisHelpIcon),
+    );
+    expect(help, findsOneWidget);
+
+    await typeKeys(tester, find.byType(TextField), 'paali');
+    // The box redraws after the 120 ms suggestion pause.
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(help, findsOneWidget);
+    expect(find.byIcon(Icons.clear), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'pāli',
+    );
+  });
+
   testWidgets('only the hits near the screen are built', (tester) async {
     await _pump(tester);
     expect(find.text('§1'), findsOneWidget);

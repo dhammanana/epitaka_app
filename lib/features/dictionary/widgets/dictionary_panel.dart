@@ -15,7 +15,9 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
 import '../providers/dictionary_header_provider.dart';
@@ -64,7 +66,6 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   /// Where each summary line of the results jumps to.
   final PageAnchors _anchors = PageAnchors();
   Timer? _suggestDebounce;
-  bool _isConverting = false;
 
   // Submitted word (meanings shown) vs live draft (suggestions only).
   String _query = '';
@@ -100,7 +101,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void initState() {
     super.initState();
-    final handedIn = cleanShownWord(widget.initialWord);
+    final handedIn = cleanDpdQuery(widget.initialWord);
     // With no word handed in, carry on from the word the sheet or an earlier
     // panel left current.
     final initial = handedIn.isNotEmpty ? handedIn : (_lookupHistory.current ?? '');
@@ -154,7 +155,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   /// Apply a dictionary word coming from [SidePanelProvider] to the search
   /// field, ignoring repeats of the current query.
   void _syncPanelWord(String word) {
-    final trimmed = cleanShownWord(word);
+    final trimmed = cleanDpdQuery(word);
     if (trimmed.isEmpty || trimmed == _query) return;
     _searchController.text = trimmed;
     _initiateSearch(trimmed);
@@ -163,8 +164,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void didUpdateWidget(DictionaryPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newWord = cleanShownWord(widget.initialWord);
-    if (newWord.isNotEmpty && newWord != cleanShownWord(oldWidget.initialWord)) {
+    final newWord = cleanDpdQuery(widget.initialWord);
+    if (newWord.isNotEmpty && newWord != cleanDpdQuery(oldWidget.initialWord)) {
       _searchController.text = newWord;
       _initiateSearch(newWord);
     }
@@ -181,24 +182,12 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _onSearchChanged(String value) {
-    if (_isConverting) return;
     // The suggestions drop down under the history list; typing means the user
     // is done with the list.
     if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
-    final converted = velthuis(value);
-    // Only update the display for Roman-script input; non-Roman
-    // scripts (Sinhala, Thai, Myanmar, …) pass through unchanged.
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _searchController.value = convertedTextEditingValue(
-        _searchController.value,
-      );
-      _isConverting = false;
-    }
+    final converted = convertToRomanPali(value);
 
     final trimmed = foldDpdQuery(converted).trim();
     if (trimmed.isEmpty) {
@@ -227,11 +216,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _performSearch(String value) {
-    // A word a chip, a tap or the reader put in the field was not typed, and
-    // Velthuis would turn its real double vowel (`aa`) into a macron.
-    final converted = value.trim() == _query
-        ? cleanShownWord(value)
-        : cleanDpdQuery(value);
+    final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -369,7 +354,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _selectWord(String word) {
-    final converted = cleanShownWord(word);
+    final converted = cleanDpdQuery(word);
     if (converted.isEmpty) return;
     _searchController.text = converted;
     _initiateSearch(converted);
@@ -506,6 +491,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                 child: TextField(
                   controller: _searchController,
                   focusNode: _focusNode,
+                  inputFormatters: const [VelthuisInputFormatter()],
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: loc.searchPali,
@@ -515,15 +501,20 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                       size: 18,
                       color: colors.onSurfaceVariant,
                     ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_searchController.text.isNotEmpty)
+                          IconButton(
                             icon: Icon(Icons.clear, size: 18),
                             onPressed: () {
                               _searchController.clear();
                               _onSearchChanged('');
                             },
-                          )
-                        : null,
+                          ),
+                        const VelthuisHelpIcon(),
+                      ],
+                    ),
                     filled: true,
                     fillColor: colors.surfaceContainerHighest,
                     border: OutlineInputBorder(

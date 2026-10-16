@@ -536,6 +536,8 @@ const Map<String, String> en = {
   'Open in Reader': 'Open in Reader',
   'No heading found for this result': 'No heading found for this result',
   'Failed to load preview:': 'Failed to load preview:',
+  'Velthuis typing': 'Velthuis typing',
+  'Sanskrit': 'Sanskrit',
 
   // ── Reader ──────────────────────────────────────────────────────────
   'Find in book…': 'Find in book…',

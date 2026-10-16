@@ -8,12 +8,12 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'dpd_fixture.dart';
 import 'shell_harness.dart';
+import '../helpers/type_keys.dart';
 
 const _word = 'dhammaabhiñño';
 
@@ -73,7 +73,7 @@ void main() {
     final c = await container(tester);
     await tester.pumpWidget(wrapShell(c, const DictionaryPanel()));
     await settleShell(tester);
-    await tester.enterText(find.byType(TextField), 'kaaya');
+    await typeKeys(tester, find.byType(TextField), 'kaaya');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await settleShell(tester);
     expect(c.read(lookupHistoryProvider).current, 'kāya');

@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../services/sutta_code_service.dart';
 
@@ -197,6 +199,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
             onKeyEvent: _onKey,
             child: TextField(
               controller: _controller,
+              inputFormatters: const [VelthuisInputFormatter()],
               autofocus: true,
               autocorrect: false,
               enableSuggestions: false,
@@ -206,6 +209,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 labelText: l10n.goToSutta,
                 hintText: l10n.goToSuttaHint,
                 prefixIcon: const Icon(Icons.near_me_outlined),
+                suffixIcon: const VelthuisHelpIcon(),
               ),
               onChanged: _update,
               onSubmitted: (_) {

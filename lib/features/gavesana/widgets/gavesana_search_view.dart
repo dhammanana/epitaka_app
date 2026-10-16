@@ -5,7 +5,9 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 import '../../search/providers/search_provider.dart';
@@ -44,10 +46,6 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   final _queryController = TextEditingController();
   final _focusNode = FocusNode();
 
-  /// Prevents re-entry while the controller text is being updated after
-  /// Velthuis conversion (the value setter notifies listeners synchronously).
-  bool _isConverting = false;
-
   double get _hPad =>
       widget.dense ? AppDimensions.sm : AppDimensions.marginMobile;
 
@@ -68,32 +66,13 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
     super.dispose();
   }
 
-  /// Applies Velthuis conversion on-the-fly while typing (same behavior as
-  /// the regular search boxes): `dhamma.m` becomes `dhammaṃ`, `raaga`
-  /// becomes `rāga`.  Non-Roman scripts (Sinhala, Thai, Myanmar, …) are
-  /// left untouched in the display so the user keeps seeing their native
-  /// script; the search still receives the Roman-converted result.
   void _onSearchChanged(String value) {
-    // Prevent re-entry when updating the controller text after conversion.
-    if (_isConverting) return;
-
-    final converted = velthuis(value);
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _queryController.value = convertedTextEditingValue(
-        _queryController.value,
-      );
-      _isConverting = false;
-    }
-
     // Refresh the suffix (clear) button visibility.
     setState(() {});
   }
 
   void _executeSearch() {
-    final query = velthuis(_queryController.text.trim());
+    final query = convertToRomanPali(_queryController.text.trim());
     if (query.isEmpty) return;
     _focusNode.unfocus();
     ref.read(aiSearchProvider.notifier).search(query);
@@ -157,6 +136,7 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
     return TextField(
       controller: _queryController,
       focusNode: _focusNode,
+      inputFormatters: const [VelthuisInputFormatter(sanskrit: false)],
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: loc.askAboutTipitaka,
@@ -166,24 +146,25 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
           onPressed: _executeSearch,
           tooltip: loc.search,
         ),
-        suffixIcon: _queryController.text.isNotEmpty
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.search),
-                    color: colors.primary,
-                    onPressed: _executeSearch,
-                    tooltip: loc.search,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: _clearSearch,
-                    tooltip: loc.clear,
-                  ),
-                ],
-              )
-            : null,
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_queryController.text.isNotEmpty) ...[
+              IconButton(
+                icon: const Icon(Icons.search),
+                color: colors.primary,
+                onPressed: _executeSearch,
+                tooltip: loc.search,
+              ),
+              IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: _clearSearch,
+                tooltip: loc.clear,
+              ),
+            ],
+            const VelthuisHelpIcon(sanskrit: false),
+          ],
+        ),
         filled: true,
         fillColor: colors.surfaceContainerHighest,
         border: OutlineInputBorder(

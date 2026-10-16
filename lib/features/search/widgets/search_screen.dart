@@ -10,8 +10,10 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../providers/search_provider.dart';
 import 'search_history_chips.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
@@ -46,7 +48,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
   bool _isMultiWord = false;
-  bool _isConverting = false;
   bool _showFilters = false;
 
   @override
@@ -73,26 +74,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onSearchChanged(String value) {
-    // Prevent re-entry when updating the controller text after Velthuis conversion
-    if (_isConverting) return;
-
-    // Apply Velthuis conversion (converts any script → Roman IAST).
-    final converted = velthuis(value);
-
-    // Only update the *displayed* text for Roman-script input where
-    // Velthuis diacritics are meaningful (aa→ā, .t→ṭ, etc.).
-    // For non-Roman scripts (Sinhala, Thai, Myanmar, …) leave the
-    // controller untouched so the user keeps seeing their native script;
-    // the search still uses the Roman-converted `converted` value below.
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _searchController.value = convertedTextEditingValue(
-        _searchController.value,
-      );
-      _isConverting = false;
-    }
+    // Any script → Roman IAST. The box converts Velthuis as it is typed.
+    final converted = convertToRomanPali(value);
 
     final effectiveValue = converted;
 
@@ -156,7 +139,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _debounce?.cancel();
     _suggestSeq++;
     final rawQuery = _searchController.text;
-    final query = velthuis(rawQuery);
+    final query = convertToRomanPali(rawQuery);
     setState(() => _showSuggestions = false);
     _focusNode.unfocus();
     ref
@@ -274,6 +257,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: TextField(
         controller: _searchController,
         focusNode: _focusNode,
+        inputFormatters: const [VelthuisInputFormatter()],
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: loc.searchPaliTexts,
@@ -282,28 +266,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onPressed: _executeSearch,
             tooltip: loc.search,
           ),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      color: colors.primary,
-                      onPressed: _executeSearch,
-                      tooltip: loc.search,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                        ref.read(searchProvider.notifier).clear();
-                      },
-                      tooltip: loc.clear,
-                    ),
-                  ],
-                )
-              : null,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchController.text.isNotEmpty) ...[
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  color: colors.primary,
+                  onPressed: _executeSearch,
+                  tooltip: loc.search,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                    ref.read(searchProvider.notifier).clear();
+                  },
+                  tooltip: loc.clear,
+                ),
+              ],
+              const VelthuisHelpIcon(),
+            ],
+          ),
           filled: true,
           fillColor: colors.surfaceContainerHighest,
           border: OutlineInputBorder(
