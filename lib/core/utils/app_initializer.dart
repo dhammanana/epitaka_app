@@ -1,6 +1,6 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -24,6 +24,11 @@ class AppInitializer {
   bool _criticalDone = false;
   bool _backgroundDone = false;
   bool _supabaseDone = false;
+
+  /// Lets a widget test boot the real app without Supabase, whose auth client
+  /// starts a periodic timer that a test cannot let run out.
+  @visibleForTesting
+  static bool skipSupabaseInit = false;
 
   /// Initialize critical services that must complete before the first frame.
   /// Called from main() before runApp().
@@ -96,7 +101,7 @@ class AppInitializer {
   /// initialized. Called from [initBackground] and from the app widget's
   /// background init (whichever runs first wins; the other is a no-op).
   Future<void> initSupabaseOnce() async {
-    if (_supabaseDone) return;
+    if (_supabaseDone || skipSupabaseInit) return;
     _supabaseDone = true;
     try {
       await Supabase.initialize(

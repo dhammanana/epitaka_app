@@ -75,13 +75,13 @@ void main() {
     test('scanDirectory returns correct versions', () {
       final dir = Directory.systemTemp.createTempSync('epitaka_test');
       try {
-        File(p.join(dir.path, 'epitaka_en.db')).createSync();
-        File(p.join(dir.path, 'epitaka_my.db')).createSync();
-        File(p.join(dir.path, 'epitaka_my_nissaya.db')).createSync();
-        File(p.join(dir.path, 'epitaka_th.db')).createSync();
-        File(p.join(dir.path, 'epitaka.db')).createSync();
-        File(p.join(dir.path, 'dpd-dictionary.db')).createSync();
-        File(p.join(dir.path, 'epitaka_vec.db')).createSync();
+        File(p.join(dir.path, 'epitaka_en.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'epitaka_my.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'epitaka_my_nissaya.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'epitaka_th.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'epitaka.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'dpd-dictionary.db')).writeAsStringSync('x');
+        File(p.join(dir.path, 'epitaka_vec.db')).writeAsStringSync('x');
 
         final versions = TranslationFilenameParser.scanDirectory(dir);
 

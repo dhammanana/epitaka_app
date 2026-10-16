@@ -15,8 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// pinned side panels are separated from the main content by a draggable
 /// divider, the width is clamped between a minimum and a screen-aware
 /// maximum, and the final width is persisted via [settingsProvider].
-/// Also verifies the docked dictionary's resizable height and that its
-/// placement (dock vs. right column) is remembered.
+/// Also verifies that the user can move the panel to the right side (header
+/// grip or the saved `sidebar_on_right` setting) and that it stays there.
 void main() {
   Future<void> pumpScaffold(
     WidgetTester tester, {
@@ -65,7 +65,7 @@ void main() {
                         onPressed: () => ref
                             .read(sidePanelProvider.notifier)
                             .open(SidePanelType.dictionary),
-                        child: const Text('open-right'),
+                        child: const Text('open-dictionary'),
                       ),
                     ],
                   ),
@@ -99,6 +99,25 @@ void main() {
     );
     return container.read(settingsProvider);
   }
+
+  /// Settings as if the user had already moved the panel to the right side.
+  Future<SettingsNotifier> panelOnRightSettings() async {
+    SharedPreferences.setMockInitialValues({'sidebar_on_right': true});
+    final prefs = await SharedPreferences.getInstance();
+    return SettingsNotifier(prefs)..init(prefs);
+  }
+
+  bool onLeft() => find
+      .byKey(const Key('left-panel-divider'))
+      .hitTestable()
+      .evaluate()
+      .isNotEmpty;
+
+  bool onRight() => find
+      .byKey(const Key('right-panel-divider'))
+      .hitTestable()
+      .evaluate()
+      .isNotEmpty;
 
   testWidgets('divider appears between panel and main content', (
     tester,
@@ -155,8 +174,8 @@ void main() {
   testWidgets('dragging the right divider grows the panel up to the cap', (
     tester,
   ) async {
-    await pumpScaffold(tester);
-    await openPanel(tester, 'open-right');
+    await pumpScaffold(tester, settings: await panelOnRightSettings());
+    await openPanel(tester, 'open-dictionary');
 
     final divider = find.byKey(const Key('right-panel-divider'));
     expect(divider, findsOneWidget);
@@ -198,182 +217,97 @@ void main() {
     expect(reopened, closeTo(afterResize, 1));
   });
 
-  testWidgets('docked dictionary height can be resized by dragging its '
-      'divider', (tester) async {
-    await pumpScaffold(tester);
-    // Open the sidebar first so the dictionary docks inside it.
-    await openPanel(tester, 'open-left');
-    await openPanel(tester, 'open-right');
-
-    // A horizontal resize divider appears above the docked dictionary.
-    final divider = find.byKey(const Key('dict-dock-divider')).hitTestable();
-    expect(divider, findsOneWidget);
-
-    // Drag the divider up → the dictionary grows (divider moves up).
-    final before = tester.getCenter(divider).dy;
-    await tester.drag(divider, const Offset(0, -100));
-    await tester.pump();
-    final after = tester.getCenter(divider).dy;
-    expect(before - after, greaterThan(50));
-
-    // The new height fraction is persisted.
-    expect(
-      readSettings(tester).dictionaryDockFraction,
-      greaterThan(0.7),
-    );
-  });
-
-  testWidgets('dictionary stays where the user moved it (dock → right column)',
+  testWidgets('dictionary stays where the user moved it (left → right)',
       (tester) async {
     await pumpScaffold(tester);
-    await openPanel(tester, 'open-left');
-    await openPanel(tester, 'open-right');
+    await openPanel(tester, 'open-dictionary');
 
-    // Docked inside the sidebar first.
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsOneWidget,
-    );
+    // The panel starts on the left.
+    expect(onLeft(), isTrue);
+    expect(onRight(), isFalse);
 
-    // Drag the dock's grip to the right → becomes the right column. The
-    // move plays a fly-out animation, a delayed layout swap, then a
-    // slide-in entrance — pump through all of it (durations live in
-    // desktop_shell.dart: _kDictMoveDuration 240ms + _kDictSwapDelay 280ms).
+    // Drag the header grip to the right: the panel moves to the right side
+    // and the choice is saved.
     await tester.drag(
-      find.byTooltip('Move dictionary to the right'),
+      find.byTooltip('Move panel to the right'),
       const Offset(120, 0),
     );
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('right-panel-divider')).hitTestable(),
-      findsOneWidget,
-    );
-    expect(readSettings(tester).dictOnRight, isTrue);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(onRight(), isTrue);
+    expect(onLeft(), isFalse);
+    expect(readSettings(tester).sidebarOnRight, isTrue);
 
     // Close the dictionary, then reopen it via the provider (as a word
-    // lookup would) — it stays on the right instead of re-docking.
+    // lookup would) — it stays on the right.
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ResponsiveScaffold)),
     );
     container.read(sidePanelProvider.notifier).close(SidePanelType.dictionary);
     await tester.pump();
-    await openPanel(tester, 'open-right');
+    await openPanel(tester, 'open-dictionary');
 
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('right-panel-divider')).hitTestable(),
-      findsOneWidget,
-    );
+    expect(onRight(), isTrue);
+    expect(onLeft(), isFalse);
   });
 
-  testWidgets('right-column dictionary slides back into the dock on grip '
-      'drag', (tester) async {
-    SharedPreferences.setMockInitialValues({'dict_on_right': true});
-    final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsNotifier(prefs)..init(prefs);
+  testWidgets('right-side dictionary moves back to the left on grip drag',
+      (tester) async {
+    await pumpScaffold(tester, settings: await panelOnRightSettings());
+    await openPanel(tester, 'open-dictionary');
 
-    await pumpScaffold(tester, settings: settings);
-    // Sidebar already open (contents) so the dictionary docks into it.
-    await openPanel(tester, 'open-left');
-    await openPanel(tester, 'open-right');
+    // Starts on the right (saved placement wins).
+    expect(onRight(), isTrue);
 
-    // Starts as the right column (saved placement wins).
-    expect(
-      find.byKey(const Key('right-panel-divider')).hitTestable(),
-      findsOneWidget,
-    );
-
-    // Drag the right panel's grip left → it flies back into the sidebar
-    // dock. Pump through the fly-out, the delayed swap, and the dock's
-    // slide-in entrance (which translates the divider off-screen until it
-    // settles).
     await tester.drag(
-      find.byTooltip('Dock dictionary in the sidebar'),
+      find.byTooltip('Move panel to the left'),
       const Offset(-120, 0),
     );
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 300));
 
-    // The dock is back in the sidebar (present and settled in place), and
-    // the dock placement is persisted.
-    expect(find.byKey(const Key('dict-dock-divider')), findsOneWidget);
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsOneWidget,
-    );
-    expect(readSettings(tester).dictOnRight, isFalse);
+    expect(onLeft(), isTrue);
+    expect(onRight(), isFalse);
+    expect(readSettings(tester).sidebarOnRight, isFalse);
   });
 
-  testWidgets('dictionary dock previews the grip drag and springs back',
+  testWidgets('a short slow grip drag leaves the panel where it is',
       (tester) async {
     await pumpScaffold(tester);
-    await openPanel(tester, 'open-left');
-    await openPanel(tester, 'open-right');
+    await openPanel(tester, 'open-dictionary');
 
-    final divider = find.byKey(const Key('dict-dock-divider'));
-    final before = tester.getCenter(divider).dx;
-
-    // Drag the grip right but hold (don't release yet): the dock follows
-    // the pointer live instead of only reacting on release. Use several
-    // small moves so the drag recognizer commits to the gesture.
+    // 60 px in 400 ms: under both the 80 px and the 300 px/s thresholds.
     final gesture = await tester.startGesture(
-      tester.getCenter(find.byTooltip('Move dictionary to the right')),
+      tester.getCenter(find.byTooltip('Move panel to the right')),
     );
     for (var i = 0; i < 4; i++) {
       await gesture.moveBy(const Offset(15, 0));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
     }
-    final during = tester.getCenter(divider).dx;
-    expect(during, greaterThan(before));
-
-    // Releasing short of the commit threshold springs the dock back.
-    await gesture.up();
-    await tester.pump();
+    // Hold still so the release velocity is zero.
     await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.getCenter(divider).dx, closeTo(before, 1));
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(onLeft(), isTrue);
+    expect(onRight(), isFalse);
+    expect(readSettings(tester).sidebarOnRight, isFalse);
   });
 
   testWidgets('dictionary placement is restored from persisted settings',
       (tester) async {
-    // The user previously moved the dictionary to the right column.
-    SharedPreferences.setMockInitialValues({'dict_on_right': true});
-    final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsNotifier(prefs)..init(prefs);
+    // The user previously moved the panel to the right side.
+    await pumpScaffold(tester, settings: await panelOnRightSettings());
+    // Dictionary open (as from a word lookup).
+    await openPanel(tester, 'open-dictionary');
 
-    await pumpScaffold(tester, settings: settings);
-    // Sidebar open + dictionary open (as from a word lookup).
-    await openPanel(tester, 'open-left');
-    await openPanel(tester, 'open-right');
-
-    // The saved placement wins: right column, not the sidebar dock.
-    expect(
-      find.byKey(const Key('right-panel-divider')).hitTestable(),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsNothing,
-    );
+    // The saved placement wins: right side, not the left.
+    expect(onRight(), isTrue);
+    expect(onLeft(), isFalse);
   });
 
-  testWidgets('activity bar honors the saved right-column placement',
+  testWidgets('activity bar honors the saved right-side placement',
       (tester) async {
-    SharedPreferences.setMockInitialValues({'dict_on_right': true});
-    final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsNotifier(prefs)..init(prefs);
-
-    await pumpScaffold(tester, settings: settings);
-    // Toggle the dictionary from the activity bar (sidebar closed). The
+    await pumpScaffold(tester, settings: await panelOnRightSettings());
+    // Toggle the dictionary from the activity bar (panel closed). The
     // status bar no longer duplicates the dictionary button.
     await tester.tap(
       find.byTooltip(AppShortcuts.tooltip('Dictionary', 'dictionary')),
@@ -381,23 +315,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // The saved right-column placement wins: the dictionary opens as the
-    // right column and does not force-open the left sidebar or dock.
-    expect(
-      find.byKey(const Key('right-panel-divider')).hitTestable(),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('left-panel-divider')).hitTestable(),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('dict-dock-divider')).hitTestable(),
-      findsNothing,
-    );
+    // The saved placement wins: the dictionary opens on the right and
+    // nothing opens on the left.
+    expect(onRight(), isTrue);
+    expect(onLeft(), isFalse);
   });
 
-  testWidgets('status bar drops the sidebar actions and centers the rest',
+  testWidgets('status bar drops the sidebar actions and keeps the shell actions',
       (tester) async {
     await pumpScaffold(tester);
 
@@ -418,18 +342,25 @@ void main() {
       findsOneWidget,
     );
 
-    // The remaining toolbar actions are still present…
+    // The shell actions on the right of the status bar are present. (The
+    // reader toolbar in the middle only draws buttons whose handlers a
+    // reader tab supplies, so it is empty in this harness.)
     expect(
-      find.byTooltip(AppShortcuts.tooltip('Jump', 'jump')),
+      find.byTooltip(
+        AppShortcuts.tooltip('Decrease font size', 'font-decrease'),
+      ),
       findsOneWidget,
     );
-    expect(find.byTooltip('Save'), findsOneWidget);
-
-    // …and the group is centered in the bar (window 1280 → center 640).
-    final jumpX = tester
-        .getCenter(find.byTooltip(AppShortcuts.tooltip('Jump', 'jump')))
-        .dx;
-    final saveX = tester.getCenter(find.byTooltip('Save')).dx;
-    expect((jumpX + saveX) / 2, closeTo(640, 8));
+    expect(
+      find.byTooltip(
+        AppShortcuts.tooltip('Increase font size', 'font-increase'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Reset layout'), findsOneWidget);
+    expect(
+      find.byTooltip(AppShortcuts.tooltip('Settings', 'settings')),
+      findsOneWidget,
+    );
   });
 }

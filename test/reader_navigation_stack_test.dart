@@ -147,7 +147,7 @@ void main() {
     'Jump to page closes the sheet and moves in place without stacking '
     'a second reader',
     (tester) async {
-      final container = await pumpReader(tester);
+      await pumpReader(tester);
 
       // Exactly one reader on the stack before jumping.
       expect(find.byType(ReaderScreen), findsOneWidget);
@@ -196,17 +196,30 @@ void main() {
         reason: 'the jump sheet must close after a successful jump',
       );
 
-      // The book really moved to the target page (the shared tab state is
-      // enough — the already-open reader picked it up without a new route).
-      final tab = container.read(readerTabsProvider).activeTab;
-      expect(tab != null, isTrue);
+      // The book really moved to the target page: its paragraph is drawn.
+      // Not the tab's stored paragraph id: the scroll controller skips a
+      // position update that comes within 50 ms (real clock) of the last
+      // one, so on a fast run the stored id stays at an earlier paragraph
+      // even though the jump finished.
+      final drawn = find
+          .byType(RichText)
+          .evaluate()
+          .map((e) => (e.widget as RichText).text.toPlainText())
+          .toList();
+      final paraIds = [
+        for (final t in drawn)
+          if (RegExp(r'paragraph (\d+)$').firstMatch(t) case final m?)
+            int.parse(m.group(1)!),
+      ]..sort();
+      expect(paraIds, isNotEmpty, reason: 'the reader draws paragraphs');
+      // Before the jump the reader shows paragraphs 13-28, so a jump that
+      // did nothing fails here. The top drawn paragraph can sit one or two
+      // above the target.
       expect(
-        tab!.currentParaId,
+        paraIds.first,
         inInclusiveRange(_jumpTargetParaId - 2, _jumpTargetParaId),
-        reason:
-            'after jumping to page $_jumpPageLabel the reader must be at '
-            'para ~$_jumpTargetParaId (topmost-visible can be one paragraph '
-            'above the target)',
+        reason: 'after jumping to page $_jumpPageLabel the reader must draw '
+            'paragraph $_jumpTargetParaId at the top',
       );
 
       // THE regression: no duplicate reader route was pushed, so Back once

@@ -41,7 +41,7 @@ void main() {
       expect(
         redirectLibraryToReader(
           isDesktopPlatform: true,
-          windowWidth: 800,
+          windowWidth: 400,
         ),
         isFalse,
       );

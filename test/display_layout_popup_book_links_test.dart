@@ -22,6 +22,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 List<Override> baseOverrides({List<TranslationVersion> versions = const []}) =>
     [localTranslationVersionsProvider.overrideWith((ref) async => versions)];
 
+/// The checkbox in the same row as [label]. Counting checkboxes by type
+/// breaks every time the popup gains another checkbox row.
+Finder checkboxInRow(Finder label) => find.descendant(
+  of: find.ancestor(of: label, matching: find.byType(InkWell)).first,
+  matching: find.byType(Checkbox),
+);
+
 void main() {
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +80,7 @@ void main() {
     await tester.pumpWidget(wrap(const DisplayLayoutPopup()));
     await tester.pumpAndSettle();
 
-    final checkbox = find.byType(Checkbox);
+    final checkbox = checkboxInRow(find.text('Show Inline Commentaries'));
     expect(checkbox, findsOneWidget);
     // Default AppSettings has showBookLinks = true.
     expect(tester.widget<Checkbox>(checkbox).value, isTrue);
@@ -284,8 +291,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Book-links checkbox + one per downloaded translation.
-    expect(find.byType(Checkbox), findsNWidgets(3));
+    // One checkbox row per downloaded translation.
+    expect(checkboxInRow(find.textContaining('English')), findsOneWidget);
+    expect(checkboxInRow(find.textContaining('Myanmar')), findsOneWidget);
 
     // Toggling a row enables that language immediately and does not close the popup.
     await tester.tap(find.textContaining('Myanmar'));
@@ -344,8 +352,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Checkboxes: 1 for Book links, 1 for Myanmar, 1 for Myanmar Nissaya = 3
-    expect(find.byType(Checkbox), findsNWidgets(3));
+    expect(
+      checkboxInRow(find.text('Myanmar · မြန်မာ')),
+      findsOneWidget,
+    );
+    expect(
+      checkboxInRow(find.text('Myanmar Nissaya · မြန်မာနိဿယ')),
+      findsOneWidget,
+    );
     expect(find.text('Myanmar · မြန်မာ'), findsOneWidget);
     expect(find.text('Myanmar Nissaya · မြန်မာနိဿယ'), findsOneWidget);
 

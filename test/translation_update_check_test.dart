@@ -61,7 +61,7 @@ void main() {
         try {
           // Simulate a bundled DB copied to disk a week ago.
           final file = File(p.join(dir.path, 'epitaka_en.db'));
-          file.createSync();
+          file.writeAsStringSync('x');
           file.setLastModifiedSync(weekAgo);
 
           final en = _version(lang: 'en', updatedAt: today);
