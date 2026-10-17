@@ -595,7 +595,9 @@ class ReaderScrollController {
         final lineIndex = para.lines.indexWhere(
           (l) => l.lineId == effectiveLineId,
         );
-        if (lineIndex >= 0 && para.lines.length > 1) {
+        // One-line paragraphs too: the fine-scroll skips them, and at the
+        // caller's 0.0 they sit flush with the top, under the find bar.
+        if (lineIndex >= 0) {
           final lineFraction = _estimateLineFraction(para, lineIndex);
           return (0.1 - lineFraction).clamp(0.0, 0.1);
         }
