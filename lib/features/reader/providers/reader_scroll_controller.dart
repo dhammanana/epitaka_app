@@ -22,6 +22,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -33,6 +34,7 @@ import '../providers/reader_selection_notifier.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../providers/reader_tts_sync_provider.dart';
 import '../utils/reader_position_utils.dart' show getCurrentParaId;
+import '../utils/reader_word_hit_test.dart' show ReaderLineMetadata;
 
 /// Owns the reader's scroll controllers, position tracking, jumping, and
 /// reading-history persistence.
@@ -45,6 +47,7 @@ class ReaderScrollController {
     required this.appBarCollapsed,
     required this.onTtsManualScroll,
     this.onFirstVisiblePosition,
+    this.contentRoot,
   });
 
   /// Riverpod reference for provider reads/writes.
@@ -77,6 +80,12 @@ class ReaderScrollController {
   /// visible (used by the screen for tab-switch timing + position logs).
   final void Function(String bookId, int topIndex, int paraId)?
   onFirstVisiblePosition;
+
+  /// The active tab's drawn reader content. Side-by-side line jumps measure
+  /// the target paragraph's Pāḷi column inside it, because that column is
+  /// shorter than the paragraph and no text-length estimate can tell by how
+  /// much.
+  final RenderBox? Function()? contentRoot;
 
   // One controller/listener pair per open book tab.
   final Map<String, ItemScrollController> _itemScrollControllers = {};
@@ -850,6 +859,94 @@ class ReaderScrollController {
         : (lineIndex / para.lines.length);
   }
 
+  /// How far below the top of its drawn list item the Pāḷi line at
+  /// [lineIndex] of [para] is drawn, as a fraction of the viewport height,
+  /// or null when the paragraph's joined-Pāḷi block is not drawn, or
+  /// [bookId] is not the active tab (paragraph ids repeat across books).
+  ///
+  /// Measured inside the item so it does not matter which copy of the list
+  /// drew it: during a long jump scrollable_positioned_list draws a second
+  /// list and swaps it in at the end, and inside one item both draw alike.
+  double? _drawnPaliLineOffset(
+    String bookId,
+    ParagraphData para,
+    int lineIndex,
+  ) {
+    if (ref.read(readerTabsProvider).activeTab?.bookId != bookId) return null;
+    final root = contentRoot?.call();
+    if (root == null || !root.attached) return null;
+
+    RenderMetaData? block;
+    void findBlock(RenderObject node) {
+      if (block != null) return;
+      if (node is RenderMetaData) {
+        final meta = node.metaData;
+        if (meta is ReaderLineMetadata &&
+            meta.paraId == para.paraId &&
+            meta.lineId == null &&
+            meta.segment == 'pali') {
+          if (node.attached && node.hasSize) block = node;
+          return;
+        }
+      }
+      node.visitChildren(findBlock);
+    }
+
+    findBlock(root);
+    if (block == null) return null;
+
+    // The item is the list sliver's direct child.
+    RenderObject? item = block;
+    while (item != null && item.parent is! RenderSliver) {
+      item = item.parent;
+    }
+    final RenderObject? viewport = RenderAbstractViewport.maybeOf(block);
+    if (item is! RenderBox || viewport is! RenderBox || !viewport.hasSize) {
+      return null;
+    }
+
+    RenderParagraph? text;
+    void findText(RenderObject node) {
+      if (text != null) return;
+      if (node is RenderParagraph) {
+        text = node;
+        return;
+      }
+      node.visitChildren(findText);
+    }
+
+    block!.visitChildren(findText);
+    final drawn = text;
+    if (drawn == null || !drawn.hasSize) return null;
+
+    // Same joining as ReadingParagraph._buildJoinedPali. The drawn text can
+    // differ in length (script conversion, stripped variants, removed HTML
+    // tags such as <b>), so map the line's start by its share of the joined
+    // text.
+    final shown = [
+      for (final l in para.lines)
+        if (l.paliText != null && l.paliText!.trim().isNotEmpty) l.paliText!,
+    ];
+    final before = [
+      for (final l in para.lines.take(lineIndex))
+        if (l.paliText != null && l.paliText!.trim().isNotEmpty) l.paliText!,
+    ];
+    final joinedLength = shown.join(' ').length;
+    if (joinedLength == 0) return null;
+    final startInJoined = before.isEmpty ? 0 : before.join(' ').length + 1;
+    final drawnLength = drawn.text.toPlainText().length;
+    final caretIndex = (startInJoined / joinedLength * drawnLength)
+        .round()
+        .clamp(0, drawnLength);
+    final caret = drawn.getOffsetForCaret(
+      TextPosition(offset: caretIndex),
+      Rect.zero,
+    );
+    final height = viewport.size.height;
+    if (height <= 0) return null;
+    return drawn.localToGlobal(caret, ancestor: item).dy / height;
+  }
+
   /// Fine-scroll to [lineId] without per-line widgets (side-by-side /
   /// hideJoinLines display modes, where [fineScrollToLine] can never attach
   /// its GlobalKey).
@@ -857,7 +954,8 @@ class ReaderScrollController {
   /// The item positions report the target paragraph's rendered fraction of
   /// the viewport (`[itemLeadingEdge, itemTrailingEdge]`); the line's top is
   /// estimated from weighted text lengths through that span, and the paragraph
-  /// is re-scrolled so the estimate lands at ~30% of the viewport.
+  /// is re-scrolled so the estimate lands at ~30% of the viewport. Side-by-side
+  /// measures the drawn Pāḷi line instead ([_drawnPaliLineOffset]).
   void _fineScrollByGeometry(
     String bookId,
     int paraIndex,
@@ -929,6 +1027,29 @@ class ReaderScrollController {
       finish();
       return;
     }
+    // Side-by-side draws the Pāḷi as one column of a two-column row, and the
+    // translation column is often much taller, so a share of the whole
+    // paragraph lands on the translation line and leaves the Pāḷi line
+    // screens above (Peṭakopadesa 636 line 27). Scroll to where the Pāḷi
+    // line is actually drawn instead.
+    final settings = ref.read(settingsProvider);
+    double? drawnLineOffset;
+    if (settings.translationDisplayMode == TranslationDisplayMode.sideBySide &&
+        settings.showPali &&
+        settings.showTranslation) {
+      // A throw here would skip finish() and wedge the app-bar flags. The
+      // first call runs straight after the paragraph scroll, where a debug
+      // build asserts if the text still needs layout.
+      try {
+        drawnLineOffset = _drawnPaliLineOffset(bookId, para, lineIndex);
+      } catch (e) {
+        developer.log(
+          '[JUMP] book=$bookId paraId=${para.paraId} measuring the drawn Pāḷi '
+          'line failed ($e) — using the estimate',
+          name: 'epitaka.reader.ui',
+        );
+      }
+    }
     final lineFraction = _estimateLineFraction(para, lineIndex);
 
     // The target line is estimated at `lineFraction * span` viewports from
@@ -936,13 +1057,13 @@ class ReaderScrollController {
     // targetAlignment = 0.1 - lineFraction * span.
     // Clamped so the top never drops below 0.1 and the bottom never rises
     // above 0.1 (allowing large negative alignments for multi-viewport
-    // paragraphs when translations are enabled).
+    // paragraphs when translations are enabled). The measured side-by-side
+    // offset needs no clamp: it already lies inside the item.
     final minAlignment = (0.1 - span).clamp(-100.0, 0.1);
     const maxAlignment = 0.1;
-    final targetAlignment = (0.1 - lineFraction * span).clamp(
-      minAlignment,
-      maxAlignment,
-    );
+    final targetAlignment = drawnLineOffset != null
+        ? 0.1 - drawnLineOffset
+        : (0.1 - lineFraction * span).clamp(minAlignment, maxAlignment);
 
     final controller = _itemScrollControllers[bookId];
     if (controller == null) {

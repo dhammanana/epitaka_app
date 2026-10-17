@@ -7,6 +7,7 @@ library;
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -182,14 +183,22 @@ void main() {
           reason: '[${mode.name}] the target line text must be rendered');
       line5Top = tester.getTopLeft(line5Text).dy;
     } else {
-      // Joined modes render the whole paragraph as a single Text; estimate
-      // line 5's top from the paragraph rect (uniform line heights).
-      final paraText = find.textContaining('paragraph $_targetParaId line 1');
-      expect(paraText, findsOneWidget,
-          reason: '[${mode.name}] the target paragraph must be rendered');
-      final paraRect = tester.getRect(paraText);
-      final lineHeight = paraRect.height / _linesPerPara;
-      line5Top = paraRect.top + 4 * lineHeight;
+      // Joined modes render the whole paragraph as a single Text, and in
+      // side-by-side its half-width column wraps, so a source line is not
+      // one drawn row: read line 5's drawn caret.
+      final needle = 'pāli text paragraph $_targetParaId line $targetLine';
+      final tops = <double>[];
+      for (final e in find.byType(RichText).evaluate()) {
+        final rp = e.renderObject;
+        if (rp is! RenderParagraph || !rp.attached || !rp.hasSize) continue;
+        final i = rp.text.toPlainText().indexOf(needle);
+        if (i < 0) continue;
+        final caret = rp.getOffsetForCaret(TextPosition(offset: i), Rect.zero);
+        tops.add(rp.localToGlobal(caret).dy);
+      }
+      expect(tops, hasLength(1),
+          reason: '[${mode.name}] the target paragraph must be rendered once');
+      line5Top = tops.single;
     }
 
     final line5Fraction = (line5Top - viewportTop) / viewportHeight;
@@ -199,13 +208,14 @@ void main() {
       'viewportH=$viewportHeight line5Fraction=${line5Fraction.toStringAsFixed(3)}',
     );
 
-    // The target line (not the paragraph start) must sit at ~30% of the
-    // viewport (the fine-scroll target). Allow generous tolerance for
+    // The target line (not the paragraph start) must sit at ~10% of the
+    // viewport (the fine-scroll target; it moved from 30% to 10% in d8abb10
+    // and this test was left at 30%). Allow generous tolerance for
     // font-metric differences.
     expect(
       line5Fraction,
-      closeTo(0.3, 0.1),
-      reason: '[${mode.name}] the target line must land at ~30% of the '
+      closeTo(0.1, 0.1),
+      reason: '[${mode.name}] the target line must land at ~10% of the '
           'viewport, not the paragraph start; got '
           'fraction=${line5Fraction.toStringAsFixed(3)}',
     );

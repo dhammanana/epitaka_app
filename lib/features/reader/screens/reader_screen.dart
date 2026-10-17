@@ -541,6 +541,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       },
       viewInsetsBottom: () => _mediaNoSubscribe(context).viewInsets.bottom,
       appBarCollapsed: _appBarCollapsed,
+      contentRoot: () =>
+          _contentHitTestKey.currentContext?.findRenderObject() as RenderBox?,
       onTtsManualScroll: (bookId, visible, paragraphs) =>
           _tts.handleManualScroll(bookId, visible, paragraphs),
       onFirstVisiblePosition: (bookId, topIndex, paraId) {
