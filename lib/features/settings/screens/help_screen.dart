@@ -167,6 +167,7 @@ class _ShortcutsSection extends StatelessWidget {
     final tabIds = [for (var i = 1; i <= 9; i++) 'tab-$i'];
     final items = [
       _Shortcut(loc.searchInBook, 'find-in-book'),
+      _Shortcut(loc.t('Toggle Regex'), 'regex-toggle'),
       _Shortcut(loc.globalSearch, 'find-everywhere'),
       _Shortcut(loc.openDictionary, 'dictionary'),
       _Shortcut(loc.libraryLabel, 'library-sidebar'),

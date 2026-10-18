@@ -6,6 +6,7 @@ import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/sutta_jump/services/sutta_code_service.dart';
 import 'package:epitaka/features/sutta_jump/widgets/go_to_sutta_dialog.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 // --- service ---------------------------------------------------------------
@@ -149,7 +151,10 @@ void main() {
       await db.close();
     });
 
-    Future<void> pumpHost(WidgetTester tester) async {
+    Future<void> pumpHost(
+      WidgetTester tester, {
+      bool appShortcuts = false,
+    }) async {
       container = ProviderContainer(
         overrides: [
           epitakaDbProvider.overrideWith((ref) async => db),
@@ -161,26 +166,27 @@ void main() {
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      final app = MaterialApp(
+        supportedLocales: AppLocalizationsDelegate.supportedLocales,
+        localizationsDelegates: const [
+          AppLocalizationsDelegate(),
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showGoToSuttaDialog(context),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: MaterialApp(
-            supportedLocales: AppLocalizationsDelegate.supportedLocales,
-            localizationsDelegates: const [
-              AppLocalizationsDelegate(),
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-            home: Scaffold(
-              body: Builder(
-                builder: (context) => TextButton(
-                  onPressed: () => showGoToSuttaDialog(context),
-                  child: const Text('open'),
-                ),
-              ),
-            ),
-          ),
+          child: appShortcuts ? withAppShortcuts(app) : app,
         ),
       );
       await tester.pump();
@@ -257,6 +263,28 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'aṃ',
       );
+      await closeWithEscape(tester);
+    });
+
+    testWidgets('the Alt+R key, through the app bindings, turns rx on, '
+        'then off', (tester) async {
+      AppShortcuts.overrides = const {};
+      await pumpHost(tester, appShortcuts: true);
+      final field = find.byType(TextField);
+      await tester.showKeyboard(field);
+      Future<void> press() async {
+        await sendAltR(tester);
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      expect(rxOnIn(tester, field), isFalse);
+      await press();
+      expect(rxOnIn(tester, field), isTrue);
+      await press();
+      expect(rxOnIn(tester, field), isFalse);
       await closeWithEscape(tester);
     });
 

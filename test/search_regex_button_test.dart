@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 class _FakeSearchNotifier extends SearchNotifier {
@@ -226,6 +227,17 @@ void main() {
         await typeKeys(tester, _field, ')');
         await tester.pump();
         expect(atField, findsNothing);
+      });
+
+      testWidgets('Alt+R in the box turns rx on, then off', (tester) async {
+        await pump(tester);
+        expect(rxOnIn(tester, _field), isFalse);
+        await regexHotkeyIn(tester, _field);
+        await tester.pump();
+        expect(rxOnIn(tester, _field), isTrue);
+        await regexHotkeyIn(tester, _field);
+        await tester.pump();
+        expect(rxOnIn(tester, _field), isFalse);
       });
     });
   }

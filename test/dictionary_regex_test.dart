@@ -8,6 +8,7 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/features/dpd/providers/lookup_history.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'dpd/dpd_fixture.dart';
 import 'dpd/shell_harness.dart';
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 Finder get _field => find.byType(TextField).first;
@@ -158,6 +160,35 @@ void main() {
           ),
           findsNothing,
         );
+      });
+
+      testWidgets('the Alt+R key, through the app bindings, turns rx on, '
+          'then off', (tester) async {
+        tester.view.physicalSize = const Size(500, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        AppShortcuts.overrides = const {};
+        final c = await makeShellContainer(tester, dbFile);
+        await tester.pumpWidget(wrapShell(c, withAppShortcuts(box)));
+        await tester.pump();
+        await tester.showKeyboard(_field);
+        await sendAltR(tester);
+        await settleShell(tester);
+        expect(rxOnIn(tester, _field), isTrue);
+        await sendAltR(tester);
+        await settleShell(tester);
+        expect(rxOnIn(tester, _field), isFalse);
+      });
+
+      testWidgets('Alt+R in the box turns rx on, then off', (tester) async {
+        await pump(tester);
+        expect(rxOnIn(tester, _field), isFalse);
+        await regexHotkeyIn(tester, _field);
+        await settleShell(tester);
+        expect(rxOnIn(tester, _field), isTrue);
+        await regexHotkeyIn(tester, _field);
+        await settleShell(tester);
+        expect(rxOnIn(tester, _field), isFalse);
       });
     });
   }

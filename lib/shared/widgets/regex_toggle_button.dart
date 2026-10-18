@@ -3,6 +3,37 @@ import 'package:flutter/material.dart';
 
 import '../../core/utils/app_localizations.dart';
 import '../../core/theme/app_typography.dart';
+import '../utils/app_shortcuts.dart';
+
+/// The "regex-toggle" shortcut: press the Rx button of the search box that
+/// has the cursor. Every box puts its button inside its own [TextField]
+/// decoration, so the button is found from the focused field instead of
+/// being wired into each box. Outside such a box the key does nothing.
+void toggleRegexInFocusedBox() {
+  // The button is hidden on web, so its box takes no regex there.
+  if (kIsWeb) return;
+  final focused = FocusManager.instance.primaryFocus?.context;
+  if (focused == null) return;
+  Element? field;
+  focused.visitAncestorElements((element) {
+    if (element.widget is! TextField) return true;
+    field = element;
+    return false;
+  });
+  RegexToggleButton? button;
+  void search(Element element) {
+    if (button != null) return;
+    final widget = element.widget;
+    if (widget is RegexToggleButton) {
+      button = widget;
+    } else {
+      element.visitChildElements(search);
+    }
+  }
+
+  field?.visitChildElements(search);
+  button?.onToggle();
+}
 
 /// The "regex" switch beside the clear button of a search box. On, the box
 /// takes a regular expression instead of words. The label is "Rx" —
@@ -24,7 +55,7 @@ class RegexToggleButton extends StatelessWidget {
     final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
     return Tooltip(
-      message: loc.regularExpression,
+      message: AppShortcuts.tooltip(loc.regularExpression, 'regex-toggle'),
       excludeFromSemantics: true,
       child: Semantics(
         button: true,

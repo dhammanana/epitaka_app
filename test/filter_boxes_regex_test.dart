@@ -24,6 +24,7 @@ import 'package:epitaka/features/annotations/providers/annotations_provider.dart
 import 'package:epitaka/features/annotations/widgets/global_annotations_view.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:epitaka/features/desktop/desktop_shell.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 /// Differ by one long vowel, so a pattern can tell them apart and the plain
@@ -307,6 +309,17 @@ void main() {
         expect(find.textContaining('Invalid pattern:'), findsOneWidget);
         expect(_shown(), isEmpty);
       });
+
+      testWidgets('Alt+R in the box turns Rx on, then off', (tester) async {
+        await open(tester);
+        expect(rxOnIn(tester, _field), isFalse);
+        await regexHotkeyIn(tester, _field);
+        await _settle(tester);
+        expect(rxOnIn(tester, _field), isTrue);
+        await regexHotkeyIn(tester, _field);
+        await _settle(tester);
+        expect(rxOnIn(tester, _field), isFalse);
+      });
     });
   }
 
@@ -439,5 +452,53 @@ void main() {
         expect(editable.focusNode.hasFocus, isTrue);
       });
     }
+  });
+
+  testWidgets('the Alt+R key reaches the box with the cursor through the '
+      "app's bindings; in a field with no Rx it does nothing", (tester) async {
+    AppShortcuts.overrides = const {};
+    const plain = Key('plain');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [_settings, _contents],
+        child: withAppShortcuts(
+          MaterialApp(
+            supportedLocales: AppLocalizationsDelegate.supportedLocales,
+            localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+              AppLocalizationsDelegate(),
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: const Scaffold(
+              body: Column(
+                children: [
+                  Expanded(child: ContentsPanel(bookId: 'dn1')),
+                  TextField(key: plain),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final box = find.descendant(
+      of: find.byType(ContentsPanel),
+      matching: find.byType(TextField),
+    );
+
+    await tester.showKeyboard(find.byKey(plain));
+    await sendAltR(tester);
+    await _settle(tester);
+    expect(rxOnIn(tester, box), isFalse);
+
+    await tester.showKeyboard(box);
+    await sendAltR(tester);
+    await _settle(tester);
+    expect(rxOnIn(tester, box), isTrue);
+    await sendAltR(tester);
+    await _settle(tester);
+    expect(rxOnIn(tester, box), isFalse);
   });
 }
