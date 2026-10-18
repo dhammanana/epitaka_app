@@ -180,6 +180,23 @@ void main() {
         expect(rxOnIn(tester, _field), isFalse);
       });
 
+      testWidgets('rx on or off, by key or by tap, keeps the cursor in a box '
+          'that holds a word', (tester) async {
+        await pump(tester, words: ['dhamma'], patterns: ['dhamma']);
+        await _submit(tester, 'dhamma');
+        await tester.showKeyboard(_field);
+        toggleRegexInFocusedBox();
+        await settleShell(tester);
+        expect(rxOnIn(tester, _field), isTrue);
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'key on');
+        toggleRegexInFocusedBox();
+        await settleShell(tester);
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'key off');
+        await _toggle(tester);
+        expect(rxOnIn(tester, _field), isTrue);
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'tap on');
+      });
+
       testWidgets('Alt+R in the box turns rx on, then off', (tester) async {
         await pump(tester);
         expect(rxOnIn(tester, _field), isFalse);

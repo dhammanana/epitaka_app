@@ -229,6 +229,28 @@ void main() {
         expect(atField, findsNothing);
       });
 
+      testWidgets('rx on or off, by key or by tap, keeps the cursor in a box '
+          'that holds a word', (tester) async {
+        final m = await pump(tester);
+        await tester.enterText(_field, 'dhamma');
+        await tester.pump();
+        await tester.showKeyboard(_field);
+        toggleRegexInFocusedBox();
+        await tester.pump();
+        await tester.pump();
+        expect(m.fake.calls.last, (query: 'dhamma', regex: true));
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'key on');
+        toggleRegexInFocusedBox();
+        await tester.pump();
+        await tester.pump();
+        expect(m.fake.calls.last, (query: 'dhamma', regex: false));
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'key off');
+        await _toggle(tester);
+        await tester.pump();
+        expect(m.fake.calls.last, (query: 'dhamma', regex: true));
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'tap on');
+      });
+
       testWidgets('Alt+R in the box turns rx on, then off', (tester) async {
         await pump(tester);
         expect(rxOnIn(tester, _field), isFalse);

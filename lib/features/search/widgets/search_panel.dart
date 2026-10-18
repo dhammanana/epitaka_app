@@ -212,7 +212,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     });
   }
 
-  void _executeSearch() {
+  /// [keepFocus]: a search run again by the rx switch leaves the cursor in
+  /// the box, so the user can go on typing, and does not hand it to the
+  /// results.
+  void _executeSearch({bool keepFocus = false}) {
     // Cancel any pending suggestion fetch and invalidate in-flight ones,
     // so the panel can't pop up over the results after searching.
     _debounce?.cancel();
@@ -222,13 +225,13 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     // A pattern runs exactly as typed: script conversion would rewrite it.
     final query = regex ? rawQuery : convertToRomanPali(rawQuery);
     setState(() => _showSuggestions = false);
-    _focusNode.unfocus();
+    if (!keepFocus) _focusNode.unfocus();
     ref
         .read(searchProvider.notifier)
         .search(query: query, distance: _wordDistance, regex: regex);
     // On desktop, move keyboard focus to the results so j/k navigation
     // works right after searching.
-    if (ResponsiveBreakpoint.isDesktop(context)) {
+    if (!keepFocus && ResponsiveBreakpoint.isDesktop(context)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _resultsFocusNode.requestFocus();
       });
@@ -252,7 +255,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final on = !ref.read(searchRegexProvider);
     ref.read(searchRegexProvider.notifier).state = on;
     _onSearchChanged(_searchController.text);
-    if (_searchController.text.isNotEmpty) _executeSearch();
+    if (_searchController.text.isNotEmpty) _executeSearch(keepFocus: true);
   }
 
   /// Fill the search bar with a previous query from history and run it.

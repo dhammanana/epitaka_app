@@ -231,15 +231,17 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     });
   }
 
-  void _performSearch(String value) {
+  /// [keepFocus]: a search run again by the rx switch leaves the cursor in
+  /// the box, so the user can go on typing.
+  void _performSearch(String value, {bool keepFocus = false}) {
     if (ref.read(dictionaryRegexProvider)) {
-      _submitPattern(value);
+      _submitPattern(value, keepFocus: keepFocus);
       return;
     }
     final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
-    _focusNode.unfocus();
+    if (!keepFocus) _focusNode.unfocus();
     _initiateSearch(converted);
   }
 
@@ -251,10 +253,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   /// A pattern runs exactly as typed and stays out of the lookup history:
   /// re-run from there in normal mode it would mean something else.
-  void _submitPattern(String pattern) {
+  void _submitPattern(String pattern, {bool keepFocus = false}) {
     if (pattern.trim().isEmpty) return;
     _suggestDebounce?.cancel();
-    _focusNode.unfocus();
+    if (!keepFocus) _focusNode.unfocus();
     setState(() {
       _query = pattern;
       _draft = pattern;
@@ -273,7 +275,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     ref.read(dictionaryRegexProvider.notifier).state = on;
     _suggestDebounce?.cancel();
     setState(() => _draft = _query);
-    if (_query.isNotEmpty) _performSearch(_query);
+    if (_query.isNotEmpty) _performSearch(_query, keepFocus: true);
     // A pattern that cleans to no word (`-`) runs no plain lookup; its
     // regex results must not stay up with rx off.
     if (!on && _queryIsRegex) {

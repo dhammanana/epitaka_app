@@ -22,6 +22,14 @@ bool rxOnIn(WidgetTester tester, Finder field) => tester
     )
     .on;
 
+/// Whether the cursor is in [field].
+bool fieldHasFocus(WidgetTester tester, Finder field) => tester
+    .widget<EditableText>(
+      find.descendant(of: field, matching: find.byType(EditableText)),
+    )
+    .focusNode
+    .hasFocus;
+
 /// Puts the cursor in [field] and runs the action the Alt+R shortcut
 /// ('regex-toggle') runs. The real key, through [withAppShortcuts], is
 /// pressed in the Contents panel, the dictionary and Go to Sutta tests.

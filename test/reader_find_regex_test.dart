@@ -255,7 +255,13 @@ void main() {
     expect(_matches(c.read(inBookSearchProvider)), isEmpty);
 
     find.toggleRegex();
-    await pumpEventQueue();
+    // The pattern runs in a regex job in another isolate: wait on the real
+    // clock for its answer, as _find does. Under full-suite load the event
+    // queue alone empties first.
+    for (var i = 0; i < 500; i++) {
+      if (_matches(c.read(inBookSearchProvider)).isNotEmpty) break;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     expect(_matches(c.read(inBookSearchProvider)), [(2, 1), (3, 1)]);
   });
 
