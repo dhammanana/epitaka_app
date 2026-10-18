@@ -18,6 +18,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// Also verifies that the user can move the panel to the right side (header
 /// grip or the saved `sidebar_on_right` setting) and that it stays there.
 void main() {
+  tearDownAll(() {
+    // These tests leave the side panel saved as open (and on the right).
+    // Files share a process in `just test`, and a later reader test drawn
+    // with the panel open overflows, so leave the store empty.
+    SharedPreferences.setMockInitialValues({});
+  });
+
   Future<void> pumpScaffold(
     WidgetTester tester, {
     SettingsNotifier? settings,
