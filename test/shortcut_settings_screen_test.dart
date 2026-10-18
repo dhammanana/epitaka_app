@@ -91,8 +91,18 @@ void main() {
     for (var i = 1; i < tops.length; i++) {
       expect(tops[i], greaterThan(tops[i - 1]), reason: titles[i]);
     }
-    expect(find.byTooltip('Change'), findsNWidgets(59));
+    expect(find.byTooltip('Change'), findsNWidgets(60));
     expect(find.byTooltip('Restore default'), findsNothing);
+  });
+
+  testWidgets('Toggle Regex sits right below Find in Book, with Alt+R', (
+    tester,
+  ) async {
+    await _pumpPage(tester);
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+    expect(top('Toggle Regex'), greaterThan(top('Find in Book')));
+    expect(top('Toggle Regex'), lessThan(top('Jump to Page…')));
+    expect(AppShortcuts.hintFor('regex-toggle'), 'Alt+R');
   });
 
   testWidgets('the Sidebar section follows the activity bar order', (
@@ -185,8 +195,9 @@ void main() {
       bool control = false,
       bool shift = false,
     }) async {
-      if (control)
+      if (control) {
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      }
       if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyEvent(key);
       if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);

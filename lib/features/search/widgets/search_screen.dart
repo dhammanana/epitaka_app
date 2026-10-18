@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,11 +12,12 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 import '../providers/search_provider.dart';
 import 'search_history_chips.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
@@ -33,7 +37,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
-  final _focusNode = FocusNode();
+  late final _focusNode = FocusNode(onKeyEvent: _onFieldKey);
 
   /// Focus node for the results list (j/k navigation on desktop).
   final FocusNode _resultsFocusNode = FocusNode();
@@ -47,6 +51,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
+
+  /// The suggestion the arrow keys have reached; -1 means none.
+  int _suggestionIndex = -1;
+  final GlobalKey _suggestionKey = GlobalKey();
   bool _isMultiWord = false;
   bool _showFilters = false;
 
@@ -74,6 +82,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onSearchChanged(String value) {
+    _suggestionIndex = -1;
+    if (ref.read(searchRegexProvider)) {
+      // A pattern has no suggestions and sets its own word distance.
+      _debounce?.cancel();
+      _suggestSeq++;
+      setState(() {
+        _suggestions = [];
+        _showSuggestions = false;
+      });
+      return;
+    }
     // Any script → Roman IAST. The box converts Velthuis as it is typed.
     final converted = convertToRomanPali(value);
 
@@ -114,6 +133,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           if (!mounted || seq != _suggestSeq) return;
           setState(() {
             _suggestions = suggestions;
+            _suggestionIndex = -1;
             _showSuggestions = suggestions.isNotEmpty;
           });
         } else {
@@ -133,24 +153,66 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
   }
 
+  /// Down arrow in the box moves to the results, where j/k, Enter and Esc
+  /// work; the box keeps the cursor after a search, so this is the way in.
+  KeyEventResult _onFieldKey(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    if (_showSuggestions && _suggestions.isNotEmpty) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _moveSuggestion(
+          (_suggestionIndex + 1).clamp(0, _suggestions.length - 1),
+        );
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowUp && _suggestionIndex >= 0) {
+        _moveSuggestion(_suggestionIndex - 1);
+        return KeyEventResult.handled;
+      }
+      if ((key == LogicalKeyboardKey.enter ||
+              key == LogicalKeyboardKey.numpadEnter) &&
+          _suggestionIndex >= 0 &&
+          _suggestionIndex < _suggestions.length) {
+        _onSuggestionSelected(_suggestions[_suggestionIndex]);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    final state = ref.read(searchProvider);
+    if (event is! KeyDownEvent ||
+        key != LogicalKeyboardKey.arrowDown ||
+        state is! SearchResults ||
+        (state.bookSummaries.isEmpty && state.headings.isEmpty) ||
+        _resultsFocusNode.context == null) {
+      return KeyEventResult.ignored;
+    }
+    _resultsFocusNode.requestFocus();
+    return KeyEventResult.handled;
+  }
+
+  void _moveSuggestion(int index) {
+    setState(() => _suggestionIndex = index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _suggestionKey.currentContext;
+      if (mounted && ctx != null) Scrollable.ensureVisible(ctx);
+    });
+  }
+
   void _executeSearch() {
     // Cancel any pending suggestion fetch and invalidate in-flight ones,
     // so the panel can't pop up over the results after searching.
     _debounce?.cancel();
     _suggestSeq++;
     final rawQuery = _searchController.text;
-    final query = convertToRomanPali(rawQuery);
+    final regex = ref.read(searchRegexProvider);
+    // A pattern runs exactly as typed: script conversion would rewrite it.
+    final query = regex ? rawQuery : convertToRomanPali(rawQuery);
     setState(() => _showSuggestions = false);
-    _focusNode.unfocus();
     ref
         .read(searchProvider.notifier)
-        .search(query: query, distance: _wordDistance);
-    // Desktop: hand keyboard focus to the results so j/k navigate them.
-    if (ResponsiveBreakpoint.isDesktop(context)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _resultsFocusNode.requestFocus();
-      });
-    }
+        .search(query: query, distance: _wordDistance, regex: regex);
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
@@ -163,12 +225,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     } else {
       _searchController.text = suggestion.pali;
     }
-    setState(() => _showSuggestions = false);
+    setState(() {
+      _showSuggestions = false;
+      _suggestionIndex = -1;
+    });
     _executeSearch();
   }
 
+  void _toggleRegex() {
+    final on = !ref.read(searchRegexProvider);
+    ref.read(searchRegexProvider.notifier).state = on;
+    _onSearchChanged(_searchController.text);
+    if (_searchController.text.isNotEmpty) _executeSearch();
+  }
+
   /// Fill the search bar with a previous query from history and run it.
+  /// History and searches from outside the app hold plain words, so they
+  /// run with rx off.
   void _onHistorySelected(String query) {
+    ref.read(searchRegexProvider.notifier).state = false;
     _searchController.text = query;
     final wordCount = query.trim().isEmpty
         ? 0
@@ -233,7 +308,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
-          _buildSearchBar(colors),
+          _buildSearchBar(colors, searchState),
           if (searchState is SearchIdle && !_showSuggestions)
             SearchHistoryChips(onSelected: _onHistorySelected),
           _buildOptionsBar(colors, searchState),
@@ -245,27 +320,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildSearchBar(ColorScheme colors) {
+  Widget _buildSearchBar(ColorScheme colors, SearchState searchState) {
     final loc = AppLocalizations.of(context);
+    final regexOn = ref.watch(searchRegexProvider);
+    // "Invalid pattern" or "Pattern too slow", while the box still holds
+    // the pattern it belongs to.
+    final patternMessage =
+        searchState is SearchError &&
+            searchState.query == _searchController.text
+        ? searchState.patternMessage(loc)
+        : null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        AppDimensions.sm,
-        AppDimensions.marginMobile,
-        0,
-      ),
+      padding: searchBoxPadding(SearchBoxSize.screen),
       child: TextField(
         controller: _searchController,
         focusNode: _focusNode,
-        inputFormatters: const [VelthuisInputFormatter()],
+        // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+        inputFormatters: regexOn ? const [] : const [VelthuisInputFormatter()],
         textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
+        decoration: searchBoxDecoration(
+          context,
           hintText: loc.searchPaliTexts,
-          prefixIcon: IconButton(
-            icon: Icon(Icons.search, color: colors.onSurfaceVariant),
-            onPressed: _executeSearch,
-            tooltip: loc.search,
-          ),
+          size: SearchBoxSize.screen,
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -286,31 +362,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   tooltip: loc.clear,
                 ),
               ],
-              const VelthuisHelpIcon(),
+              if (!kIsWeb)
+                RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
+              if (!regexOn) const VelthuisHelpIcon(),
             ],
           ),
-          filled: true,
-          fillColor: colors.surfaceContainerHighest,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.md,
-            vertical: 12,
+          errorText: patternMessage,
+          prefixIcon: IconButton(
+            icon: Icon(Icons.search, color: colors.onSurfaceVariant),
+            onPressed: _executeSearch,
+            tooltip: loc.search,
           ),
         ),
-        style: AppTypography.bodyPali.copyWith(
-          fontFamily: ref
-              .watch(
-                settingsProvider.select((s) => s.typography.pali.fontFamily),
-              )
-              .fontFamily,
-          fontSize: 16,
-          color: colors.onSurface,
-        ),
+        style: searchBoxTextStyle(context, size: SearchBoxSize.screen),
         onChanged: _onSearchChanged,
         onSubmitted: (_) => _executeSearch(),
+        // An empty handler stops the field dropping the cursor on Enter.
+        onEditingComplete: () {},
       ),
     );
   }
@@ -328,98 +396,100 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Row(
             children: [
-              // Word distance selector
-              PopupMenuButton<int>(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: loc.wordDistance,
-                initialValue: _wordDistance,
-                onSelected: (val) {
-                  setState(() => _wordDistance = val);
-                  if (_searchController.text.isNotEmpty) _executeSearch();
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: 0, child: Text(loc.anyDistance)),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: 3,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.check,
-                          size: 16,
-                          color: Colors.transparent,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(loc.withinNWords(3)),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(value: 1, child: Text(loc.withinNWords(1))),
-                  PopupMenuItem(value: 2, child: Text(loc.withinNWords(2))),
-                  PopupMenuItem(value: 5, child: Text(loc.withinNWords(5))),
-                  PopupMenuItem(value: 10, child: Text(loc.withinNWords(10))),
-                ],
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _wordDistance > 0
-                        ? colors.secondaryContainer
-                        : (_isMultiWord
-                              ? colors.tertiaryContainer
-                              : colors.surfaceContainerHighest),
-                    borderRadius: BorderRadius.circular(16),
-                    border: _isMultiWord && _wordDistance == 0
-                        ? Border.all(
-                            color: colors.tertiary.withValues(alpha: 0.5),
-                          )
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.swap_horiz,
-                        size: 14,
-                        color: _wordDistance > 0
-                            ? colors.onSecondaryContainer
-                            : (_isMultiWord
-                                  ? colors.onTertiaryContainer
-                                  : colors.onSurfaceVariant),
+              // Word distance selector. A pattern sets its own distance.
+              if (!ref.watch(searchRegexProvider)) ...[
+                PopupMenuButton<int>(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: loc.wordDistance,
+                  initialValue: _wordDistance,
+                  onSelected: (val) {
+                    setState(() => _wordDistance = val);
+                    if (_searchController.text.isNotEmpty) _executeSearch();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 0, child: Text(loc.anyDistance)),
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 3,
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check,
+                            size: 16,
+                            color: Colors.transparent,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(loc.withinNWords(3)),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _wordDistance > 0
-                            ? '${loc.dist}: $_wordDistance'
-                            : loc.dist,
-                        style: AppTypography.labelSmall.copyWith(
+                    ),
+                    PopupMenuItem(value: 1, child: Text(loc.withinNWords(1))),
+                    PopupMenuItem(value: 2, child: Text(loc.withinNWords(2))),
+                    PopupMenuItem(value: 5, child: Text(loc.withinNWords(5))),
+                    PopupMenuItem(value: 10, child: Text(loc.withinNWords(10))),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _wordDistance > 0
+                          ? colors.secondaryContainer
+                          : (_isMultiWord
+                                ? colors.tertiaryContainer
+                                : colors.surfaceContainerHighest),
+                      borderRadius: BorderRadius.circular(16),
+                      border: _isMultiWord && _wordDistance == 0
+                          ? Border.all(
+                              color: colors.tertiary.withValues(alpha: 0.5),
+                            )
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.swap_horiz,
+                          size: 14,
                           color: _wordDistance > 0
                               ? colors.onSecondaryContainer
                               : (_isMultiWord
                                     ? colors.onTertiaryContainer
                                     : colors.onSurfaceVariant),
-                          fontWeight: _wordDistance > 0 || _isMultiWord
-                              ? FontWeight.w600
-                              : FontWeight.w400,
                         ),
-                      ),
-                      Icon(
-                        Icons.arrow_drop_down,
-                        size: 16,
-                        color: _wordDistance > 0
-                            ? colors.onSecondaryContainer
-                            : (_isMultiWord
-                                  ? colors.onTertiaryContainer
-                                  : colors.onSurfaceVariant),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Text(
+                          _wordDistance > 0
+                              ? '${loc.dist}: $_wordDistance'
+                              : loc.dist,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: _wordDistance > 0
+                                ? colors.onSecondaryContainer
+                                : (_isMultiWord
+                                      ? colors.onTertiaryContainer
+                                      : colors.onSurfaceVariant),
+                            fontWeight: _wordDistance > 0 || _isMultiWord
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 16,
+                          color: _wordDistance > 0
+                              ? colors.onSecondaryContainer
+                              : (_isMultiWord
+                                    ? colors.onTertiaryContainer
+                                    : colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
 
               const Spacer(),
 
@@ -581,6 +651,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: ListView.separated(
         padding: EdgeInsets.zero,
         shrinkWrap: true,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(2000),
         itemCount: _suggestions.length,
         separatorBuilder: (_, _) => Divider(
           height: 1,
@@ -588,7 +659,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         itemBuilder: (context, index) {
           final sug = _suggestions[index];
-          return InkWell(
+          return Container(
+            key: index == _suggestionIndex ? _suggestionKey : null,
+            color: index == _suggestionIndex
+                ? colors.primary.withValues(alpha: 0.12)
+                : null,
+            child: InkWell(
             onTap: () => _onSuggestionSelected(sug),
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -633,7 +709,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ],
               ),
             ),
-          );
+          ));
         },
       ),
     );
@@ -654,7 +730,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onEscape: () => _focusNode.requestFocus(),
         );
       case SearchError(:final message):
-        return _buildErrorState(colors, message);
+        return _buildErrorState(
+          colors,
+          state.patternMessage(AppLocalizations.of(context)) ?? message,
+        );
     }
   }
 

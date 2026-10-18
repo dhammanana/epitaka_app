@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:epitaka/core/utils/responsive_breakpoint.dart'
     show ResponsiveBreakpoint;
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
+import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'package:epitaka/shared/widgets/search_box_decoration.dart';
 import 'package:epitaka/shared/widgets/wide_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -19,6 +21,7 @@ import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
+import '../../search/services/regex_search.dart';
 import '../providers/dictionary_header_provider.dart';
 import 'dictionary_header_icons.dart';
 import 'lookup_history_list.dart';
@@ -138,6 +141,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   // Live textbox value (debounced) driving prefix suggestions.
   String _draft = '';
 
+  /// [_query] is a pattern submitted with rx on.
+  bool _queryIsRegex = false;
+
+  /// Why the submitted pattern does not compile.
+  String? _patternError;
+
   // Keyboard navigation over the suggestion dropdown: -1 = caret in the
   // field, otherwise the highlighted suggestion index (Enter accepts it).
   int _suggestIndex = -1;
@@ -222,9 +231,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
-    final converted = convertToRomanPali(value);
-
-    final trimmed = foldDpdQuery(converted).trim();
+    final regex = ref.read(dictionaryRegexProvider);
+    final trimmed = regex
+        ? value.trim()
+        : foldDpdQuery(convertToRomanPali(value)).trim();
     if (trimmed.isEmpty) {
       setState(() {
         _lookupHistory.resetPosition();
@@ -234,6 +244,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         _suggestPending = 0;
         _suggestKeys.clear();
       });
+      return;
+    }
+    // A pattern has no suggestions. The redraw shows the clear button, which
+    // the suggestion timer would otherwise bring.
+    if (regex) {
+      setState(() {});
       return;
     }
 
@@ -251,10 +267,13 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _performSearch(String value) {
+    if (ref.read(dictionaryRegexProvider)) {
+      _submitPattern(value);
+      return;
+    }
     final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
-    _focusNode.unfocus();
     _initiateSearch(converted);
   }
 
@@ -271,6 +290,27 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     _showWord(word);
   }
 
+  /// A pattern runs exactly as typed and stays out of the lookup history:
+  /// re-run from there in normal mode it would mean something else.
+  void _submitPattern(String pattern) {
+    if (pattern.trim().isEmpty) return;
+    _setQuery(pattern, regex: true);
+  }
+
+  /// rx on or off runs the last submitted lookup again in the new mode.
+  void _toggleRegex() {
+    final on = !ref.read(dictionaryRegexProvider);
+    ref.read(dictionaryRegexProvider.notifier).state = on;
+    _suggestDebounce?.cancel();
+    setState(() => _draft = _query);
+    if (_query.isNotEmpty) _performSearch(_query);
+    // A pattern that cleans to no word (`-`) runs no plain lookup; its
+    // regex results must not stay up with rx off.
+    if (!on && _queryIsRegex) {
+      _setQuery('', regex: false);
+    }
+  }
+
   /// Back and forward put a word on screen without adding it to any list.
   void _stepHistory(String? word) {
     if (word == null) return;
@@ -279,10 +319,23 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }
 
   void _showWord(String word) {
+    // A word from a tap, the history or the reader is a plain lookup. The
+    // flag may not change while a widget builds, so it waits a microtask.
+    if (ref.read(dictionaryRegexProvider)) {
+      Future.microtask(() {
+        if (mounted) ref.read(dictionaryRegexProvider.notifier).state = false;
+      });
+    }
+    _setQuery(word, regex: false);
+  }
+
+  void _setQuery(String word, {required bool regex}) {
     _suggestDebounce?.cancel();
     setState(() {
       _query = word;
       _draft = word;
+      _queryIsRegex = regex;
+      _patternError = regex ? regexError(word) : null;
       _historyOpen = false;
       _suggestIndex = -1;
       _suggestPending = 0;
@@ -321,6 +374,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         event.logicalKey == LogicalKeyboardKey.numpadEnter;
     if (!isDown && !isUp && !isEnter) return KeyEventResult.ignored;
     if (!mounted) return KeyEventResult.ignored;
+    if (ref.read(dictionaryRegexProvider)) return KeyEventResult.ignored;
     // Flush the live textbox value: the draft is debounced, so without
     // this an arrow pressed right after typing would see stale state.
     // Both sides cleaned: a typed draft is already clean, but a word put on
@@ -547,6 +601,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     // also change. No PopScope here: a tap on the barrier above the sheet and
     // the back key both pop the route, and both must close the sheet.
     ref.watch(lookupHistoryProvider);
+    final regexOn = ref.watch(dictionaryRegexProvider);
     ref.listen(dictionaryScrollTopRequestProvider, (_, _) {
       final controller = _sheetScroll;
       if (controller != null && controller.hasClients) controller.jumpTo(0);
@@ -572,7 +627,6 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     // changes ~60 times during the ~300ms keyboard open animation,
     // causing the expensive dictionary results to rebuild per frame.
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
-    final paliSize = (pali.fontSize * 0.8).clamp(12.0, 24.0);
     // The same chip size as the desktop panel, so the rows look alike.
     final chipSize = (pali.fontSize * 0.55).clamp(9.0, 14.0);
 
@@ -700,31 +754,26 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
                           // Search bar row
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              4,
-                              AppDimensions.sm,
-                              AppDimensions.marginMobile - 8,
-                              0,
-                            ),
+                            padding: searchBoxPadding(SearchBoxSize.screen),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: TextField(
                                     controller: _searchController,
                                     focusNode: _focusNode,
-                                    inputFormatters: const [
-                                      VelthuisInputFormatter(),
-                                    ],
+                                    // `.m`, `.t`, `.n` are regex: rx keeps
+                                    // them as typed.
+                                    inputFormatters: regexOn
+                                        ? const []
+                                        : const [VelthuisInputFormatter()],
                                     autofocus: _shouldAutofocus,
                                     textInputAction: TextInputAction.search,
-                                    decoration: InputDecoration(
+                                    decoration: searchBoxDecoration(
+                                      context,
                                       hintText: AppLocalizations.of(
                                         context,
                                       ).searchPali,
-                                      prefixIcon: Icon(
-                                        Icons.search,
-                                        color: colors.onSurfaceVariant,
-                                      ),
+                                      size: SearchBoxSize.screen,
                                       suffixIcon: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -737,32 +786,31 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                                 _focusNode.requestFocus();
                                               },
                                             ),
-                                          const VelthuisHelpIcon(),
+                                          RegexToggleButton(
+                                            on: regexOn,
+                                            onToggle: _toggleRegex,
+                                          ),
+                                          if (!regexOn)
+                                            const VelthuisHelpIcon(),
                                         ],
                                       ),
-                                      filled: true,
-                                      fillColor: colors.surfaceContainerHighest,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(
-                                          AppDimensions.radiusXl,
-                                        ),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: AppDimensions.md,
-                                            vertical: 12,
-                                          ),
+                                      errorText:
+                                          _patternError != null &&
+                                              _queryIsRegex &&
+                                              _searchController.text == _query
+                                          ? AppLocalizations.of(
+                                              context,
+                                            ).invalidPattern(_patternError!)
+                                          : null,
                                     ),
-                                    style: AppTypography.bodyTranslation
-                                        .copyWith(
-                                          color: colors.onSurface,
-                                          fontSize: paliSize,
-                                          fontFamily:
-                                              pali.fontFamily.fontFamily,
-                                        ),
+                                    style: searchBoxTextStyle(
+                                      context,
+                                      size: SearchBoxSize.screen,
+                                    ),
                                     onChanged: _onSearchChanged,
                                     onSubmitted: _performSearch,
+                                    // An empty handler stops the field dropping the cursor on Enter.
+                                    onEditingComplete: () {},
                                   ),
                                 ),
                                 LookupHistoryButtons(
@@ -862,6 +910,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
       (d) => d.enabled && d.status == MdxStatus.ready,
     );
     final showSuggestions =
+        !ref.watch(dictionaryRegexProvider) &&
         _draft.isNotEmpty &&
         _draft != _query &&
         (_draft.length >= kDictionarySuggestionMinLength || hasMdxDicts);
@@ -1075,16 +1124,33 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   /// Build the results — directly look up the word and show detail.
   /// If the exact lookup fails, fall back to prefix search suggestions.
   Widget _buildResults(ColorScheme colors, ScrollController scrollController) {
+    if (_patternError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            AppLocalizations.of(context).invalidPattern(_patternError!),
+            style: AppTypography.bodyTranslation.copyWith(color: colors.error),
+          ),
+        ),
+      );
+    }
     // Try exact lookup first
     return ref
-        .watch(dpdLookupProvider(_query))
+        .watch(
+          _queryIsRegex
+              ? dpdRegexLookupProvider(_query)
+              : dpdLookupProvider(_query),
+        )
         .when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                AppLocalizations.of(context).errorMessage(e.toString()),
+                e is RegexTooSlow
+                    ? AppLocalizations.of(context).patternTooSlow
+                    : AppLocalizations.of(context).errorMessage(e.toString()),
                 style: AppTypography.bodyTranslation.copyWith(
                   color: colors.error,
                 ),
@@ -1092,6 +1158,9 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
           ),
           data: (lookup) {
+            if (lookup.regexTotal != null) {
+              return _buildDictionaryResults(colors, lookup, scrollController);
+            }
             final hasDpdMatch = lookup.hasMatch;
             // DPD is not the only dictionary: the enabled Bold Definition
             // and other books can match words DPD has no entry for. When DPD
@@ -1149,38 +1218,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             ),
           ],
           data: (results) {
-            if (results.isEmpty) {
-              return [
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(48.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 48,
-                            color: colors.outlineVariant,
-                          ),
-                          const SizedBox(height: AppDimensions.md),
-                          Text(
-                            AppLocalizations.of(
-                              context,
-                            ).noMatchesFoundForQuery(_query),
-                            style: AppTypography.bodyTranslation.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ];
-            }
+            if (results.isEmpty) return _noMatchesSlivers(colors);
 
             return [
               SliverToBoxAdapter(
@@ -1219,6 +1257,31 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         );
   }
 
+  List<Widget> _noMatchesSlivers(ColorScheme colors) => [
+    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+    SliverToBoxAdapter(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(48.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off, size: 48, color: colors.outlineVariant),
+              const SizedBox(height: AppDimensions.md),
+              Text(
+                AppLocalizations.of(context).noMatchesFoundForQuery(_query),
+                style: AppTypography.bodyTranslation.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ];
+
   /// Show combined results from DPD and the other dictionaries, in the order
   /// of the user's dictionary list.
   Widget _buildDictionaryResults(
@@ -1229,6 +1292,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   }) {
     // The cleaned lemma_1 for cross-dictionary search
     final searchWord = lookup.searchWord;
+    final regexTotal = lookup.regexTotal;
 
     return Consumer(
       builder: (context, ref, _) {
@@ -1250,7 +1314,17 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
         return listAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => const SizedBox.shrink(),
-          data: (entries) {
+          data: (allEntries) {
+            // A regex answers from the DPD headword list only, drawn as the
+            // usual headwords (and the summary, which lists them).
+            final entries = regexTotal == null
+                ? allEntries
+                : [
+                    for (final e in allEntries)
+                      if (e.item.id == 'dpd_headwords' ||
+                          e.item.id == kDpdSummaryId)
+                        e,
+                  ];
             // Memoize: skip rebuilding when nothing changed. The sheet's
             // builder re-runs on every drag/keyboard frame, and rebuilding
             // flutter_html definitions each time is the dictionary's biggest
@@ -1301,6 +1375,23 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                 child: CustomScrollView(
                   controller: scrollController,
                   slivers: [
+                    if (regexTotal == 0) ..._noMatchesSlivers(colors),
+                    if (regexTotal != null &&
+                        regexTotal > lookup.headwords.length)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            AppLocalizations.of(context).regexMatchesShown(
+                              regexTotal,
+                              lookup.headwords.length,
+                            ),
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
                     for (final w in buildOrderedDictionaryItems(
                       entries: entries,
                       lookup: lookup,

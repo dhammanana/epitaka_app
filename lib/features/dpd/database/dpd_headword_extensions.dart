@@ -1,13 +1,12 @@
 import 'dpd_database.dart';
 
+/// [lemma1] without its homograph number (`dhamma 1.01` → `dhamma`).
+String lemmaCleanOf(String lemma1) =>
+    lemma1.replaceAll(RegExp(r' \d.*$', multiLine: true, unicode: true), '');
+
 extension DpdHeadwordGrammar on DpdHeadword {
   /// Regex cleanup of lemma_1 (removes numbers at the end)
-  String get lemmaClean {
-    return lemma1.replaceAll(
-      RegExp(r' \d.*$', multiLine: true, unicode: true),
-      '',
-    );
-  }
+  String get lemmaClean => lemmaCleanOf(lemma1);
 
   /// Regex cleanup of root_key (removes numbers at the end)
   String get rootClean {

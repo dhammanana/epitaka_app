@@ -23,6 +23,7 @@ import '../../features/settings/widgets/settings_dialog.dart';
 import '../../features/sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../shared/providers/side_panel_provider.dart';
 import '../../shared/providers/vimamsa_panel_provider.dart';
+import '../../shared/widgets/regex_toggle_button.dart';
 
 /// True on a native macOS build (never true on web or other platforms).
 bool get _isMacOS => !kIsWeb && Platform.isMacOS;
@@ -278,6 +279,12 @@ class AppShortcuts {
         SingleActivator(LogicalKeyboardKey.keyF, meta: true),
       ],
       macActivator: SingleActivator(LogicalKeyboardKey.keyF, meta: true),
+    ),
+    ShortcutBinding(
+      id: 'regex-toggle',
+      label: 'Toggle Regex',
+      section: ShortcutSection.reading,
+      activators: [SingleActivator(LogicalKeyboardKey.keyR, alt: true)],
     ),
     ShortcutBinding(
       id: 'close-tab',
@@ -1063,7 +1070,7 @@ class AppShortcuts {
     void toggleAnnotations() {
       final context = _ctx(navigatorKey);
       if (ResponsiveBreakpoint.isDesktop(context)) {
-        toggleSidebarPanel(SidePanelType.annotations);
+        toggleSidebarPanel(SidePanelType.annotations, autoFocus: true);
       } else {
         context.push(AppRoutes.annotations);
       }
@@ -1097,7 +1104,7 @@ class AppShortcuts {
     void toggleContents() {
       final context = _ctx(navigatorKey);
       if (ResponsiveBreakpoint.isDesktop(context)) {
-        toggleSidebarPanel(SidePanelType.contents);
+        toggleSidebarPanel(SidePanelType.contents, autoFocus: true);
         return;
       }
       // Mobile: open the full-page contents screen for the active book.
@@ -1166,6 +1173,7 @@ class AppShortcuts {
     // (e.g. the N and L library shortcuts).
     final invokes = <String, VoidCallback>{
       'find-in-book': toggleInBookSearch,
+      'regex-toggle': toggleRegexInFocusedBox,
       'find-everywhere': openGlobalSearch,
       'close-tab': closeFocusTab,
       'close-all-tabs': closeAllTabs,

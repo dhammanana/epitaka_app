@@ -22,6 +22,7 @@ class DpdLookup {
     this.fuzzy = const [],
     this.dictPartial = const {},
     this.dictFuzzy = const {},
+    this.regexTotal,
   });
 
   final String query;
@@ -51,6 +52,10 @@ class DpdLookup {
   /// Set when there is no readable DPD database. The other dictionaries still
   /// answer, so this is data and not an error.
   final DpdUnavailable? unavailable;
+
+  /// Regex mode: how many headwords the pattern matched. [headwords] holds
+  /// the first of them, at most [kDictionaryRegexLimit].
+  final int? regexTotal;
 
   bool get hasMatch =>
       headwords.isNotEmpty || roots.isNotEmpty || secondary.isNotEmpty;
@@ -168,6 +173,49 @@ final dpdLookupProvider = FutureProvider.autoDispose
         fuzzy: fuzzy,
         dictPartial: wantPartial ? dictLoose.partial : const {},
         dictFuzzy: wantFuzzy ? dictLoose.fuzzy : const {},
+      );
+    });
+
+/// The rx button of the Dictionary sheet and panel. Not saved, like the
+/// Search one.
+final dictionaryRegexProvider = StateProvider<bool>((ref) => false);
+
+/// How many headwords a regex lookup shows.
+const kDictionaryRegexLimit = 100;
+
+/// The headwords whose clean lemma matches the [pattern] (rx on). Only the
+/// DPD headword list answers: roots, the secondary sources, the extra
+/// dictionaries and the looser tiers are not searched.
+final dpdRegexLookupProvider = FutureProvider.autoDispose
+    .family<DpdLookup, String>((ref, pattern) async {
+      final timer = Stopwatch()..start();
+      final DpdDao dao;
+      try {
+        dao = await ref.watch(dpdDaoProvider.future);
+      } on DpdUnavailable catch (e) {
+        return DpdLookup(
+          query: pattern,
+          headwords: const [],
+          roots: const [],
+          secondary: const [],
+          timer: timer,
+          unavailable: e,
+        );
+      }
+      // A runaway pattern ends as RegexTooSlow; a new lookup drops this
+      // one, which cancels its job.
+      final (:total, :first) = await dao.searchLemmaRegex(
+        pattern,
+        limit: kDictionaryRegexLimit,
+        onJob: (job) => ref.onDispose(job.cancel),
+      );
+      return DpdLookup(
+        query: pattern,
+        headwords: first,
+        roots: const [],
+        secondary: const [],
+        timer: timer,
+        regexTotal: total,
       );
     });
 

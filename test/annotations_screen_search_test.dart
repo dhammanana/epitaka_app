@@ -11,10 +11,15 @@ import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/annotations/models/annotation.dart';
 import 'package:epitaka/features/annotations/providers/annotations_provider.dart';
 import 'package:epitaka/features/annotations/screens/annotations_screen.dart';
+import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
+import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+
+import 'helpers/regex_hotkey.dart';
+import 'helpers/type_keys.dart';
 
 Annotation _ann({
   required String id,
@@ -83,6 +88,13 @@ Widget _build() {
             bookName: 'Abhidhamma',
             note: 'Remember this point',
           ),
+          // DN 1, 7 words: `([^ ]+ ?)+x` backtracks on it for about 30 s.
+          _ann(
+            id: '5',
+            bookId: 'dn1',
+            bookName: 'Dīgha',
+            exactText: 'ekaṃ samayaṃ bhagavā antarā ca rājagahaṃ antarā',
+          ),
         ]),
       ),
       settingsProvider.overrideWith((ref) {
@@ -106,6 +118,12 @@ Widget _build() {
 
 Future<void> _search(WidgetTester tester, String query) async {
   await tester.enterText(find.byType(TextField), query);
+  await tester.pumpAndSettle();
+  // An Rx search answers from a regex job in another isolate, which the
+  // fake clock does not run: let real time pass, then draw the answer.
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 300)),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -181,5 +199,102 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('dhammaṃ'), findsOneWidget);
     expect(find.textContaining('My saved place'), findsOneWidget);
+  });
+
+  group('Rx and Velthuis (spec J)', () {
+    Finder field() => find.byType(TextField);
+    Finder help() =>
+        find.descendant(of: field(), matching: find.byType(VelthuisHelpIcon));
+    Future<void> rxOn(WidgetTester tester) async {
+      await tester.tap(find.byType(RegexToggleButton));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Rx sits after the clear button and before the help; '
+        'Velthuis works with Rx off', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      expect(help(), findsOneWidget);
+      await typeKeys(tester, field(), 'paali');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field()).controller!.text, 'pāli');
+      final rx = tester.getCenter(find.byType(RegexToggleButton)).dx;
+      expect(rx, greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx));
+      expect(rx, lessThan(tester.getCenter(help()).dx));
+    });
+
+    testWidgets('Alt+R in the box turns Rx on, then off', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isFalse);
+      await regexHotkeyIn(tester, field());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isTrue);
+      await regexHotkeyIn(tester, field());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isFalse);
+    });
+
+    testWidgets('Rx on keeps `.m`, hides the help, and matches exact '
+        'diacritics', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      await rxOn(tester);
+      await typeKeys(tester, field(), 'a.m');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field()).controller!.text, 'a.m');
+      expect(help(), findsNothing);
+
+      await _search(tester, 'sattā');
+      expect(find.textContaining('sabbe sattā'), findsOneWidget);
+      expect(find.textContaining('dhammaṃ'), findsNothing);
+      // `satta` is not `sattā` with Rx on.
+      await _search(tester, 'satta');
+      expect(find.textContaining('sabbe sattā'), findsNothing);
+    });
+
+    testWidgets('a pattern that does not compile says why at the field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      await rxOn(tester);
+      await _search(tester, '(');
+      expect(find.textContaining('Invalid pattern:'), findsOneWidget);
+      expect(find.textContaining('dhammaṃ'), findsNothing);
+    });
+
+    // The job's time-limit timer runs on the fake clock; its isolate on the
+    // real one.
+    Future<void> passLimit(WidgetTester tester) async {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a runaway pattern ends as "Pattern too slow"', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      await rxOn(tester);
+      await tester.enterText(field(), r'([^ ]+ ?)+x');
+      await tester.pumpAndSettle();
+      await passLimit(tester);
+      expect(find.text('Pattern too slow'), findsOneWidget);
+    });
+
+    testWidgets('X during a runaway pattern leaves no late answer', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      await rxOn(tester);
+      await tester.enterText(field(), r'([^ ]+ ?)+x');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.clear));
+      await tester.pumpAndSettle();
+      await passLimit(tester);
+      expect(find.text('Pattern too slow'), findsNothing);
+      expect(find.textContaining('dhammaṃ'), findsOneWidget);
+    });
   });
 }

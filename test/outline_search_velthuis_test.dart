@@ -48,8 +48,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.search).first);
+    // The box shows at once (spec I).
     await tester.pumpAndSettle();
     final help = find.descendant(
       of: find.byType(TextField),

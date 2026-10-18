@@ -538,6 +538,11 @@ const Map<String, String> en = {
   'Failed to load preview:': 'Failed to load preview:',
   'Velthuis typing': 'Velthuis typing',
   'Sanskrit': 'Sanskrit',
+  'Regular expression': 'Regular expression',
+  'Invalid pattern:': 'Invalid pattern:',
+  'Pattern too slow': 'Pattern too slow',
+  'matches, first': 'matches, first',
+  'shown': 'shown',
 
   // ── Reader ──────────────────────────────────────────────────────────
   'Find in book…': 'Find in book…',

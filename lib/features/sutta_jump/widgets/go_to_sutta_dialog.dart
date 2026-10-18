@@ -9,9 +9,16 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../search/services/regex_search.dart';
 import '../services/sutta_code_service.dart';
+
+/// Whether "Go to sutta" takes a regex over sutta names (spec G). Session
+/// only, like the other rx flags: never saved, so the box always opens in
+/// normal mode after a restart.
+final goToSuttaRegexProvider = StateProvider<bool>((ref) => false);
 
 bool _dialogOpen = false;
 
@@ -99,6 +106,12 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
   // the list.
   Future<SuttaLookupCache>? _lookupFuture;
   int _query = 0;
+  // Why the pattern does not compile, when rx is on and it does not.
+  String? _patternError;
+  // The pattern ran past its time limit (spec K).
+  bool _patternTooSlow = false;
+  // The running rx name search; the next keystroke and closing cancel it.
+  RegexJob<Object?>? _regexJob;
   // A second Enter during the closing animation would pop the page below.
   bool _closing = false;
 
@@ -117,6 +130,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
 
   @override
   void dispose() {
+    _regexJob?.cancel();
     _controller.dispose();
     _scroll.dispose();
     super.dispose();
@@ -124,15 +138,41 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
 
   Future<void> _update(String text) async {
     final query = ++_query;
+    _regexJob?.cancel();
+    final regexOn = ref.read(goToSuttaRegexProvider);
     var results = const <SuttaTarget>[];
     var failed = false;
+    String? patternError;
+    var tooSlow = false;
     try {
       final cache = await _lookup();
-      // Codes first (`mn10`); sutta and book names when no code matches.
-      results = searchSuttaCodes(cache, text);
-      if (results.isEmpty && text.trim().isNotEmpty) {
-        results = searchSuttaNames(cache, text);
+      // Keystrokes made while the list loaded: only the newest starts a job.
+      if (!mounted || query != _query) return;
+      if (regexOn) {
+        // Regex over sutta and book names only (spec G); codes are exact.
+        if (text.isNotEmpty) {
+          final error = regexError(text);
+          if (error != null) {
+            patternError = error;
+          } else {
+            results = await searchSuttaNamesRegex(
+              cache,
+              text,
+              onJob: (job) => _regexJob = job,
+            );
+          }
+        }
+      } else {
+        // Codes first (`mn10`); sutta and book names when no code matches.
+        results = searchSuttaCodes(cache, text);
+        if (results.isEmpty && text.trim().isNotEmpty) {
+          results = searchSuttaNames(cache, text);
+        }
       }
+    } on RegexTooSlow {
+      tooSlow = true;
+    } on RegexCancelled {
+      return; // a newer keystroke, or the dialog closed
     } catch (e) {
       developer.log(
         '[GO TO SUTTA] Lookup failed for "$text": $e',
@@ -145,9 +185,18 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
       _results = results;
       _resultsFor = text;
       _failed = failed;
+      _patternError = patternError;
+      _patternTooSlow = tooSlow;
       _highlight = 0;
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _toggleRegex() {
+    final notifier = ref.read(goToSuttaRegexProvider.notifier);
+    notifier.state = !notifier.state;
+    // The box text means something else in the other mode; re-run it.
+    _update(_controller.text);
   }
 
   void _open(SuttaTarget target) {
@@ -189,6 +238,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final text = _controller.text;
+    final regexOn = ref.watch(goToSuttaRegexProvider);
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -199,7 +249,10 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
             onKeyEvent: _onKey,
             child: TextField(
               controller: _controller,
-              inputFormatters: const [VelthuisInputFormatter()],
+              // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+              inputFormatters: regexOn
+                  ? const []
+                  : const [VelthuisInputFormatter()],
               autofocus: true,
               autocorrect: false,
               enableSuggestions: false,
@@ -209,7 +262,21 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 labelText: l10n.goToSutta,
                 hintText: l10n.goToSuttaHint,
                 prefixIcon: const Icon(Icons.near_me_outlined),
-                suffixIcon: const VelthuisHelpIcon(),
+                // This box has no clear button: rx sits before the help.
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
+                    if (!regexOn) const VelthuisHelpIcon(),
+                  ],
+                ),
+                errorText: _resultsFor != text
+                    ? null
+                    : _patternTooSlow
+                    ? l10n.patternTooSlow
+                    : _patternError != null
+                    ? l10n.invalidPattern(_patternError!)
+                    : null,
               ),
               onChanged: _update,
               onSubmitted: (_) {
@@ -229,7 +296,10 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
             )
           else if (text.trim().isNotEmpty &&
               _results.isEmpty &&
-              _resultsFor == text)
+              _resultsFor == text &&
+              // An invalid pattern already says so at the field.
+              _patternError == null &&
+              !_patternTooSlow)
             Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
