@@ -2,10 +2,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/models/app_models.dart';
-import '../lib/features/search/providers/search_provider.dart';
-import '../lib/features/search/widgets/search_results_navigator.dart';
-import '../lib/shared/utils/app_shortcuts.dart';
+import 'package:epitaka/core/models/app_models.dart';
+import 'package:epitaka/features/search/providers/search_provider.dart';
+import 'package:epitaka/features/search/widgets/search_results_navigator.dart';
+import 'package:epitaka/shared/utils/app_shortcuts.dart';
 
 SearchResultItem _item(String bookId, int paraId) => SearchResultItem(
       bookId: bookId,
@@ -158,6 +158,8 @@ void main() {
             nav,
             onActivate: () => activated++,
             onEscape: () => escaped++,
+            onExpandBook: (_) {},
+            onCollapseBook: (_) {},
           );
 
       expect(handle(LogicalKeyboardKey.keyJ), KeyEventResult.handled);
@@ -192,6 +194,8 @@ void main() {
             nav,
             onActivate: () {},
             onEscape: () {},
+            onExpandBook: (_) {},
+            onCollapseBook: (_) {},
           );
 
       expect(handle(LogicalKeyboardKey.keyN), KeyEventResult.handled);
@@ -200,6 +204,96 @@ void main() {
       expect(nav.selected, 1);
       expect(handle(LogicalKeyboardKey.arrowDown), KeyEventResult.handled);
       expect(nav.selected, 2);
+    });
+
+    group('book fold keys and Up at the top', () {
+      late SearchResultsNavigator nav;
+      late List<int> expanded;
+      late List<int> collapsed;
+      var escaped = 0;
+
+      KeyEventResult press(LogicalKeyboardKey key) => handleSearchNavKey(
+            KeyDownEvent(
+              physicalKey: PhysicalKeyboardKey.keyA,
+              logicalKey: key,
+              timeStamp: Duration.zero,
+            ),
+            nav,
+            onActivate: () {},
+            onEscape: () => escaped++,
+            onExpandBook: expanded.add,
+            onCollapseBook: collapsed.add,
+          );
+
+      // Rows: 0 b1 (open), 1 hit, 2 hit, 3 b2 (closed).
+      setUp(() {
+        escaped = 0;
+        expanded = [];
+        collapsed = [];
+        nav = SearchResultsNavigator();
+        nav.rebuild(
+          SearchResults(
+            query: 'x',
+            totalResults: 3,
+            bookSummaries: [
+              _summary(
+                'b1',
+                expanded: true,
+                items: [_item('b1', 1), _item('b1', 2)],
+                totalCount: 2,
+              ),
+              _summary('b2'),
+            ],
+          ),
+          includeHeadings: false,
+        );
+      });
+
+      test('Right unfolds a closed book and leaves an open one alone', () {
+        nav.selected = 3;
+        expect(press(LogicalKeyboardKey.arrowRight), KeyEventResult.handled);
+        expect(expanded, [1]);
+        nav.selected = 0;
+        expect(press(LogicalKeyboardKey.arrowRight), KeyEventResult.handled);
+        nav.selected = 1;
+        expect(press(LogicalKeyboardKey.arrowRight), KeyEventResult.handled);
+        expect(expanded, [1]);
+      });
+
+      test('Left on a hit selects its book row and folds the book', () {
+        nav.selected = 2;
+        expect(press(LogicalKeyboardKey.arrowLeft), KeyEventResult.handled);
+        expect(nav.selected, 0);
+        expect(collapsed, [0]);
+      });
+
+      test('Left on an open book row folds it', () {
+        nav.selected = 0;
+        press(LogicalKeyboardKey.arrowLeft);
+        expect(collapsed, [0]);
+      });
+
+      test('Left on a closed book row does nothing but is consumed', () {
+        nav.selected = 3;
+        expect(press(LogicalKeyboardKey.arrowLeft), KeyEventResult.handled);
+        expect(collapsed, isEmpty);
+        expect(nav.selected, 3);
+      });
+
+      test('Up at row 0 calls onEscape; at row 1 it moves to row 0', () {
+        expect(press(LogicalKeyboardKey.arrowUp), KeyEventResult.handled);
+        expect(escaped, 1);
+        nav.selected = 1;
+        press(LogicalKeyboardKey.arrowUp);
+        expect(nav.selected, 0);
+        expect(escaped, 1);
+      });
+
+      test('k at row 0 stays and does not call onEscape', () {
+        expect(press(LogicalKeyboardKey.keyK), KeyEventResult.handled);
+        expect(nav.selected, 0);
+        expect(escaped, 0);
+      });
     });
   });
 }

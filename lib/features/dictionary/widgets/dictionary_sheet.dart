@@ -266,17 +266,14 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     });
   }
 
-  /// [keepFocus]: a search run again by the rx switch leaves the cursor in
-  /// the box, so the user can go on typing.
-  void _performSearch(String value, {bool keepFocus = false}) {
+  void _performSearch(String value) {
     if (ref.read(dictionaryRegexProvider)) {
-      _submitPattern(value, keepFocus: keepFocus);
+      _submitPattern(value);
       return;
     }
     final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
-    if (!keepFocus) _focusNode.unfocus();
     _initiateSearch(converted);
   }
 
@@ -295,9 +292,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
 
   /// A pattern runs exactly as typed and stays out of the lookup history:
   /// re-run from there in normal mode it would mean something else.
-  void _submitPattern(String pattern, {bool keepFocus = false}) {
+  void _submitPattern(String pattern) {
     if (pattern.trim().isEmpty) return;
-    if (!keepFocus) _focusNode.unfocus();
     _setQuery(pattern, regex: true);
   }
 
@@ -307,7 +303,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
     ref.read(dictionaryRegexProvider.notifier).state = on;
     _suggestDebounce?.cancel();
     setState(() => _draft = _query);
-    if (_query.isNotEmpty) _performSearch(_query, keepFocus: true);
+    if (_query.isNotEmpty) _performSearch(_query);
     // A pattern that cleans to no word (`-`) runs no plain lookup; its
     // regex results must not stay up with rx off.
     if (!on && _queryIsRegex) {
@@ -813,6 +809,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                     ),
                                     onChanged: _onSearchChanged,
                                     onSubmitted: _performSearch,
+                                    // An empty handler stops the field dropping the cursor on Enter.
+                                    onEditingComplete: () {},
                                   ),
                                 ),
                                 LookupHistoryButtons(
