@@ -39,7 +39,8 @@ class SearchResultsView extends ConsumerStatefulWidget {
   final SearchResults state;
 
   /// Optional external focus node for the results list; when the parent
-  /// provides one it can move focus here after a search executes.
+  /// provides one it can move focus here, as the search box's Down arrow
+  /// does.
   final FocusNode? resultsFocusNode;
 
   /// Called when Esc is pressed in the results (parent usually refocuses
@@ -164,11 +165,17 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
     final isPhone = ResponsiveBreakpoint.isPhone(context);
     return Focus(
       focusNode: focusNode,
+      onFocusChange: (has) {
+        if (has) _searchNav.selectFirst();
+        setState(() {});
+      },
       onKeyEvent: (node, event) => handleSearchNavKey(
         event,
         _searchNav,
         onActivate: _activateSelectedRow,
         onEscape: () => widget.onEscape?.call(),
+        onExpandBook: ref.read(searchProvider.notifier).expandBook,
+        onCollapseBook: ref.read(searchProvider.notifier).collapseBook,
       ),
       child: ListView.builder(
         padding: EdgeInsets.fromLTRB(
@@ -209,7 +216,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
       case SearchRowKind.headingCard:
         return _SearchRowHighlight(
           key: selectedKey,
-          selected: isSelected,
+          selected: isSelected && (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
           colors: colors,
           child: _HeadingResultsCard(
             headings: state.headings,
@@ -272,7 +279,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
           GroupRowHighlight(
             // The load-more row never carried the scroll key.
             key: row.kind == SearchRowKind.loadMore ? null : selectedKey,
-            selected: isSelected,
+            selected: isSelected && (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
             colors: colors,
             child: content,
           ),

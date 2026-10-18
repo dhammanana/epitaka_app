@@ -3,6 +3,7 @@
 library;
 
 import 'package:epitaka/core/database/app_database.dart';
+import 'package:epitaka/core/models/app_models.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/services/regex_search.dart';
@@ -12,6 +13,7 @@ import 'package:epitaka/shared/utils/app_navigation.dart';
 import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +26,18 @@ class _FakeSearchNotifier extends SearchNotifier {
   _FakeSearchNotifier(super.ref);
 
   final calls = <({String query, bool regex})>[];
+
+  /// When set, a search answers with two books of results.
+  bool answer = false;
+
+  /// With [answer], the search finds no book at all.
+  bool noHits = false;
+
+  /// The books the list asked to unfold, by position.
+  final expanded = <int>[];
+
+  @override
+  Future<void> expandBook(int summaryIndex) async => expanded.add(summaryIndex);
 
   @override
   Future<void> ensureIndexBuilt() async {}
@@ -40,6 +54,26 @@ class _FakeSearchNotifier extends SearchNotifier {
     bool regex = false,
   }) async {
     calls.add((query: query, regex: regex));
+    if (answer) {
+      state = SearchResults(
+        query: query,
+        totalResults: noHits ? 0 : 2,
+        regex: regex,
+        bookSummaries: noHits
+            ? []
+            : [
+          BookResultSummary(
+            book: BookInfo(id: 1, bookId: 'b1', bookName: 'Book One'),
+            totalCount: 1,
+          ),
+          BookResultSummary(
+            book: BookInfo(id: 2, bookId: 'b2', bookName: 'Book Two'),
+            totalCount: 1,
+          ),
+        ],
+      );
+      return;
+    }
     // The one state this file checks beyond the calls: the invalid-pattern
     // error the real notifier sets, shown at the field.
     if (regex) {
@@ -249,6 +283,152 @@ void main() {
         await tester.pump();
         expect(m.fake.calls.last, (query: 'dhamma', regex: true));
         expect(fieldHasFocus(tester, _field), isTrue, reason: 'tap on');
+      });
+
+      testWidgets('Enter keeps the cursor in the box, rx on or off', (
+        tester,
+      ) async {
+        final m = await pump(tester);
+        await _toggle(tester);
+        await tester.enterText(_field, 'dhamma');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+        expect(m.fake.calls.last, (query: 'dhamma', regex: true));
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'rx on');
+        await _toggle(tester);
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+        expect(m.fake.calls.last, (query: 'dhamma', regex: false));
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'rx off');
+      });
+
+      testWidgets('Down arrow moves from the box to the results, rx on or '
+          'off; Esc comes back', (tester) async {
+        final m = await pump(tester);
+        await tester.showKeyboard(_field);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'no results');
+
+        m.fake.answer = true;
+        for (final rx in [false, true]) {
+          if (rx) await _toggle(tester);
+          await tester.enterText(_field, 'dhamma');
+          await tester.testTextInput.receiveAction(TextInputAction.search);
+          await tester.pump();
+          await tester.pump();
+          expect(m.fake.calls.last.regex, rx);
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pump();
+          expect(fieldHasFocus(tester, _field), isFalse, reason: 'rx $rx');
+          // Only the results list answers Esc, by giving the box the cursor.
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pump();
+          expect(fieldHasFocus(tester, _field), isTrue, reason: 'rx $rx');
+        }
+      });
+
+      testWidgets('Down lands on the first row every time; Right unfolds it; '
+          'Up on the first row returns to the box', (tester) async {
+        final m = await pump(tester);
+        m.fake.answer = true;
+        await tester.enterText(_field, 'dhamma');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown); // row 1
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isFalse);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        expect(m.fake.expanded, [0], reason: 'the first book, not the second');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isTrue);
+      });
+
+      testWidgets('arrows and Enter walk the suggestions before the results',
+          (tester) async {
+        final m = await pump(tester);
+        m.fake.answer = true;
+        await tester.enterText(_field, 'dhamma');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+        final searches = m.fake.calls.length;
+
+        await tester.enterText(_field, 'dham');
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+        expect(find.text('dhammassa'), findsOneWidget, reason: 'suggestions');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'stays in box');
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        await tester.pump();
+        expect(m.fake.calls.length, searches + 1);
+        expect(m.fake.calls.last.query, 'dhammassa');
+
+        // With no suggestions showing, Down goes to the results again.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isFalse);
+      });
+
+      testWidgets('Down with zero hits leaves the cursor in the box', (
+        tester,
+      ) async {
+        final m = await pump(tester);
+        m.fake.answer = true;
+        m.fake.noHits = true;
+        await tester.enterText(_field, 'dhamma');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(fieldHasFocus(tester, _field), isTrue);
+      });
+
+      testWidgets('the selected row is drawn highlighted only while the list '
+          'has the cursor', (tester) async {
+        final m = await pump(tester);
+        m.fake.answer = true;
+        await tester.enterText(_field, 'dhamma');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+        await tester.pump();
+        int highlighted() => tester
+            .widgetList(
+              find.byWidgetPredicate((w) {
+                final n = w.runtimeType.toString();
+                return n == '_SearchRowHighlight' || n == 'GroupRowHighlight';
+              }),
+            )
+            .where((w) => (w as dynamic).selected as bool)
+            .length;
+
+        expect(highlighted(), 0, reason: 'cursor in the box');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(highlighted(), 1, reason: 'cursor in the list');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        expect(highlighted(), 0, reason: 'back in the box');
       });
 
       testWidgets('Alt+R in the box turns rx on, then off', (tester) async {

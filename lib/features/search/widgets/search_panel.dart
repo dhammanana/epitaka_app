@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/app_database.dart' hide SearchResultRow;
@@ -9,7 +11,6 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_text_utils.dart';
@@ -44,7 +45,7 @@ class SearchPanel extends ConsumerStatefulWidget {
 
 class _SearchPanelState extends ConsumerState<SearchPanel> {
   final _searchController = TextEditingController();
-  final _focusNode = FocusNode();
+  late final _focusNode = FocusNode(onKeyEvent: _onFieldKey);
   Timer? _debounce;
 
   /// Bumped whenever a search is executed or the field changes; a
@@ -55,6 +56,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   int _wordDistance = 0;
   bool _showSuggestions = false;
   List<SearchSuggestion> _suggestions = [];
+
+  /// The suggestion the arrow keys have reached; -1 means none.
+  int _suggestionIndex = -1;
+  final GlobalKey _suggestionKey = GlobalKey();
   bool _isMultiWord = false;
   bool _showFilters = false;
 
@@ -151,6 +156,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   }
 
   void _onSearchChanged(String value) {
+    _suggestionIndex = -1;
     if (ref.read(searchRegexProvider)) {
       // A pattern has no suggestions and sets its own word distance.
       _debounce?.cancel();
@@ -193,6 +199,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           if (!mounted || seq != _suggestSeq) return;
           setState(() {
             _suggestions = suggestions;
+            _suggestionIndex = -1;
             _showSuggestions = suggestions.isNotEmpty;
           });
         } else {
@@ -212,10 +219,54 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     });
   }
 
-  /// [keepFocus]: a search run again by the rx switch leaves the cursor in
-  /// the box, so the user can go on typing, and does not hand it to the
-  /// results.
-  void _executeSearch({bool keepFocus = false}) {
+  /// Down arrow in the box moves to the results, where j/k, Enter and Esc
+  /// work; the box keeps the cursor after a search, so this is the way in.
+  KeyEventResult _onFieldKey(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    if (_showSuggestions && _suggestions.isNotEmpty) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _moveSuggestion(
+          (_suggestionIndex + 1).clamp(0, _suggestions.length - 1),
+        );
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowUp && _suggestionIndex >= 0) {
+        _moveSuggestion(_suggestionIndex - 1);
+        return KeyEventResult.handled;
+      }
+      if ((key == LogicalKeyboardKey.enter ||
+              key == LogicalKeyboardKey.numpadEnter) &&
+          _suggestionIndex >= 0 &&
+          _suggestionIndex < _suggestions.length) {
+        _onSuggestionSelected(_suggestions[_suggestionIndex]);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    final state = ref.read(searchProvider);
+    if (event is! KeyDownEvent ||
+        key != LogicalKeyboardKey.arrowDown ||
+        state is! SearchResults ||
+        state.bookSummaries.isEmpty ||
+        _resultsFocusNode.context == null) {
+      return KeyEventResult.ignored;
+    }
+    _resultsFocusNode.requestFocus();
+    return KeyEventResult.handled;
+  }
+
+  void _moveSuggestion(int index) {
+    setState(() => _suggestionIndex = index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _suggestionKey.currentContext;
+      if (mounted && ctx != null) Scrollable.ensureVisible(ctx);
+    });
+  }
+
+  void _executeSearch() {
     // Cancel any pending suggestion fetch and invalidate in-flight ones,
     // so the panel can't pop up over the results after searching.
     _debounce?.cancel();
@@ -225,17 +276,9 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     // A pattern runs exactly as typed: script conversion would rewrite it.
     final query = regex ? rawQuery : convertToRomanPali(rawQuery);
     setState(() => _showSuggestions = false);
-    if (!keepFocus) _focusNode.unfocus();
     ref
         .read(searchProvider.notifier)
         .search(query: query, distance: _wordDistance, regex: regex);
-    // On desktop, move keyboard focus to the results so j/k navigation
-    // works right after searching.
-    if (!keepFocus && ResponsiveBreakpoint.isDesktop(context)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _resultsFocusNode.requestFocus();
-      });
-    }
   }
 
   void _onSuggestionSelected(SearchSuggestion suggestion) {
@@ -247,7 +290,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     } else {
       _searchController.text = suggestion.pali;
     }
-    setState(() => _showSuggestions = false);
+    setState(() {
+      _showSuggestions = false;
+      _suggestionIndex = -1;
+    });
     _executeSearch();
   }
 
@@ -255,7 +301,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final on = !ref.read(searchRegexProvider);
     ref.read(searchRegexProvider.notifier).state = on;
     _onSearchChanged(_searchController.text);
-    if (_searchController.text.isNotEmpty) _executeSearch(keepFocus: true);
+    if (_searchController.text.isNotEmpty) _executeSearch();
   }
 
   /// Fill the search bar with a previous query from history and run it.
@@ -367,6 +413,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             style: searchBoxTextStyle(context),
             onChanged: _onSearchChanged,
             onSubmitted: (_) => _executeSearch(),
+            // An empty handler stops the field dropping the cursor on Enter.
+            onEditingComplete: () {},
           ),
         ),
 
@@ -544,6 +592,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             child: ListView.separated(
               padding: EdgeInsets.zero,
               shrinkWrap: true,
+              scrollCacheExtent: const ScrollCacheExtent.pixels(2000),
               itemCount: _suggestions.length,
               separatorBuilder: (_, _) => Divider(
                 height: 1,
@@ -551,7 +600,12 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
               ),
               itemBuilder: (context, index) {
                 final sug = _suggestions[index];
-                return InkWell(
+                return Container(
+            key: index == _suggestionIndex ? _suggestionKey : null,
+            color: index == _suggestionIndex
+                ? colors.primary.withValues(alpha: 0.12)
+                : null,
+            child: InkWell(
                   onTap: () => _onSuggestionSelected(sug),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -600,7 +654,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                       ],
                     ),
                   ),
-                );
+                ));
               },
             ),
           ),
@@ -610,11 +664,17 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
         Expanded(
           child: Focus(
             focusNode: _resultsFocusNode,
+            onFocusChange: (has) {
+              if (has) _searchNav.selectFirst();
+              setState(() {});
+            },
             onKeyEvent: (node, event) => handleSearchNavKey(
               event,
               _searchNav,
               onActivate: _activateSelectedRow,
               onEscape: () => _focusNode.requestFocus(),
+              onExpandBook: ref.read(searchProvider.notifier).expandBook,
+              onCollapseBook: ref.read(searchProvider.notifier).collapseBook,
             ),
             child: _buildResults(searchState, colors),
           ),
@@ -903,7 +963,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             key: row.kind == SearchRowKind.loadMore || !isSelected
                 ? null
                 : _selectedRowKey,
-            selected: isSelected,
+            selected: isSelected && _resultsFocusNode.hasFocus,
             colors: colors,
             child: content,
           ),

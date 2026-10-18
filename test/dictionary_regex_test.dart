@@ -197,6 +197,20 @@ void main() {
         expect(fieldHasFocus(tester, _field), isTrue, reason: 'tap on');
       });
 
+      testWidgets('Enter keeps the cursor in the box, rx on or off', (
+        tester,
+      ) async {
+        await pump(tester, words: ['dhamma'], patterns: ['dhamma']);
+        await _toggle(tester);
+        await tester.showKeyboard(_field);
+        await _submit(tester, 'dhamma');
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'rx on');
+        await _toggle(tester);
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await settleShell(tester);
+        expect(fieldHasFocus(tester, _field), isTrue, reason: 'rx off');
+      });
+
       testWidgets('Alt+R in the box turns rx on, then off', (tester) async {
         await pump(tester);
         expect(rxOnIn(tester, _field), isFalse);
