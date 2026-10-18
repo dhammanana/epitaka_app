@@ -12,7 +12,9 @@ import 'core/utils/app_localizations.dart';
 import 'core/utils/keep_awake.dart';
 import 'core/utils/l10n/app_strings.dart';
 import 'core/utils/platform_info.dart';
-import 'core/providers/dpd_dictionary_provider.dart';
+import 'features/dpd/providers/dpd_database_provider.dart';
+import 'features/dpd/services/dpd_update_checker.dart';
+import 'features/dpd/widgets/dpd_update_dialog.dart';
 import 'core/providers/settings_provider.dart';
 import 'features/indexing/index_controller.dart';
 import 'features/reader/providers/tts_reading_provider.dart';
@@ -122,6 +124,7 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
   late final GoRouter _router;
   final _updateService = AppUpdateService();
   bool _updateCheckDone = false;
+  bool _dpdCheckDone = false;
   bool _backgroundInitDone = false;
 
   /// Passed to GoRouter (see `buildRouter`) so AppShortcuts can resolve a
@@ -180,9 +183,11 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       await ref.read(annotationSyncProvider.future);
     } catch (_) {}
 
-    // Warm the DPD dictionary connection (provider caches the DB instance)
+    // Warm the DPD dictionary connection (provider caches the DB instance).
+    // The reader's quote-join check reads the quick handle synchronously, so
+    // it must be open before the first tap.
     try {
-      await ref.read(dpdDictionaryDbProvider.future);
+      await ref.read(dpdQuickLookupProvider.future);
       developer.log('[DICT] DPD warm-up triggered', name: 'epitaka.dict');
     } catch (_) {}
   }
@@ -203,6 +208,30 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
       developer.log(
         'Desktop update check failed: $error',
         name: 'epitaka.update',
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// The daily DPD release check, on every platform. A failure is logged,
+  /// not shown; "Check now" in settings shows the error itself.
+  Future<void> _checkForDpdUpdate() async {
+    if (_dpdCheckDone) return;
+    _dpdCheckDone = true;
+    try {
+      final dpd = await ref.read(dpdDatabaseProvider.future);
+      if (dpd.status != DpdDatabaseStatus.ready) return;
+      final release = await ref
+          .read(dpdUpdateProvider.notifier)
+          .checkIfDue(dpd.releaseVersion);
+      if (!mounted || release == null) return;
+      final context = _navigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      await DpdUpdateDialog.show(context, release);
+    } catch (error, stackTrace) {
+      developer.log(
+        'DPD update check failed: $error',
+        name: 'epitaka.dpd',
         stackTrace: stackTrace,
       );
     }
@@ -237,6 +266,7 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ChangelogService.showIfNewBuild(_navigatorKey);
       _checkForDesktopUpdate();
+      _checkForDpdUpdate();
     });
 
     final themePreference = ref.watch(

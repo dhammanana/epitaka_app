@@ -30,11 +30,11 @@ void main() {
   tearDown(() => AppShortcuts.overrides = const {});
 
   group('catalog', () {
-    test('holds 46 shortcuts with unique ids, 32 of them app-wide', () {
+    test('holds 59 shortcuts with unique ids, 45 of them app-wide', () {
       final catalog = AppShortcuts.shortcutCatalog;
-      expect(catalog, hasLength(46));
-      expect(catalog.map((b) => b.id).toSet(), hasLength(46));
-      expect(catalog.where((b) => b.section.isAppWide), hasLength(32));
+      expect(catalog, hasLength(59));
+      expect(catalog.map((b) => b.id).toSet(), hasLength(59));
+      expect(catalog.where((b) => b.section.isAppWide), hasLength(45));
     });
   });
 

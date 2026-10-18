@@ -54,6 +54,11 @@ class SidePanelState {
   /// Optional data to pass to the panel (e.g. dictionary word).
   final String? panelData;
 
+  /// Stamps every time [panelData] is handed in, from one counter that never
+  /// resets. A tap on the same word twice gives the same text, so a panel
+  /// needs this to tell a new tap from an unrelated change (a width drag).
+  final int dataSeq;
+
   /// When true, the panel should request focus on its primary text input
   /// as soon as it is shown (used by keyboard shortcuts like Cmd+D / Cmd+Shift+F).
   final bool autoFocus;
@@ -63,6 +68,7 @@ class SidePanelState {
     this.isPinned = false,
     this.width = 340,
     this.panelData,
+    this.dataSeq = 0,
     this.autoFocus = false,
   });
 
@@ -71,6 +77,7 @@ class SidePanelState {
     bool? isPinned,
     double? width,
     String? panelData,
+    int? dataSeq,
     bool? autoFocus,
     bool clearPanel = false,
     bool clearData = false,
@@ -80,6 +87,7 @@ class SidePanelState {
       isPinned: isPinned ?? this.isPinned,
       width: width ?? this.width,
       panelData: clearData ? null : (panelData ?? this.panelData),
+      dataSeq: dataSeq ?? this.dataSeq,
       autoFocus: autoFocus ?? this.autoFocus,
     );
   }
@@ -112,6 +120,14 @@ class SidePanelsState {
 /// Notifier for managing sidebar panel states.
 class SidePanelNotifier extends StateNotifier<SidePanelsState> {
   SidePanelNotifier() : super(const SidePanelsState());
+
+  int _lastDataSeq = 0;
+  int _stampData() => ++_lastDataSeq;
+
+  /// The stamp of the last word a dictionary panel applied. It lives here, not
+  /// in the panel, because moving the sidebar to the other side rebuilds the
+  /// panel and it must not apply the same word again.
+  int appliedDataSeq = -1;
 
   /// Toggle a panel. If already open in the same slot, close it.
   /// If another panel is open in the same slot, replace it.
@@ -187,7 +203,7 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
     final left = state.left;
     if (left.openPanel == SidePanelType.dictionary) {
       state = SidePanelsState(
-        left: left.copyWith(panelData: word),
+        left: left.copyWith(panelData: word, dataSeq: _stampData()),
         right: state.right,
       );
       return;
@@ -197,7 +213,7 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
     if (right.openPanel == SidePanelType.dictionary) {
       state = SidePanelsState(
         left: state.left,
-        right: right.copyWith(panelData: word),
+        right: right.copyWith(panelData: word, dataSeq: _stampData()),
       );
     }
   }
@@ -234,6 +250,7 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
       openPanel: panel,
       isPinned: false,
       panelData: data,
+      dataSeq: data != null ? _stampData() : 0,
       autoFocus: autoFocus,
     );
     _updateSlotState(slot, newState);
@@ -263,6 +280,7 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
       isPinned: isPinned,
       width: width,
       panelData: panelData,
+      dataSeq: panelData != null ? _stampData() : null,
       autoFocus: autoFocus,
       clearPanel: clearPanel,
       clearData: clearData,

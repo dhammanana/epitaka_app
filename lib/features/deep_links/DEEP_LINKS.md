@@ -35,7 +35,7 @@ Where:
 
 `epitaka://search?q={query}` (or `https://epitaka.org/app/search?q={query}`)
 opens search on top of the current screen and runs the query, as if it had
-been typed and Enter pressed. If search is already on top, the query replaces
+been pasted and Enter pressed: Velthuis is not applied, so a real `aa` stays. If search is already on top, the query replaces
 it. In the custom scheme the route name is the host (`search`, `reader`), not
 the first path segment.
 

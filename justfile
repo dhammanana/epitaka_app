@@ -62,7 +62,7 @@ linux-run:
 android_pkg := "com.dn.epitaka"
 android_apk := "build/app/outputs/flutter-apk/app-prod-debug.apk"
 # Content databases: re-sent when the desktop copy changed since the last send.
-android_content_dbs := "epitaka.db epitaka_en.db dpd-dictionary.db"
+android_content_dbs := "epitaka.db epitaka_en.db dpd-mobile.db"
 # User data (bookmarks, history, notes, search index): sent only when the
 # phone has none, never overwritten, so nothing added on the phone is lost.
 android_user_dbs := "app_data.db"
@@ -150,7 +150,36 @@ android-db:
         fi
     done
 
+# Profile build: compiled like a release, so timings are real; the plugin signs it
+# with the debug key, so it updates the installed app in place and keeps its data.
+# Build a profile APK and install it on the phone (never uninstalls)
+android-profile:
+    flutter build apk --profile --flavor prod
+    adb install -r build/app/outputs/flutter-apk/app-prod-profile.apk
+
+# Same as android-build and android-install, but with hot reload: in this
+# terminal, r loads code changes in about a second, R restarts the app, q quits.
+# It uses the same debug build and app id, so the phone's data is kept. If the
+# installed app is signed with another key, run android-install once first.
+# Run the current source live on the phone, with hot reload
+android-run:
+    flutter run --flavor prod
+
 # Start the app on the phone
 android-start:
     adb shell monkey -p "{{android_pkg}}" -c android.intent.category.LAUNCHER 1 >/dev/null
     @echo "ePitaka started on the phone"
+
+# The files share eight processes, so the compiler is not the queue. A leak
+# between files can show here; `just test-files` is the check before a PR.
+# Run every test through the combined files (the routine full run)
+test:
+    uv run scripts/combine_tests.py
+    mkdir -p build
+    flutter test --file-reporter json:build/test_combined.json test/_combined/shard_*.dart
+
+# One process per file, as before. Slow, but no file can affect another.
+# Run every test file on its own (once before each PR)
+test-files:
+    mkdir -p build
+    flutter test --file-reporter json:build/test_files.json $(find test -name "*_test.dart" ! -name mdx_repro_test.dart ! -path "test/_combined/*" | sort)

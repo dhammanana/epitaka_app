@@ -12,8 +12,8 @@
 ///     `cakkhuñca`, …) — the `remove_diacritics 1` contract
 ///   * multi-word queries (AND + prefix terms) and NEAR distance
 ///   * cross-script search — script queries converted to Roman via
-///     [velthuis] find Roman-indexed text; raw unconverted script queries
-///     match nothing (which is why the UI converts first)
+///     [convertToRomanPali] find Roman-indexed text; raw unconverted script
+///     queries match nothing (which is why the UI converts first)
 ///   * filtered search — per-book scoping, pagination, per-book counts
 ///     (what powers the category/nikāya filter panel), and the provider
 ///     filter toggles themselves
@@ -28,7 +28,7 @@ import 'package:epitaka/core/database/translation_database.dart';
 import 'package:epitaka/core/providers/app_db_provider.dart';
 import 'package:epitaka/core/providers/database_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
-import 'package:epitaka/core/utils/velthuis.dart';
+import 'package:epitaka/core/utils/pali_script_converter.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -275,7 +275,7 @@ void main() {
     for (final entry in scriptQueries.entries) {
       test('${entry.key} query converts to Roman and finds the Pāḷi',
           () async {
-        final roman = velthuis(entry.value);
+        final roman = convertToRomanPali(entry.value);
         expect(roman, 'dhamma',
             reason: '${entry.key} "${entry.value}" must convert to "dhamma"');
         expect(await hits(roman), contains(('dn1', 4)));
@@ -284,9 +284,9 @@ void main() {
 
     test('mixed script + Roman text converts to a multi-word query', () async {
       // Myanmar နမော + Roman tassa → "namo tassa".
-      expect(velthuis('နမော tassa'), 'namo tassa');
+      expect(convertToRomanPali('နမော tassa'), 'namo tassa');
       // Both converted words together find the namo paragraph.
-      expect(await hits(velthuis('နမော tassa')), {('dn1', 7)});
+      expect(await hits(convertToRomanPali('နမော tassa')), {('dn1', 7)});
     });
 
     test('a raw unconverted script query matches nothing (UI converts first)',

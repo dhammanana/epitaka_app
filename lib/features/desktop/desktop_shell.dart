@@ -9,7 +9,10 @@ import '../../shared/providers/vimamsa_panel_provider.dart';
 import '../../shared/widgets/reader_toolbar_controller.dart';
 import '../ai_qa/screens/ai_qa_screen.dart';
 import '../contents/widgets/contents_panel.dart';
+import '../dictionary/providers/dictionary_panel_memory.dart';
 import '../dictionary/widgets/dictionary_panel.dart';
+import '../dictionary/providers/dictionary_header_provider.dart';
+import '../dictionary/widgets/dictionary_header_icons.dart';
 import '../gavesana/widgets/gavesana_panel.dart';
 import '../translator/widgets/translator_panel.dart';
 import '../annotations/widgets/global_annotations_view.dart';
@@ -62,6 +65,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   void initState() {
     super.initState();
+    if (!DictionaryPanelMemory.restoredThisRun) {
+      DictionaryPanelMemory.restoredThisRun = true;
+      DictionaryPanelMemory.restore(
+        ref.read(sidePanelProvider.notifier),
+        slotFree: () => ref.read(sidePanelProvider).left.openPanel == null,
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final s = ref.read(settingsProvider);
@@ -183,6 +193,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
     final showLeftSidebar = left != null && !_sidebarOnRight;
     final showRightSidebar = _sidebarOnRight && left != null;
+
+    ref.listen(sidePanelProvider.select((p) => p.isDictionaryOpen), (
+      prev,
+      open,
+    ) {
+      DictionaryPanelMemory.saveOpen(open);
+    });
 
     // Opening a book while Vīmaṃsā is showing returns to the reader.
     ref.listen(readerTabsProvider, (prev, next) {
@@ -316,7 +333,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
 /// The single sidebar panel: a header (title + drag grip + close), then the
 /// active panel content filling the rest of the space.
-class DesktopSidebar extends StatelessWidget {
+class DesktopSidebar extends ConsumerWidget {
   final SidePanelType panel;
   final String title;
   final bool onRight;
@@ -337,9 +354,12 @@ class DesktopSidebar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final showIcons =
+        panel == SidePanelType.dictionary &&
+        ref.watch(dictionaryHeaderIconsProvider);
 
     return Container(
       color: colors.surfaceContainerLowest,
@@ -349,6 +369,8 @@ class DesktopSidebar extends StatelessWidget {
             title: title,
             colors: colors,
             onClose: onClose,
+            actions: showIcons ? const DictionaryHeaderIcons() : null,
+            actionsWidth: kDictionaryHeaderIconsWidth,
             grip: _Grip(
               onDragRight: onMoveSidebarRight,
               onDragLeft: onMoveSidebarLeft,
@@ -391,59 +413,93 @@ class DesktopSidebar extends StatelessWidget {
 }
 
 /// A slim panel header: title on the left, drag grip and close button on
-/// the right.
+/// the right. [actions] sit between them when they fit. With less room the
+/// title goes first, then the actions move to a thin row under the header.
 class _PanelHeader extends StatelessWidget {
   final String title;
   final ColorScheme colors;
   final VoidCallback onClose;
   final Widget grip;
+  final Widget? actions;
+  final double actionsWidth;
 
   const _PanelHeader({
     required this.title,
     required this.colors,
     required this.onClose,
     required this.grip,
+    this.actions,
+    this.actionsWidth = 0,
   });
+
+  // The left margin, the grip, the close button and the gaps around them.
+  static const _chrome = 12 + 8 + 30 + 30 + 4;
+  static const _minTitle = 90.0;
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: [
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurfaceVariant,
+    return LayoutBuilder(
+      builder: (context, box) {
+        final inline = actions != null && box.maxWidth >= _chrome + actionsWidth;
+        final showTitle =
+            actions == null || box.maxWidth >= _chrome + actionsWidth + _minTitle;
+        return Column(
+          children: [
+            SizedBox(
+              height: 36,
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: showTitle
+                        ? Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  if (inline) ...[actions!, const SizedBox(width: 8)],
+                  grip,
+                  Tooltip(
+                    message: loc.closePanel,
+                    child: InkWell(
+                      onTap: onClose,
+                      borderRadius: BorderRadius.circular(6),
+                      child: SizedBox(
+                        width: 30,
+                        height: 30,
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
               ),
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-          grip,
-          Tooltip(
-            message: loc.closePanel,
-            child: InkWell(
-              onTap: onClose,
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 30,
-                height: 30,
-                child: Icon(
-                  Icons.close,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
+            if (actions != null && !inline)
+              SizedBox(
+                height: 32,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FittedBox(fit: BoxFit.scaleDown, child: actions),
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 }

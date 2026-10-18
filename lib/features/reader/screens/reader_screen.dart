@@ -7,15 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../dpd/providers/dpd_database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/startup_timing.dart';
-import '../../../core/utils/velthuis.dart';
 import '../../annotations/providers/annotations_provider.dart';
 import '../../annotations/widgets/annotations_panel.dart';
 import '../../../shared/providers/side_panel_provider.dart';
@@ -555,6 +555,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             name: 'epitaka.reader.ui',
           );
           StartupTiming.mark('book first visible: $bookId (paraId=$paraId)');
+          debugPrint('[PERF] tab visible book=$bookId ms=$posElapsed');
           _tabSwitchStartMs = null; // one-shot
         }
       },
@@ -786,13 +787,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // the DB provider is awaited at startup, so the routing below still
     // happens before any selection clearing. If the DB is not yet loaded,
     // the bare word is routed unchanged.
+    final quick = ref.read(dpdQuickLookupProvider).valueOrNull;
     final lookupWord = pickLookupWord(
       word,
       hit?.joinedWord,
-      ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(word),
-      (hit?.joinedWord == null)
-          ? null
-          : ref.read(dpdDictionaryDbProvider).valueOrNull?.getLookup(hit!.joinedWord!),
+      (w) => quick?.hasContent(w) ?? false,
     );
     if (lookupWord != word) {
       developer.log('[DBG] quote-run join: "$word" → "$lookupWord"', name: 'epitaka.dict');
@@ -2036,7 +2035,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onSubmitted: (v) {
         final notifier = ref.read(inBookSearchProvider.notifier);
         final searchState = ref.read(inBookSearchProvider);
-        if (searchState.hasMatches && searchState.query == velthuis(v)) {
+        if (searchState.hasMatches &&
+            searchState.query == convertToRomanPali(v)) {
           // A search still waiting on the debounce would re-run later and
           // jump back to the first match.
           notifier.cancelPendingSearch();

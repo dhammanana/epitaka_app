@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_shortcuts.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
 
 /// In-book search bar shown as an overlay at the top of the reader.
 ///
@@ -84,6 +86,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 child: TextField(
                 controller: controller,
                 focusNode: focusNode,
+                inputFormatters: const [VelthuisInputFormatter()],
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: loc.findInBook,
@@ -102,18 +105,24 @@ class ReaderInBookSearchBar extends StatelessWidget {
                     vertical: 0,
                   ),
                   isDense: true,
-                  suffixIcon: Visibility(
-                    visible: controller.text.isNotEmpty,
-                    maintainSize: true,
-                    maintainAnimation: true,
-                    maintainState: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        controller.clear();
-                        onQueryChanged('');
-                      },
-                    ),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Visibility(
+                        visible: controller.text.isNotEmpty,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            controller.clear();
+                            onQueryChanged('');
+                          },
+                        ),
+                      ),
+                      const VelthuisHelpIcon(),
+                    ],
                   ),
                 ),
                 style: TextStyle(fontSize: 14, color: colors.onSurface),

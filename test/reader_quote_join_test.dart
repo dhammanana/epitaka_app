@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:epitaka/core/database/dpd_dictionary_database.dart';
 import 'package:epitaka/features/reader/utils/reader_word_hit_test.dart';
 
 /// Tests for [quoteJoinCandidate]: the CST quote-run join rule.
@@ -105,37 +104,37 @@ void main() {
   });
 
   group('pickLookupWord — two-stage decision', () {
-    DpdLookupRow row({List<int> headwords = const [], List<String> decon = const []}) {
-      return DpdLookupRow(lookupKey: 'k', headwords: headwords, deconstructor: decon);
-    }
+    // DPD "has something for this word", as a set of words.
+    bool Function(String) known(Set<String> words) => words.contains;
 
     test('bare word resolves → bare word routed, candidate ignored', () {
       expect(
-        pickLookupWord('khitto', 'khittoti', row(headwords: [1]), row(headwords: [2])),
+        pickLookupWord('khitto', 'khittoti', known({'khitto', 'khittoti'})),
         'khitto',
       );
     });
 
     test('bare misses, joined resolves → joined routed', () {
       expect(
-        pickLookupWord('oghamatarin', 'oghamatarinti', null, row(headwords: [18419])),
-        'oghamatarinti',
-      );
-    });
-
-    test('bare row exists but empty → treated as miss, joined routed', () {
-      expect(
-        pickLookupWord('oghamatarin', 'oghamatarinti', row(), row(decon: ['ogha + tara'])),
+        pickLookupWord('oghamatarin', 'oghamatarinti', known({'oghamatarinti'})),
         'oghamatarinti',
       );
     });
 
     test('both miss → bare word routed (usual empty state)', () {
-      expect(pickLookupWord('xyz', 'xyztī', null, null), 'xyz');
+      expect(pickLookupWord('xyz', 'xyztī', known({})), 'xyz');
     });
 
-    test('no candidate → bare word routed', () {
-      expect(pickLookupWord('khitto', null, null, null), 'khitto');
+    test('no candidate → bare word routed, nothing is looked up', () {
+      var calls = 0;
+      expect(
+        pickLookupWord('khitto', null, (w) {
+          calls++;
+          return false;
+        }),
+        'khitto',
+      );
+      expect(calls, 0);
     });
   });
 

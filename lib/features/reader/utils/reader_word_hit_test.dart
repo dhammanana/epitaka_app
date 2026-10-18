@@ -1,7 +1,6 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart' show GlobalKey;
 
-import '../../../core/database/dpd_dictionary_database.dart';
 import '../../../core/utils/pali_script_converter.dart';
 
 /// Cleans a raw Pāli word by removing non-word characters.
@@ -130,30 +129,20 @@ String? quoteJoinCandidate(String fullText, int wordEnd, String wordPrefix) {
   return wordPrefix + token;
 }
 
-/// Whether a DPD lookup row carries anything worth showing: headwords,
-/// deconstructor candidates or EPD HTML. A bare null row or an empty one
-/// counts as a miss for the two-stage pick below.
-bool lookupRowHasContent(DpdLookupRow? row) {
-  if (row == null) return false;
-  return row.headwords.isNotEmpty ||
-      row.deconstructor.isNotEmpty ||
-      (row.epd?.isNotEmpty ?? false);
-}
-
 /// Two-stage lookup pick for the reader tap path: the bare tapped [word]
 /// keeps priority; the quote-run join candidate [joinedWord] is routed only
 /// when the bare word misses entirely AND the joined form would resolve.
 /// When both miss (or there is no candidate), the bare word is returned so
 /// the dictionary shows its usual empty state for what was tapped.
+/// [hasContent] says whether DPD has anything for a word.
 String pickLookupWord(
   String word,
   String? joinedWord,
-  DpdLookupRow? bare,
-  DpdLookupRow? joined,
+  bool Function(String word) hasContent,
 ) {
   if (joinedWord == null) return word;
-  if (lookupRowHasContent(bare)) return word;
-  return lookupRowHasContent(joined) ? joinedWord : word;
+  if (hasContent(word)) return word;
+  return hasContent(joinedWord) ? joinedWord : word;
 }
 
 /// Metadata attached to a line or paragraph render box for hit testing.

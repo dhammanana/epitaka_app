@@ -7,6 +7,7 @@ import '../../core/models/translation_version.dart';
 import '../../core/providers/translation_manifest_provider.dart';
 import '../../core/utils/database_initializer.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
+import '../dpd/services/dpd_installer.dart';
 import 'index_controller.dart';
 
 /// Provider that returns true if the FTS index is built and ready.
@@ -81,25 +82,36 @@ final ftsRequiredCoreAssetsProvider = FutureProvider<List<CoreAsset>>((
   ref,
 ) async {
   final manifest = await ref.watch(translationManifestProvider.future);
+  return requiredCoreAssets(manifest, coreAssetExists);
+});
+
+/// The compulsory core assets whose file [exists] does not find.
+Future<List<CoreAsset>> requiredCoreAssets(
+  TranslationManifest manifest,
+  Future<bool> Function(String filename) exists,
+) async {
   final required = <CoreAsset>[];
 
   for (final entry in manifest.core.entries) {
     final asset = entry.value;
     if (!asset.compulsory) continue;
+    // The manifest's DPD entry is the old file, kept there for old app
+    // versions. This version needs the DPD mobile database instead.
+    if (entry.key == 'dpd_dictionary') continue;
     // Same fallback as the download path in IndexGate (_buildCoreAssetCard):
     // slugs use underscores (dpd_dictionary) but on-disk files use hyphens
     // (dpd-dictionary.db). A mismatched guess here would report an installed
     // database as missing and ask for it again every launch.
     final filename =
         asset.filename ?? '${entry.key.replaceAll('_', '-')}.db';
-    final exists = await coreAssetExists(filename);
-    if (!exists) {
+    if (!await exists(filename)) {
       required.add(asset);
     }
   }
+  if (!await exists(kDpdFilename)) required.add(kDpdCoreAsset);
 
   return required;
-});
+}
 
 /// Provider that returns translations that are compulsory (marked
 /// `compulsory: true` in the manifest) but not yet installed on disk.

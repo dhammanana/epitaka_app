@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/utils/app_localizations.dart';
 import '../../annotations/widgets/account_sync_tile.dart';
@@ -22,135 +23,196 @@ import '../widgets/about_dialog.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
 
+const _listOffsetKey = 'settings_list_offset';
+
+/// Where the list was left. Kept in memory so a reopen in the same run starts
+/// there on its first frame; read from the saved value once per run.
+double? _listOffset;
+
+@visibleForTesting
+void resetSettingsListOffsetForTest() => _listOffset = null;
+
 /// Main settings screen with grouped sections.
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  late final ScrollController _scroll = ScrollController(
+    initialScrollOffset: _listOffset ?? 0,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (_listOffset == null) _restoreSavedOffset();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restoreSavedOffset() async {
+    double? saved;
+    try {
+      saved = (await SharedPreferences.getInstance()).getDouble(_listOffsetKey);
+    } catch (e) {
+      debugPrint('Settings list offset not read: $e');
+    }
+    _listOffset ??= saved ?? 0;
+    // The user may have scrolled while the value loaded; that wins.
+    if (saved == null || !mounted || !_scroll.hasClients) return;
+    if (_scroll.offset == 0) _scroll.jumpTo(saved);
+  }
+
+  bool _saveOffset(ScrollEndNotification n) {
+    // Only the list itself; a scrollable inside a tile is not the list.
+    if (n.depth != 0) return false;
+    final offset = n.metrics.pixels;
+    _listOffset = offset;
+    SharedPreferences.getInstance()
+        .then((p) => p.setDouble(_listOffsetKey, offset))
+        .catchError((Object e) {
+          debugPrint('Settings list offset not saved: $e');
+          return false;
+        });
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimensions.marginMobile,
-          AppDimensions.md,
-          AppDimensions.marginMobile,
-          120,
-        ),
-        children: [
-          // Screen title
-          Text(
-            loc.settings,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.onSurface,
+      body: NotificationListener<ScrollEndNotification>(
+        onNotification: _saveOffset,
+        child: ListView(
+          controller: _scroll,
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.marginMobile,
+            AppDimensions.md,
+            AppDimensions.marginMobile,
+            120,
+          ),
+          children: [
+            // Screen title
+            Text(
+              loc.settings,
+              style: AppTypography.headlineLarge.copyWith(
+                color: colors.onSurface,
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimensions.lg),
+            const SizedBox(height: AppDimensions.lg),
 
-          // Sections
-          const SettingsAccountSection(),
+            // Sections
+            const SettingsAccountSection(),
 
-          const SizedBox(height: AppDimensions.md),
+            const SizedBox(height: AppDimensions.md),
 
-          const SettingsGeneralSection(),
+            const SettingsGeneralSection(),
 
-          const SizedBox(height: AppDimensions.md),
+            const SizedBox(height: AppDimensions.md),
 
-          SettingsSection(
-            title: loc.appearance,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _ThemePickerTile(),
-              _SettingsTile(
-                icon: Icons.palette,
-                title: loc.appearance,
-                subtitle: loc.appearanceSubtitle,
-                onTap: () => context.push('/settings/appearance'),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: AppDimensions.md),
-
-          SettingsSection(
-            title: loc.dataAndContent,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _SettingsTile(
-                icon: Icons.download,
-                title: loc.translationsDownloads,
-                onTap: () => context.push('/settings/translation'),
-              ),
-              _SettingsTile(
-                icon: Icons.menu_book,
-                title: loc.dictionarySettings,
-                subtitle: loc.dictionarySettingsSubtitle,
-                onTap: () => context.push('/settings/dictionary'),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: AppDimensions.md),
-
-          SettingsSection(
-            title: loc.readingPreferences,
-            colors: colors,
-            showDividers: true,
-            children: [
-              _SettingsTile(
-                icon: Icons.menu_book,
-                title: loc.readingOptions,
-                subtitle: loc.readingOptionsSubtitle,
-                onTap: () => context.push('/settings/reading'),
-              ),
-              if (PlatformInfo.isTtsSupported) ...[
+            SettingsSection(
+              title: loc.appearance,
+              colors: colors,
+              showDividers: true,
+              children: [
+                _ThemePickerTile(),
                 _SettingsTile(
-                  icon: Icons.record_voice_over,
-                  title: loc.textToSpeech,
-                  subtitle: loc.ttsSubtitle,
-                  onTap: () => context.push('/settings/tts'),
-                ),
-                _SettingsTile(
-                  icon: Icons.find_replace,
-                  title: loc.ttsReplacements,
-                  subtitle: loc.ttsReplacementsSubtitle,
-                  onTap: () => context.push('/settings/tts/replacements'),
+                  icon: Icons.palette,
+                  title: loc.appearance,
+                  subtitle: loc.appearanceSubtitle,
+                  onTap: () => context.push('/settings/appearance'),
                 ),
               ],
-              _SettingsTile(
-                icon: Icons.touch_app,
-                title: loc.contextMenu,
-                subtitle: loc.contextMenuSubtitle,
-                onTap: () => context.push('/settings/context-menu'),
-              ),
-              _SettingsTile(
-                icon: Icons.view_agenda_outlined,
-                title: loc.toolbar,
-                subtitle: loc.toolbarSubtitle,
-                onTap: () => context.push(AppRoutes.toolbarSettings),
-              ),
-            ],
-          ),
+            ),
 
-          const SizedBox(height: AppDimensions.md),
+            const SizedBox(height: AppDimensions.md),
 
-          // ── Search ──────────────────────────────────────────────────
-          const SettingsSearchSection(),
+            SettingsSection(
+              title: loc.dataAndContent,
+              colors: colors,
+              showDividers: true,
+              children: [
+                _SettingsTile(
+                  icon: Icons.download,
+                  title: loc.translationsDownloads,
+                  onTap: () => context.push('/settings/translation'),
+                ),
+                _SettingsTile(
+                  icon: Icons.menu_book,
+                  title: loc.dictionarySettings,
+                  subtitle: loc.dictionarySettingsSubtitle,
+                  onTap: () => context.push('/settings/dictionary'),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: AppDimensions.md),
+            const SizedBox(height: AppDimensions.md),
 
-          // ── Vīmaṃsā (AI Q&A + Gavesana) ────────────────────────────
-          const SettingsAiSection(),
+            SettingsSection(
+              title: loc.readingPreferences,
+              colors: colors,
+              showDividers: true,
+              children: [
+                _SettingsTile(
+                  icon: Icons.menu_book,
+                  title: loc.readingOptions,
+                  subtitle: loc.readingOptionsSubtitle,
+                  onTap: () => context.push('/settings/reading'),
+                ),
+                if (PlatformInfo.isTtsSupported) ...[
+                  _SettingsTile(
+                    icon: Icons.record_voice_over,
+                    title: loc.textToSpeech,
+                    subtitle: loc.ttsSubtitle,
+                    onTap: () => context.push('/settings/tts'),
+                  ),
+                  _SettingsTile(
+                    icon: Icons.find_replace,
+                    title: loc.ttsReplacements,
+                    subtitle: loc.ttsReplacementsSubtitle,
+                    onTap: () => context.push('/settings/tts/replacements'),
+                  ),
+                ],
+                _SettingsTile(
+                  icon: Icons.touch_app,
+                  title: loc.contextMenu,
+                  subtitle: loc.contextMenuSubtitle,
+                  onTap: () => context.push('/settings/context-menu'),
+                ),
+                _SettingsTile(
+                  icon: Icons.view_agenda_outlined,
+                  title: loc.toolbar,
+                  subtitle: loc.toolbarSubtitle,
+                  onTap: () => context.push(AppRoutes.toolbarSettings),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: AppDimensions.md),
+            const SizedBox(height: AppDimensions.md),
 
-          const SettingsSystemSection(),
-        ],
+            // ── Search ──────────────────────────────────────────────────
+            const SettingsSearchSection(),
+
+            const SizedBox(height: AppDimensions.md),
+
+            // ── Vīmaṃsā (AI Q&A + Gavesana) ────────────────────────────
+            const SettingsAiSection(),
+
+            const SizedBox(height: AppDimensions.md),
+
+            const SettingsSystemSection(),
+          ],
+        ),
       ),
     );
   }

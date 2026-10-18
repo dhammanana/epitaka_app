@@ -371,7 +371,10 @@ class _ThemePreviewCard extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 color: cs.surface,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

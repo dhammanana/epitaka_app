@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
+import '../providers/dictionary_font_scale_provider.dart';
 import '../providers/dictionary_expanded_provider.dart';
 
 /// A collapsible card wrapping one dictionary's result section.
@@ -37,7 +37,7 @@ class DictionaryCollapsibleCard extends ConsumerWidget {
     final expanded = ref.watch(
       dictionaryExpandedFamilyProvider(dictionaryKey),
     );
-    final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
+    final pali = ref.watch(dictionaryPaliProvider);
 
     return Container(
       margin: const EdgeInsets.only(bottom: AppDimensions.sm),
@@ -68,7 +68,7 @@ class DictionaryCollapsibleCard extends ConsumerWidget {
                     child: Text(
                       title,
                       style: TextStyle(
-                        fontSize: (pali.fontSize * 0.55).clamp(9.0, 14.0),
+                        fontSize: (pali.fontSize * 0.55).clamp(kDictionaryMinTextSize, 14.0),
                         fontWeight: FontWeight.w600,
                         color: colors.onSurfaceVariant,
                         fontFamily: pali.fontFamily.fontFamily,

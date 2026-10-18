@@ -6,23 +6,31 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/database/dpd_dictionary_database.dart';
-import '../../../core/providers/dictionary_books_provider.dart';
-import '../../../core/providers/dpd_dictionary_provider.dart';
+import '../../dpd/providers/dictionary_list_provider.dart';
+import '../providers/dictionary_panel_memory.dart';
+import '../../dpd/providers/dpd_lookup_provider.dart';
+import '../../dpd/providers/dpd_settings_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
+import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../dpd/providers/lookup_history.dart';
+import '../../dpd/utils/query_cleaning.dart';
+import '../providers/dictionary_header_provider.dart';
+import '../providers/dictionary_sheet_open_provider.dart';
+import 'lookup_history_buttons.dart';
+import 'lookup_history_list.dart';
+import 'lookup_history_chips.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
 import '../../mdx_dictionary/providers/mdx_dictionary_provider.dart';
 import '../../mdx_dictionary/providers/mdx_lookup_providers.dart';
-import '../../mdx_dictionary/widgets/mdx_definition_section.dart';
-import '../providers/dictionary_expanded_provider.dart';
-import 'dictionary_collapsible_card.dart';
 import 'dictionary_search_shared.dart';
-import 'pali_definition_card.dart';
+import 'ordered_dictionary_items.dart';
+import 'page_anchors.dart';
 
 /// A dictionary panel that can be shown in a sidebar or as a standalone
 /// widget. When used in the right sidebar on desktop, it communicates
@@ -51,22 +59,39 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
+
+  /// The history list drawn over the results (the header's history icon).
+  bool _historyOpen = false;
+
+  /// Where each summary line of the results jumps to.
+  final PageAnchors _anchors = PageAnchors();
   Timer? _suggestDebounce;
-  bool _isConverting = false;
 
   // Submitted word (meanings shown) vs live draft (suggestions only).
   String _query = '';
+  // didChangeDependencies runs again on theme or locale changes; the mount
+  // word is read once.
+  bool _mountWordApplied = false;
   String _draft = '';
 
   // Keyboard navigation over the suggestion dropdown: -1 = caret in the
   // field, otherwise the highlighted suggestion index (Enter accepts it).
   int _suggestIndex = -1;
   final Map<int, GlobalKey> _suggestKeys = {};
+  final _suggestScroll = ScrollController();
   // Arrow pressed while suggestions were still loading: 0 = none,
   // 1 = highlight first row, -1 = highlight last row once rows arrive.
   int _suggestPending = 0;
-  double? _normProgress;
-  final List<String> _searchHistory = [];
+
+  /// Back and forward over the words looked up in this panel.
+  LookupHistory get _lookupHistory => ref.read(lookupHistoryProvider);
+
+  /// A provider cannot change inside `initState` or `didChangeDependencies`,
+  /// which is where a word handed to this widget arrives, so the add waits one
+  /// microtask.
+  void _recordLookup(String word) => Future.microtask(() {
+    if (mounted) _lookupHistory.navigateTo(word);
+  });
 
   /// The last selection made inside the results, tracked via the
   /// SelectionArea's `onSelectionChanged` (SelectableRegionState exposes no
@@ -76,37 +101,25 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialWord.trim();
+    final handedIn = cleanDpdQuery(widget.initialWord);
+    // With no word handed in, carry on from the word the sheet or an earlier
+    // panel left current.
+    final initial = handedIn.isNotEmpty ? handedIn : (_lookupHistory.current ?? '');
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
       _draft = initial;
-      _addToHistory(initial);
-    } else if (widget.autoFocus) {
+    }
+    // Only a handed-in word is a new lookup. Re-adding the current word would
+    // move it to the end of the history after the user had gone back.
+    if (handedIn.isNotEmpty) _recordLookup(handedIn);
+    if (handedIn.isEmpty && widget.autoFocus) {
       // Focus the search field after the first frame so the keyboard can show.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _focusNode.requestFocus();
       });
     }
-    _attachNormProgress();
     _focusNode.onKeyEvent = _handleSearchKey;
-  }
-
-  void _attachNormProgress() {
-    ref
-        .read(dpdDictionaryDbProvider.future)
-        .then((db) {
-          if (!mounted || db.isNormReady) return;
-          final current = db.normBuildProgress;
-          if (current != null && current < 1) {
-            setState(() => _normProgress = current);
-          }
-          db.onNormProgress = (p) {
-            if (!mounted) return;
-            setState(() => _normProgress = p >= 1 ? null : p);
-          };
-        })
-        .catchError((_) {});
   }
 
   @override
@@ -116,21 +129,33 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     // is a read (not a watch): subsequent word updates arrive through the
     // [ref.listen] in build, and watching here would rebuild the whole panel
     // on every sidePanelProvider change (e.g. panel-width drags) for nothing.
+    if (_mountWordApplied) return;
+    _mountWordApplied = true;
     final panels = ref.read(sidePanelProvider);
-    final panelData = panels.left.openPanel == SidePanelType.dictionary
-        ? panels.left.panelData
+    final slot = panels.left.openPanel == SidePanelType.dictionary
+        ? panels.left
         : panels.right.openPanel == SidePanelType.dictionary
-        ? panels.right.panelData
+        ? panels.right
         : null;
-    if (panelData != null) {
-      _syncPanelWord(panelData);
-    }
+    if (slot != null) _applySlotWord(slot);
+  }
+
+  /// Apply the slot's word unless this or an earlier panel already did. The
+  /// slot still holds its last word after the user went back, and moving the
+  /// sidebar to the other side builds a new panel, so a width drag or a move
+  /// must not bring that word back.
+  void _applySlotWord(SidePanelState slot) {
+    final word = slot.panelData;
+    final notifier = ref.read(sidePanelProvider.notifier);
+    if (word == null || slot.dataSeq == notifier.appliedDataSeq) return;
+    notifier.appliedDataSeq = slot.dataSeq;
+    _syncPanelWord(word);
   }
 
   /// Apply a dictionary word coming from [SidePanelProvider] to the search
   /// field, ignoring repeats of the current query.
   void _syncPanelWord(String word) {
-    final trimmed = word.trim();
+    final trimmed = cleanDpdQuery(word);
     if (trimmed.isEmpty || trimmed == _query) return;
     _searchController.text = trimmed;
     _initiateSearch(trimmed);
@@ -139,8 +164,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   @override
   void didUpdateWidget(DictionaryPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newWord = widget.initialWord.trim();
-    if (newWord.isNotEmpty && newWord != oldWidget.initialWord.trim()) {
+    final newWord = cleanDpdQuery(widget.initialWord);
+    if (newWord.isNotEmpty && newWord != cleanDpdQuery(oldWidget.initialWord)) {
       _searchController.text = newWord;
       _initiateSearch(newWord);
     }
@@ -151,42 +176,23 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    _suggestScroll.dispose();
     _suggestDebounce?.cancel();
     super.dispose();
   }
 
-  void _addToHistory(String word) {
-    final w = word.trim();
-    if (w.isEmpty) return;
-    setState(() {
-      _searchHistory.remove(w);
-      _searchHistory.insert(0, w);
-      if (_searchHistory.length > 10) {
-        _searchHistory.removeLast();
-      }
-    });
-  }
-
   void _onSearchChanged(String value) {
-    if (_isConverting) return;
+    // The suggestions drop down under the history list; typing means the user
+    // is done with the list.
+    if (_historyOpen) setState(() => _historyOpen = false);
     _suggestDebounce?.cancel();
 
-    final converted = velthuis(value);
-    // Only update the display for Roman-script input; non-Roman
-    // scripts (Sinhala, Thai, Myanmar, …) pass through unchanged.
-    if (isRomanScript(value) &&
-        converted != value &&
-        converted.trim().isNotEmpty) {
-      _isConverting = true;
-      _searchController.value = convertedTextEditingValue(
-        _searchController.value,
-      );
-      _isConverting = false;
-    }
+    final converted = convertToRomanPali(value);
 
-    final trimmed = converted.trim();
+    final trimmed = foldDpdQuery(converted).trim();
     if (trimmed.isEmpty) {
       setState(() {
+        _lookupHistory.resetPosition();
         _draft = '';
         _query = '';
         _suggestIndex = -1;
@@ -210,7 +216,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _performSearch(String value) {
-    final converted = velthuis(value).trim();
+    final converted = cleanDpdQuery(value);
     if (converted.isEmpty) return;
     _suggestDebounce?.cancel();
     _focusNode.unfocus();
@@ -219,11 +225,24 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   void _initiateSearch(String word) {
     if (word.isEmpty) return;
+    _recordLookup(word);
+    _showWord(word);
+  }
+
+  /// Back and forward put a word on screen without adding it to any list.
+  void _stepHistory(String? word) {
+    if (word == null) return;
+    _searchController.text = word;
+    _showWord(word);
+  }
+
+  void _showWord(String word) {
     _suggestDebounce?.cancel();
-    _addToHistory(word);
+    DictionaryPanelMemory.saveWord(word);
     setState(() {
       _query = word;
       _draft = word;
+      _historyOpen = false;
       _suggestIndex = -1;
       _suggestPending = 0;
       _suggestKeys.clear();
@@ -244,8 +263,10 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     if (!mounted) return KeyEventResult.ignored;
     // Flush the live textbox value: the draft is debounced, so without
     // this an arrow pressed right after typing would see stale state.
-    final live = _searchController.text.trim();
-    if (live != _draft) {
+    // Both sides cleaned: a typed draft is already clean, but a word put on
+    // screen by a tap or a chip is not, and must not count as new typing.
+    final live = cleanDpdQuery(_searchController.text);
+    if (live != cleanDpdQuery(_draft)) {
       _suggestDebounce?.cancel();
       setState(() {
         _draft = live;
@@ -267,7 +288,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       return KeyEventResult.ignored;
     }
     final dpdAsync = ref.read(
-      dpdDictionarySearchProvider(
+      dpdSuggestionsProvider(
         _draft.length >= kDictionarySuggestionMinLength ? _draft : '',
       ),
     );
@@ -309,15 +330,31 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-      if (ctx != null) Scrollable.ensureVisible(ctx);
+      if (mounted) _revealSuggestion();
     });
     return KeyEventResult.handled;
   }
 
+  /// Scrolls the suggestion box to the selected row. The box is a lazy list:
+  /// the row the arrow jumps to from the text field (the last one) has no
+  /// widget until the list is at its end, so go there first.
+  void _revealSuggestion() {
+    final ctx = _suggestKeys[_suggestIndex]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx);
+      return;
+    }
+    // No row selected: the arrow went back up to the text field.
+    if (_suggestIndex < 0 || !_suggestScroll.hasClients) return;
+    _suggestScroll.jumpTo(_suggestScroll.position.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final built = _suggestKeys[_suggestIndex]?.currentContext;
+      if (mounted && built != null) Scrollable.ensureVisible(built);
+    });
+  }
+
   void _selectWord(String word) {
-    final converted = velthuis(word).trim();
+    final converted = cleanDpdQuery(word);
     if (converted.isEmpty) return;
     _searchController.text = converted;
     _initiateSearch(converted);
@@ -389,6 +426,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // The recent chips and the arrows read the history the sheet also writes.
+    ref.watch(lookupHistoryProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final pali = ref.watch(settingsProvider.select((s) => s.typography.pali));
@@ -405,13 +444,35 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     // NOT on provider changes — so without this listener the panel only
     // picked up a new word when something else (a window resize) happened to
     // rebuild it. React to the provider change explicitly instead.
+    // A sheet over the reader owns the icon row's requests; the docked panel
+    // under it must not scroll or open a list nobody asked it for.
+    ref.listen(dictionaryScrollTopRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    });
+    ref.listen(dictionaryHistoryRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      setState(() => _historyOpen = true);
+    });
+    ref.listen(dictionaryBackRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _stepHistory(_lookupHistory.goBack());
+    });
+    ref.listen(dictionaryForwardRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _stepHistory(_lookupHistory.goForward());
+    });
+    ref.listen(dictionarySearchFocusRequestProvider, (_, _) {
+      if (ref.read(dictionarySheetOpenProvider) > 0) return;
+      _focusNode.requestFocus();
+    });
     ref.listen(sidePanelProvider, (prev, next) {
-      final word = next.left.openPanel == SidePanelType.dictionary
-          ? next.left.panelData
+      final slot = next.left.openPanel == SidePanelType.dictionary
+          ? next.left
           : next.right.openPanel == SidePanelType.dictionary
-          ? next.right.panelData
+          ? next.right
           : null;
-      if (word != null) _syncPanelWord(word);
+      if (slot != null) _applySlotWord(slot);
     });
 
     return Column(
@@ -424,108 +485,85 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             AppDimensions.sm,
             0,
           ),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _focusNode,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: loc.searchPali,
-              isDense: true,
-              prefixIcon: Icon(
-                Icons.search,
-                size: 18,
-                color: colors.onSurfaceVariant,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _focusNode,
+                  inputFormatters: const [VelthuisInputFormatter()],
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: loc.searchPali,
+                    isDense: true,
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_searchController.text.isNotEmpty)
+                          IconButton(
+                            icon: Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              _onSearchChanged('');
+                            },
+                          ),
+                        const VelthuisHelpIcon(),
+                      ],
+                    ),
+                    filled: true,
+                    fillColor: colors.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppDimensions.radiusLg,
+                      ),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppDimensions.sm,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.onSurface,
+                    fontSize: searchSize,
+                    fontFamily: pali.fontFamily.fontFamily,
+                  ),
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _performSearch,
+                ),
               ),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: colors.surfaceContainerHighest,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-                borderSide: BorderSide.none,
+              LookupHistoryButtons(
+                onBack: () => _stepHistory(_lookupHistory.goBack()),
+                onForward: () => _stepHistory(_lookupHistory.goForward()),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.sm,
-                vertical: 8,
-              ),
-            ),
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.onSurface,
-              fontSize: searchSize,
-              fontFamily: pali.fontFamily.fontFamily,
-            ),
-            onChanged: _onSearchChanged,
-            onSubmitted: _performSearch,
+            ],
           ),
         ),
 
-        if (_normProgress != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimensions.sm,
-              6,
-              AppDimensions.sm,
-              0,
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    value: _normProgress! > 0 ? _normProgress : null,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    loc.preparing,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
         // Search history chips
-        if (_searchHistory.isNotEmpty)
+        if (_lookupHistory.words.isNotEmpty)
           Container(
             height: 32,
             margin: const EdgeInsets.only(top: 4, left: 8, right: 8),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _searchHistory.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 4),
-              itemBuilder: (context, index) {
-                return ActionChip(
-                  label: Text(_searchHistory[index]),
-                  labelStyle: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontSize: chipSize,
-                    fontFamily: pali.fontFamily.fontFamily,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  backgroundColor: colors.surfaceContainerHighest,
-                  side: BorderSide.none,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  onPressed: () {
-                    _searchController.text = _searchHistory[index];
-                    _performSearch(_searchHistory[index]);
-                  },
-                );
+            child: LookupHistoryChips(
+              words: _lookupHistory.words,
+              currentIndex: _lookupHistory.currentIndex,
+              colors: colors,
+              labelStyle: AppTypography.labelSmall.copyWith(
+                color: colors.onSurfaceVariant,
+                fontSize: chipSize,
+                fontFamily: pali.fontFamily.fontFamily,
+              ),
+              // A word that is already in the history is searched as it is
+              // stored, not read as Velthuis.
+              onTap: (word) {
+                _focusNode.unfocus();
+                _selectWord(word);
               },
             ),
           ),
@@ -533,16 +571,38 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
         const SizedBox(height: 4),
         const Divider(height: 1),
 
-        if (_draft.isNotEmpty &&
-            _draft != _query &&
-            (_draft.length >= kDictionarySuggestionMinLength || hasMdxDicts))
-          _buildSuggestionBox(colors),
-
-        // Results (only for the submitted word)
+        // Results (only for the submitted word). The suggestion box drops down
+        // over them, as tall as its words, up to the whole area.
         Expanded(
-          child: _query.isEmpty
-              ? _buildIdleState(colors)
-              : _buildResults(colors),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: _query.isEmpty
+                    ? _buildIdleState(colors)
+                    : _buildResults(colors),
+              ),
+              if (_draft.isNotEmpty &&
+                  _draft != _query &&
+                  (_draft.length >= kDictionarySuggestionMinLength ||
+                      hasMdxDicts))
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: _buildSuggestionBox(colors),
+                ),
+              if (_historyOpen)
+                Positioned.fill(
+                  child: LookupHistoryList(
+                    words: _lookupHistory.words,
+                    colors: colors,
+                    onTap: (word) {
+                      _focusNode.unfocus();
+                      _selectWord(word);
+                    },
+                    onClose: () => setState(() => _historyOpen = false),
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -554,14 +614,13 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   /// submits it as the full lookup.
   Widget _buildSuggestionBox(ColorScheme colors) {
     final dpdAsync = ref.watch(
-      dpdDictionarySearchProvider(
+      dpdSuggestionsProvider(
         _draft.length >= kDictionarySuggestionMinLength ? _draft : '',
       ),
     );
     final mdxAsync = ref.watch(mdxSuggestionsProvider(_draft));
     final exactAsync = ref.watch(mdxExactHitProvider(_draft));
     return Container(
-      constraints: const BoxConstraints(maxHeight: 220),
       margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
@@ -582,11 +641,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               if (!mounted) return;
               setState(() => _suggestIndex = pending > 0 ? 0 : last);
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final ctx = _suggestKeys[_suggestIndex]?.currentContext;
-                if (ctx != null) {
-                  Scrollable.ensureVisible(ctx);
-                }
+                if (mounted) _revealSuggestion();
               });
             });
           }
@@ -606,6 +661,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             return const SizedBox.shrink();
           }
           return ListView.builder(
+            controller: _suggestScroll,
             shrinkWrap: true,
             padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: tiles.length,
@@ -621,12 +677,12 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   /// Shared with [_handleSearchKey] so keyboard and pointer pick the same
   /// rows in the same order.
   List<({String word, String search, String? preview, bool isExact})>
-  _suggestionItems(List<DpdHeadwordRow> dpd, List<String> mdx, bool exact) {
+  _suggestionItems(List<String> dpd, List<String> mdx, bool exact) {
     final seen = <String>{};
     final items =
         <({String word, String search, String? preview, bool isExact})>[];
     void add(String word, String search, String? preview, bool isExact) {
-      if (seen.add(word.toLowerCase()) && items.length < 10) {
+      if (seen.add(word.toLowerCase()) && items.length < kSuggestionMaxRows) {
         items.add((
           word: word,
           search: search,
@@ -643,15 +699,15 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     for (final w in mdx) {
       add(w, w, null, false);
     }
-    for (final r in dpd) {
-      add(r.lemma1, r.cleanLemma1, r.meaningHtml, false);
+    for (final w in dpd) {
+      add(w, w, null, false);
     }
     return items;
   }
 
   List<Widget> _mergedSuggestionTiles(
     ColorScheme colors,
-    List<DpdHeadwordRow> dpd,
+    List<String> dpd,
     List<String> mdx,
     AsyncValue<bool> exactAsync,
   ) {
@@ -700,7 +756,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   Widget _buildResults(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
     return ref
-        .watch(dpdDictionaryLookupProvider(_query))
+        .watch(dpdLookupProvider(_query))
         .when(
           loading: () =>
               const Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -714,8 +770,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
             ),
           ),
           data: (lookup) {
-            final hasDpdMatch =
-                lookup.hasHeadwords || lookup.hasDeconstructor || lookup.hasEpd;
+            final hasDpdMatch = lookup.hasMatch;
             // DPD is not the only dictionary: the enabled Bold Definition
             // and other books can match words DPD has no entry for. When DPD
             // misses, still render those sections and append DPD's
@@ -725,6 +780,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               lookup,
               includePrefixSuggestions:
                   !hasDpdMatch &&
+                  lookup.unavailable == null &&
                   _query.length >= kDictionarySuggestionMinLength,
             );
           },
@@ -738,7 +794,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   List<Widget> _prefixSuggestionChildren(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
     return ref
-        .watch(dpdDictionarySearchProvider(_query))
+        .watch(dpdClosestMatchesProvider(_query))
         .when(
           loading: () => [
             const Padding(
@@ -796,12 +852,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
               const SizedBox(height: 4),
               ...results.map(
                 (r) => SuggestionTile(
-                  word: r.lemma1,
-                  meaningPreview: r.meaningHtml,
-                  // Fill the search with the cleaned lemma: DPD
-                  // headwords carry a homograph suffix ("añña 1.1"),
-                  // which would otherwise be searched as-is.
-                  onTap: () => _selectWord(r.cleanLemma1),
+                  word: r,
+                  onTap: () => _selectWord(r),
                   colors: colors,
                   highlightQuery: _query.trim(),
                 ),
@@ -813,68 +865,39 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   Widget _buildDictionaryResults(
     ColorScheme colors,
-    DpdFullLookup lookup, {
+    DpdLookup lookup, {
     bool includePrefixSuggestions = false,
   }) {
-    String searchWord = _query;
-    if (lookup.headwords.isNotEmpty) {
-      searchWord = lookup.headwords.first.cleanLemma1;
-    }
+    final searchWord = lookup.searchWord;
 
     return Consumer(
       builder: (context, ref, _) {
-        final booksAsync = ref.watch(dictionaryBooksNotifierProvider);
-        final mdxAsync = ref.watch(mdxDictionariesProvider);
-        return booksAsync.when(
+        final listAsync = ref.watch(dictionaryListProvider);
+        final level = ref.watch(dpdSettingsProvider.select((s) => s.level));
+        final showSummary = ref.watch(
+          dpdSettingsProvider.select((s) => s.showSummary),
+        );
+        return listAsync.when(
           loading: () =>
               const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           error: (_, _) => const SizedBox.shrink(),
-          data: (books) {
-            final enabledBooks = books.where((b) => b.userChoice).toList();
-            final children = <Widget>[];
-            for (final book in enabledBooks) {
-              if (book.id == 11) {
-                if (lookup.hasHeadwords ||
-                    lookup.hasDeconstructor ||
-                    lookup.hasEpd) {
-                  children.add(_DpdSection(colors: colors, lookup: lookup));
-                }
-              } else if (book.id == 100) {
-                children.add(
-                  PaliDefinitionSection(
-                    searchWord: searchWord,
-                    bookName: book.name,
-                    colors: colors,
-                  ),
-                );
-              } else {
-                children.add(
-                  DictDefinitionSection(
-                    bookId: book.id,
-                    bookName: book.name,
-                    searchWord: searchWord,
-                    colors: colors,
-                    onEntryTap: _selectWord,
-                  ),
-                );
-              }
-            }
-            if (includePrefixSuggestions) {
-              children.addAll(_prefixSuggestionChildren(colors));
-            }
-            for (final m in (mdxAsync.valueOrNull ?? []).where(
-              (d) => d.enabled,
-            )) {
-              children.add(
-                MdxDefinitionSection(
-                  dictId: m.id,
-                  dictTitle: m.title,
-                  searchWord: searchWord,
-                  onEntryTap: _selectWord,
-                ),
-              );
-            }
-            children.add(const SizedBox(height: 24));
+          data: (entries) {
+            final children = <Widget>[
+              ...buildOrderedDictionaryItems(
+                entries: entries,
+                lookup: lookup,
+                level: level,
+                searchWord: searchWord,
+                colors: colors,
+                onWordTap: _selectWord,
+                anchors: _anchors,
+                onJump: (id) => _anchors.jumpTo(id, _scrollController),
+                showSummary: showSummary,
+              ),
+              if (includePrefixSuggestions)
+                ..._prefixSuggestionChildren(colors),
+              const SizedBox(height: 24),
+            ];
             // Select-and-search: same treatment as the dictionary sheet — a
             // SelectionArea over the results lets any word inside a
             // definition be selected and re-looked-up via the toolbar's
@@ -894,358 +917,5 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
         );
       },
     );
-  }
-}
-
-// ── DPD Section ────────────────────────────────────────────────────────
-
-class _DpdSection extends ConsumerStatefulWidget {
-  final ColorScheme colors;
-  final DpdFullLookup lookup;
-
-  const _DpdSection({required this.colors, required this.lookup});
-
-  @override
-  ConsumerState<_DpdSection> createState() => _DpdSectionState();
-}
-
-class _DpdSectionState extends ConsumerState<_DpdSection> {
-  /// Which deconstructor candidate card is expanded (-1 = none).
-  int _activeDeconCardIndex = -1;
-
-  /// Which token inside the expanded candidate is selected.
-  int _activeDeconTokenIndex = 0;
-
-  /// Cached headword rows for deconstructor tokens, so tapping a token
-  /// doesn't re-hit the database every time.
-  final Map<String, List<DpdHeadwordRow>> _subLookupCache = {};
-
-  static const _cardKey = 'dpd';
-
-  @override
-  void didUpdateWidget(_DpdSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // A new search word resets the expand/collapse and cache state.
-    if (!identical(oldWidget.lookup, widget.lookup)) {
-      _activeDeconCardIndex = -1;
-      _activeDeconTokenIndex = 0;
-      _subLookupCache.clear();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = widget.colors;
-    final lookup = widget.lookup;
-    final loc = AppLocalizations.of(context);
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliFontFamily = pali.fontFamily.fontFamily;
-    // Collapsed: header only. The headword HTML is only built while
-    // expanded (lazy), and the expand state persists across searches.
-    final expanded = ref.watch(dictionaryExpandedFamilyProvider(_cardKey));
-    if (!expanded) {
-      return DictionaryCollapsibleCard(
-        dictionaryKey: _cardKey,
-        title: loc.dpdDictionary,
-        icon: Icons.auto_stories,
-        colors: colors,
-        child: const SizedBox.shrink(),
-      );
-    }
-    return DictionaryCollapsibleCard(
-      dictionaryKey: _cardKey,
-      title: loc.dpdDictionary,
-      icon: Icons.auto_stories,
-      colors: colors,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Headword row — the searched key for this lookup.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
-            child: Text(
-              lookup.searchedKey,
-              style: AppTypography.headlineSmall.copyWith(
-                color: colors.onSurface,
-                // Just above the 0.8× entry titles, and below the reader's
-                // Pāli text.
-                fontSize: (pali.fontSize * 0.9).clamp(12.0, 27.0),
-                fontWeight: FontWeight.bold,
-                fontFamily: paliFontFamily,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          if (lookup.hasDeconstructor) ...[
-            _buildDeconstructorSection(colors, lookup),
-            const SizedBox(height: 12),
-          ],
-          if (lookup.hasEpd) ...[
-            _buildEpdSection(colors, lookup.lookup!.epd!),
-            const SizedBox(height: 12),
-          ],
-          ...lookup.headwords.map(
-            (hw) => DpdHeadwordCard(
-              lemma: hw.lemma1,
-              meaningHtml: hw.meaningHtml,
-              colors: colors,
-              compact: true,
-              showBorder: false,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEpdSection(ColorScheme colors, String epdHtml) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.translate, size: 14, color: colors.onSurfaceVariant),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context).englishMeaning,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        DpdHtmlRichText(
-          html: epdHtml,
-          baseStyle: AppTypography.bodyTranslation.copyWith(
-            color: colors.onSurface,
-            fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
-            fontFamily: pali.fontFamily.fontFamily,
-          ),
-          linkColor: colors.primary,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDeconstructorSection(ColorScheme colors, DpdFullLookup lookup) {
-    final settings = ref.watch(settingsProvider);
-    final pali = settings.typography.pali;
-    final paliFontFamily = pali.fontFamily.fontFamily;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.call_split, size: 14, color: colors.onSurfaceVariant),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context).compoundBreakdown,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-                fontSize: (pali.fontSize * 0.6).clamp(10.0, 14.0),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-
-        ...lookup.deconstructionCandidates.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final candidate = entry.value;
-          final isActive = idx == _activeDeconCardIndex;
-
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                // Toggle: tapping the active card collapses it.
-                _activeDeconCardIndex = _activeDeconCardIndex == idx ? -1 : idx;
-                _activeDeconTokenIndex = 0;
-              });
-              _lookupDeconTokens(candidate);
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? colors.primaryContainer.withValues(alpha: 0.3)
-                    : colors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isActive
-                      ? colors.primary
-                      : colors.outlineVariant.withValues(alpha: 0.3),
-                  width: isActive ? 1.5 : 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Candidate header: tokens joined with " + "
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: colors.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Text(
-                        candidate.tokens.join(' + '),
-                        style: AppTypography.bodyTranslation.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w500,
-                          fontSize: (pali.fontSize * 0.7).clamp(11.0, 18.0),
-                          fontFamily: paliFontFamily,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Expanded detail for the active card — token chips.
-                  if (isActive && candidate.tokens.length > 1) ...[
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 8,
-                        top: 4,
-                        bottom: 4,
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: List.generate(candidate.tokens.length, (i) {
-                            final isTokenActive = i == _activeDeconTokenIndex;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(() => _activeDeconTokenIndex = i);
-                                  _lookupDeconToken(candidate.tokens[i]);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isTokenActive
-                                        ? colors.primary
-                                        : colors.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(
-                                    candidate.tokens[i],
-                                    style: AppTypography.labelSmall.copyWith(
-                                      color: isTokenActive
-                                          ? colors.onPrimary
-                                          : colors.onSurfaceVariant,
-                                      fontWeight: isTokenActive
-                                          ? FontWeight.w600
-                                          : FontWeight.w400,
-                                      fontSize: (pali.fontSize * 0.75).clamp(
-                                        11.0,
-                                        18.0,
-                                      ),
-                                      fontFamily: paliFontFamily,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-                    ),
-                    // Token content — constrained height so the panel
-                    // doesn't grow unbounded.
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 240),
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(10),
-                        child: _buildTokenContent(
-                          colors,
-                          candidate.tokens[_activeDeconTokenIndex],
-                        ),
-                      ),
-                    ),
-                  ] else if (isActive) ...[
-                    const Divider(height: 1),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 240),
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(10),
-                        child: _buildTokenContent(colors, candidate.tokens[0]),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  Widget _buildTokenContent(ColorScheme colors, String token) {
-    final cached = _subLookupCache[token];
-    if (cached != null) {
-      if (cached.isEmpty) return const SizedBox.shrink();
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: cached.map((hw) {
-          return DpdHeadwordCard(
-            lemma: hw.lemma1,
-            meaningHtml: hw.meaningHtml,
-            colors: colors,
-            compact: true,
-          );
-        }).toList(),
-      );
-    }
-
-    // Trigger async lookup.
-    _lookupDeconToken(token);
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _lookupDeconToken(String token) async {
-    if (_subLookupCache.containsKey(token)) return;
-    try {
-      final headwords = await ref.read(dpdSubLookupProvider(token).future);
-      if (mounted) {
-        setState(() {
-          _subLookupCache[token] = headwords;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _lookupDeconTokens(DeconstructionCandidate candidate) async {
-    for (final token in candidate.tokens) {
-      await _lookupDeconToken(token);
-    }
   }
 }
