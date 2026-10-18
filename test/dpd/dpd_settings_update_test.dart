@@ -85,7 +85,7 @@ void main() {
     await open(tester);
     expect(find.text('Installed release: v0.4.20261012'), findsOneWidget);
     expect(find.text('Not checked yet'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Reinstall'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Reinstall'), findsOneWidget);
   });
 
   testWidgets('an older newest release: up to date, with the check date', (
@@ -95,43 +95,62 @@ void main() {
     await checkNow(tester);
     expect(find.text('Up to date'), findsOneWidget);
     expect(find.text('Last checked: 2026-10-14'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Reinstall'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Reinstall'), findsOneWidget);
   });
 
-  testWidgets('the check and its answer share a line, as do the buttons', (
-    tester,
-  ) async {
-    await open(tester, latest: _release('v0.4.20260926'));
-    await checkNow(tester);
-    double midY(Finder f) => tester.getCenter(f).dy;
-    expect(
-      find.descendant(
-        of: find
-            .ancestor(of: find.text('Up to date'), matching: find.byType(Row))
-            .first,
-        matching: find.byIcon(Icons.check),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      midY(find.text('Up to date')),
-      moreOrLessEquals(midY(find.text('Last checked: 2026-10-14')), epsilon: 3),
-    );
-    expect(
-      midY(find.text('Reinstall')),
-      moreOrLessEquals(midY(find.text('Check now')), epsilon: 1),
-    );
-  });
+  testWidgets(
+    'the check and its answer share a line, and the buttons share one row',
+    (tester) async {
+      await open(tester, latest: _release('v0.4.20260926'));
+      await checkNow(tester);
+      double midY(Finder f) => tester.getCenter(f).dy;
+      expect(
+        find.descendant(
+          of: find
+              .ancestor(of: find.text('Up to date'), matching: find.byType(Row))
+              .first,
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        midY(find.text('Up to date')),
+        moreOrLessEquals(
+          midY(find.text('Last checked: 2026-10-14')),
+          epsilon: 3,
+        ),
+      );
+      // One row of buttons, left to right: Check now, the download button,
+      // Import from file. Only the recommended step would be filled.
+      final check = find.widgetWithText(OutlinedButton, 'Check now');
+      final reinstall = find.widgetWithText(OutlinedButton, 'Reinstall');
+      final import = find.widgetWithText(OutlinedButton, 'Import from file…');
+      expect(
+        tester.getCenter(check).dy,
+        moreOrLessEquals(tester.getCenter(reinstall).dy, epsilon: 1),
+      );
+      expect(
+        tester.getCenter(import).dy,
+        moreOrLessEquals(tester.getCenter(reinstall).dy, epsilon: 1),
+      );
+      expect(
+        tester.getTopLeft(check).dx,
+        lessThan(tester.getTopLeft(reinstall).dx),
+      );
+      expect(
+        tester.getTopLeft(reinstall).dx,
+        lessThan(tester.getTopLeft(import).dx),
+      );
+      expect(tester.getSize(check).height, tester.getSize(reinstall).height);
+    },
+  );
 
   testWidgets('a newer release: named with its size, and Download', (
     tester,
   ) async {
     await open(tester, latest: _release('v0.4.20261101'));
     await checkNow(tester);
-    expect(
-      find.text('Newer release: v0.4.20261101 (200 MB)'),
-      findsOneWidget,
-    );
+    expect(find.text('Newer release: v0.4.20261101 (200 MB)'), findsOneWidget);
     expect(find.text('Up to date'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Download'), findsOneWidget);
   });
@@ -162,7 +181,7 @@ void main() {
         );
     await settleShell(tester, frames: 2);
     expect(find.text('DPD is downloading 42%'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Reinstall'), findsNothing);
+    expect(find.text('Reinstall'), findsNothing);
   });
 
   testWidgets('no file: not installed, and Download', (tester) async {

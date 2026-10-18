@@ -192,13 +192,22 @@ class _IndexGateState extends ConsumerState<IndexGate>
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final release = ref.watch(dpdLatestReleaseProvider).valueOrNull;
+    // Unpacking is all that is left of an import, which downloads nothing, so
+    // the size of the download no longer applies.
+    final unpacking =
+        ref.watch(
+          translationDownloadProvider.select(
+            (all) => all[kDpdDownloadKey]?.status,
+          ),
+        ) ==
+        DownloadStatus.extracting;
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(AppDimensions.marginMobile),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: const BoxConstraints(maxWidth: 720),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,8 +230,16 @@ class _IndexGateState extends ConsumerState<IndexGate>
                       color: colors.onSurfaceVariant,
                     ),
                   ),
-                  if (release != null) ...[
-                    const SizedBox(height: AppDimensions.sm),
+                  const SizedBox(height: AppDimensions.md),
+                  Text(
+                    loc.dpdNewDatabaseMustDownload,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  if (release != null && !unpacking) ...[
+                    const SizedBox(height: AppDimensions.md),
                     Text(
                       loc.dpdDownloadSize(formatDpdSize(release.size)),
                       textAlign: TextAlign.center,

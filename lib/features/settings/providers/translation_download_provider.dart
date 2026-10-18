@@ -62,6 +62,11 @@ class TranslationDownloadNotifier
     extends StateNotifier<Map<String, TranslationDownloadState>> {
   final Map<String, CancelableCompleter> _cancelTokens = {};
 
+  /// The latest core install of each key. After Stop, the old run can sit
+  /// blocked on a silent server while the reader presses Resume; when it
+  /// wakes, it must not touch the state or the token of the newer run.
+  final Map<String, int> _coreRuns = {};
+
   TranslationDownloadNotifier([this._ref]) : super({});
 
   /// The provider's own ref. It lives as long as the app, unlike the widget
@@ -442,6 +447,10 @@ class TranslationDownloadNotifier
   /// extracted file before the old one is touched; throwing there keeps the
   /// old database. [swap] wraps the rename, so an open database can be closed
   /// around it. [dbDir] and [client] are for tests.
+  ///
+  /// With [resume], an interrupted download keeps its partial file, named for
+  /// the release digest, and the next call continues from that byte. A
+  /// stream silent for [stallTimeout] ends the download the same way.
   Future<bool> downloadCoreAsset({
     required String url,
     required String filename,
@@ -456,11 +465,15 @@ class TranslationDownloadNotifier
       void Function(ProviderOrFamily provider) invalidate,
     )?
     swap,
+    bool resume = false,
+    Duration stallTimeout = const Duration(seconds: 60),
     Directory? dbDir,
     http.Client? client,
   }) async {
     final key = versionKey ?? filename.replaceAll('.db', '');
     _cancelTokens.remove(key);
+    final runId = _coreRuns[key] = (_coreRuns[key] ?? 0) + 1;
+    bool superseded() => _coreRuns[key] != runId;
 
     state = {
       ...state,
@@ -489,16 +502,24 @@ class TranslationDownloadNotifier
     _cancelTokens[key] = cancelToken;
     final invalidate = _ref?.invalidate ?? ref.invalidate;
     File? zipFile;
-    File? tempFile;
+    Directory? dir;
+    // A failed transfer keeps its partial zip for the next Resume. Anything
+    // after it (checksum, unpack, checks) deletes the zip.
+    var transferring = true;
 
     try {
-      final dir = dbDir ?? await getDatabaseDirectory();
+      dir = dbDir ?? await getDatabaseDirectory();
       // Stream the .zip straight to disk: the core databases are hundreds
       // of MB and holding them in memory OOM-kills low-RAM devices (the
       // main Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
-      zipFile = File(p.join(dir.path, '$filename.zip.tmp'));
-      if (await zipFile.exists()) await zipFile.delete();
-      final tmpDbPath = p.join(dir.path, '$filename.tmp');
+      if (resume) {
+        final partialName = partialZipName(filename, expectedZipSha256);
+        zipFile = File(p.join(dir.path, partialName));
+        await _deleteOtherPartials(dir, filename, keep: partialName);
+      } else {
+        zipFile = File(p.join(dir.path, '$filename.zip.tmp'));
+        if (await zipFile.exists()) await zipFile.delete();
+      }
 
       final httpClient = client ?? http.Client();
       var lastShownPct = -1;
@@ -509,6 +530,8 @@ class TranslationDownloadNotifier
           cancelToken: cancelToken,
           client: httpClient,
           expectedBytes: expectedBytes ?? 0,
+          resume: resume,
+          stallTimeout: stallTimeout,
           onProgress: (progress) {
             final pct = (progress * 100).round().clamp(0, 100);
             state = {
@@ -538,6 +561,7 @@ class TranslationDownloadNotifier
       } finally {
         if (client == null) httpClient.close();
       }
+      transferring = false;
 
       if (expectedZipSha256 != null && expectedZipSha256.isNotEmpty) {
         final actual = await _sha256OfFile(zipFile);
@@ -550,19 +574,154 @@ class TranslationDownloadNotifier
       }
       // Stop counts until here, through the checksum pass; extraction and
       // the swap then run to the end.
-      _cancelTokens.remove(key);
+      if (!superseded()) _cancelTokens.remove(key);
 
       if (cancelToken.isCancelled) {
+        if (superseded()) return false;
         await _fgsStop();
         DownloadNotificationService.instance.dismissTranslation();
         state = {
           ...state,
           key: const TranslationDownloadState(status: DownloadStatus.cancelled),
         };
-        await _deleteQuietly(zipFile);
+        if (!resume) await _deleteQuietly(zipFile);
         return false;
       }
+    } catch (e) {
+      // A newer run owns the state, the token and the zip file now.
+      if (superseded()) return false;
+      await _fgsStop();
+      _cancelTokens.remove(key);
+      if (zipFile != null && !(resume && transferring)) {
+        await _deleteQuietly(zipFile);
+      }
+      if (cancelToken.isCancelled) {
+        DownloadNotificationService.instance.dismissTranslation();
+        state = {
+          ...state,
+          key: const TranslationDownloadState(status: DownloadStatus.cancelled),
+        };
+      } else {
+        _reportCoreFailure(key, displayName, e);
+      }
+      return false;
+    }
 
+    return _installFromZip(
+      key: key,
+      filename: filename,
+      displayName: displayName,
+      zipFile: zipFile,
+      dir: dir,
+      deleteZip: true,
+      fgsActive: fgsActive,
+      verify: verify,
+      swap: swap,
+      invalidate: invalidate,
+    );
+  }
+
+  /// Installs the zip at [zip] as [filename], as [downloadCoreAsset] does
+  /// after a transfer, but for a file the reader picked: it is never deleted,
+  /// and no checksum is known to compare it with. Progress and errors go to
+  /// [versionKey]'s state.
+  Future<bool> importCoreZip({
+    required File zip,
+    required String filename,
+    required String displayName,
+    required WidgetRef ref,
+    String? versionKey,
+    Future<void> Function(File tmpDb)? verify,
+    Future<void> Function(
+      Future<void> Function() replace,
+      void Function(ProviderOrFamily provider) invalidate,
+    )?
+    swap,
+    Directory? dbDir,
+  }) async {
+    final key = versionKey ?? filename.replaceAll('.db', '');
+    final running = stateFor(key).status;
+    if (running == DownloadStatus.downloading ||
+        running == DownloadStatus.extracting) {
+      return false;
+    }
+    _coreRuns[key] = (_coreRuns[key] ?? 0) + 1;
+    if (!await zip.exists()) {
+      _reportCoreFailure(
+        key,
+        displayName,
+        FormatException(
+          'The file could not be found: ${p.basename(zip.path)}',
+        ),
+      );
+      return false;
+    }
+    final fgsActive = await _fgsStart(
+      title: 'Importing $displayName',
+      text: '…',
+    );
+    final Directory dir;
+    try {
+      dir = dbDir ?? await getDatabaseDirectory();
+    } catch (e) {
+      await _fgsStop();
+      _reportCoreFailure(key, displayName, e);
+      return false;
+    }
+    return _installFromZip(
+      key: key,
+      filename: filename,
+      displayName: displayName,
+      zipFile: zip,
+      dir: dir,
+      deleteZip: false,
+      fgsActive: fgsActive,
+      verify: verify,
+      swap: swap,
+      invalidate: _ref?.invalidate ?? ref.invalidate,
+    );
+  }
+
+  /// The error state and notification of a failed core install.
+  void _reportCoreFailure(String key, String displayName, Object error) {
+    final message = downloadErrorMessage(error);
+    // Previously silent: the notification just vanished and the wizard
+    // showed no reason, so failures looked like the download "closed".
+    DownloadNotificationService.instance.showTranslationError(
+      displayName,
+      message,
+    );
+    state = {
+      ...state,
+      key: TranslationDownloadState(
+        status: DownloadStatus.error,
+        errorMessage: message,
+      ),
+    };
+  }
+
+  /// Unpacks [zipFile], checks the database, swaps it in and reports
+  /// completed; the part of a core install that follows the transfer.
+  /// [deleteZip] is false for a file the reader picked.
+  Future<bool> _installFromZip({
+    required String key,
+    required String filename,
+    required String displayName,
+    required File zipFile,
+    required Directory dir,
+    required bool deleteZip,
+    required bool fgsActive,
+    required void Function(ProviderOrFamily provider) invalidate,
+    Future<void> Function(File tmpDb)? verify,
+    Future<void> Function(
+      Future<void> Function() replace,
+      void Function(ProviderOrFamily provider) invalidate,
+    )?
+    swap,
+  }) async {
+    File? tempFile;
+    try {
+      final tmpDbPath = p.join(dir.path, '$filename.tmp');
       state = {
         ...state,
         key: const TranslationDownloadState(status: DownloadStatus.extracting),
@@ -585,7 +744,7 @@ class TranslationDownloadNotifier
       // held fully in memory. Throws with a human-readable message when the
       // zip has no .db or is corrupt.
       await _extractDbFromZip(zipPath: zipFile.path, tmpPath: tmpDbPath);
-      await _deleteQuietly(zipFile);
+      if (deleteZip) await _deleteQuietly(zipFile);
 
       final destPath = p.join(dir.path, filename);
       final extracted = tempFile = File(tmpDbPath);
@@ -607,6 +766,9 @@ class TranslationDownloadNotifier
       }
 
       await _fgsStop();
+      // An import leaves the partial of an earlier, stopped download behind;
+      // once the database is installed, nothing is left to resume.
+      await _deleteOtherPartials(dir, filename, keep: '');
       state = {
         ...state,
         key: const TranslationDownloadState(
@@ -624,32 +786,10 @@ class TranslationDownloadNotifier
       return true;
     } catch (e) {
       await _fgsStop();
-      _cancelTokens.remove(key);
-      if (zipFile != null) await _deleteQuietly(zipFile);
+      if (deleteZip) await _deleteQuietly(zipFile);
       // A failed check or swap must not leave the extracted 1 GB behind.
       if (tempFile != null) await _deleteQuietly(tempFile);
-      if (cancelToken.isCancelled) {
-        DownloadNotificationService.instance.dismissTranslation();
-        state = {
-          ...state,
-          key: const TranslationDownloadState(status: DownloadStatus.cancelled),
-        };
-      } else {
-        final message = downloadErrorMessage(e);
-        // Previously silent: the notification just vanished and the wizard
-        // showed no reason, so failures looked like the download "closed".
-        DownloadNotificationService.instance.showTranslationError(
-          displayName,
-          message,
-        );
-        state = {
-          ...state,
-          key: TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: message,
-          ),
-        };
-      }
+      _reportCoreFailure(key, displayName, e);
       return false;
     }
   }
@@ -665,31 +805,83 @@ class TranslationDownloadNotifier
   /// stays 0.0 so the UI shows an indeterminate bar.
   ///
   /// Throws [HttpException] on HTTP errors, [_DownloadCancelled] when
-  /// [cancelToken] is cancelled. Partial files are deleted before throwing.
+  /// [cancelToken] is cancelled. Partial files are deleted before throwing,
+  /// unless [resume] is set: then the partial stays, and a partial already on
+  /// disk is continued with a Range request. A server that ignores the range
+  /// (`200`) or refuses it (`416`) restarts the file from byte 0.
   Future<void> _streamDownloadToFile({
     required String url,
     required File destZip,
     required CancelableCompleter cancelToken,
     required http.Client client,
     int expectedBytes = 0,
+    bool resume = false,
+    Duration stallTimeout = const Duration(seconds: 60),
     void Function(double progress)? onProgress,
   }) async {
-    final request = http.Request('GET', Uri.parse(url));
-    final response = await client.send(request);
+    var offset = 0;
+    if (resume && await destZip.exists()) offset = await destZip.length();
+    // A partial that already has every byte only needs its checksum.
+    if (offset > 0 && expectedBytes > 0 && offset >= expectedBytes) {
+      onProgress?.call(1.0);
+      return;
+    }
 
-    if (response.statusCode != 200) {
-      await _deleteQuietly(destZip);
+    Future<http.StreamedResponse> send(int from) {
+      final request = http.Request('GET', Uri.parse(url));
+      if (from > 0) request.headers['Range'] = 'bytes=$from-';
+      final response = client.send(request);
+      return resume
+          ? response.timeout(stallTimeout, onTimeout: () => throw _stalled())
+          : response;
+    }
+
+    var response = await send(offset);
+    if (offset > 0) {
+      final continues =
+          response.statusCode == 206 &&
+          _contentRangeStart(response.headers['content-range']) == offset;
+      if (!continues) {
+        offset = 0;
+        // A 200 body is the whole file already. A 416, or a 206 from the wrong
+        // byte, is refetched from 0. Any other answer (a 403 on an expired
+        // link, a 503) stops below and keeps the partial.
+        if (response.statusCode == 206 || response.statusCode == 416) {
+          await response.stream.drain<void>();
+          response = await send(0);
+        }
+      }
+    }
+
+    if (response.statusCode != 200 &&
+        !(response.statusCode == 206 && offset > 0)) {
+      if (!resume) await _deleteQuietly(destZip);
       throw HttpException('Download failed (HTTP ${response.statusCode})');
     }
 
+    // Stop pressed while the server was answering: opening the file now
+    // would empty it under a newer run that has already started.
+    if (cancelToken.isCancelled) throw _DownloadCancelled();
+
     final headerLength = response.contentLength ?? 0;
-    final total = headerLength > 0 ? headerLength : expectedBytes;
-    final sink = destZip.openWrite();
+    final total = headerLength > 0 ? offset + headerLength : expectedBytes;
+    final sink = destZip.openWrite(
+      mode: offset > 0 ? FileMode.append : FileMode.write,
+    );
     try {
-      var received = 0;
+      var received = offset;
       var lastReportMs = 0;
       var lastReportedPct = -1;
-      await for (final chunk in response.stream) {
+      if (offset > 0 && total > 0) onProgress?.call(offset / total);
+      final body = resume
+          ? response.stream.timeout(
+              stallTimeout,
+              onTimeout: (sink) => sink
+                ..addError(_stalled())
+                ..close(),
+            )
+          : response.stream;
+      await for (final chunk in body) {
         if (cancelToken.isCancelled) throw _DownloadCancelled();
         sink.add(chunk);
         received += chunk.length;
@@ -711,10 +903,38 @@ class TranslationDownloadNotifier
       }
     } catch (_) {
       await sink.close();
-      await _deleteQuietly(destZip);
+      if (!resume) await _deleteQuietly(destZip);
       rethrow;
     }
     await sink.close();
+  }
+
+  FormatException _stalled() => const FormatException(
+    'No data for 60 seconds. Press Resume to continue.',
+  );
+
+  /// The first byte of a `Content-Range: bytes 100-199/200` header, or null.
+  int? _contentRangeStart(String? header) {
+    final match = RegExp(r'bytes (\d+)-').firstMatch(header ?? '');
+    return match == null ? null : int.parse(match.group(1)!);
+  }
+
+  /// Deletes every partial zip of [filename] except [keep]: a partial of
+  /// another release must never be continued.
+  Future<void> _deleteOtherPartials(
+    Directory dir,
+    String filename, {
+    required String keep,
+  }) async {
+    await for (final entity in dir.list()) {
+      final name = p.basename(entity.path);
+      if (entity is File &&
+          name != keep &&
+          name.startsWith('$filename.') &&
+          name.endsWith('.zip.part')) {
+        await _deleteQuietly(entity);
+      }
+    }
   }
 
   /// Extracts the first `.db` entry of the zip at [zipPath] to [tmpPath]
@@ -817,6 +1037,16 @@ class TranslationDownloadNotifier
     }
     return false;
   }
+}
+
+/// The name of the partial zip of [filename]. It carries the first 12 hex
+/// characters of the release digest, so a partial of an older release is never
+/// continued; without a digest only the size and the final checksum guard it.
+String partialZipName(String filename, String? sha256) {
+  final suffix = sha256 != null && sha256.length >= 12
+      ? '.${sha256.substring(0, 12).toLowerCase()}'
+      : '';
+  return '$filename$suffix.zip.part';
 }
 
 /// The error text a download shows. A full disk gets a plain message

@@ -200,7 +200,7 @@ class _DpdDatabaseSection extends ConsumerWidget {
               ],
               const SizedBox(height: 8),
               // The check date and its answer share a line, and so do the
-              // two buttons (user, 2026-10-14); each pair wraps when narrow.
+              // buttons (user, 2026-10-14); each wraps when narrow.
               Wrap(
                 spacing: 12,
                 runSpacing: 4,
@@ -247,16 +247,18 @@ class _DpdDatabaseSection extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  OutlinedButton.icon(
+              // Messages above, buttons in one row below: Check now first,
+              // then the download button, then Import from file.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: DpdDownloadControl(
+                  release: latest,
+                  label: isReady && !newer ? loc.dpdReinstall : null,
+                  primary: !isReady || newer,
+                  leading: OutlinedButton.icon(
                     onPressed: update.checking
                         ? null
-                        : () =>
-                              ref.read(dpdUpdateProvider.notifier).checkNow(),
+                        : () => ref.read(dpdUpdateProvider.notifier).checkNow(),
                     icon: update.checking
                         ? const SizedBox(
                             width: 16,
@@ -266,11 +268,7 @@ class _DpdDatabaseSection extends ConsumerWidget {
                         : const Icon(Icons.refresh),
                     label: Text(loc.dpdCheckNow),
                   ),
-                  DpdDownloadControl(
-                    release: latest,
-                    label: isReady && !newer ? loc.dpdReinstall : null,
-                  ),
-                ],
+                ),
               ),
             ],
           ),

@@ -1159,12 +1159,18 @@ class AppLocalizations {
       '${_t('Installed release')}: $release';
   String get dpdNewDatabaseTitle => _t('New DPD dictionary');
   String get dpdNewDatabaseBody => _t(
-    'This version of ePitaka uses a new, fuller DPD dictionary database. '
-    'It must be downloaded before the app can open.',
+    'This version of ePitaka uses a new, fuller DPD dictionary database.',
   );
+  String get dpdNewDatabaseMustDownload =>
+      _t('It must be downloaded before the app can open.');
   String dpdDownloadSize(String size) => '${_t('Download size')}: $size';
   String get dpdDownloading => _t('DPD is downloading');
   String get dpdUnpacking => _t('Unpacking and checking…');
+  String get resume => _t('Resume');
+  String get dpdImportFromFile => _t('Import from file…');
+  String dpdAlreadyDownloaded(int doneMb, int? totalMb) => totalMb == null
+      ? '$doneMb MB ${_t('already downloaded')}'
+      : '$doneMb ${_t('of')} $totalMb MB ${_t('already downloaded')}';
   String get dpdUpdateTitle => _t('New DPD release');
   String dpdUpdateBody(String release, String size) =>
       '${_t('A newer DPD dictionary release is available')}: $release '
