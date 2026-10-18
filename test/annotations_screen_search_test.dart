@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 Annotation _ann({
@@ -220,6 +221,18 @@ void main() {
       final rx = tester.getCenter(find.byType(RegexToggleButton)).dx;
       expect(rx, greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx));
       expect(rx, lessThan(tester.getCenter(help()).dx));
+    });
+
+    testWidgets('Alt+R in the box turns Rx on, then off', (tester) async {
+      await tester.pumpWidget(_build());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isFalse);
+      await regexHotkeyIn(tester, field());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isTrue);
+      await regexHotkeyIn(tester, field());
+      await tester.pumpAndSettle();
+      expect(rxOnIn(tester, field()), isFalse);
     });
 
     testWidgets('Rx on keeps `.m`, hides the help, and matches exact '

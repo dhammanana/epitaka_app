@@ -23,6 +23,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 const _bookId = 'dn1';
@@ -316,6 +317,12 @@ void main() {
         greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx),
       );
       await tester.tap(find.byType(RegexToggleButton));
+      expect(events, ['toggle']);
+    });
+
+    testWidgets('Alt+R in the box reports a toggle', (tester) async {
+      final (_, events) = await pumpBar(tester, regexOn: false);
+      await regexHotkeyIn(tester, find.byType(TextField));
       expect(events, ['toggle']);
     });
 
