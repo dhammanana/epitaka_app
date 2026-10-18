@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/settings_provider.dart' show settingsProvider;
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../../search/services/regex_search.dart';
 import '../providers/reader_provider.dart';
 import '../providers/reader_tabs_provider.dart';
 
@@ -28,19 +29,36 @@ class InBookSearchState {
   /// Index into [matchParaIds] / [matchLineIds] for the selected match.
   final int matchIndex;
 
+  /// rx mode: the pieces of text the pattern matched, joined by spaces. The
+  /// reader highlights these as ordinary words; [query] keeps the pattern.
+  final String? highlight;
+
+  /// rx mode: why the pattern does not compile.
+  final String? patternError;
+
+  /// rx mode: the pattern ran past its time limit (spec K).
+  final bool patternTooSlow;
+
   const InBookSearchState({
     this.showSearchBar = false,
     this.query = '',
     this.matchParaIds = const [],
     this.matchLineIds = const [],
     this.matchIndex = -1,
+    this.highlight,
+    this.patternError,
+    this.patternTooSlow = false,
   });
 
   bool get hasMatches => matchParaIds.isNotEmpty;
   int get matchCount => matchParaIds.length;
   int get currentMatchDisplay => matchIndex + 1; // 1-based
-  String? get effectiveQuery =>
-      showSearchBar && query.isNotEmpty ? query : null;
+  String? get effectiveQuery {
+    if (!showSearchBar || query.isEmpty) return null;
+    final h = highlight;
+    if (h == null) return query;
+    return h.isEmpty ? null : h;
+  }
 
   InBookSearchState copyWith({
     bool? showSearchBar,
@@ -60,7 +78,101 @@ class InBookSearchState {
           ? const []
           : (matchLineIds ?? this.matchLineIds),
       matchIndex: clearMatches ? -1 : (matchIndex ?? this.matchIndex),
+      highlight: clearMatches ? null : highlight,
+      patternError: clearMatches ? null : patternError,
+      patternTooSlow: !clearMatches && patternTooSlow,
     );
+  }
+}
+
+/// The rx button of the reader's Find bar. Not saved, like the Search one.
+final findRegexProvider = StateProvider<bool>((ref) => false);
+
+/// The searchable text of every line of one book, in reading order, built
+/// once per paragraph list and variant setting, so later queries skip the
+/// cleaning (over a second per query in the largest books on a fast phone).
+/// Weak, so it never keeps a closed book's paragraphs in memory.
+class _LineTextCache<T> {
+  _LineTextCache(this._build);
+
+  /// Static: a large book builds in a background isolate, and a closure
+  /// there cannot hold the notifier.
+  final List<T> Function(List<_LineInput> inputs, bool hide) _build;
+
+  WeakReference<List<ParagraphData>>? _source;
+  bool? _hide;
+  List<T> lines = const [];
+  String? bookId;
+
+  /// The background build while it runs, so a query typed before it ends
+  /// waits for it instead of building again.
+  Future<List<T>>? _pending;
+
+  void clear() {
+    _source = null;
+    _hide = null;
+    lines = const [];
+    bookId = null;
+    _pending = null;
+  }
+
+  /// The text of every line of [paragraphs]. [onBuild] sees the inputs when
+  /// the cache has to build.
+  FutureOr<List<T>> linesFor(
+    List<ParagraphData> paragraphs,
+    bool hide,
+    String bookId, {
+    void Function(List<_LineInput> inputs)? onBuild,
+  }) {
+    // A reload or remarks refresh replaces the paragraph list, and the
+    // variant toggle changes what a line contains; either one makes the
+    // cached strings wrong.
+    if (identical(_source?.target, paragraphs) && _hide == hide) {
+      return _pending ?? lines;
+    }
+
+    final prepareSw = Stopwatch()..start();
+    final inputs = <_LineInput>[
+      for (final para in paragraphs)
+        for (final line in para.lines)
+          (line.paliText, line.translations, line.normalizedText),
+    ];
+    onBuild?.call(inputs);
+    _source = WeakReference(paragraphs);
+    _hide = hide;
+    this.bookId = bookId;
+
+    if (inputs.length < ReaderSearchNotifier.backgroundMinLines) {
+      _pending = null;
+      return lines = _build(inputs, hide);
+    }
+
+    lines = const [];
+    final build = _build;
+    final pending = Isolate.run(() => build(inputs, hide));
+    // What the main isolate still pays to start the build: gathering the
+    // lines and handing them to the new isolate.
+    debugPrint(
+      '[PERF] find prepare main=${prepareSw.elapsedMilliseconds} '
+      'lines=${inputs.length}',
+    );
+    _pending = pending;
+    pending.then<void>(
+      (built) {
+        if (identical(_pending, pending)) {
+          lines = built;
+          _pending = null;
+        }
+      },
+      onError: (Object _) {
+        // The waiting query reports the error; the next one tries again.
+        if (identical(_pending, pending)) {
+          _pending = null;
+          _source = null;
+        }
+      },
+    );
+    return pending;
   }
 }
 
@@ -76,18 +188,16 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   /// closes it too), even when the same word is typed again.
   int _searchGen = 0;
 
-  /// Normalized text of every line of the last searched book, in reading
-  /// order, so later queries skip the normalization (over a second per
-  /// query in the largest books on a fast phone). Weak, so the cache never
-  /// keeps a closed book's paragraphs in memory.
-  WeakReference<List<ParagraphData>>? _normalizedSource;
-  bool? _normalizedHideVariants;
-  List<String> _normalizedLines = const [];
-  String? _normalizedBookId;
+  /// The running rx match, cancelled by the next find, closing the bar and
+  /// dispose.
+  RegexJob<({List<int> hits, List<String> pieces})>? _regexJob;
 
-  /// The background build of [_normalizedLines] while it runs, so a query
-  /// typed before it finishes waits for it instead of building again.
-  Future<List<String>>? _pendingLines;
+  /// Folded text of every line (diacritics ignored), for normal finds.
+  final _normalized = _LineTextCache<String>(_normalizeAll);
+
+  /// Per line, its Pāli and each translation with diacritics kept, for rx
+  /// finds. Built only once rx is used in a book.
+  final _exact = _LineTextCache<List<String>>(_exactAll);
 
   /// Books with fewer lines than this normalize on the main isolate. A line
   /// costs about 68 µs on a Pixel 8 Pro (Pācity-y with English: 1.28 s for
@@ -106,13 +216,11 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     // A book leaves memory when its last tab closes (readerDataProvider);
     // its normalized text, about the size of the book, goes with it.
     _ref.listen(readerTabsProvider, (_, tabs) {
-      final bookId = _normalizedBookId;
-      if (bookId != null && !tabs.tabs.any((t) => t.bookId == bookId)) {
-        _normalizedSource = null;
-        _normalizedHideVariants = null;
-        _normalizedLines = const [];
-        _normalizedBookId = null;
-        _pendingLines = null;
+      for (final cache in [_normalized, _exact]) {
+        final bookId = cache.bookId;
+        if (bookId != null && !tabs.tabs.any((t) => t.bookId == bookId)) {
+          cache.clear();
+        }
       }
     });
   }
@@ -120,6 +228,7 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _regexJob?.cancel();
     searchController.dispose();
     searchFocusNode.dispose();
     super.dispose();
@@ -157,11 +266,14 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         .read(readerDataProvider(activeTab.bookId))
         .paragraphs;
     if (paragraphs.isEmpty) return;
-    _normalizedFor(
-      paragraphs,
-      _ref.read(settingsProvider.select((s) => s.stripVariantAnnotations)),
-      activeTab.bookId,
+    final hide = _ref.read(
+      settingsProvider.select((s) => s.stripVariantAnnotations),
     );
+    if (_ref.read(findRegexProvider)) {
+      _exact.linesFor(paragraphs, hide, activeTab.bookId);
+    } else {
+      _normalizedFor(paragraphs, hide, activeTab.bookId);
+    }
   }
 
   /// The normalized text of every line of [paragraphs], in reading order.
@@ -172,70 +284,16 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
     List<ParagraphData> paragraphs,
     bool hideVariants,
     String bookId,
-  ) {
-    // A reload or remarks refresh replaces the paragraph list, and the
-    // variant toggle changes what a line contains; either one makes the
-    // cached strings wrong.
-    if (identical(_normalizedSource?.target, paragraphs) &&
-        _normalizedHideVariants == hideVariants) {
-      return _pendingLines ?? _normalizedLines;
-    }
-
-    final prepareSw = Stopwatch()..start();
-    final inputs = <_LineInput>[];
-    var toNormalize = 0;
-    for (final para in paragraphs) {
-      for (final line in para.lines) {
-        // Normalized text is computed on-demand (normalizedText is
-        // always empty today — pre-computation during book load was
-        // removed as an optimization).
-        if (line.normalizedText.isEmpty) toNormalize++;
-        inputs.add((line.paliText, line.translations, line.normalizedText));
-      }
-    }
-    _lastNormalizedCount = toNormalize;
-    _normalizedSource = WeakReference(paragraphs);
-    _normalizedHideVariants = hideVariants;
-    _normalizedBookId = bookId;
-
-    if (inputs.length < backgroundMinLines) {
-      _pendingLines = null;
-      return _normalizedLines = _normalizeAll(inputs, hideVariants);
-    }
-
-    _normalizedLines = const [];
-    final pending = _normalizeInBackground(inputs, hideVariants);
-    // What the main isolate still pays to start the build: gathering the
-    // lines and handing them to the new isolate.
-    debugPrint(
-      '[PERF] find prepare main=${prepareSw.elapsedMilliseconds} '
-      'lines=${inputs.length}',
-    );
-    _pendingLines = pending;
-    pending.then<void>(
-      (lines) {
-        if (identical(_pendingLines, pending)) {
-          _normalizedLines = lines;
-          _pendingLines = null;
-        }
-      },
-      onError: (Object _) {
-        // The waiting query reports the error; the next one tries again.
-        if (identical(_pendingLines, pending)) {
-          _pendingLines = null;
-          _normalizedSource = null;
-        }
-      },
-    );
-    return pending;
-  }
-
-  // Static, so the isolate's closure cannot capture the notifier, whose
-  // controllers and ref cannot be sent to another isolate.
-  static Future<List<String>> _normalizeInBackground(
-    List<_LineInput> inputs,
-    bool hideVariants,
-  ) => Isolate.run(() => _normalizeAll(inputs, hideVariants));
+  ) => _normalized.linesFor(
+    paragraphs,
+    hideVariants,
+    bookId,
+    // Normalized text is computed on-demand (normalizedText is always
+    // empty today — pre-computation during book load was removed as an
+    // optimization).
+    onBuild: (inputs) =>
+        _lastNormalizedCount = inputs.where((i) => i.$3.isEmpty).length,
+  );
 
   static List<String> _normalizeAll(List<_LineInput> inputs, bool hide) => [
     for (final (pali, translations, normalized) in inputs)
@@ -243,6 +301,27 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
           ? _normalizeLine(pali, translations, hideVariants: hide)
           : normalized,
   ];
+
+  /// Each line's search copy as the index cleans it, diacritics kept: the
+  /// Pāli (variant readings follow the setting, as in a normal find) and
+  /// each translation, as separate texts so `^` and `$` mean one of them.
+  static List<List<String>> _exactAll(List<_LineInput> inputs, bool hide) => [
+    for (final (pali, translations, _) in inputs)
+      [
+        if (pali != null && pali.trim().isNotEmpty)
+          cleanPaliForIndexing(pali.toLowerCase(), stripVariantContent: hide),
+        for (final t in translations.values)
+          if (t.trim().isNotEmpty) cleanPaliForIndexing(t.toLowerCase()),
+      ],
+  ];
+
+  /// Switch rx on or off and find the box's text again in the new mode.
+  void toggleRegex() {
+    final on = !_ref.read(findRegexProvider);
+    _ref.read(findRegexProvider.notifier).state = on;
+    _searchTimer?.cancel();
+    _runSearch(searchController.text);
+  }
 
   /// Drop a search that is still waiting on the debounce.
   void cancelPendingSearch() => _searchTimer?.cancel();
@@ -271,6 +350,7 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   void _closeSearch() {
     _searchTimer?.cancel();
     _searchGen++;
+    _regexJob?.cancel();
     searchController.clear();
     state = const InBookSearchState();
   }
@@ -282,6 +362,8 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
   Future<void> _runSearch(String query) async {
     final activeTab = _ref.read(readerTabsProvider).activeTab;
     if (activeTab == null) return;
+    _regexJob?.cancel();
+    if (_ref.read(findRegexProvider)) return _runRegexSearch(query, activeTab);
 
     // Convert the query from any Pali script to Roman IAST (the find box
     // converts Velthuis itself, as it is typed). The reader always searches
@@ -380,7 +462,8 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
       // Store the Roman query so the paragraph highlight can convert it
       // back to the display script for matching (see
       // convertSearchQueryForScript in reading_paragraph.dart).
-      state = state.copyWith(
+      state = InBookSearchState(
+        showSearchBar: state.showSearchBar,
         query: romanQuery,
         matchParaIds: matchParas,
         matchLineIds: matchLines,
@@ -390,6 +473,81 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
         '[PERF] find ms=${perfSw.elapsedMilliseconds} lines=$linesSeen '
         'normalized=$_lastNormalizedCount matches=${matchParas.length}',
       );
+    } catch (e) {
+      developer.log('[SEARCH] Error: $e', name: 'epitaka.reader.search');
+      if (mounted && gen == _searchGen) {
+        state = state.copyWith(query: '', clearMatches: true);
+      }
+    }
+  }
+
+  /// rx mode: [pattern] as typed, run over each line's exact search copy. A
+  /// line matches when the pattern matches its Pāli or one translation.
+  Future<void> _runRegexSearch(String pattern, ReaderTabInfo activeTab) async {
+    final gen = ++_searchGen;
+    if (pattern.trim().isEmpty) {
+      state = state.copyWith(query: '', clearMatches: true);
+      return;
+    }
+    final error = regexError(pattern);
+    if (error != null) {
+      state = InBookSearchState(
+        showSearchBar: state.showSearchBar,
+        query: pattern,
+        patternError: error,
+      );
+      return;
+    }
+    final perfSw = Stopwatch()..start();
+    try {
+      final readerState = _ref.read(readerDataProvider(activeTab.bookId));
+      if (readerState.paragraphs.isEmpty) {
+        state = state.copyWith(query: '', clearMatches: true);
+        return;
+      }
+      final hide = _ref.read(
+        settingsProvider.select((s) => s.stripVariantAnnotations),
+      );
+      final built = _exact.linesFor(
+        readerState.paragraphs,
+        hide,
+        activeTab.bookId,
+        onBuild: (_) => _exactBuilds++,
+      );
+      final lines = built is Future<List<List<String>>> ? await built : built;
+      if (!mounted || gen != _searchGen) return;
+
+      // The match runs in a regex job (spec K): a runaway pattern ends as
+      // too slow, and the next find or closing the bar cancels it.
+      final job = _regexJob = startRegexMatch(pattern, lines, maxPieces: 50);
+      final matched = await job.result;
+      if (!mounted || gen != _searchGen) return;
+      final ids = <(int, int)>[
+        for (final para in readerState.paragraphs)
+          for (final line in para.lines) (para.paraId, line.lineId),
+      ];
+      state = InBookSearchState(
+        showSearchBar: state.showSearchBar,
+        query: pattern,
+        matchParaIds: [for (final i in matched.hits) ids[i].$1],
+        matchLineIds: [for (final i in matched.hits) ids[i].$2],
+        matchIndex: matched.hits.isEmpty ? -1 : 0,
+        highlight: matched.pieces.join(' '),
+      );
+      debugPrint(
+        '[PERF] find regex ms=${perfSw.elapsedMilliseconds} '
+        'lines=${ids.length} matches=${matched.hits.length}',
+      );
+    } on RegexTooSlow {
+      if (mounted && gen == _searchGen) {
+        state = InBookSearchState(
+          showSearchBar: state.showSearchBar,
+          query: pattern,
+          patternTooSlow: true,
+        );
+      }
+    } on RegexCancelled {
+      // A newer find or closing the bar cancelled it; that one owns the state.
     } catch (e) {
       developer.log('[SEARCH] Error: $e', name: 'epitaka.reader.search');
       if (mounted && gen == _searchGen) {
@@ -440,7 +598,17 @@ class ReaderSearchNotifier extends StateNotifier<InBookSearchState> {
 
   /// How many normalized lines the cache holds.
   @visibleForTesting
-  int get cachedLineCount => _normalizedLines.length;
+  int get cachedLineCount => _normalized.lines.length;
+
+  /// How many lines the rx cache holds.
+  @visibleForTesting
+  int get cachedExactLineCount => _exact.lines.length;
+
+  int _exactBuilds = 0;
+
+  /// How many times a find built the rx cache.
+  @visibleForTesting
+  int get exactBuildCount => _exactBuilds;
 
   /// Test seam for [_normalizeLine] (private): lets tests assert that the
   /// variant-content mode follows the settings toggle.

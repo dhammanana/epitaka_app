@@ -161,10 +161,11 @@ void main() {
     tester,
   ) async {
     await _pump(tester);
-    // Measured with the old Card-per-book panel in this same layout. A border
-    // that pads the row (a Container's border does) moves both.
-    expect(tester.getTopLeft(find.text('§1')), const Offset(19.2, 159.6));
-    expect(tester.getTopLeft(find.text('Book One')), const Offset(37.2, 124.7));
+    // Measured with the old Card-per-book panel in this same layout, plus
+    // the 8 px gap now under the search box (spec J). A border that pads the
+    // row (a Container's border does) moves both.
+    expect(tester.getTopLeft(find.text('§1')), const Offset(19.2, 167.6));
+    expect(tester.getTopLeft(find.text('Book One')), const Offset(37.2, 132.7));
   });
 
   testWidgets('scrolling to the end shows the last hit', (tester) async {

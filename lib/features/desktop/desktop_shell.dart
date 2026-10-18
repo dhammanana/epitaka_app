@@ -233,7 +233,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                     visible: showLeftSidebar || showRightSidebar,
                   ),
                   // Left sidebar
-                  Container(
+                  SizedBox(
                     width: showLeftSidebar ? _leftWidth : 0,
                     child: showLeftSidebar
                         ? _buildSidebar(
@@ -265,7 +265,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                         setState(() => _rightWidth = _clampRight(w)),
                     onDragEnd: _persistWidths,
                   ),
-                  Container(
+                  SizedBox(
                     width: showRightSidebar ? _rightWidth : 0,
                     child: showRightSidebar
                         ? _buildSidebar(
@@ -395,13 +395,13 @@ class DesktopSidebar extends ConsumerWidget {
       case SidePanelType.history:
         return const HistoryPanel();
       case SidePanelType.annotations:
-        return const GlobalAnnotationsView();
+        return GlobalAnnotationsView(autoFocus: autoFocus);
       case SidePanelType.scriptConverter:
         return const ScriptConverterPanel();
       case SidePanelType.contents:
-        return const ContentsPanel();
+        return ContentsPanel(autoFocus: autoFocus);
       case SidePanelType.outline:
-        return const OutlinePanel();
+        return OutlinePanel(autoFocus: autoFocus);
       case SidePanelType.gavesana:
         return GavesanaPanel(autoFocus: autoFocus);
       case SidePanelType.translator:
@@ -639,7 +639,7 @@ class _PanelDividerState extends State<_PanelDivider> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return SizedBox(
       width: widget.visible ? _kDividerWidth : 0,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,

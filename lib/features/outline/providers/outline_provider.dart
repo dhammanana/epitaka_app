@@ -221,3 +221,8 @@ Future<List<OutlineGroup>> _loadFromHeadings(Ref ref, String bookId) async {
 
   return groups;
 }
+
+/// Whether the Outline search boxes (phone screen and desktop panel) take a
+/// regex over section titles (spec H). Session only, never saved, like the
+/// other rx flags.
+final outlineRegexProvider = StateProvider<bool>((ref) => false);

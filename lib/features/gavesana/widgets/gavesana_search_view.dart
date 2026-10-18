@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_dimensions.dart';
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
@@ -102,7 +102,7 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
       children: [
         // ── Search bar + AI settings ─────────────────────────
         Padding(
-          padding: EdgeInsets.fromLTRB(_hPad, AppDimensions.sm, _hPad, 0),
+          padding: searchBoxPadding(_boxSize),
           child: Row(
             children: [
               Expanded(child: _buildSearchField(colors, loc)),
@@ -124,13 +124,16 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
           ),
         ),
 
-        const SizedBox(height: AppDimensions.sm),
-
         // ── Body ─────────────────────────────────────────────
         Expanded(child: _buildBody(colors, aiState, searchState, loc)),
       ],
     );
   }
+
+  /// The sidebar's dense box is the panel size, the full screen's the
+  /// screen size (spec J).
+  SearchBoxSize get _boxSize =>
+      widget.dense ? SearchBoxSize.panel : SearchBoxSize.screen;
 
   Widget _buildSearchField(ColorScheme colors, AppLocalizations loc) {
     return TextField(
@@ -138,14 +141,10 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
       focusNode: _focusNode,
       inputFormatters: const [VelthuisInputFormatter(sanskrit: false)],
       textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
+      decoration: searchBoxDecoration(
+        context,
         hintText: loc.askAboutTipitaka,
-        isDense: widget.dense,
-        prefixIcon: IconButton(
-          icon: Icon(Icons.search, color: colors.onSurfaceVariant),
-          onPressed: _executeSearch,
-          tooltip: loc.search,
-        ),
+        size: _boxSize,
         suffixIcon: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -165,28 +164,13 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
             const VelthuisHelpIcon(sanskrit: false),
           ],
         ),
-        filled: true,
-        fillColor: colors.surfaceContainerHighest,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            widget.dense ? AppDimensions.radiusLg : AppDimensions.radiusXl,
-          ),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: widget.dense ? AppDimensions.sm : AppDimensions.md,
-          vertical: widget.dense ? 8 : 12,
+        prefixIcon: IconButton(
+          icon: Icon(Icons.search, color: colors.onSurfaceVariant),
+          onPressed: _executeSearch,
+          tooltip: loc.search,
         ),
       ),
-      style: AppTypography.bodyPali.copyWith(
-        fontFamily: ref
-            .watch(
-              settingsProvider.select((s) => s.typography.pali.fontFamily),
-            )
-            .fontFamily,
-        fontSize: widget.dense ? 14 : 16,
-        color: colors.onSurface,
-      ),
+      style: searchBoxTextStyle(context, size: _boxSize),
       onChanged: _onSearchChanged,
       onSubmitted: (_) => _executeSearch(),
     );

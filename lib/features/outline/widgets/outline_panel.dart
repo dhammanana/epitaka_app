@@ -9,8 +9,11 @@ import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../search/services/regex_search.dart';
 import '../models/outline_models.dart';
 import '../providers/outline_provider.dart';
 import 'outline_section_sheet.dart';
@@ -28,7 +31,6 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
 
-  bool _searchActive = false;
   String _searchQuery = '';
   final Set<int> _collapsedGroups = {};
   final Set<int> _collapsedSuttas = {};
@@ -38,15 +40,20 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
     super.initState();
     if (widget.autoFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() => _searchActive = true);
-        _searchFocusNode.requestFocus();
+        if (mounted) _searchFocusNode.requestFocus();
       });
     }
   }
 
+  /// The Rx filter over the section titles: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
+
   @override
   void dispose() {
+    _rxFilter.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -88,66 +95,58 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
     }
 
     final outlineAsync = ref.watch(outlineProvider(activeTab.bookId));
+    // rx: the raw text stays the pattern; it matches titles with exact
+    // diacritics (spec H). An invalid one filters to nothing.
+    final rxOn = ref.watch(outlineRegexProvider);
+    final patternError = rxOn && _searchQuery.trim().isNotEmpty
+        ? regexError(_searchQuery)
+        : null;
 
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppDimensions.sm,
-            0,
-            AppDimensions.sm,
-            0,
-          ),
-          child: _searchActive
-              ? TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  inputFormatters: const [VelthuisInputFormatter()],
-                  autofocus: true,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.onSurface,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: loc.searchContents,
-                    isDense: true,
-                    border: InputBorder.none,
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () {
-                            setState(() {
-                              _searchActive = false;
-                              _searchQuery = '';
-                              _searchController.clear();
-                            });
-                          },
-                        ),
-                        const VelthuisHelpIcon(),
-                      ],
-                    ),
-                  ),
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        loc.outline,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+          padding: searchBoxPadding(SearchBoxSize.panel),
+          // The box is always there, like Library and Search: the sidebar
+          // already names the panel (spec I).
+          child: TextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+            inputFormatters: rxOn
+                ? const []
+                : const [VelthuisInputFormatter()],
+            style: searchBoxTextStyle(context),
+            decoration: searchBoxDecoration(
+              context,
+              hintText: loc.searchContents,
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_searchQuery.isNotEmpty)
                     IconButton(
-                      icon: const Icon(Icons.search, size: 18),
-                      color: colors.onSurfaceVariant,
-                      onPressed: () => setState(() => _searchActive = true),
+                      icon: const Icon(Icons.clear, size: 18),
+                      tooltip: loc.clear,
+                      onPressed: () => setState(() {
+                        _searchQuery = '';
+                        _searchController.clear();
+                      }),
                     ),
-                  ],
-                ),
+                  RegexToggleButton(
+                    on: rxOn,
+                    onToggle: () =>
+                        ref.read(outlineRegexProvider.notifier).state = !rxOn,
+                  ),
+                  if (!rxOn) const VelthuisHelpIcon(),
+                ],
+              ),
+              errorText: patternError != null
+                  ? loc.invalidPattern(patternError)
+                  : rxOn && _rxFilter.isTooSlow(_searchQuery)
+                  ? loc.patternTooSlow
+                  : null,
+            ),
+            onChanged: (v) => setState(() => _searchQuery = v),
+          ),
         ),
         Divider(color: colors.outlineVariant, height: 1),
         Expanded(
@@ -166,9 +165,35 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
                   ),
                 );
               }
-              final query = normalizePaliFuzzy(
-                _searchQuery.trim(),
-              ).toLowerCase();
+              final query = _searchQuery.trim().isEmpty
+                  ? ''
+                  : rxOn
+                  ? _searchQuery
+                  : normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
+              // rx runs in a regex job (spec K); until it answers, and for
+              // an invalid pattern, nothing matches.
+              final rxText = rxOn ? query : '';
+              final flat = [
+                for (final g in groups)
+                  for (final s in g.suttas) ...s.items,
+              ];
+              final hits = _rxFilter.hitsFor(
+                rxText.isNotEmpty && patternError == null ? rxText : '',
+                groups,
+                () => [
+                  for (final item in flat) [item.title.toLowerCase()],
+                ],
+              );
+              final rxItems = Set<OutlineItem>.identity()
+                ..addAll([
+                  if (patternError == null && hits != null)
+                    for (final i in hits) flat[i],
+                ]);
+              bool matches(OutlineItem item) => rxText.isNotEmpty
+                  ? rxItems.contains(item)
+                  : normalizePaliFuzzy(
+                      item.title,
+                    ).toLowerCase().contains(query);
               return ListView.builder(
                 padding: const EdgeInsets.fromLTRB(
                   AppDimensions.xs,
@@ -176,10 +201,11 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
                   AppDimensions.sm,
                   AppDimensions.sm,
                 ),
-                itemCount: _rowCount(groups, query),
+                itemCount: _rowCount(groups, query, matches),
                 itemBuilder: (context, i) => _buildRow(
                   groups,
                   query,
+                  matches,
                   i,
                   colors,
                   script,
@@ -194,7 +220,11 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
     );
   }
 
-  int _rowCount(List<OutlineGroup> groups, String query) {
+  int _rowCount(
+    List<OutlineGroup> groups,
+    String query,
+    bool Function(OutlineItem item) matches,
+  ) {
     var n = 0;
     for (var gi = 0; gi < groups.length; gi++) {
       final group = groups[gi];
@@ -206,9 +236,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
         final sutta = group.suttas[si];
         if (query.isNotEmpty) {
           for (final item in sutta.items) {
-            if (normalizePaliFuzzy(item.title).toLowerCase().contains(query)) {
-              n++;
-            }
+            if (matches(item)) n++;
           }
           continue;
         }
@@ -223,6 +251,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   Widget _buildRow(
     List<OutlineGroup> groups,
     String query,
+    bool Function(OutlineItem item) matches,
     int index,
     ColorScheme colors,
     Script script,
@@ -257,9 +286,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
         final sutta = group.suttas[si];
         if (query.isNotEmpty) {
           for (final item in sutta.items) {
-            if (!normalizePaliFuzzy(item.title).toLowerCase().contains(query)) {
-              continue;
-            }
+            if (!matches(item)) continue;
             if (n++ == index) {
               return _PanelItemTile(
                 item: item,

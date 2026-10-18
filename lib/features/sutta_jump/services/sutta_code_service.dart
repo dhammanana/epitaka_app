@@ -1,4 +1,5 @@
 import '../../../core/database/epitaka_database.dart';
+import '../../search/services/regex_search.dart';
 import '../../../core/utils/fuzzy_matcher/fuzzy_matcher_library.dart'
     show normalizeQuery;
 
@@ -417,6 +418,56 @@ List<SuttaTarget> searchSuttaNames(SuttaLookupCache cache, String input) {
       if (normalizeQuery(bookName).replaceAll(' ', '').contains(query)) {
         add(row);
       }
+    }
+  }
+  return results;
+}
+
+/// Regex name lookup for rx mode (spec G): [pattern] over the lower-cased
+/// heading title, then the lower-cased book name — the same two-pass order
+/// as [searchSuttaNames]. Diacritics are exact; `^` and `$` are the bounds
+/// of the one title. Codes are not searched.
+///
+/// The match is a regex job (spec K): a runaway pattern throws
+/// [RegexTooSlow], and [onJob] gets the job so the caller can cancel it.
+Future<List<SuttaTarget>> searchSuttaNamesRegex(
+  SuttaLookupCache cache,
+  String pattern, {
+  void Function(RegexJob<Object?> job)? onJob,
+}) async {
+  final rows = cache.rows;
+  // Titles first, then each row's book name, in one job.
+  final job = startRegexMatch(pattern, [
+    for (final row in rows) [row.title.toLowerCase()],
+    for (final row in rows)
+      [(cache.bookNames[row.bookId] ?? '').toLowerCase()],
+  ]);
+  onJob?.call(job);
+  final hits = (await job.result).hits.toSet();
+  bool titleHit(int i) => hits.contains(i);
+  bool bookHit(int i) => hits.contains(rows.length + i);
+
+  final seen = <String>{};
+  final results = <SuttaTarget>[];
+  void add(SuttaLookupRow row) {
+    final target = SuttaTarget(
+      bookId: row.bookId,
+      paraId: row.paraId,
+      displayCode: _primaryCode(row),
+      title: row.title,
+    );
+    if (seen.add(target._identity)) results.add(target);
+  }
+
+  // Title hits outrank book-name hits.
+  for (var pass = 0; pass < 2 && results.length < _maxResults; pass++) {
+    for (var i = 0; i < rows.length; i++) {
+      if (results.length >= _maxResults) break;
+      if (titleHit(i)) {
+        if (pass == 0) add(rows[i]);
+        continue;
+      }
+      if (pass == 1 && bookHit(i)) add(rows[i]);
     }
   }
   return results;

@@ -27,3 +27,8 @@ final contentsProvider =
           ))
       .toList();
 });
+
+/// Whether the Contents search boxes (phone screen and desktop panel)
+/// take a regex over heading titles (spec H). Session only, never saved,
+/// like the other rx flags.
+final contentsRegexProvider = StateProvider<bool>((ref) => false);

@@ -23,6 +23,9 @@ class _FakeSearchNotifier extends SearchNotifier {
 
   final calls = <({String query, int distance})>[];
 
+  /// The `regex` flag of each call in [calls].
+  final regexFlags = <bool>[];
+
   @override
   Future<void> ensureIndexBuilt() async {}
 
@@ -30,8 +33,13 @@ class _FakeSearchNotifier extends SearchNotifier {
   Future<List<SearchSuggestion>> getSuggestions(String prefix) async => [];
 
   @override
-  Future<void> search({required String query, int distance = 0}) async {
+  Future<void> search({
+    required String query,
+    int distance = 0,
+    bool regex = false,
+  }) async {
     calls.add((query: query, distance: distance));
+    regexFlags.add(regex);
   }
 }
 
@@ -89,6 +97,8 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField).first);
     expect(field.controller!.text, 'dhamma vinaya');
     expect(fake.calls, [(query: 'dhamma vinaya', distance: 3)]);
+    // A search from outside the app always runs with Rx off.
+    expect(fake.regexFlags, [false]);
   });
 
   testWidgets(
