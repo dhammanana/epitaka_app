@@ -13,9 +13,11 @@ import '../../../core/models/translation_version.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../indexing/index_controller.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../services/regex_search.dart';
 import 'search_history_provider.dart';
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -88,6 +90,11 @@ class SearchResultItem {
   /// original query terms — the whole passage is relevant.
   final bool showAllLines;
 
+  /// Regex mode: the pieces of text the pattern matched in this paragraph.
+  /// Rows and the reader highlight these as ordinary words, so no highlight
+  /// code has to run the pattern itself.
+  final List<String>? highlightTerms;
+
   /// Convenience: get the full paragraph Pāli text (joined lines).
   String get paliText => lines.map((l) => l.pali).join(' ');
 
@@ -107,6 +114,7 @@ class SearchResultItem {
     required this.lines,
     this.paliSnippet,
     this.showAllLines = false,
+    this.highlightTerms,
   });
 }
 
@@ -116,7 +124,7 @@ class BookResultSummary {
   final int totalCount;
   bool isExpanded;
 
-  /// Pages of loaded results (each page is `kSearchPageSize` items max).
+  /// Pages of loaded results, one per window of hits (see [fullyLoaded]).
   final List<List<SearchResultItem>> loadedPages;
 
   /// When true (AI-found results), treat the book as fully loaded so no
@@ -124,8 +132,14 @@ class BookResultSummary {
   final bool forceFullyLoaded;
 
   /// Whether we've loaded all available results for this book.
+  ///
+  /// A page can hold up to a window of Pāli hits plus a window of
+  /// translation-only hits, so every hit can be loaded before the pages
+  /// reach [totalCount] at 30 each.
   bool get fullyLoaded =>
-      forceFullyLoaded || loadedPages.length * kSearchPageSize >= totalCount;
+      forceFullyLoaded ||
+      loadedPages.length * kSearchPageSize >= totalCount ||
+      loadedCount >= totalCount;
 
   int get loadedCount => loadedPages.fold(0, (sum, page) => sum + page.length);
 
@@ -189,6 +203,9 @@ class SearchResults extends SearchState {
   /// Heading matches found in the headings table.
   final List<HeadingResult> headings;
 
+  /// [query] is a regular expression (the rx button was on).
+  final bool regex;
+
   const SearchResults({
     required this.query,
     required this.totalResults,
@@ -197,12 +214,37 @@ class SearchResults extends SearchState {
     this.distance = 0,
     this.enabledCategories = kAllCategories,
     this.enabledNikayas = kAllNikayas,
+    this.regex = false,
   });
 }
 
 class SearchError extends SearchState {
   final String message;
-  const SearchError(this.message);
+
+  /// Set when a regex did not compile: why. The screen shows it as
+  /// "Invalid pattern: …" in the user's language.
+  final String? patternError;
+
+  /// The query the error belongs to; the field's error text hides once the
+  /// box text moves on.
+  final String? query;
+
+  /// The regex scan ran past its time limit (spec K).
+  final bool patternTooSlow;
+
+  const SearchError(
+    this.message, {
+    this.patternError,
+    this.query,
+    this.patternTooSlow = false,
+  });
+
+  /// "Invalid pattern: …" or "Pattern too slow", or null for other errors.
+  String? patternMessage(AppLocalizations loc) => patternTooSlow
+      ? loc.patternTooSlow
+      : patternError == null
+      ? null
+      : loc.invalidPattern(patternError!);
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────
@@ -220,10 +262,33 @@ class IncomingSearch {
 
 final incomingSearchProvider = StateProvider<IncomingSearch?>((ref) => null);
 
+/// The rx button of the Search screen and the Search sidebar. Not saved: a
+/// regex mode left on from an earlier day would make plain searches look
+/// broken.
+final searchRegexProvider = StateProvider<bool>((ref) => false);
+
+/// Starts a regex scan of the Pāli search copy. Tests replace it to scan a
+/// fixture file and to count the scans.
+final regexScanProvider =
+    Provider<Future<RegexJob<List<RegexHit>>> Function(String pattern)>(
+      (ref) =>
+          (pattern) async =>
+              scanPaliRegex(await AppDatabase.defaultPath(), pattern),
+    );
+
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
   ref,
 ) {
   return SearchNotifier(ref);
+});
+
+typedef _LoadPoint = ({
+  String query,
+  int distance,
+  bool regex,
+  int pageCount,
+  int totalCount,
+  Set<int> seen,
 });
 
 typedef RawHeading = ({
@@ -252,7 +317,29 @@ class SearchNotifier extends StateNotifier<SearchState> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _cancelRegexJobs();
     super.dispose();
+  }
+
+  /// The regex jobs of the running search: the scan, the headings, the
+  /// result pages. A new search, Clear and dispose cancel them (spec K).
+  final Set<RegexJob<Object?>> _regexJobs = {};
+
+  void _cancelRegexJobs() {
+    for (final job in _regexJobs) {
+      job.cancel();
+    }
+    _regexJobs.clear();
+  }
+
+  /// Await [job] as one of the running search's jobs.
+  Future<T> _awaitRegexJob<T>(RegexJob<T> job) async {
+    _regexJobs.add(job);
+    try {
+      return await job.result;
+    } finally {
+      _regexJobs.remove(job);
+    }
   }
 
   /// Public getters for current filter state.
@@ -367,7 +454,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<void> _reSearch() async {
     final current = state;
     if (current is SearchResults) {
-      await search(query: current.query, distance: current.distance);
+      await search(
+        query: current.query,
+        distance: current.distance,
+        regex: current.regex,
+      );
     } else if (current is SearchIdle) {
       // No search active yet — still emit a fresh idle state so the
       // filter chips (which read from this provider) rebuild with the
@@ -410,20 +501,44 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Search is always diacritic-insensitive (fuzzy): the FTS index is
   /// built with `remove_diacritics 1`, so the database layer normalizes
   /// the query the same way the index text was cleaned.
-  Future<void> search({required String query, int distance = 0}) async {
+  ///
+  /// With [regex], [query] is a pattern run over the Pāli search copy of
+  /// every paragraph, with exact diacritics (see [scanPaliRegex]). It is
+  /// kept as typed, spaces included, and stays out of the search history:
+  /// re-run from there in normal mode it would mean something else.
+  Future<void> search({
+    required String query,
+    int distance = 0,
+    bool regex = false,
+  }) async {
     final gen = ++_searchGen;
-    final normalized = query.trim();
+    _cancelRegexJobs();
+    final normalized = regex ? query : query.trim();
+    if (regex) distance = 0;
     // A query made only of punctuation (",", "…") has no searchable words
     // after cleaning — treat it like an empty query instead of running a
     // pointless search.
-    if (normalized.isEmpty || cleanPaliForIndexing(normalized).isEmpty) {
+    if (normalized.trim().isEmpty ||
+        (!regex && cleanPaliForIndexing(normalized).isEmpty)) {
       state = const SearchIdle();
       return;
     }
 
-    try {
-      _ref.read(searchHistoryProvider.notifier).add(normalized);
-    } catch (_) {}
+    if (regex) {
+      final error = regexError(normalized);
+      if (error != null) {
+        state = SearchError(
+          'Invalid pattern: $error',
+          patternError: error,
+          query: normalized,
+        );
+        return;
+      }
+    } else {
+      try {
+        _ref.read(searchHistoryProvider.notifier).add(normalized);
+      } catch (_) {}
+    }
     state = const SearchLoading();
 
     try {
@@ -438,60 +553,41 @@ class SearchNotifier extends StateNotifier<SearchState> {
       if (gen != _searchGen) return;
 
       // ── Count results by book ──────────────────────────────────────
-      // Books, the headings bulk load, and both count queries run
-      // concurrently so a cold headings cache overlaps the FTS counts
-      // instead of stalling behind them.
+      // Books, the headings bulk load, and the count query run
+      // concurrently so a cold headings cache overlaps the FTS count
+      // instead of stalling behind it.
       final countSw = Stopwatch()..start();
       final epitakaDbFuture = _epitakaDb();
       final headingsFuture = epitakaDbFuture.then<List<RawHeading>>(
         (db) => _allHeadings(db),
         onError: (_) => <RawHeading>[],
       );
-      final activeLang = _activeTranslationLang();
-      final countFutures = <Future<Map<String, int>>>[
-        () async {
-          try {
-            return await appDb.countPaliResultsByBook(
-              normalized,
-              distance: distance,
-            );
-          } catch (_) {
-            return <String, int>{};
-          }
-        }(),
-      ];
-      if (activeLang != null) {
-        countFutures.add(() async {
-          try {
-            return await appDb.countTranslationResultsByBook(
-              activeLang,
-              normalized,
-              distance: distance,
-            );
-          } catch (_) {
-            return <String, int>{};
-          }
-        }());
-      }
+      final countFuture = regex
+          // A failed scan reaches the catch below and shows as an error,
+          // not as "no results".
+          ? _regexCounts(gen, normalized)
+          : () async {
+              try {
+                return await appDb.countResultsByBook(
+                  normalized,
+                  langCode: _activeTranslationLang(),
+                  distance: distance,
+                );
+              } catch (_) {
+                return <String, int>{};
+              }
+            }();
       final waited = await Future.wait([
         _allBooks(),
         headingsFuture,
-        ...countFutures,
+        countFuture,
       ]);
       if (gen != _searchGen) return;
 
       final allBooks = waited[0] as List<BookInfo>;
       final rawHeadings = waited[1] as List<RawHeading>;
       final bookMap = <String, BookInfo>{for (final b in allBooks) b.bookId: b};
-
-      final combinedCounts = <String, int>{};
-      for (var i = 2; i < waited.length; i++) {
-        final result = waited[i] as Map<String, int>;
-        for (final entry in result.entries) {
-          combinedCounts[entry.key] =
-              (combinedCounts[entry.key] ?? 0) + entry.value;
-        }
-      }
+      final combinedCounts = waited[2] as Map<String, int>;
 
       debugPrint(
         '[PERF] search count ms=${countSw.elapsedMilliseconds} '
@@ -500,7 +596,22 @@ class SearchNotifier extends StateNotifier<SearchState> {
       );
 
       // ── Search headings ───────────────────────────────────────────
-      final headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
+      final List<HeadingResult> headingResults;
+      if (regex) {
+        final matched = await _awaitRegexJob(
+          startRegexMatch(normalized, [
+            for (final h in rawHeadings) [h.title],
+          ]),
+        );
+        if (gen != _searchGen) return;
+        headingResults = _collectHeadings(
+          [for (final i in matched.hits) rawHeadings[i]],
+          bookMap,
+          (_) => true,
+        );
+      } else {
+        headingResults = _filterHeadings(rawHeadings, normalized, bookMap);
+      }
 
       // The currently opened book (if any) is pinned to the front of both
       // headings and book groups, so hits in the book being read come first.
@@ -522,6 +633,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
           distance: distance,
           enabledCategories: _enabledCategories,
           enabledNikayas: _enabledNikayas,
+          regex: regex,
         );
         return;
       }
@@ -574,6 +686,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         distance: distance,
         enabledCategories: _enabledCategories,
         enabledNikayas: _enabledNikayas,
+        regex: regex,
       );
 
       // If auto-expanded, load every book concurrently instead of one
@@ -589,10 +702,56 @@ class SearchNotifier extends StateNotifier<SearchState> {
           summaries.any((s) => s.book.bookId == activeBookId)) {
         await _loadBookPages(activeBookId, fetchAll: true);
       }
+    } on RegexTooSlow {
+      if (gen != _searchGen) return;
+      state = SearchError(
+        'Pattern too slow',
+        query: normalized,
+        patternTooSlow: true,
+      );
+    } on RegexCancelled {
+      // Only a newer search or Clear cancels; that one owns the state.
     } catch (e) {
       if (gen != _searchGen) return;
       state = SearchError('Search failed: $e');
     }
+  }
+
+  /// The regex hits of search [_regexHitsGen], per book, paragraphs in text
+  /// order. One scan serves the counts and every page: the scan reads the
+  /// whole canon, a book's page only slices this list.
+  Map<String, List<int>> _regexHits = const {};
+  int _regexHitsGen = -1;
+
+  /// The pattern [_regexHits] answer. The hits do not depend on the
+  /// category or piṭaka filters, so a filter change reuses them instead of
+  /// scanning the canon again (about 1 s).
+  String? _regexHitsPattern;
+
+  Future<Map<String, int>> _regexCounts(int gen, String pattern) async {
+    if (pattern != _regexHitsPattern) {
+      final sw = Stopwatch()..start();
+      final job = await _ref.read(regexScanProvider)(pattern);
+      if (gen != _searchGen) {
+        job.cancel();
+        throw const RegexCancelled();
+      }
+      final hits = await _awaitRegexJob(job);
+      debugPrint(
+        '[PERF] search regex ms=${sw.elapsedMilliseconds} hits=${hits.length}',
+      );
+      final byBook = <String, List<int>>{};
+      for (final h in hits) {
+        byBook.putIfAbsent(h.bookId, () => []).add(h.paraId);
+      }
+      for (final ids in byBook.values) {
+        ids.sort();
+      }
+      _regexHits = byBook;
+      _regexHitsPattern = pattern;
+    }
+    if (gen == _searchGen) _regexHitsGen = gen;
+    return {for (final e in _regexHits.entries) e.key: e.value.length};
   }
 
   // ── Load results for a specific book ──────────────────────────────────
@@ -642,29 +801,42 @@ class SearchNotifier extends StateNotifier<SearchState> {
     ({int pages, int hits, int commits}) done() =>
         (pages: pages, hits: hits, commits: commits);
 
-    var point = _bookLoadPoint(bookId);
-    if (point == null) return done();
-    final first = _bookWindows(point.pageCount, point.totalCount).first;
-    final firstRows = await _fetchBookRows(
-      bookId: bookId,
-      query: point.query,
-      distance: point.distance,
-      offset: first.offset,
-      limit: first.pageSize,
-    );
-    if (gen != _searchGen) return done();
-    final firstItems = (await _buildWindowItems(bookId, point.query, [
-      firstRows,
-    ])).single;
-    if (gen != _searchGen) return done();
-    if (firstItems.isEmpty) return done();
-    if (!_commitBookPages(bookId, [firstItems], expectedPageCount: point.pageCount)) {
-      return done();
+    // A window whose paragraphs were all shown on earlier pages adds an
+    // empty page and moves on, so "Show more" always shows something new.
+    _LoadPoint? point;
+    while (true) {
+      point = _bookLoadPoint(bookId);
+      if (point == null) return done();
+      final first = _bookWindows(point.pageCount, point.totalCount).first;
+      final firstRows = await _fetchBookRows(
+        bookId: bookId,
+        query: point.query,
+        distance: point.distance,
+        regex: point.regex,
+        offset: first.offset,
+        limit: first.pageSize,
+      );
+      if (gen != _searchGen) return done();
+      final firstItems = (await _buildWindowItems(
+        bookId,
+        point.query,
+        [firstRows],
+        seen: point.seen,
+        regex: point.regex,
+      )).single;
+      if (gen != _searchGen) return done();
+      if (!_commitBookPages(bookId, [
+        firstItems,
+      ], expectedPageCount: point.pageCount)) {
+        return done();
+      }
+      pages++;
+      hits += firstItems.length;
+      commits++;
+      if (_rowsEnd(firstRows, first.pageSize)) return done();
+      if (firstItems.isNotEmpty) break;
     }
-    pages++;
-    hits += firstItems.length;
-    commits++;
-    if (!fetchAll || firstItems.length < first.pageSize) return done();
+    if (!fetchAll) return done();
 
     point = _bookLoadPoint(bookId);
     if (point == null) return done();
@@ -675,6 +847,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       bookId: bookId,
       query: point.query,
       distance: point.distance,
+      regex: point.regex,
       offset: start,
       limit: -1,
     );
@@ -684,24 +857,29 @@ class SearchNotifier extends StateNotifier<SearchState> {
       return rows.sublist(from, (from + n).clamp(0, rows.length));
     }
 
-    final built = await _buildWindowItems(bookId, point.query, [
+    final windowRows = [
       for (final w in windows)
         (
           pali: cut(restRows.pali, w.offset, w.pageSize),
           trans: cut(restRows.trans, w.offset, w.pageSize),
         ),
-    ]);
+    ];
+    final built = await _buildWindowItems(
+      bookId,
+      point.query,
+      windowRows,
+      seen: point.seen,
+      regex: point.regex,
+    );
     if (gen != _searchGen) return done();
 
-    // The same stop rules as one fetch per page: an empty page ends the
-    // book, and so does a page shorter than its window.
+    // The same stop rule as one fetch per page: a window that runs out of
+    // rows ends the book.
     final accepted = <List<SearchResultItem>>[];
     for (var i = 0; i < windows.length; i++) {
-      if (built[i].isEmpty) break;
       accepted.add(built[i]);
-      if (built[i].length < windows[i].pageSize) break;
+      if (_rowsEnd(windowRows[i], windows[i].pageSize)) break;
     }
-    if (accepted.isEmpty) return done();
     if (!_commitBookPages(bookId, accepted, expectedPageCount: point.pageCount)) {
       return done();
     }
@@ -712,9 +890,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   /// Where [bookId]'s next page starts, or `null` when the book is gone
-  /// from the results or fully loaded.
-  ({String query, int distance, int pageCount, int totalCount})?
-  _bookLoadPoint(String bookId) {
+  /// from the results or fully loaded. [seen] holds the paragraphs already
+  /// on its pages.
+  _LoadPoint? _bookLoadPoint(String bookId) {
     final current = state;
     if (current is! SearchResults) return null;
     final idx = current.bookSummaries.indexWhere(
@@ -726,10 +904,21 @@ class SearchNotifier extends StateNotifier<SearchState> {
     return (
       query: current.query,
       distance: current.distance,
+      regex: current.regex,
       pageCount: summary.loadedPages.length,
       totalCount: summary.totalCount,
+      seen: {
+        for (final page in summary.loadedPages)
+          for (final item in page) item.paraId,
+      },
     );
   }
+
+  /// Whether a window's rows ran out: the hits end inside it.
+  static bool _rowsEnd(
+    ({List<SearchResultRow> pali, List<SearchResultRow> trans}) rows,
+    int pageSize,
+  ) => rows.pali.length < pageSize && rows.trans.length < pageSize;
 
   /// The page windows after the first [pageCount] pages: each starts at
   /// `page * kSearchPageSize`, and the last is cut to the hits that remain.
@@ -786,20 +975,42 @@ class SearchNotifier extends StateNotifier<SearchState> {
       distance: current.distance,
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
+      regex: current.regex,
     );
     return true;
   }
 
   /// The Pāli and translation FTS rows of [bookId] in rank order, [limit]
-  /// rows of each from [offset].
+  /// rows of each from [offset]. With [regex], the cached regex hits in text
+  /// order, and no translation rows.
   Future<({List<SearchResultRow> pali, List<SearchResultRow> trans})>
   _fetchBookRows({
     required String bookId,
     required String query,
     required int distance,
+    required bool regex,
     required int offset,
     required int limit,
   }) async {
+    if (regex) {
+      final ids = _regexHitsGen == _searchGen
+          ? (_regexHits[bookId] ?? const <int>[])
+          : const <int>[];
+      final from = offset.clamp(0, ids.length);
+      final to = limit < 0 ? ids.length : (from + limit).clamp(0, ids.length);
+      return (
+        pali: [
+          for (final id in ids.sublist(from, to))
+            SearchResultRow(
+              bookId: bookId,
+              vripage: '',
+              snippet: '',
+              firstParaId: id,
+            ),
+        ],
+        trans: const <SearchResultRow>[],
+      );
+    }
     final appDb = await _ref.read(appDbProvider.future);
     final activeLang = _activeTranslationLang();
 
@@ -834,37 +1045,47 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   /// Builds one page of [SearchResultItem]s per window of FTS rows. Each
   /// page lists its Pāli paragraphs, then its translation-only ones, as a
-  /// page always has; the lines of every page are fetched together.
+  /// page always has; the lines of every page are fetched together. A
+  /// paragraph in [seen] or on an earlier window is left out, so one that
+  /// matched in the Pāli on one page and in the translation on another is
+  /// listed once.
   Future<List<List<SearchResultItem>>> _buildWindowItems(
     String bookId,
     String query,
-    List<({List<SearchResultRow> pali, List<SearchResultRow> trans})> windows,
-  ) async {
+    List<({List<SearchResultRow> pali, List<SearchResultRow> trans})> windows, {
+    Set<int> seen = const {},
+    bool regex = false,
+  }) async {
     final activeLang = _activeTranslationLang();
-    final searchWords = normalizePaliFuzzy(
-      query,
-    ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-
+    final searchWords = regex
+        ? const <String>[]
+        : normalizePaliFuzzy(
+            query,
+          ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final listed = {...seen};
     final windowParaIds = <List<int>>[];
     final windowSnippets = <Map<int, SearchResultRow>>[];
     for (final (:pali, :trans) in windows) {
       // Merge para_ids from both Pali and translation results
-      final seenParaIds = <int>{};
+      final paraIds = <int>[];
       final allSnippets = <int, SearchResultRow>{};
 
       for (final row in pali) {
         if (row.firstParaId == null) continue;
-        seenParaIds.add(row.firstParaId!);
-        allSnippets[row.firstParaId!] = row;
-      }
-      for (final row in trans) {
-        if (row.firstParaId == null) continue;
-        if (seenParaIds.add(row.firstParaId!)) {
-          // Translation-only match — store snippet
+        if (listed.add(row.firstParaId!)) {
+          paraIds.add(row.firstParaId!);
           allSnippets[row.firstParaId!] = row;
         }
       }
-      windowParaIds.add(seenParaIds.toList());
+      for (final row in trans) {
+        if (row.firstParaId == null) continue;
+        if (listed.add(row.firstParaId!)) {
+          // Translation-only match — store snippet
+          paraIds.add(row.firstParaId!);
+          allSnippets[row.firstParaId!] = row;
+        }
+      }
+      windowParaIds.add(paraIds);
       windowSnippets.add(allSnippets);
     }
 
@@ -977,11 +1198,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // normalizePaliFuzzy so diacritics don't cause a mismatch — the
       // FTS index stores normalized text, but the sentences table stores
       // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
-      final paliNormalized = normalizePaliFuzzy(pali);
-      bool isMatch = searchWords.any((w) => paliNormalized.contains(w));
-      if (!isMatch && lineTrans != null) {
-        final transNormalized = normalizePaliFuzzy(lineTrans);
-        isMatch = searchWords.any((w) => transNormalized.contains(w));
+      // Regex mode marks its lines below, in a regex job.
+      final bool isMatch;
+      if (regex) {
+        isMatch = false;
+      } else {
+        final paliNormalized = normalizePaliFuzzy(pali);
+        var matched = searchWords.any((w) => paliNormalized.contains(w));
+        if (!matched && lineTrans != null) {
+          final transNormalized = normalizePaliFuzzy(lineTrans);
+          matched = searchWords.any((w) => transNormalized.contains(w));
+        }
+        isMatch = matched;
       }
 
       paraLines
@@ -994,6 +1222,42 @@ class SearchNotifier extends StateNotifier<SearchState> {
               isMatch: isMatch,
             ),
           );
+    }
+
+    // A regex can match across a line break, so the paragraph matches but
+    // no single line does: then every line is shown. A mark job that is too
+    // slow or cancelled leaves every line shown and nothing highlighted.
+    final highlightTerms = <int, List<String>>{};
+    if (regex) {
+      final pids = paraLines.keys.toList();
+      List<({List<bool> lines, List<String> pieces})>? marks;
+      try {
+        marks = await _awaitRegexJob(
+          _startRegexMarks(query, [
+            for (final pid in pids) [for (final l in paraLines[pid]!) l.pali],
+          ]),
+        );
+      } on RegexTooSlow {
+        marks = null;
+      } on RegexCancelled {
+        marks = null;
+      }
+      for (var i = 0; i < pids.length; i++) {
+        final pid = pids[i];
+        final lines = paraLines[pid]!;
+        final mark = marks?[i];
+        final anyLine = mark != null && mark.lines.any((m) => m);
+        if (mark != null) highlightTerms[pid] = mark.pieces;
+        paraLines[pid] = [
+          for (var j = 0; j < lines.length; j++)
+            SearchResultLine(
+              lineId: lines[j].lineId,
+              pali: lines[j].pali,
+              translation: lines[j].translation,
+              isMatch: !anyLine || mark.lines[j],
+            ),
+        ];
+      }
     }
 
     // Build SearchResultItems — only include paras that had lines
@@ -1009,6 +1273,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
                 paliSnippet: windowSnippets[w][pid]?.snippet.isNotEmpty == true
                     ? windowSnippets[w][pid]!.snippet
                     : null,
+                highlightTerms: highlightTerms[pid],
               ),
         ],
     ];
@@ -1040,6 +1305,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       distance: current.distance,
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
+      regex: current.regex,
     );
 
     await _loadBookPage(summaryIndex);
@@ -1068,6 +1334,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       distance: current.distance,
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
+      regex: current.regex,
     );
   }
 
@@ -1308,20 +1575,24 @@ class SearchNotifier extends StateNotifier<SearchState> {
     final words = normalizePaliFuzzy(
       cleaned,
     ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty || headings.isEmpty) return [];
+    if (words.isEmpty) return [];
+    return _collectHeadings(
+      headings,
+      bookMap,
+      (h) => h.key.isNotEmpty && words.every(h.key.contains),
+    );
+  }
 
+  /// The first 10 [headings] that pass [matches], one per book and title.
+  List<HeadingResult> _collectHeadings(
+    List<RawHeading> headings,
+    Map<String, BookInfo> bookMap,
+    bool Function(RawHeading) matches,
+  ) {
     final results = <HeadingResult>[];
     final seen = <String>{};
     for (final h in headings) {
-      if (h.key.isEmpty) continue;
-      var matches = true;
-      for (final word in words) {
-        if (!h.key.contains(word)) {
-          matches = false;
-          break;
-        }
-      }
-      if (!matches) continue;
+      if (!matches(h)) continue;
 
       // Deduplicate by book_id + title to avoid showing the same
       // heading multiple times (e.g. when multiple para_ids match).
@@ -1408,6 +1679,33 @@ class SearchNotifier extends StateNotifier<SearchState> {
     return headings;
   }
 
+  // Static, so the job's closure cannot capture the notifier, which cannot
+  // be sent to another isolate.
+  static RegexJob<List<({List<bool> lines, List<String> pieces})>>
+  _startRegexMarks(String pattern, List<List<String>> paragraphs) =>
+      startRegexJob(() => _regexMarks(pattern, paragraphs));
+
+  /// For each paragraph's Pāli lines: which lines [pattern] matches in
+  /// their own search copy, and up to 20 distinct pieces it matches in the
+  /// paragraph's copy, cleaned as the index cleaned it.
+  static List<({List<bool> lines, List<String> pieces})> _regexMarks(
+    String pattern,
+    List<List<String>> paragraphs,
+  ) {
+    final regex = compileSearchRegex(pattern);
+    String copy(String text) => cleanPaliForIndexing(text.toLowerCase());
+    return [
+      for (final lines in paragraphs)
+        (
+          lines: [for (final l in lines) regex.hasMatch(copy(l))],
+          pieces: {
+            for (final m in regex.allMatches(copy(lines.join(' '))))
+              if (m.end > m.start) m[0]!,
+          }.take(20).toList(),
+        ),
+    ];
+  }
+
   // Static, so the isolate's closure cannot capture the notifier, which
   // cannot be sent to another isolate. Cleaning 38,069 titles is too long
   // for one frame on a phone.
@@ -1454,6 +1752,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Clear the search state.
   void clear() {
     _searchGen++;
+    _cancelRegexJobs();
     _debounce?.cancel();
     _enabledCategories = {...kAllCategories};
     _enabledNikayas = {...kAllNikayas};

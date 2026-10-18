@@ -1063,7 +1063,7 @@ class AppShortcuts {
     void toggleAnnotations() {
       final context = _ctx(navigatorKey);
       if (ResponsiveBreakpoint.isDesktop(context)) {
-        toggleSidebarPanel(SidePanelType.annotations);
+        toggleSidebarPanel(SidePanelType.annotations, autoFocus: true);
       } else {
         context.push(AppRoutes.annotations);
       }
@@ -1097,7 +1097,7 @@ class AppShortcuts {
     void toggleContents() {
       final context = _ctx(navigatorKey);
       if (ResponsiveBreakpoint.isDesktop(context)) {
-        toggleSidebarPanel(SidePanelType.contents);
+        toggleSidebarPanel(SidePanelType.contents, autoFocus: true);
         return;
       }
       // Mobile: open the full-page contents screen for the active book.

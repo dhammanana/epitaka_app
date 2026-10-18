@@ -12,9 +12,16 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
+import '../../search/services/regex_search.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../providers/library_filter_provider.dart';
+
+/// Whether the Library filter box takes a regex over book names and ids
+/// (spec H). Session only, never saved, like the other rx flags.
+final libraryRegexProvider = StateProvider<bool>((ref) => false);
 
 /// Self-contained Tipitaka book browser: category tabs (Mūla, Aṭṭhakathā,
 /// Ṭīkā, Añña) plus the collapsible nikaya tree underneath.
@@ -29,9 +36,10 @@ import '../providers/library_filter_provider.dart';
 /// a dialog, wrap this in a [SizedBox] (or give the dialog a fixed size) so
 /// it has a bounded height to lay out the tab view in.
 ///
-/// When [autoFocusFilter] is true (used by the Cmd/Ctrl+L shortcut), the
-/// filter field above the tree is focused on first build so the user can
-/// type immediately to narrow the book list.
+/// When [autoFocusFilter] is true (the user opened the panel: a sidebar tab,
+/// a button or the Cmd/Ctrl+L shortcut), the filter field above the tree is
+/// focused on first build so the user can type immediately to narrow the
+/// book list.
 class LibraryBrowser extends ConsumerStatefulWidget {
   final double maxWidth;
 
@@ -122,13 +130,25 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
 
   @override
   void dispose() {
+    _rxFilter.dispose();
     _filterController.dispose();
     _filterFocusNode.dispose();
     super.dispose();
   }
 
-  /// Normalized filter query (diacritic + case insensitive).
-  String get _query => normalizePaliFuzzy(_filterQuery.trim()).toLowerCase();
+  /// Normalized filter query (diacritic + case insensitive). With rx on,
+  /// the raw box text: it is the pattern.
+  String get _query => _filterQuery.trim().isEmpty
+      ? ''
+      : ref.read(libraryRegexProvider)
+      ? _filterQuery
+      : normalizePaliFuzzy(_filterQuery.trim()).toLowerCase();
+
+  /// The Rx filter over the book names and ids: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
 
   /// All books across every category/nikaya, deduplicated by bookId.
   List<BookItem> _allBooks(List<BookCategory> categories) {
@@ -155,12 +175,40 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
         book.book.bookId.toLowerCase().contains(query);
   }
 
+  /// The books [_query] matches. With rx on, the pattern runs over each
+  /// book's lower-cased name and id with exact diacritics (spec H), in a
+  /// regex job (spec K); an invalid pattern, or one still running for the
+  /// first time, matches nothing.
+  List<BookItem> _matchingBooks(List<BookCategory> categories) {
+    final books = _allBooks(categories);
+    final query = _query;
+    if (!ref.read(libraryRegexProvider)) {
+      _rxFilter.hitsFor('', categories, () => const []);
+      return books.where(_matches).toList();
+    }
+    final valid = query.isNotEmpty && regexError(query) == null;
+    final hits = _rxFilter.hitsFor(valid ? query : '', categories, () => [
+      for (final b in books)
+        [b.book.displayName.toLowerCase(), b.book.bookId.toLowerCase()],
+    ]);
+    if (query.isEmpty) return books;
+    if (!valid || hits == null) return const [];
+    return [for (final i in hits.toList()..sort()) books[i]];
+  }
+
   @override
   Widget build(BuildContext context) {
     final treeAsync = ref.watch(booksTreeProvider);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final isDesktop = ResponsiveBreakpoint.isDesktop(context);
+    final rxOn = ref.watch(libraryRegexProvider);
+    // An empty box shows the tree, which never asks the filter, so drop a
+    // job still running (X, or the text deleted).
+    if (_filterQuery.trim().isEmpty) _rxFilter.reset();
+    final patternError = rxOn && _filterQuery.trim().isNotEmpty
+        ? regexError(_filterQuery)
+        : null;
     // Phones hide the field until the user pulls the list down; desktop (and
     // any active query) keeps it permanently visible.
     final showSearch = isDesktop || _searchVisible || _filterQuery.isNotEmpty;
@@ -180,28 +228,28 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
               alignment: Alignment.topCenter,
               child: showSearch
                   ? Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppDimensions.marginMobile,
-                        0,
-                        AppDimensions.marginMobile,
-                        AppDimensions.sm,
+                      padding: searchBoxPadding(
+                        isDesktop ? SearchBoxSize.panel : SearchBoxSize.screen,
                       ),
                       child: TextField(
                         controller: _filterController,
                         focusNode: _filterFocusNode,
-                        inputFormatters: const [VelthuisInputFormatter()],
-                        style: AppTypography.labelMedium.copyWith(
-                          fontSize: 13,
-                          color: colors.onSurface,
+                        // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+                        inputFormatters: rxOn
+                            ? const []
+                            : const [VelthuisInputFormatter()],
+                        style: searchBoxTextStyle(
+                          context,
+                          size: isDesktop
+                              ? SearchBoxSize.panel
+                              : SearchBoxSize.screen,
                         ),
-                        decoration: InputDecoration(
+                        decoration: searchBoxDecoration(
+                          context,
                           hintText: loc.searchBooks,
-                          isDense: true,
-                          prefixIcon: Icon(
-                            Icons.search,
-                            size: 16,
-                            color: colors.onSurfaceVariant,
-                          ),
+                          size: isDesktop
+                              ? SearchBoxSize.panel
+                              : SearchBoxSize.screen,
                           suffixIcon: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -213,21 +261,22 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                                     setState(() => _filterQuery = '');
                                   },
                                 ),
-                              const VelthuisHelpIcon(),
+                              RegexToggleButton(
+                                on: rxOn,
+                                onToggle: () =>
+                                    ref
+                                            .read(libraryRegexProvider.notifier)
+                                            .state =
+                                        !rxOn,
+                              ),
+                              if (!rxOn) const VelthuisHelpIcon(),
                             ],
                           ),
-                          filled: true,
-                          fillColor: colors.surfaceContainerHighest,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.radiusMd,
-                            ),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: AppDimensions.sm,
-                            vertical: 6,
-                          ),
+                          errorText: patternError != null
+                              ? loc.invalidPattern(patternError)
+                              : rxOn && _rxFilter.isTooSlow(_filterQuery)
+                              ? loc.patternTooSlow
+                              : null,
                         ),
                         onChanged: (v) => setState(() => _filterQuery = v),
                       ),
@@ -276,7 +325,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
     ColorScheme colors,
     AppLocalizations loc,
   ) {
-    final matches = _allBooks(categories).where(_matches).toList();
+    final matches = _matchingBooks(categories);
     if (matches.isEmpty) {
       return Center(
         child: Column(

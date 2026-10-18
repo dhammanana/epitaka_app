@@ -60,7 +60,9 @@ class SidePanelState {
   final int dataSeq;
 
   /// When true, the panel should request focus on its primary text input
-  /// as soon as it is shown (used by keyboard shortcuts like Cmd+D / Cmd+Shift+F).
+  /// as soon as it is shown: the user opened it (a sidebar tab, a toolbar
+  /// button, a shortcut). A word lookup sent from the reader leaves it off,
+  /// so the reader keeps the keyboard.
   final bool autoFocus;
 
   const SidePanelState({
@@ -130,8 +132,9 @@ class SidePanelNotifier extends StateNotifier<SidePanelsState> {
   int appliedDataSeq = -1;
 
   /// Toggle a panel. If already open in the same slot, close it.
-  /// If another panel is open in the same slot, replace it.
-  void toggle(SidePanelType panel, {String? data, bool autoFocus = false}) {
+  /// If another panel is open in the same slot, replace it. Only the user
+  /// toggles a panel, so it takes the cursor to its search box by default.
+  void toggle(SidePanelType panel, {String? data, bool autoFocus = true}) {
     final slot = _slotFor(panel);
     final current = slot == PanelSlot.left ? state.left : state.right;
 

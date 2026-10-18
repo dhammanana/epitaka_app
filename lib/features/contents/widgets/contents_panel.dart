@@ -12,8 +12,11 @@ import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../search/services/regex_search.dart';
 import '../providers/contents_provider.dart';
 
 /// A panel showing the table of contents for a book.
@@ -28,12 +31,16 @@ class ContentsPanel extends ConsumerStatefulWidget {
   /// When true, tapping a heading pops the screen (for full-page mode).
   final bool autoPopOnTap;
 
+  /// Put the cursor in the search box once the panel shows.
+  final bool autoFocus;
+
   const ContentsPanel({
     super.key,
     this.bookId,
     this.bookName,
     this.currentParaId,
     this.autoPopOnTap = false,
+    this.autoFocus = false,
   });
 
   @override
@@ -46,7 +53,6 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
   final _searchFocusNode = FocusNode();
 
   bool _didScrollToCurrent = false;
-  bool _searchActive = false;
   String _searchQuery = '';
 
   final Set<int> _collapsedParaIds = {};
@@ -80,7 +86,24 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.autoFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
+  }
+
+  /// The Rx filter over the heading titles: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
+
+  @override
   void dispose() {
+    _rxFilter.dispose();
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -217,7 +240,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
         final currentIndex = _currentHeadingIndex(headings);
         // Inside panel it's always compact
 
-        if (!_searchActive && !_didScrollToCurrent && currentIndex >= 0) {
+        if (_searchQuery.isEmpty && !_didScrollToCurrent && currentIndex >= 0) {
           _didScrollToCurrent = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _scrollToIndex(currentIndex);
@@ -225,94 +248,105 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
         }
 
         final parents = _parentsFor(headings);
-        final query = normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
+        // rx: the raw text stays the pattern; it matches titles with
+        // exact diacritics (spec H), in a regex job (spec K). An invalid one
+        // filters to nothing.
+        final rxOn = ref.watch(contentsRegexProvider);
+        final rxText = rxOn ? _searchQuery : '';
+        final patternError = rxText.isNotEmpty ? regexError(rxText) : null;
+        final rxHits = _rxFilter.hitsFor(
+          patternError == null ? rxText : '',
+          headings,
+          () => [
+            for (final h in headings) [(h.title ?? '').toLowerCase()],
+          ],
+        );
+        final query = rxOn
+            ? _searchQuery
+            : normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
         final indentUnit = AppDimensions.sm;
         final rowLeftPadding = AppDimensions.sm;
-        final visibleIndices = _visibleIndicesFor(headings, parents, query);
+        final visibleIndices = rxText.isNotEmpty
+            ? (patternError != null || rxHits == null
+                  ? const <int>[]
+                  : (rxHits.toList()..sort()))
+            : _visibleIndicesFor(headings, parents, query);
 
         return Column(
           children: [
             // Search bar (compact)
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimensions.sm,
-                0,
-                AppDimensions.sm,
-                0,
-              ),
-              child: _searchActive
-                  ? TextField(
+              padding: searchBoxPadding(SearchBoxSize.panel),
+              // The box is always there, like Library and Search: the
+              // sidebar already names the panel (spec I).
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
                       controller: _searchController,
                       focusNode: _searchFocusNode,
-                      inputFormatters: const [VelthuisInputFormatter()],
-                      autofocus: true,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.onSurface,
-                      ),
-                      decoration: InputDecoration(
+                      // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+                      inputFormatters: rxOn
+                          ? const []
+                          : const [VelthuisInputFormatter()],
+                      style: searchBoxTextStyle(context),
+                      decoration: searchBoxDecoration(
+                        context,
                         hintText: loc.searchContents,
-                        isDense: true,
-                        border: InputBorder.none,
                         suffixIcon: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _searchActive = false;
+                            if (_searchQuery.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                tooltip: loc.clear,
+                                onPressed: () => setState(() {
                                   _searchQuery = '';
                                   _searchController.clear();
-                                });
-                              },
+                                }),
+                              ),
+                            RegexToggleButton(
+                              on: rxOn,
+                              onToggle: () =>
+                                  ref
+                                          .read(contentsRegexProvider.notifier)
+                                          .state =
+                                      !rxOn,
                             ),
-                            const VelthuisHelpIcon(),
+                            if (!rxOn) const VelthuisHelpIcon(),
                           ],
                         ),
+                        errorText: patternError != null
+                            ? loc.invalidPattern(patternError)
+                            : rxOn && _rxFilter.isTooSlow(_searchQuery)
+                            ? loc.patternTooSlow
+                            : null,
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v),
-                    )
-                  : Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            loc.contents,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        // The outline is the full outline of the book —
-                        // every section with its study guide — opened as a
-                        // separate reading view.
-                        IconButton(
-                          icon: const Icon(
-                            Icons.account_tree_outlined,
-                            size: 18,
-                          ),
-                          color: colors.onSurfaceVariant,
-                          tooltip: loc.outline,
-                          onPressed: () {
-                            if (_effectiveBookId.isEmpty) return;
-                            if (ResponsiveBreakpoint.isDesktop(context)) {
-                              ref
-                                  .read(sidePanelProvider.notifier)
-                                  .toggle(SidePanelType.outline);
-                              return;
-                            }
-                            context.push(
-                              '/outline/$_effectiveBookId?bookName=${Uri.encodeComponent(_effectiveBookName)}',
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.search, size: 18),
-                          color: colors.onSurfaceVariant,
-                          onPressed: () => setState(() => _searchActive = true),
-                        ),
-                      ],
                     ),
+                  ),
+                  // The outline is the full outline of the book —
+                  // every section with its study guide — opened as a
+                  // separate reading view.
+                  IconButton(
+                    icon: const Icon(Icons.account_tree_outlined, size: 18),
+                    color: colors.onSurfaceVariant,
+                    tooltip: loc.outline,
+                    onPressed: () {
+                      if (_effectiveBookId.isEmpty) return;
+                      if (ResponsiveBreakpoint.isDesktop(context)) {
+                        ref
+                            .read(sidePanelProvider.notifier)
+                            .toggle(SidePanelType.outline);
+                        return;
+                      }
+                      context.push(
+                        '/outline/$_effectiveBookId?bookName=${Uri.encodeComponent(_effectiveBookName)}',
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
             Divider(color: colors.outlineVariant, height: 1),
             Expanded(

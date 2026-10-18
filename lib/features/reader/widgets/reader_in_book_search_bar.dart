@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_shortcuts.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 
 /// In-book search bar shown as an overlay at the top of the reader.
 ///
@@ -25,6 +27,16 @@ class ReaderInBookSearchBar extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onSearchEntire;
 
+  /// The box takes a regular expression (the rx button is on).
+  final bool regexOn;
+  final VoidCallback onToggleRegex;
+
+  /// Why the submitted pattern does not compile, shown in place of the count.
+  final String? patternError;
+
+  /// The pattern ran past its time limit; shown in place of the count.
+  final bool patternTooSlow;
+
   const ReaderInBookSearchBar({
     super.key,
     required this.colors,
@@ -39,6 +51,10 @@ class ReaderInBookSearchBar extends StatelessWidget {
     required this.onPrevious,
     required this.onNext,
     required this.onSearchEntire,
+    this.regexOn = false,
+    required this.onToggleRegex,
+    this.patternError,
+    this.patternTooSlow = false,
   });
 
   @override
@@ -47,7 +63,10 @@ class ReaderInBookSearchBar extends StatelessWidget {
     final currentMatch = currentMatchIndex + 1; // 1-based display
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: kSearchBoxGap,
+      ),
       child: Row(
         children: [
           // Close button
@@ -61,50 +80,39 @@ class ReaderInBookSearchBar extends StatelessWidget {
           const SizedBox(width: 4),
           // Search field
           Expanded(
-            child: SizedBox(
-              height: 36,
-              // A single-line field would only move the caret on ↑/↓, so
-              // take them here to step the matches, like the results list.
-              child: Focus(
-                canRequestFocus: false,
-                onKeyEvent: (_, event) {
-                  // With nothing to step to, leave the arrows to the field.
-                  if (matchCount == 0) return KeyEventResult.ignored;
-                  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-                    return KeyEventResult.ignored;
-                  }
-                  if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                    onNext();
-                    return KeyEventResult.handled;
-                  }
-                  if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                    onPrevious();
-                    return KeyEventResult.handled;
-                  }
+            // Its own height, like the Search box (spec J); a fixed 36 px
+            // would clip the shared look.
+            // A single-line field would only move the caret on ↑/↓, so
+            // take them here to step the matches, like the results list.
+            child: Focus(
+              canRequestFocus: false,
+              onKeyEvent: (_, event) {
+                // With nothing to step to, leave the arrows to the field.
+                if (matchCount == 0) return KeyEventResult.ignored;
+                if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
                   return KeyEventResult.ignored;
-                },
-                child: TextField(
+                }
+                if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                  onNext();
+                  return KeyEventResult.handled;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                  onPrevious();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: TextField(
                 controller: controller,
                 focusNode: focusNode,
-                inputFormatters: const [VelthuisInputFormatter()],
+                // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+                inputFormatters: regexOn
+                    ? const []
+                    : const [VelthuisInputFormatter()],
                 textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
+                decoration: searchBoxDecoration(
+                  context,
                   hintText: loc.findInBook,
-                  hintStyle: TextStyle(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                    fontSize: 14,
-                  ),
-                  filled: true,
-                  fillColor: colors.surfaceContainerHighest,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 0,
-                  ),
-                  isDense: true,
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -121,23 +129,50 @@ class ReaderInBookSearchBar extends StatelessWidget {
                           },
                         ),
                       ),
-                      const VelthuisHelpIcon(),
+                      RegexToggleButton(on: regexOn, onToggle: onToggleRegex),
+                      if (!regexOn) const VelthuisHelpIcon(),
                     ],
                   ),
                 ),
-                style: TextStyle(fontSize: 14, color: colors.onSurface),
+                style: searchBoxTextStyle(context),
                 onChanged: (v) {
                   // Debounce is handled by the caller via onQueryChanged.
                   onQueryChanged(v);
                 },
                 onSubmitted: onSubmitted,
               ),
-              ),
             ),
           ),
           const SizedBox(width: 8),
           // Match counter
-          if (matchCount > 0)
+          if (patternError != null || patternTooSlow)
+            Tooltip(
+              message: patternTooSlow
+                  ? loc.patternTooSlow
+                  : loc.invalidPattern(patternError!),
+              child: ConstrainedBox(
+                // Room for "Pattern too slow" whole (it was cut at 140);
+                // a long invalid-pattern reason ends in "…", in full in
+                // the tooltip.
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    patternTooSlow
+                        ? loc.patternTooSlow
+                        : loc.invalidPattern(patternError!),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: colors.error,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else if (matchCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(

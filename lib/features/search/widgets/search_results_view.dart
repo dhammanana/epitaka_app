@@ -290,7 +290,8 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
     BookResultSummary summary,
     SearchResultItem item,
   ) {
-    final query = widget.state.query;
+    // Regex mode: the reader highlights the matched pieces, not the pattern.
+    final query = item.highlightTerms?.join(' ') ?? widget.state.query;
 
     // Find the first matching line's lineId for precise line-level jumping
     final int? initialLineId;
@@ -330,7 +331,8 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
             bookId: heading.bookId,
             bookName: heading.bookName ?? heading.bookId,
             initialParaId: heading.paraId,
-            searchQuery: widget.state.query,
+            // A pattern is not words the reader could highlight.
+            searchQuery: widget.state.regex ? null : widget.state.query,
           ),
         );
     openReaderRoute(context);
@@ -354,7 +356,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
     final loc = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
 
-    final searchQuery = widget.state.query;
+    final searchQuery = item.highlightTerms?.join(' ') ?? widget.state.query;
 
     try {
       final epitakaDb = await ref.read(epitakaDbProvider.future);
@@ -912,10 +914,14 @@ class _SearchResultItemTile extends ConsumerWidget {
         : (settings.showTranslation ? settings.primaryTranslationLang : null);
     final script = settings.paliScript;
 
-    // Extract search terms from the current query
+    // Extract search terms from the current query, or in regex mode from
+    // the pieces the pattern matched.
+    final highlightQuery = searchState is SearchResults
+        ? item.highlightTerms?.join(' ') ?? searchState.query
+        : '';
     final List<String> searchTerms;
     if (searchState is SearchResults) {
-      final query = searchState.query;
+      final query = highlightQuery;
       searchTerms = normalizePaliFuzzy(
         query,
       ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
@@ -951,7 +957,7 @@ class _SearchResultItemTile extends ConsumerWidget {
 
     // Raw Roman query (before fuzzy normalization), used to re-convert the
     // Pāli snippet terms into the display script for highlighting.
-    final rawQuery = searchState is SearchResults ? searchState.query : '';
+    final rawQuery = highlightQuery;
 
     final isPhone = ResponsiveBreakpoint.isPhone(context);
     return InkWell(
