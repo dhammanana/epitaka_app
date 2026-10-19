@@ -8,6 +8,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
@@ -30,6 +31,19 @@ class OutlinePanel extends ConsumerStatefulWidget {
 class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      final tab = ref.read(readerTabsProvider).activeTab;
+      if (tab != null && i < _found.length) {
+        _openItem(tab.bookId, tab.bookName, _found[i]);
+      }
+    },
+  );
+
+  /// The sections the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<OutlineItem> _found = const [];
 
   String _searchQuery = '';
   final Set<int> _collapsedGroups = {};
@@ -38,11 +52,16 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   @override
   void initState() {
     super.initState();
+    _nav.addListener(_onNavChanged);
     if (widget.autoFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
       });
     }
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
   }
 
   /// The Rx filter over the section titles: a regex job, so a runaway
@@ -55,6 +74,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
   void dispose() {
     _rxFilter.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -112,9 +132,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
             controller: _searchController,
             focusNode: _searchFocusNode,
             // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
-            inputFormatters: rxOn
-                ? const []
-                : const [VelthuisInputFormatter()],
+            inputFormatters: rxOn ? const [] : const [VelthuisInputFormatter()],
             style: searchBoxTextStyle(context),
             decoration: searchBoxDecoration(
               context,
@@ -131,6 +149,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
                         _searchController.clear();
                       }),
                     ),
+                  if (!rxOn) const VelthuisHelpIcon(),
                   RegexToggleButton(
                     on: rxOn,
                     onToggle: () =>
@@ -148,7 +167,6 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
           ),
         ),
         Divider(color: colors.outlineVariant, height: 1),
-                  if (!rxOn) const VelthuisHelpIcon(),
         Expanded(
           child: outlineAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -194,23 +212,38 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
                   : normalizePaliFuzzy(
                       item.title,
                     ).toLowerCase().contains(query);
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(
-                  AppDimensions.xs,
-                  AppDimensions.sm,
-                  AppDimensions.sm,
-                  AppDimensions.sm,
-                ),
-                itemCount: _rowCount(groups, query, matches),
-                itemBuilder: (context, i) => _buildRow(
-                  groups,
-                  query,
-                  matches,
-                  i,
-                  colors,
-                  script,
-                  activeTab.bookId,
-                  activeTab.bookName,
+              // With a query every row is a found section, in this order.
+              _found = query.isEmpty
+                  ? const []
+                  : [
+                      for (final item in flat)
+                        if (matches(item)) item,
+                    ];
+              _nav.count = _found.length;
+              if (_nav.selected >= _found.length) _nav.selected = 0;
+              return Focus(
+                focusNode: _nav.listFocus,
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimensions.xs,
+                    AppDimensions.sm,
+                    AppDimensions.sm,
+                    AppDimensions.sm,
+                  ),
+                  itemCount: _rowCount(groups, query, matches),
+                  itemBuilder: (context, i) => FilterNavRow(
+                    selected: _nav.isSelected(i),
+                    child: _buildRow(
+                      groups,
+                      query,
+                      matches,
+                      i,
+                      colors,
+                      script,
+                      activeTab.bookId,
+                      activeTab.bookName,
+                    ),
+                  ),
                 ),
               );
             },

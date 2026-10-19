@@ -21,6 +21,7 @@ import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../router/app_router.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
@@ -43,6 +44,16 @@ class OutlineScreen extends ConsumerStatefulWidget {
 class _OutlineScreenState extends ConsumerState<OutlineScreen> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _openItem(_found[i]);
+    },
+  );
+
+  /// The sections the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<OutlineItem> _found = const [];
 
   String _searchQuery = '';
 
@@ -60,9 +71,20 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
   });
 
   @override
+  void initState() {
+    super.initState();
+    _nav.addListener(_onNavChanged);
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     _rxFilter.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -215,6 +237,15 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
           }
 
           final rows = _buildRows(groups);
+          // With a query every row is a found section, in this order.
+          _found = _searchQuery.trim().isEmpty
+              ? const []
+              : [
+                  for (final row in rows)
+                    if (row is _ItemRow) row.item,
+                ];
+          _nav.count = _found.length;
+          if (_nav.selected >= _found.length) _nav.selected = 0;
           final total = groups.fold<int>(0, (sum, g) => sum + g.itemCount);
 
           return Column(
@@ -244,14 +275,20 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(
-                          left: AppDimensions.md,
-                          right: AppDimensions.md,
-                          bottom: AppDimensions.xxl,
+                    : Focus(
+                        focusNode: _nav.listFocus,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.only(
+                            left: AppDimensions.md,
+                            right: AppDimensions.md,
+                            bottom: AppDimensions.xxl,
+                          ),
+                          itemCount: rows.length,
+                          itemBuilder: (context, i) => FilterNavRow(
+                            selected: _nav.isSelected(i),
+                            child: _buildRow(rows[i], colors),
+                          ),
                         ),
-                        itemCount: rows.length,
-                        itemBuilder: (context, i) => _buildRow(rows[i], colors),
                       ),
               ),
             ],
@@ -364,6 +401,7 @@ class _OutlineHeader extends ConsumerWidget {
                   tooltip: loc.clear,
                   onPressed: onClearSearch,
                 ),
+              if (!rxOn) const VelthuisHelpIcon(),
               RegexToggleButton(
                 on: rxOn,
                 onToggle: () =>
@@ -400,7 +438,6 @@ class _OutlineHeader extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Row(
-              if (!rxOn) const VelthuisHelpIcon(),
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(

@@ -11,6 +11,7 @@ import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/providers/side_panel_provider.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
@@ -51,6 +52,16 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _jumpTo(_found[i]);
+    },
+  );
+
+  /// The headings the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<HeadingInfo> _found = const [];
 
   bool _didScrollToCurrent = false;
   String _searchQuery = '';
@@ -88,6 +99,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
   @override
   void initState() {
     super.initState();
+    _nav.addListener(_onNavChanged);
     if (widget.autoFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
@@ -101,11 +113,16 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
     if (mounted) setState(() {});
   });
 
+  void _onNavChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _rxFilter.dispose();
     _scrollController.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -271,6 +288,11 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                   ? const <int>[]
                   : (rxHits.toList()..sort()))
             : _visibleIndicesFor(headings, parents, query);
+        _found = _searchQuery.trim().isEmpty
+            ? const []
+            : [for (final i in visibleIndices) headings[i]];
+        _nav.count = _found.length;
+        if (_nav.selected >= _found.length) _nav.selected = 0;
 
         return Column(
           children: [
@@ -305,6 +327,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                                   _searchController.clear();
                                 }),
                               ),
+                            if (!rxOn) const VelthuisHelpIcon(),
                             RegexToggleButton(
                               on: rxOn,
                               onToggle: () =>
@@ -326,7 +349,6 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                   ),
                   // The outline is the full outline of the book —
                   // every section with its study guide — opened as a
-                            if (!rxOn) const VelthuisHelpIcon(),
                   // separate reading view.
                   IconButton(
                     icon: const Icon(Icons.account_tree_outlined, size: 18),
@@ -361,42 +383,48 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(
-                        AppDimensions.xs,
-                        AppDimensions.sm,
-                        AppDimensions.sm,
-                        AppDimensions.sm,
-                      ),
-                      itemCount: visibleIndices.length,
-                      itemBuilder: (context, i) {
-                        final index = visibleIndices[i];
-                        final heading = headings[index];
-                        final indent = query.isEmpty
-                            ? (heading.level ?? 1).clamp(1, 5) - 1
-                            : 0;
-                        final isCurrent = index == currentIndex;
-                        final hasChildren =
-                            query.isEmpty && _hasChildren(index, headings);
-                        final isCollapsed = _collapsedParaIds.contains(
-                          heading.paraId,
-                        );
+                  : Focus(
+                      focusNode: _nav.listFocus,
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(
+                          AppDimensions.xs,
+                          AppDimensions.sm,
+                          AppDimensions.sm,
+                          AppDimensions.sm,
+                        ),
+                        itemCount: visibleIndices.length,
+                        itemBuilder: (context, i) {
+                          final index = visibleIndices[i];
+                          final heading = headings[index];
+                          final indent = query.isEmpty
+                              ? (heading.level ?? 1).clamp(1, 5) - 1
+                              : 0;
+                          final isCurrent = index == currentIndex;
+                          final hasChildren =
+                              query.isEmpty && _hasChildren(index, headings);
+                          final isCollapsed = _collapsedParaIds.contains(
+                            heading.paraId,
+                          );
 
-                        return _ContentsRow(
-                          heading: heading,
-                          indent: indent,
-                          indentUnit: indentUnit,
-                          leftPadding: rowLeftPadding,
-                          isCurrent: isCurrent,
-                          hasChildren: hasChildren,
-                          isCollapsed: isCollapsed,
-                          colors: colors,
-                          onToggleCollapse: () =>
-                              _toggleCollapse(heading.paraId),
-                          onTap: () => _jumpTo(heading),
-                        );
-                      },
+                          return FilterNavRow(
+                            selected: _nav.isSelected(i),
+                            child: _ContentsRow(
+                              heading: heading,
+                              indent: indent,
+                              indentUnit: indentUnit,
+                              leftPadding: rowLeftPadding,
+                              isCurrent: isCurrent,
+                              hasChildren: hasChildren,
+                              isCollapsed: isCollapsed,
+                              colors: colors,
+                              onToggleCollapse: () =>
+                                  _toggleCollapse(heading.paraId),
+                              onTap: () => _jumpTo(heading),
+                            ),
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

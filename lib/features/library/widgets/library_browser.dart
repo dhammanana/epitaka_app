@@ -11,6 +11,7 @@ import '../../../core/utils/pali_text_utils.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
@@ -66,6 +67,15 @@ class LibraryBrowser extends ConsumerStatefulWidget {
 class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   final _filterController = TextEditingController();
   final _filterFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _filterFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _openBook(ref, context, _found[i]);
+    },
+  );
+
+  /// The books the filter box found, in list order, for the Down-arrow path.
+  List<BookItem> _found = const [];
   String _filterQuery = '';
 
   /// On phones the search field is hidden by default so the browser stays
@@ -81,11 +91,16 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   @override
   void initState() {
     super.initState();
+    _nav.addListener(_onNavChanged);
     if (widget.autoFocusFilter) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _filterFocusNode.requestFocus();
       });
     }
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
   }
 
   /// Reveal/hide the search field from scroll gestures:
@@ -132,6 +147,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
   void dispose() {
     _rxFilter.dispose();
     _filterController.dispose();
+    _nav.dispose();
     _filterFocusNode.dispose();
     super.dispose();
   }
@@ -187,10 +203,14 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
       return books.where(_matches).toList();
     }
     final valid = query.isNotEmpty && regexError(query) == null;
-    final hits = _rxFilter.hitsFor(valid ? query : '', categories, () => [
-      for (final b in books)
-        [b.book.displayName.toLowerCase(), b.book.bookId.toLowerCase()],
-    ]);
+    final hits = _rxFilter.hitsFor(
+      valid ? query : '',
+      categories,
+      () => [
+        for (final b in books)
+          [b.book.displayName.toLowerCase(), b.book.bookId.toLowerCase()],
+      ],
+    );
     if (query.isEmpty) return books;
     if (!valid || hits == null) return const [];
     return [for (final i in hits.toList()..sort()) books[i]];
@@ -203,6 +223,8 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
     final loc = AppLocalizations.of(context);
     final isDesktop = ResponsiveBreakpoint.isDesktop(context);
     final rxOn = ref.watch(libraryRegexProvider);
+    // Only the filtered list below sets this, so the tree is not navigable.
+    _nav.count = 0;
     // An empty box shows the tree, which never asks the filter, so drop a
     // job still running (X, or the text deleted).
     if (_filterQuery.trim().isEmpty) _rxFilter.reset();
@@ -261,6 +283,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                                     setState(() => _filterQuery = '');
                                   },
                                 ),
+                              if (!rxOn) const VelthuisHelpIcon(),
                               RegexToggleButton(
                                 on: rxOn,
                                 onToggle: () =>
@@ -282,7 +305,6 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                     )
                   : const SizedBox.shrink(),
             ),
-                              if (!rxOn) const VelthuisHelpIcon(),
             // ── Content: filtered flat list or the tabbed tree ─────
             Expanded(
               child: NotificationListener<ScrollNotification>(
@@ -344,38 +366,47 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
         ),
       );
     }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.marginMobile,
-        0,
-        AppDimensions.marginMobile,
-        120,
-      ),
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-            border: Border.all(color: colors.outlineVariant),
-          ),
-          child: Column(
-            children: [
-              for (final (index, book) in matches.indexed)
-                Column(
-                  children: [
-                    // Flat list: every book sits at the same (top) level, so
-                    // depth 1 (left padding = 18 + 0*24 = 18). depth 0 would
-                    // compute a NEGATIVE left padding (18 + (0-1)*24 = -6)
-                    // and crash with 'padding.isNonNegative'.
-                    _BookRow(book: book, colors: colors, depth: 1),
-                    if (index != matches.length - 1)
-                      Divider(height: 1, color: colors.outlineVariant),
-                  ],
-                ),
-            ],
-          ),
+    _found = matches;
+    _nav.count = matches.length;
+    if (_nav.selected >= matches.length) _nav.selected = matches.length - 1;
+    return Focus(
+      focusNode: _nav.listFocus,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppDimensions.marginMobile,
+          0,
+          AppDimensions.marginMobile,
+          120,
         ),
-      ],
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                for (final (index, book) in matches.indexed)
+                  Column(
+                    children: [
+                      // Flat list: every book sits at the same (top) level, so
+                      // depth 1 (left padding = 18 + 0*24 = 18). depth 0 would
+                      // compute a NEGATIVE left padding (18 + (0-1)*24 = -6)
+                      // and crash with 'padding.isNonNegative'.
+                      FilterNavRow(
+                        selected: _nav.isSelected(index),
+                        child: _BookRow(book: book, colors: colors, depth: 1),
+                      ),
+                      if (index != matches.length - 1)
+                        Divider(height: 1, color: colors.outlineVariant),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -805,6 +836,18 @@ class _SubNikayaSectionState extends ConsumerState<_SubNikayaSection> {
 
 /// ── Book Row ──────────────────────────────────────────────────────────────
 
+void _openBook(WidgetRef ref, BuildContext context, BookItem book) {
+  ref
+      .read(readerTabsProvider.notifier)
+      .openTab(
+        ReaderTabInfo(
+          bookId: book.book.bookId,
+          bookName: book.book.displayName,
+        ),
+      );
+  openReaderRoute(context);
+}
+
 class _BookRow extends ConsumerStatefulWidget {
   final BookItem book;
   final ColorScheme colors;
@@ -833,17 +876,7 @@ class _BookRowState extends ConsumerState<_BookRow> {
     return Column(
       children: [
         InkWell(
-          onTap: () {
-            ref
-                .read(readerTabsProvider.notifier)
-                .openTab(
-                  ReaderTabInfo(
-                    bookId: book.book.bookId,
-                    bookName: book.book.displayName,
-                  ),
-                );
-            openReaderRoute(context);
-          },
+          onTap: () => _openBook(ref, context, book),
           child: Padding(
             padding: EdgeInsets.only(
               // Clamp so a depth-0 caller (or any future regression) can

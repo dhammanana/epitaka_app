@@ -10,6 +10,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
@@ -47,6 +48,16 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _jumpTo(_found[i]);
+    },
+  );
+
+  /// The headings the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<HeadingInfo> _found = const [];
 
   bool _didScrollToCurrent = false;
   String _searchQuery = '';
@@ -84,10 +95,21 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   });
 
   @override
+  void initState() {
+    super.initState();
+    _nav.addListener(_onNavChanged);
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     _rxFilter.dispose();
     _scrollController.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -290,6 +312,11 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                     ? const <int>[]
                     : (rxHits.toList()..sort()))
               : _visibleIndicesFor(headings, parents, query);
+          _found = _searchQuery.trim().isEmpty
+              ? const []
+              : [for (final i in visibleIndices) headings[i]];
+          _nav.count = _found.length;
+          if (_nav.selected >= _found.length) _nav.selected = 0;
 
           return Column(
             children: [
@@ -323,42 +350,48 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          listLeftPadding,
-                          AppDimensions.md,
-                          AppDimensions.md,
-                          AppDimensions.md,
-                        ),
-                        itemCount: visibleIndices.length,
-                        itemBuilder: (context, i) {
-                          final index = visibleIndices[i];
-                          final heading = headings[index];
-                          final indent = query.isEmpty
-                              ? (heading.level ?? 1).clamp(1, 5) - 1
-                              : 0;
-                          final isCurrent = index == currentIndex;
-                          final hasChildren =
-                              query.isEmpty && _hasChildren(index, headings);
-                          final isCollapsed = _collapsedParaIds.contains(
-                            heading.paraId,
-                          );
+                    : Focus(
+                        focusNode: _nav.listFocus,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            listLeftPadding,
+                            AppDimensions.md,
+                            AppDimensions.md,
+                            AppDimensions.md,
+                          ),
+                          itemCount: visibleIndices.length,
+                          itemBuilder: (context, i) {
+                            final index = visibleIndices[i];
+                            final heading = headings[index];
+                            final indent = query.isEmpty
+                                ? (heading.level ?? 1).clamp(1, 5) - 1
+                                : 0;
+                            final isCurrent = index == currentIndex;
+                            final hasChildren =
+                                query.isEmpty && _hasChildren(index, headings);
+                            final isCollapsed = _collapsedParaIds.contains(
+                              heading.paraId,
+                            );
 
-                          return _ContentsRow(
-                            heading: heading,
-                            indent: indent,
-                            indentUnit: indentUnit,
-                            leftPadding: rowLeftPadding,
-                            isCurrent: isCurrent,
-                            hasChildren: hasChildren,
-                            isCollapsed: isCollapsed,
-                            colors: colors,
-                            onToggleCollapse: () =>
-                                _toggleCollapse(heading.paraId),
-                            onTap: () => _jumpTo(heading),
-                          );
-                        },
+                            return FilterNavRow(
+                              selected: _nav.isSelected(i),
+                              child: _ContentsRow(
+                                heading: heading,
+                                indent: indent,
+                                indentUnit: indentUnit,
+                                leftPadding: rowLeftPadding,
+                                isCurrent: isCurrent,
+                                hasChildren: hasChildren,
+                                isCollapsed: isCollapsed,
+                                colors: colors,
+                                onToggleCollapse: () =>
+                                    _toggleCollapse(heading.paraId),
+                                onTap: () => _jumpTo(heading),
+                              ),
+                            );
+                          },
+                        ),
                       ),
               ),
             ],
@@ -433,6 +466,7 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                     _searchController.clear();
                   }),
                 ),
+              if (!rxOn) const VelthuisHelpIcon(),
               RegexToggleButton(
                 on: rxOn,
                 onToggle: () =>
@@ -465,7 +499,6 @@ class _ContentsRow extends ConsumerWidget {
   /// (smaller on phones).
   final double leftPadding;
   final bool isCurrent;
-              if (!rxOn) const VelthuisHelpIcon(),
   final bool hasChildren;
   final bool isCollapsed;
   final ColorScheme colors;

@@ -25,9 +25,11 @@ import 'package:epitaka/features/annotations/widgets/global_annotations_view.dar
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:epitaka/features/desktop/desktop_shell.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
+import 'package:epitaka/shared/widgets/filter_list_nav.dart';
 import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -258,9 +260,9 @@ void main() {
 
         await tester.tap(_rx);
         await tester.pumpAndSettle();
+        expect(tester.getCenter(_rx), rxBefore);
         await _type(tester, 'a.m');
         expect(tester.widget<TextField>(_field).controller!.text, 'a.m');
-        expect(tester.getCenter(_rx), rxBefore);
         expect(_help, findsNothing);
       });
 
@@ -505,5 +507,105 @@ void main() {
     await sendAltR(tester);
     await _settle(tester);
     expect(rxOnIn(tester, box), isFalse);
+  });
+
+  // Down in the box enters the found rows, as in the Search results.
+  for (final (name, open) in [
+    ('Contents screen', _openContentsScreen),
+    ('Contents panel', _openContentsPanel),
+    ('Outline screen', _openOutline),
+    ('Outline panel', _openOutlinePanel),
+    ('Library', _openLibrary),
+  ]) {
+    group('$name Down arrow', () {
+      List<FilterNavRow> selectedRows(WidgetTester tester) => tester
+          .widgetList<FilterNavRow>(find.byType(FilterNavRow))
+          .where((r) => r.selected)
+          .toList();
+
+      bool boxHasCursor(WidgetTester tester) =>
+          tester.widget<TextField>(_field).focusNode!.hasFocus;
+
+      Future<void> key(WidgetTester tester, LogicalKeyboardKey k) async {
+        await tester.sendKeyEvent(k);
+        await tester.pumpAndSettle();
+      }
+
+      Finder titleIn(FilterNavRow row, String title) => find.descendant(
+        of: find.byWidget(row),
+        matching: find.textContaining(title, findRichText: true),
+      );
+
+      testWidgets('with no text in the box, does nothing', (tester) async {
+        await open(tester);
+        await tester.tap(_field);
+        await tester.pump();
+        await key(tester, LogicalKeyboardKey.arrowDown);
+        expect(boxHasCursor(tester), isTrue);
+        expect(selectedRows(tester), isEmpty);
+      });
+
+      testWidgets('moves the cursor to the first found row, then down, '
+          'and Up on the first row returns to the box', (tester) async {
+        await open(tester);
+        await _type(tester, 'sam');
+        expect(selectedRows(tester), isEmpty);
+
+        await key(tester, LogicalKeyboardKey.arrowDown);
+        expect(boxHasCursor(tester), isFalse);
+        var rows = selectedRows(tester);
+        expect(rows, hasLength(1));
+        expect(titleIn(rows.single, _long), findsOneWidget);
+
+        await key(tester, LogicalKeyboardKey.arrowDown);
+        rows = selectedRows(tester);
+        expect(rows, hasLength(1));
+        expect(titleIn(rows.single, _short), findsOneWidget);
+
+        await key(tester, LogicalKeyboardKey.arrowUp);
+        expect(titleIn(selectedRows(tester).single, _long), findsOneWidget);
+
+        await key(tester, LogicalKeyboardKey.arrowUp);
+        expect(boxHasCursor(tester), isTrue);
+        expect(selectedRows(tester), isEmpty);
+      });
+
+      testWidgets('Esc returns to the box', (tester) async {
+        await open(tester);
+        await _type(tester, 'sam');
+        await key(tester, LogicalKeyboardKey.arrowDown);
+        await key(tester, LogicalKeyboardKey.escape);
+        expect(boxHasCursor(tester), isTrue);
+        expect(selectedRows(tester), isEmpty);
+      });
+
+      testWidgets('works with Rx on', (tester) async {
+        await open(tester);
+        await tester.tap(_rx);
+        await tester.pumpAndSettle();
+        await _type(tester, 'ā');
+        await key(tester, LogicalKeyboardKey.arrowDown);
+        expect(boxHasCursor(tester), isFalse);
+        expect(selectedRows(tester), hasLength(1));
+      });
+    });
+  }
+
+  testWidgets('Contents panel: Enter on the selected row jumps to it', (
+    tester,
+  ) async {
+    await _openContentsPanel(tester);
+    await _type(tester, 'sam');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ContentsPanel)),
+    );
+    final tab = container.read(readerTabsProvider).activeTab!;
+    // The second found heading is _short, paraId 2.
+    expect(tab.bookId, 'dn1');
+    expect(tab.initialParaId, 2);
   });
 }
