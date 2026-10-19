@@ -266,8 +266,8 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
                     if (!regexOn) const VelthuisHelpIcon(),
+                    RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
                   ],
                 ),
                 errorText: _resultsFor != text

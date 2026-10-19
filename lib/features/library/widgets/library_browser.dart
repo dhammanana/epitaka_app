@@ -269,7 +269,6 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                                             .state =
                                         !rxOn,
                               ),
-                              if (!rxOn) const VelthuisHelpIcon(),
                             ],
                           ),
                           errorText: patternError != null
@@ -283,6 +282,7 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                     )
                   : const SizedBox.shrink(),
             ),
+                              if (!rxOn) const VelthuisHelpIcon(),
             // ── Content: filtered flat list or the tabbed tree ─────
             Expanded(
               child: NotificationListener<ScrollNotification>(

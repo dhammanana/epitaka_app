@@ -289,12 +289,12 @@ class _SearchField extends ConsumerWidget {
                   tooltip: loc.clearSearch,
                   icon: const Icon(Icons.clear),
                 ),
+              if (!rxOn) const VelthuisHelpIcon(),
               RegexToggleButton(
                 on: rxOn,
                 onToggle: () =>
                     ref.read(annotationsRegexProvider.notifier).state = !rxOn,
               ),
-              if (!rxOn) const VelthuisHelpIcon(),
             ],
           ),
           errorText: patternError != null

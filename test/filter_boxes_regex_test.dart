@@ -233,12 +233,16 @@ void main() {
     ('Library', _openLibrary),
   ]) {
     group(name, () {
-      testWidgets('Rx sits before the Velthuis help, after the other icons; '
+      testWidgets('Rx sits after the Velthuis help and the other icons, and stays put; '
           'on, it keeps `.m` and hides the help', (tester) async {
         await open(tester);
         expect(_rx, findsOneWidget);
         expect(_help, findsOneWidget);
-        expect(tester.getCenter(_rx).dx, lessThan(tester.getCenter(_help).dx));
+        expect(
+          tester.getCenter(_rx).dx,
+          greaterThan(tester.getCenter(_help).dx),
+        );
+        final rxBefore = tester.getCenter(_rx);
         for (final icon in [Icons.close, Icons.clear]) {
           final other = find.descendant(
             of: _field,
@@ -256,6 +260,7 @@ void main() {
         await tester.pumpAndSettle();
         await _type(tester, 'a.m');
         expect(tester.widget<TextField>(_field).controller!.text, 'a.m');
+        expect(tester.getCenter(_rx), rxBefore);
         expect(_help, findsNothing);
       });
 

@@ -54,29 +54,40 @@ class RegexToggleButton extends StatelessWidget {
     if (kIsWeb) return const SizedBox.shrink();
     final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: AppShortcuts.tooltip(loc.regularExpression, 'regex-toggle'),
-      excludeFromSemantics: true,
-      child: Semantics(
-        button: true,
-        toggled: on,
-        label: loc.regularExpression,
-        excludeSemantics: true,
-        child: InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(4),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-            decoration: BoxDecoration(
-              color: on ? colors.primaryContainer : null,
+    // A text box gives its suffix at least 48 px. Without this floor, Rx alone
+    // is narrower, sits at the left of that slot and shifts when the help
+    // icon beside it hides.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: kMinInteractiveDimension),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Tooltip(
+          message: AppShortcuts.tooltip(loc.regularExpression, 'regex-toggle'),
+          excludeFromSemantics: true,
+          child: Semantics(
+            button: true,
+            toggled: on,
+            label: loc.regularExpression,
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: onToggle,
               borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              'Rx',
-              style: AppTypography.labelSmall.copyWith(
-                fontWeight: FontWeight.bold,
-                color: on ? colors.primary : colors.onSurfaceVariant,
+              child: Container(
+                // The button is last in the box, so the right margin matches the
+                // help icon's 8 px padding that used to sit after it.
+                margin: const EdgeInsets.only(left: 2, right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: on ? colors.primaryContainer : null,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Rx',
+                  style: AppTypography.labelSmall.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: on ? colors.primary : colors.onSurfaceVariant,
+                  ),
+                ),
               ),
             ),
           ),

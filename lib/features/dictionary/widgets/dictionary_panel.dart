@@ -570,8 +570,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                               _onSearchChanged('');
                             },
                           ),
-                        RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
                         if (!regexOn) const VelthuisHelpIcon(),
+                        RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
                       ],
                     ),
                     errorText:

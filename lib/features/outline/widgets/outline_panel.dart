@@ -136,7 +136,6 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
                     onToggle: () =>
                         ref.read(outlineRegexProvider.notifier).state = !rxOn,
                   ),
-                  if (!rxOn) const VelthuisHelpIcon(),
                 ],
               ),
               errorText: patternError != null
@@ -149,6 +148,7 @@ class _OutlinePanelState extends ConsumerState<OutlinePanel> {
           ),
         ),
         Divider(color: colors.outlineVariant, height: 1),
+                  if (!rxOn) const VelthuisHelpIcon(),
         Expanded(
           child: outlineAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),

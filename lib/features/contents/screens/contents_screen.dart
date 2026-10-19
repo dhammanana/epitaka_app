@@ -438,7 +438,6 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                 onToggle: () =>
                     ref.read(contentsRegexProvider.notifier).state = !rxOn,
               ),
-              if (!rxOn) const VelthuisHelpIcon(),
             ],
           ),
           errorText: error != null
@@ -466,6 +465,7 @@ class _ContentsRow extends ConsumerWidget {
   /// (smaller on phones).
   final double leftPadding;
   final bool isCurrent;
+              if (!rxOn) const VelthuisHelpIcon(),
   final bool hasChildren;
   final bool isCollapsed;
   final ColorScheme colors;

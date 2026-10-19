@@ -313,7 +313,6 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                                           .state =
                                       !rxOn,
                             ),
-                            if (!rxOn) const VelthuisHelpIcon(),
                           ],
                         ),
                         errorText: patternError != null
@@ -327,6 +326,7 @@ class _ContentsPanelState extends ConsumerState<ContentsPanel> {
                   ),
                   // The outline is the full outline of the book —
                   // every section with its study guide — opened as a
+                            if (!rxOn) const VelthuisHelpIcon(),
                   // separate reading view.
                   IconButton(
                     icon: const Icon(Icons.account_tree_outlined, size: 18),

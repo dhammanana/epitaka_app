@@ -403,9 +403,9 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                       },
                     ),
                   ],
+                  if (!regexOn) const VelthuisHelpIcon(),
                   if (!kIsWeb)
                     RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-                  if (!regexOn) const VelthuisHelpIcon(),
                 ],
               ),
               errorText: patternMessage,

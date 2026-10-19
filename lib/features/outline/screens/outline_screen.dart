@@ -369,7 +369,6 @@ class _OutlineHeader extends ConsumerWidget {
                 onToggle: () =>
                     ref.read(outlineRegexProvider.notifier).state = !rxOn,
               ),
-              if (!rxOn) const VelthuisHelpIcon(),
             ],
           ),
           errorText: error != null
@@ -401,6 +400,7 @@ class _OutlineHeader extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Row(
+              if (!rxOn) const VelthuisHelpIcon(),
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(

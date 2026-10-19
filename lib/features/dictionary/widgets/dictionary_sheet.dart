@@ -786,12 +786,12 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                                 _focusNode.requestFocus();
                                               },
                                             ),
+                                          if (!regexOn)
+                                            const VelthuisHelpIcon(),
                                           RegexToggleButton(
                                             on: regexOn,
                                             onToggle: _toggleRegex,
                                           ),
-                                          if (!regexOn)
-                                            const VelthuisHelpIcon(),
                                         ],
                                       ),
                                       errorText:

@@ -362,9 +362,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   tooltip: loc.clear,
                 ),
               ],
+              if (!regexOn) const VelthuisHelpIcon(),
               if (!kIsWeb)
                 RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-              if (!regexOn) const VelthuisHelpIcon(),
             ],
           ),
           errorText: patternMessage,

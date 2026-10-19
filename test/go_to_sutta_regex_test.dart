@@ -218,7 +218,7 @@ void main() {
       expect(find.byType(GoToSuttaDialog), findsNothing);
     }
 
-    testWidgets('rx sits before the Velthuis help; on, the help hides', (
+    testWidgets('rx sits after the Velthuis help; on, the help hides and rx stays put', (
       tester,
     ) async {
       await pumpHost(tester);
@@ -233,13 +233,15 @@ void main() {
       );
       expect(rx, findsOneWidget);
       expect(help, findsOneWidget);
-      // Order: rx first, then the help icon.
-      expect(tester.getTopLeft(rx).dx < tester.getTopLeft(help).dx, isTrue);
+      // Order: the help icon first, then rx.
+      expect(tester.getTopLeft(help).dx < tester.getTopLeft(rx).dx, isTrue);
+      final rxBefore = tester.getTopLeft(rx);
 
       await tester.tap(rx);
       await tester.pumpAndSettle();
       expect(help, findsNothing);
       expect(rx, findsOneWidget);
+      expect(tester.getTopLeft(rx), rxBefore);
       await closeWithEscape(tester);
     });
 

@@ -210,7 +210,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('Rx sits after the clear button and before the help; '
+    testWidgets('Rx sits after the clear button and the help; '
         'Velthuis works with Rx off', (tester) async {
       await tester.pumpWidget(_build());
       await tester.pumpAndSettle();
@@ -220,7 +220,7 @@ void main() {
       expect(tester.widget<TextField>(field()).controller!.text, 'pāli');
       final rx = tester.getCenter(find.byType(RegexToggleButton)).dx;
       expect(rx, greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx));
-      expect(rx, lessThan(tester.getCenter(help()).dx));
+      expect(rx, greaterThan(tester.getCenter(help()).dx));
     });
 
     testWidgets('Alt+R in the box turns Rx on, then off', (tester) async {
