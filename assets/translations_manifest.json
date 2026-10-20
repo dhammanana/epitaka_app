@@ -15,14 +15,14 @@
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en.zip",
           "note": "English translation — used by AI Q&A to search and provide answers",
-          "size": 123433999,
-          "dbSize": 645627904,
-          "updated": "2026-10-07",
+          "size": 124389973,
+          "dbSize": 649023488,
+          "updated": "2026-10-20",
           "compulsory": true,
-          "checksum": "a254894168e684b1dd6ad843b3c2b9871974e622cd0fa1be2b826a03b09a0eb6",
-          "version": "2026-10-07-a2548941",
-          "versionedFile": "epitaka_en_20261007-a2548941.zip",
-          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en_20261007-a2548941.zip"
+          "checksum": "ebee1e0fc490371ed035d7327c4f5584485eb632037dd0652710433d28c9a1e3",
+          "version": "2026-10-20-ebee1e0f",
+          "versionedFile": "epitaka_en_20261020-ebee1e0f.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_en_20261020-ebee1e0f.zip"
         }
       }
     },
@@ -103,14 +103,14 @@
         "default": {
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo.zip",
-          "size": 3573696,
-          "dbSize": 25133056,
-          "updated": "2026-10-10",
+          "size": 11097874,
+          "dbSize": 69767168,
+          "updated": "2026-10-20",
           "compulsory": false,
-          "checksum": "8ea587da364d83b0debd818846ca0e5f548fb6ba218218aed1c5227ecc66a943",
-          "version": "2026-10-10-8ea587da",
-          "versionedFile": "epitaka_lo_20261010-8ea587da.zip",
-          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo_20261010-8ea587da.zip"
+          "checksum": "9bea274d6ac8470007352fa4da018843a755c788ed92eb26802ee54d57dfdd16",
+          "version": "2026-10-20-9bea274d",
+          "versionedFile": "epitaka_lo_20261020-9bea274d.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo_20261020-9bea274d.zip"
         }
       }
     },
@@ -262,14 +262,14 @@
         "default": {
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_hi.zip",
-          "size": 86533494,
-          "dbSize": 415592448,
-          "updated": "2026-10-07",
+          "size": 94034923,
+          "dbSize": 479858688,
+          "updated": "2026-10-20",
           "compulsory": false,
-          "checksum": "84b2afa47397f5958e0e37b983771570bd79ab1cf47837ea52999eb9092e3621",
-          "version": "2026-10-07-84b2afa4",
-          "versionedFile": "epitaka_hi_20261007-84b2afa4.zip",
-          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_hi_20261007-84b2afa4.zip"
+          "checksum": "41e9f17d3ee024347cf831515c6f17ccea05f90c4abbe76fda8c4e3a524d9b77",
+          "version": "2026-10-20-41e9f17d",
+          "versionedFile": "epitaka_hi_20261020-41e9f17d.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_hi_20261020-41e9f17d.zip"
         }
       }
     },
@@ -334,14 +334,14 @@
         "default": {
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_bn.zip",
-          "size": 67060685,
-          "dbSize": 322256896,
-          "updated": "2026-10-10",
+          "size": 82847058,
+          "dbSize": 392548352,
+          "updated": "2026-10-20",
           "compulsory": false,
-          "checksum": "a52c35c6114d2d6d8b6b99c1253dce9e3dbf2be44a54df57817c3c39b8a771b1",
-          "version": "2026-10-10-a52c35c6",
-          "versionedFile": "epitaka_bn_20261010-a52c35c6.zip",
-          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_bn_20261010-a52c35c6.zip"
+          "checksum": "8b371fb408144e5dc499582ec05c2b966667a1e7823cb787c881c2083fc079b3",
+          "version": "2026-10-20-8b371fb4",
+          "versionedFile": "epitaka_bn_20261020-8b371fb4.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_bn_20261020-8b371fb4.zip"
         }
       }
     },
@@ -360,6 +360,24 @@
           "version": "2026-10-10-2e13bb29",
           "versionedFile": "epitaka_es_20261010-2e13bb29.zip",
           "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_es_20261010-2e13bb29.zip"
+        }
+      }
+    },
+    "fr": {
+      "englishName": "French",
+      "nativeName": "Français",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_fr.zip",
+          "size": 72892142,
+          "dbSize": 237096960,
+          "updated": "2026-10-20",
+          "compulsory": false,
+          "checksum": "1ac9951df97bb86c028e75d5d079d8b0c9e0803a45e0bb29e4d579928cccb815",
+          "version": "2026-10-20-1ac9951d",
+          "versionedFile": "epitaka_fr_20261020-1ac9951d.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_fr_20261020-1ac9951d.zip"
         }
       }
     }
