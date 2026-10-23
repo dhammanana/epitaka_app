@@ -2028,6 +2028,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       matchCount: ref.watch(inBookSearchProvider).matchCount,
       currentMatchIndex: ref.watch(inBookSearchProvider).matchIndex,
       query: ref.watch(inBookSearchProvider).query,
+      regexOn: ref.watch(findRegexProvider),
+      onToggleRegex: () =>
+          ref.read(inBookSearchProvider.notifier).toggleRegex(),
+      patternError: ref.watch(inBookSearchProvider).patternError,
+      patternTooSlow: ref.watch(inBookSearchProvider).patternTooSlow,
       onClose: _toggleInBookSearch,
       onQueryChanged: (v) {
         ref.read(inBookSearchProvider.notifier).onQueryChanged(v);
@@ -2035,8 +2040,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onSubmitted: (v) {
         final notifier = ref.read(inBookSearchProvider.notifier);
         final searchState = ref.read(inBookSearchProvider);
-        if (searchState.hasMatches &&
-            searchState.query == convertToRomanPali(v)) {
+        // rx keeps the pattern as typed; a plain find stores it in Roman.
+        final typed = ref.read(findRegexProvider) ? v : convertToRomanPali(v);
+        if (searchState.hasMatches && searchState.query == typed) {
           // A search still waiting on the debounce would re-run later and
           // jump back to the first match.
           notifier.cancelPendingSearch();
@@ -2053,7 +2059,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onSearchEntire: () {
         _toggleInBookSearch();
         if (ResponsiveBreakpoint.isDesktop(context)) {
-          ref.read(sidePanelProvider.notifier).open(SidePanelType.search);
+          ref
+              .read(sidePanelProvider.notifier)
+              .open(SidePanelType.search, autoFocus: true);
         } else {
           context.push('/search');
         }

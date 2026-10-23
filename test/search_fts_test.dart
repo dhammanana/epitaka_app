@@ -138,6 +138,7 @@ Future<TranslationDatabase> _fixtureTranslationDb() async {
     ('dn1', 1, 1, 'rāga dveṣa moha'),
     ('dn1', 2, 1, 'cittaṃ parisuddhaṃ'),
     ('kv', 10, 1, 'sabbe dhammā'),
+    ('vbh', 20, 1, 'for the well-being of many'),
   ];
   for (final (bookId, paraId, lineId, translation) in rows) {
     await db.customStatement(
@@ -229,6 +230,12 @@ void main() {
       expect(await hits('sab san'), {('dn1', 2)});
     });
 
+    test('a hyphen in a Pāḷi query still splits the words', () async {
+      // The Pāḷi index turned hyphens into spaces; `sabbedhammā` is in no
+      // paragraph.
+      expect(await hits('sabbe-dhammā'), {('dn1', 5)});
+    });
+
     test('a multi-word query with one missing word matches nothing', () async {
       expect(await hits('sabbe gavaya'), isEmpty);
     });
@@ -313,6 +320,25 @@ void main() {
       );
     });
 
+    test('countResultsByBook counts a paragraph that matches in the Pāḷi and '
+        'the translation once', () async {
+      // kv 10 has `dhammaṃ` in the Pāḷi and `dhammā` in the English.
+      expect(
+        await appDb.countResultsByBook('dhamma', langCode: 'en'),
+        {'dn1': 2, 'kv': 1},
+      );
+      // A translation-only match still counts.
+      expect(
+        await appDb.countResultsByBook('raga', langCode: 'en'),
+        {'dn1': 1},
+      );
+      // No translation index: the Pāḷi count alone.
+      expect(
+        await appDb.countResultsByBook('dhamma', langCode: 'xx'),
+        {'dn1': 2, 'kv': 1},
+      );
+    });
+
     test('searchPaliFtsByBook paginates with limit/offset', () async {
       final page1 =
           await appDb.searchPaliFtsByBook('dn1', 'katva', limit: 1, offset: 0);
@@ -362,6 +388,19 @@ void main() {
     test('multi-word translation query (citta parisuddha)', () async {
       final rows = await appDb.searchTranslationFts('en', 'citta parisuddha');
       expect(rows.map((r) => (r.bookId, r.firstParaId)), contains(('dn1', 2)));
+    });
+
+    test('a hyphenated query finds the hyphenated word, which the index '
+        'stored joined', () async {
+      final rows = await appDb.searchTranslationFts('en', 'well-being');
+      expect(rows.map((r) => (r.bookId, r.firstParaId)), [('vbh', 20)]);
+      final inBook =
+          await appDb.searchTranslationFtsByBook('en', 'vbh', 'well-being');
+      expect({for (final r in inBook) r.firstParaId}, {20});
+      expect(
+        await appDb.countResultsByBook('well-being', langCode: 'en'),
+        {'vbh': 1},
+      );
     });
 
     test('translation search filtered by book', () async {

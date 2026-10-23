@@ -21,8 +21,12 @@ import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../router/app_router.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
+import '../../search/services/regex_search.dart';
 import '../models/outline_models.dart';
 import '../providers/outline_provider.dart';
 import '../widgets/outline_section_sheet.dart';
@@ -40,8 +44,17 @@ class OutlineScreen extends ConsumerStatefulWidget {
 class _OutlineScreenState extends ConsumerState<OutlineScreen> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _openItem(_found[i]);
+    },
+  );
 
-  bool _searchActive = false;
+  /// The sections the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<OutlineItem> _found = const [];
+
   String _searchQuery = '';
 
   /// Indices of collapsed vagga groups.
@@ -51,26 +64,36 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
   /// open) — used to keep long suttas tidy.
   final Set<int> _collapsedSuttas = {};
 
+  /// The Rx filter over the section titles: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _nav.addListener(_onNavChanged);
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _rxFilter.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
 
-  void _toggleSearch() {
+  void _clearSearch() {
     setState(() {
-      _searchActive = !_searchActive;
-      if (!_searchActive) {
-        _searchQuery = '';
-        _searchController.clear();
-      }
+      _searchQuery = '';
+      _searchController.clear();
     });
-    if (_searchActive) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _searchFocusNode.requestFocus();
-      });
-    }
   }
 
   void _openItem(OutlineItem item) {
@@ -85,8 +108,32 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
 
   /// Flat list of rows to render, honouring collapse state and search.
   List<_Row> _buildRows(List<OutlineGroup> groups) {
+    // rx: the raw text stays the pattern; it matches titles with exact
+    // diacritics (spec H), in a regex job (spec K). An invalid one filters
+    // to nothing.
+    final rxOn = ref.watch(outlineRegexProvider);
+    final rxText = rxOn && _searchQuery.trim().isNotEmpty ? _searchQuery : '';
+    final valid = rxText.isNotEmpty && regexError(rxText) == null;
+    final flat = [
+      for (final g in groups)
+        for (final s in g.suttas) ...s.items,
+    ];
+    final hits = _rxFilter.hitsFor(
+      valid ? rxText : '',
+      groups,
+      () => [
+        for (final item in flat) [item.title.toLowerCase()],
+      ],
+    );
+    if (rxText.isNotEmpty && (!valid || hits == null)) return const [];
+    final rxItems = rxText.isEmpty
+        ? null
+        : (Set<OutlineItem>.identity()
+            ..addAll([for (final i in hits!) flat[i]]));
     final query = _searchQuery.trim().isEmpty
         ? ''
+        : rxOn
+        ? _searchQuery
         : normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
 
     final rows = <_Row>[];
@@ -106,9 +153,10 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
         // Search: flat match list, no group/sutta headers.
         if (query.isNotEmpty) {
           for (final item in sutta.items) {
-            if (normalizePaliFuzzy(item.title).toLowerCase().contains(query)) {
-              rows.add(_ItemRow(item: item));
-            }
+            final matches = rxItems != null
+                ? rxItems.contains(item)
+                : normalizePaliFuzzy(item.title).toLowerCase().contains(query);
+            if (matches) rows.add(_ItemRow(item: item));
           }
           continue;
         }
@@ -167,13 +215,6 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(_searchActive ? Icons.close : Icons.search),
-            tooltip: loc.searchContents,
-            onPressed: _toggleSearch,
-          ),
-        ],
       ),
       body: outlineAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -196,6 +237,15 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
           }
 
           final rows = _buildRows(groups);
+          // With a query every row is a found section, in this order.
+          _found = _searchQuery.trim().isEmpty
+              ? const []
+              : [
+                  for (final row in rows)
+                    if (row is _ItemRow) row.item,
+                ];
+          _nav.count = _found.length;
+          if (_nav.selected >= _found.length) _nav.selected = 0;
           final total = groups.fold<int>(0, (sum, g) => sum + g.itemCount);
 
           return Column(
@@ -205,11 +255,11 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
               _OutlineHeader(
                 bookName: widget.bookName,
                 sectionCount: total,
-                searchActive: _searchActive,
                 searchController: _searchController,
                 searchFocusNode: _searchFocusNode,
                 onSearchChanged: (v) => setState(() => _searchQuery = v),
-                onCloseSearch: _toggleSearch,
+                onClearSearch: _clearSearch,
+                patternTooSlow: _rxFilter.isTooSlow(_searchQuery),
               ),
               Divider(color: colors.outlineVariant, height: 1),
               // ── Rows ─────────────────────────────────────────────
@@ -225,14 +275,20 @@ class _OutlineScreenState extends ConsumerState<OutlineScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(
-                          left: AppDimensions.md,
-                          right: AppDimensions.md,
-                          bottom: AppDimensions.xxl,
+                    : Focus(
+                        focusNode: _nav.listFocus,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.only(
+                            left: AppDimensions.md,
+                            right: AppDimensions.md,
+                            bottom: AppDimensions.xxl,
+                          ),
+                          itemCount: rows.length,
+                          itemBuilder: (context, i) => FilterNavRow(
+                            selected: _nav.isSelected(i),
+                            child: _buildRow(rows[i], colors),
+                          ),
                         ),
-                        itemCount: rows.length,
-                        itemBuilder: (context, i) => _buildRow(rows[i], colors),
                       ),
               ),
             ],
@@ -290,20 +346,22 @@ class _ItemRow extends _Row {
 class _OutlineHeader extends ConsumerWidget {
   final String bookName;
   final int sectionCount;
-  final bool searchActive;
   final TextEditingController searchController;
   final FocusNode searchFocusNode;
   final ValueChanged<String> onSearchChanged;
-  final VoidCallback onCloseSearch;
+  final VoidCallback onClearSearch;
+
+  /// The Rx pattern ran past its time limit.
+  final bool patternTooSlow;
 
   const _OutlineHeader({
     required this.bookName,
     required this.sectionCount,
-    required this.searchActive,
     required this.searchController,
     required this.searchFocusNode,
     required this.onSearchChanged,
-    required this.onCloseSearch,
+    required this.onClearSearch,
+    this.patternTooSlow = false,
   });
 
   @override
@@ -312,51 +370,64 @@ class _OutlineHeader extends ConsumerWidget {
     final loc = AppLocalizations.of(context);
     final script = ref.watch(settingsProvider.select((s) => s.paliScript));
     final isPhone = Mobile.isPhone(context);
+    final rxOn = ref.watch(outlineRegexProvider);
+    final error = rxOn && searchController.text.trim().isNotEmpty
+        ? regexError(searchController.text)
+        : null;
 
     final pad = isPhone ? AppDimensions.md : AppDimensions.lg;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        pad,
-        AppDimensions.md,
-        pad,
-        AppDimensions.sm,
+    final searching = searchController.text.isNotEmpty;
+    // The box shows at once (spec I); the intro below it shows while the
+    // box is empty, as it did while search was closed.
+    final box = Padding(
+      padding: searchBoxPadding(SearchBoxSize.screen),
+      child: TextField(
+        controller: searchController,
+        focusNode: searchFocusNode,
+        // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+        inputFormatters: rxOn ? const [] : const [VelthuisInputFormatter()],
+        style: searchBoxTextStyle(context, size: SearchBoxSize.screen),
+        decoration: searchBoxDecoration(
+          context,
+          hintText: loc.searchContents,
+          size: SearchBoxSize.screen,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (searching)
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: loc.clear,
+                  onPressed: onClearSearch,
+                ),
+              if (!rxOn) const VelthuisHelpIcon(),
+              RegexToggleButton(
+                on: rxOn,
+                onToggle: () =>
+                    ref.read(outlineRegexProvider.notifier).state = !rxOn,
+              ),
+            ],
+          ),
+          errorText: error != null
+              ? loc.invalidPattern(error)
+              : rxOn && patternTooSlow
+              ? loc.patternTooSlow
+              : null,
+        ),
+        onChanged: onSearchChanged,
       ),
-      child: searchActive
-          ? TextField(
-              controller: searchController,
-              focusNode: searchFocusNode,
-              inputFormatters: const [VelthuisInputFormatter()],
-              autofocus: true,
-              style: AppTypography.bodyTranslation.copyWith(
-                color: colors.onSurface,
-                fontSize: 15,
-              ),
-              decoration: InputDecoration(
-                hintText: loc.searchContents,
-                hintStyle: AppTypography.labelSmall.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: onCloseSearch,
-                    ),
-                    const VelthuisHelpIcon(),
-                  ],
-                ),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                  borderSide: BorderSide(color: colors.outlineVariant),
-                ),
-              ),
-              onChanged: onSearchChanged,
-            )
-          : Column(
+    );
+    // One tree whether or not the box has text: switching between "box"
+    // and "box plus intro" would rebuild the field and drop its focus.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        box,
+        if (!searching)
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, 0, pad, AppDimensions.sm),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -413,6 +484,8 @@ class _OutlineHeader extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+      ],
     );
   }
 }

@@ -10,9 +10,13 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
 import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
+import '../../search/services/regex_search.dart';
 import '../providers/contents_provider.dart';
 
 /// Contents screen showing the table of contents for a book.
@@ -44,9 +48,18 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final _nav = FilterListNav(
+    boxNode: _searchFocusNode,
+    onActivate: (i) {
+      if (i < _found.length) _jumpTo(_found[i]);
+    },
+  );
+
+  /// The headings the filter box found, in list order, for the Down-arrow
+  /// path.
+  List<HeadingInfo> _found = const [];
 
   bool _didScrollToCurrent = false;
-  bool _searchActive = false;
   String _searchQuery = '';
 
   /// paraIds of headings whose children are currently collapsed.
@@ -75,10 +88,28 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
   /// visible-indices cache above knows to invalidate.
   int _collapseVersion = 0;
 
+  /// The Rx filter over the heading titles: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _nav.addListener(_onNavChanged);
+  }
+
+  void _onNavChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _rxFilter.dispose();
     _scrollController.dispose();
     _searchController.dispose();
+    _nav.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -208,18 +239,6 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
     });
   }
 
-  void _openSearch() {
-    setState(() => _searchActive = true);
-  }
-
-  void _closeSearch() {
-    setState(() {
-      _searchActive = false;
-      _searchQuery = '';
-      _searchController.clear();
-    });
-  }
-
   void _jumpTo(HeadingInfo heading) {
     // Whether or not a tab is already open for this book, openTab jumps
     // within the existing tab (updating its initialParaId) rather than
@@ -250,7 +269,9 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
         data: (headings) {
           final currentIndex = _currentHeadingIndex(headings);
 
-          if (!_searchActive && !_didScrollToCurrent && currentIndex >= 0) {
+          if (_searchQuery.isEmpty &&
+              !_didScrollToCurrent &&
+              currentIndex >= 0) {
             _didScrollToCurrent = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _scrollToIndex(currentIndex);
@@ -258,7 +279,22 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
           }
 
           final parents = _parentsFor(headings);
-          final query = normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
+          // rx: the raw text stays the pattern; it matches titles with
+          // exact diacritics (spec H), in a regex job (spec K). An invalid one
+          // filters to nothing.
+          final rxOn = ref.watch(contentsRegexProvider);
+          final rxText = rxOn ? _searchQuery : '';
+          final patternError = rxText.isNotEmpty ? regexError(rxText) : null;
+          final rxHits = _rxFilter.hitsFor(
+            patternError == null ? rxText : '',
+            headings,
+            () => [
+              for (final h in headings) [(h.title ?? '').toLowerCase()],
+            ],
+          );
+          final query = rxOn
+              ? _searchQuery
+              : normalizePaliFuzzy(_searchQuery.trim()).toLowerCase();
 
           // Phones have much less horizontal room, so both the outer list
           // padding and the per-level indent step are tightened up.
@@ -271,7 +307,16 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
           // collapse state. Otherwise, respect the expand/collapse tree.
           // Titles and query are both run through normalizePaliFuzzy so a
           // plain "n" also matches ñ/ṇ/ṅ and other Pāli diacritic letters.
-          final visibleIndices = _visibleIndicesFor(headings, parents, query);
+          final visibleIndices = rxText.isNotEmpty
+              ? (patternError != null || rxHits == null
+                    ? const <int>[]
+                    : (rxHits.toList()..sort()))
+              : _visibleIndicesFor(headings, parents, query);
+          _found = _searchQuery.trim().isEmpty
+              ? const []
+              : [for (final i in visibleIndices) headings[i]];
+          _nav.count = _found.length;
+          if (_nav.selected >= _found.length) _nav.selected = 0;
 
           return Column(
             children: [
@@ -285,9 +330,10 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                     AppDimensions.marginMobile,
                     0,
                   ),
-                  child: _searchActive
-                      ? _buildSearchBar(colors)
-                      : _buildTitleBar(colors),
+                  // The box shows at once, under the title (spec I).
+                  child: Column(
+                    children: [_buildTitleBar(colors), _buildSearchBar(colors)],
+                  ),
                 ),
               ),
               Divider(color: colors.outlineVariant, height: 1),
@@ -304,42 +350,48 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          listLeftPadding,
-                          AppDimensions.md,
-                          AppDimensions.md,
-                          AppDimensions.md,
-                        ),
-                        itemCount: visibleIndices.length,
-                        itemBuilder: (context, i) {
-                          final index = visibleIndices[i];
-                          final heading = headings[index];
-                          final indent = query.isEmpty
-                              ? (heading.level ?? 1).clamp(1, 5) - 1
-                              : 0;
-                          final isCurrent = index == currentIndex;
-                          final hasChildren =
-                              query.isEmpty && _hasChildren(index, headings);
-                          final isCollapsed = _collapsedParaIds.contains(
-                            heading.paraId,
-                          );
+                    : Focus(
+                        focusNode: _nav.listFocus,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            listLeftPadding,
+                            AppDimensions.md,
+                            AppDimensions.md,
+                            AppDimensions.md,
+                          ),
+                          itemCount: visibleIndices.length,
+                          itemBuilder: (context, i) {
+                            final index = visibleIndices[i];
+                            final heading = headings[index];
+                            final indent = query.isEmpty
+                                ? (heading.level ?? 1).clamp(1, 5) - 1
+                                : 0;
+                            final isCurrent = index == currentIndex;
+                            final hasChildren =
+                                query.isEmpty && _hasChildren(index, headings);
+                            final isCollapsed = _collapsedParaIds.contains(
+                              heading.paraId,
+                            );
 
-                          return _ContentsRow(
-                            heading: heading,
-                            indent: indent,
-                            indentUnit: indentUnit,
-                            leftPadding: rowLeftPadding,
-                            isCurrent: isCurrent,
-                            hasChildren: hasChildren,
-                            isCollapsed: isCollapsed,
-                            colors: colors,
-                            onToggleCollapse: () =>
-                                _toggleCollapse(heading.paraId),
-                            onTap: () => _jumpTo(heading),
-                          );
-                        },
+                            return FilterNavRow(
+                              selected: _nav.isSelected(i),
+                              child: _ContentsRow(
+                                heading: heading,
+                                indent: indent,
+                                indentUnit: indentUnit,
+                                leftPadding: rowLeftPadding,
+                                isCurrent: isCurrent,
+                                hasChildren: hasChildren,
+                                isCollapsed: isCollapsed,
+                                colors: colors,
+                                onToggleCollapse: () =>
+                                    _toggleCollapse(heading.paraId),
+                                onTap: () => _jumpTo(heading),
+                              ),
+                            );
+                          },
+                        ),
                       ),
               ),
             ],
@@ -374,12 +426,6 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.search),
-              color: colors.onSurfaceVariant,
-              tooltip: loc.searchContents,
-              onPressed: _openSearch,
-            ),
-            IconButton(
               icon: const Icon(Icons.close),
               color: colors.onSurfaceVariant,
               onPressed: () => context.pop(),
@@ -392,39 +438,50 @@ class _ContentsScreenState extends ConsumerState<ContentsScreen> {
 
   Widget _buildSearchBar(ColorScheme colors) {
     final loc = AppLocalizations.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            inputFormatters: const [VelthuisInputFormatter()],
-            autofocus: true,
-            style: AppTypography.headlineSmall.copyWith(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: colors.onSurface,
-            ),
-            decoration: InputDecoration(
-              hintText: loc.searchContents,
-              hintStyle: AppTypography.labelSmall.copyWith(
-                fontSize: 14,
-                color: colors.onSurfaceVariant,
+    final rxOn = ref.watch(contentsRegexProvider);
+    final error = rxOn && _searchQuery.isNotEmpty
+        ? regexError(_searchQuery)
+        : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: kSearchBoxGap),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+        inputFormatters: rxOn ? const [] : const [VelthuisInputFormatter()],
+        style: searchBoxTextStyle(context, size: SearchBoxSize.screen),
+        decoration: searchBoxDecoration(
+          context,
+          hintText: loc.searchContents,
+          size: SearchBoxSize.screen,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchQuery.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: loc.clear,
+                  onPressed: () => setState(() {
+                    _searchQuery = '';
+                    _searchController.clear();
+                  }),
+                ),
+              if (!rxOn) const VelthuisHelpIcon(),
+              RegexToggleButton(
+                on: rxOn,
+                onToggle: () =>
+                    ref.read(contentsRegexProvider.notifier).state = !rxOn,
               ),
-              border: InputBorder.none,
-              isDense: true,
-              suffixIcon: const VelthuisHelpIcon(),
-            ),
-            onChanged: (value) => setState(() => _searchQuery = value),
+            ],
           ),
+          errorText: error != null
+              ? loc.invalidPattern(error)
+              : rxOn && _rxFilter.isTooSlow(_searchQuery)
+              ? loc.patternTooSlow
+              : null,
         ),
-        IconButton(
-          icon: const Icon(Icons.close),
-          color: colors.onSurfaceVariant,
-          tooltip: loc.closeSearch,
-          onPressed: _closeSearch,
-        ),
-      ],
+        onChanged: (value) => setState(() => _searchQuery = value),
+      ),
     );
   }
 }

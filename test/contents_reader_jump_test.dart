@@ -29,13 +29,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/database/epitaka_database.dart';
-import '../lib/core/providers/database_provider.dart';
-import '../lib/core/providers/settings_provider.dart';
-import '../lib/core/utils/app_localizations.dart';
-import '../lib/features/contents/screens/contents_screen.dart';
-import '../lib/features/reader/providers/reader_tabs_provider.dart';
-import '../lib/router/app_router.dart';
+import 'package:epitaka/core/database/epitaka_database.dart';
+import 'package:epitaka/core/providers/database_provider.dart';
+import 'package:epitaka/core/providers/settings_provider.dart';
+import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/features/contents/screens/contents_screen.dart';
+import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
+import 'package:epitaka/router/app_router.dart';
 
 /// Paragraphs in the test book. Headings live at every 5th paragraph
 /// (5, 10, …, 120) so the TOC list is long enough to auto-scroll and the
@@ -235,11 +235,20 @@ void main() {
     }
 
     // 4) The TOC list really scrolled (offset > 0), not just "lucky" layout.
+    // The list that holds the headings; the always-visible search box
+    // (spec I) has a Scrollable of its own.
     final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(ContentsScreen),
-        matching: find.byType(Scrollable),
-      ),
+      find
+          .ancestor(
+            of: find
+                .descendant(
+                  of: find.byType(ContentsScreen),
+                  matching: find.textContaining('Heading'),
+                )
+                .first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(scrollable.position.pixels, greaterThan(0),
         reason: 'TOC list must auto-scroll down to the current heading');
@@ -273,11 +282,20 @@ void main() {
     }
 
     // Nothing to scroll to.
+    // The list that holds the headings; the always-visible search box
+    // (spec I) has a Scrollable of its own.
     final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(ContentsScreen),
-        matching: find.byType(Scrollable),
-      ),
+      find
+          .ancestor(
+            of: find
+                .descendant(
+                  of: find.byType(ContentsScreen),
+                  matching: find.textContaining('Heading'),
+                )
+                .first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(scrollable.position.pixels, 0);
 

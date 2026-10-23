@@ -134,6 +134,34 @@ void main() {
     expect(await dao.searchSuggestions('d'), isEmpty);
   });
 
+  group('lemma regex (rx in the dictionary)', () {
+    List<String> lemmas(List<DpdHeadwordWithRoot> r) => [
+      for (final h in r) h.headword.lemma1,
+    ];
+
+    test('`^…\$` finds every homograph of one clean lemma', () async {
+      final r = await dao.searchLemmaRegex(r'^dhamma$');
+      expect(r.total, 16);
+      expect(lemmas(r.first).take(2), ['dhamma 1.01', 'dhamma 1.02']);
+      expect(r.first.every((h) => h.headword.lemma1.startsWith('dhamma ')), isTrue);
+    });
+
+    test('more hits than the limit: the first ones in Pāḷi order, and the '
+        'true total', () async {
+      final r = await dao.searchLemmaRegex('^k', limit: 3);
+      expect(r.total, 24);
+      expect(lemmas(r.first), ['kama 1', 'kama 2', 'kama 3']);
+    });
+
+    test('diacritics are exact', () async {
+      expect(lemmas((await dao.searchLemmaRegex(r'^dhammā$')).first), [
+        'dhammā',
+      ]);
+      expect((await dao.searchLemmaRegex(r'^kāma$')).total, 4);
+      expect((await dao.searchLemmaRegex(r'^kama$')).total, 3);
+    });
+  });
+
   test('the handle refuses writes and leaves no side files', () async {
     await expectLater(
       db.customStatement(

@@ -590,6 +590,11 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Where [open] finds `app_data.db`. The regex search opens its own
+  /// connection to the same file.
+  static Future<String> defaultPath() async =>
+      p.join((await getDatabaseDirectory()).path, 'app_data.db');
+
   /// Open the app database at the default path.
   ///
   /// IMPORTANT: this used to unconditionally delete the `-wal`/`-shm`
@@ -616,8 +621,7 @@ class AppDatabase extends _$AppDatabase {
   /// silently deleting anything, so the UI can offer an explicit
   /// "Clear data & rebuild" action.
   static Future<AppDatabase> open() async {
-    final dir = await getDatabaseDirectory();
-    final dbPath = p.join(dir.path, 'app_data.db');
+    final dbPath = await defaultPath();
     final file = File(dbPath);
 
     debugPrint(
@@ -666,8 +670,7 @@ class AppDatabase extends _$AppDatabase {
   /// codepath creates the fresh database, rather than this method
   /// silently creating a second connection to the same file.
   static Future<void> deleteDatabaseFile() async {
-    final dir = await getDatabaseDirectory();
-    final dbPath = p.join(dir.path, 'app_data.db');
+    final dbPath = await defaultPath();
     final file = File(dbPath);
 
     debugPrint('[DB] Clearing app_data.db at user request…');
@@ -1701,7 +1704,11 @@ class AppDatabase extends _$AppDatabase {
     final exists = await isTranslationIndexBuilt(langCode);
     if (!exists) return [];
 
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    final ftsQuery = _buildFtsQuery(
+      query,
+      distance: distance,
+      joinHyphens: true,
+    );
     if (ftsQuery.isEmpty) return [];
 
     try {
@@ -1748,8 +1755,18 @@ class AppDatabase extends _$AppDatabase {
   /// Words are matched as prefixes (`term*`). With [distance] > 0 and more
   /// than one word, FTS5's NEAR() function (not the FTS3/4 infix syntax)
   /// requires the words within [distance] tokens of each other.
-  String _buildFtsQuery(String query, {int distance = 0}) {
-    final normalized = cleanPaliForIndexing(query.trim().toLowerCase());
+  ///
+  /// [joinHyphens] is for the translation indexes, which were built with
+  /// hyphens removed (`well-being` → `wellbeing`); the Pāli index turned
+  /// them into spaces.
+  String _buildFtsQuery(
+    String query, {
+    int distance = 0,
+    bool joinHyphens = false,
+  }) {
+    var text = query.trim().toLowerCase();
+    if (joinHyphens) text = text.replaceAll('-', '');
+    final normalized = cleanPaliForIndexing(text);
     if (normalized.isEmpty) return '';
 
     final words = normalized
@@ -1801,34 +1818,47 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Count search results grouped by book_id from a translation FTS index.
-  Future<Map<String, int>> countTranslationResultsByBook(
-    String langCode,
+  /// Count the paragraphs that match [query] per book_id, in the Pāli or in
+  /// the [langCode] translation. A paragraph that matches in both counts
+  /// once: adding the two counts made `dhamma` with English on read 73,591
+  /// instead of 54,036.
+  Future<Map<String, int>> countResultsByBook(
     String query, {
+    String? langCode,
     int distance = 0,
   }) async {
-    final tableName = 'search_fts_$langCode';
-    final exists = await isTranslationIndexBuilt(langCode);
-    if (!exists) return {};
-
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
-    if (ftsQuery.isEmpty) return {};
+    final paliQuery = _buildFtsQuery(query, distance: distance);
+    final transTable = 'search_fts_$langCode';
+    final transQuery =
+        langCode != null && await isTranslationIndexBuilt(langCode)
+        ? _buildFtsQuery(query, distance: distance, joinHyphens: true)
+        : '';
+    if (transQuery.isEmpty) {
+      return countPaliResultsByBook(query, distance: distance);
+    }
+    if (paliQuery.isEmpty) return {};
 
     try {
       final rows = await customSelect(
-        'SELECT book_id, COUNT(*) as cnt '
-        'FROM $tableName '
-        'WHERE translation_text MATCH ? '
-        'GROUP BY book_id '
-        'ORDER BY book_id',
-        variables: [Variable.withString(ftsQuery)],
+        'SELECT book_id, COUNT(*) as cnt FROM ('
+        'SELECT book_id, para_id FROM search_fts WHERE pali_text MATCH ? '
+        'UNION '
+        'SELECT book_id, para_id FROM $transTable '
+        'WHERE translation_text MATCH ?'
+        ') GROUP BY book_id ORDER BY book_id',
+        variables: [
+          Variable.withString(paliQuery),
+          Variable.withString(transQuery),
+        ],
       ).get();
       return {
         for (final r in rows)
           r.data['book_id'] as String: (r.data['cnt'] as num).toInt(),
       };
-    } catch (_) {
-      return {};
+    } catch (e) {
+      debugPrint('[SEARCH] count UNION failed, Pāli only: $e');
+      // A broken translation index must not hide the Pāli hits.
+      return countPaliResultsByBook(query, distance: distance);
     }
   }
 
@@ -1890,7 +1920,11 @@ class AppDatabase extends _$AppDatabase {
     final exists = await isTranslationIndexBuilt(langCode);
     if (!exists) return [];
 
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    final ftsQuery = _buildFtsQuery(
+      query,
+      distance: distance,
+      joinHyphens: true,
+    );
     if (ftsQuery.isEmpty) return [];
 
     try {

@@ -99,11 +99,10 @@ void main() {
       }
 
       // 4) The list really scrolled (offset > 0), not just "lucky" layout.
+      // The list that holds the heading; the always-visible search box
+      // (spec I) has a Scrollable of its own.
       final scrollable = tester.state<ScrollableState>(
-        find.descendant(
-          of: find.byType(ContentsScreen),
-          matching: find.byType(Scrollable),
-        ),
+        find.ancestor(of: target, matching: find.byType(Scrollable)).first,
       );
       expect(
         scrollable.position.pixels,
@@ -119,11 +118,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Without a current paragraph there is nothing to highlight/scroll to.
+      // The list that holds the headings, not the search box's Scrollable.
       final scrollable = tester.state<ScrollableState>(
-        find.descendant(
-          of: find.byType(ContentsScreen),
-          matching: find.byType(Scrollable),
-        ),
+        find
+            .ancestor(
+              of: find.text('Heading 1'),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       expect(scrollable.position.pixels, 0);
 
@@ -165,11 +167,10 @@ void main() {
       expect(style.color, scheme.primary, reason: 'current heading color');
       expect(style.fontWeight, FontWeight.w700, reason: 'current heading bold');
 
+      // The list that holds the heading; the always-visible search box
+      // (spec I) has a Scrollable of its own.
       final scrollable = tester.state<ScrollableState>(
-        find.descendant(
-          of: find.byType(ContentsPanel),
-          matching: find.byType(Scrollable),
-        ),
+        find.ancestor(of: target, matching: find.byType(Scrollable)).first,
       );
       expect(
         scrollable.position.pixels,
@@ -180,9 +181,9 @@ void main() {
   });
 
   group('Contents search — Velthuis and the help icon', () {
+    /// The box shows at once on the phone screen and the desktop panel
+    /// (spec I): nothing to tap.
     Future<void> typeIn(WidgetTester tester) async {
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.search));
       await tester.pumpAndSettle();
       final help = find.descendant(
         of: find.byType(TextField),

@@ -28,6 +28,11 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/diacritics.dart';
 import '../../../core/utils/pali_script_converter.dart';
+import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/regex_toggle_button.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
+import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../search/services/regex_search.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
@@ -44,7 +49,10 @@ const int _kCollapseAfter = 5;
 /// The reusable annotations overview (no app bar — the caller supplies
 /// chrome). Suitable for a full screen or a desktop sidebar panel.
 class GlobalAnnotationsView extends ConsumerStatefulWidget {
-  const GlobalAnnotationsView({super.key});
+  /// Put the cursor in the search box once the view shows.
+  final bool autoFocus;
+
+  const GlobalAnnotationsView({super.key, this.autoFocus = false});
 
   @override
   ConsumerState<GlobalAnnotationsView> createState() =>
@@ -60,14 +68,57 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
   bool _showBookFilters = false;
 
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _query = '';
 
   /// Ids of cards already swiped away (see _AnnotationsListState).
   final Set<String> _dismissed = {};
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.autoFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
+  }
+
+  /// The Rx filter over the annotations' texts: a regex job, so a runaway
+  /// pattern ends as "too slow" instead of freezing (spec K).
+  late final _rxFilter = RegexListFilter(() {
+    if (mounted) setState(() {});
+  });
+
+  /// Which annotations the box text matches. With Rx on, the pattern runs
+  /// over each annotation's lower-cased texts with exact diacritics, in a
+  /// regex job; an invalid pattern, or one still running for the first
+  /// time, matches nothing.
+  bool Function(Annotation) _matcherFor(List<Annotation> all, bool rxOn) {
+    if (!rxOn) {
+      _rxFilter.hitsFor('', all, () => const []);
+      return _annotationMatcher(_query);
+    }
+    final text = _query.trim().isEmpty ? '' : _query;
+    final valid = text.isNotEmpty && regexError(text) == null;
+    final hits = _rxFilter.hitsFor(valid ? text : '', all, () => [
+      for (final a in all)
+        [
+          for (final s in [a.exactText, a.note, a.name, a.bookName, a.bookId])
+            if (s != null && s.isNotEmpty) s.toLowerCase(),
+        ],
+    ]);
+    if (text.isEmpty) return (_) => true;
+    if (!valid || hits == null) return (_) => false;
+    final ids = {for (final i in hits) all[i].id};
+    return (a) => ids.contains(a.id);
+  }
+
+  @override
   void dispose() {
+    _rxFilter.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -80,6 +131,9 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
   Widget build(BuildContext context) {
     final allAsync = ref.watch(allAnnotationsProvider);
     final all = allAsync.valueOrNull ?? const <Annotation>[];
+    // Watched here, so the book chips follow an Rx toggle too.
+    final rxOn = ref.watch(annotationsRegexProvider);
+    final matches = _matcherFor(all, rxOn);
 
     int countOf(AnnotationType t) => all.where((a) => a.type == t).length;
 
@@ -88,9 +142,11 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
         // ── Search field ───────────────────────────────────────────
         _SearchField(
           controller: _searchController,
+          focusNode: _searchFocusNode,
           query: _query,
           onChanged: (v) => setState(() => _query = v),
           onClear: _clearSearch,
+          patternTooSlow: rxOn && _rxFilter.isTooSlow(_query),
         ),
         // ── Filter chips (with live counts) + book-filter toggle ────
         _SummaryHeader(
@@ -110,7 +166,7 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
         // ── Book filter panel ──────────────────────────────────────
         if (_showBookFilters)
           _BookFilterPanel(
-            books: _bookOptions(all),
+            books: _bookOptions(all, matches),
             selectedBooks: _selectedBooks,
             onToggle: (bookId) {
               setState(() {
@@ -123,6 +179,7 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
           child: _AnnotationsList(
             filter: _filter,
             query: _query,
+            matches: matches,
             selectedBooks: _selectedBooks,
             dismissed: _dismissed,
             onClearSearch: _clearSearch,
@@ -135,10 +192,13 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
 
   /// Books visible under the current search + type filter, in display
   /// order (bookId → best display name). Multi-select filter options.
-  List<MapEntry<String, String>> _bookOptions(List<Annotation> all) {
+  List<MapEntry<String, String>> _bookOptions(
+    List<Annotation> all,
+    bool Function(Annotation) matches,
+  ) {
     final options = <String, String>{};
     for (final a in all) {
-      if (_query.isNotEmpty && !_annotationMatches(a, _query)) continue;
+      if (_query.isNotEmpty && !matches(a)) continue;
       if (_filter != null && a.type != _filter) continue;
       options.putIfAbsent(a.bookId, () => a.bookName ?? a.bookId);
     }
@@ -146,14 +206,19 @@ class _GlobalAnnotationsViewState extends ConsumerState<GlobalAnnotationsView> {
   }
 }
 
+/// The Annotations search box's Rx button. Session only, never saved, like
+/// the other rx flags (spec J).
+final annotationsRegexProvider = StateProvider<bool>((ref) => false);
+
 /// Case- and diacritic-insensitive match of [query] against an
 /// annotation's quote text, note body, bookmark name, and book name/id.
-bool _annotationMatches(Annotation a, String query) {
+bool Function(Annotation) _annotationMatcher(String query) {
   final q = stripDiacritics(query.trim().toLowerCase());
-  if (q.isEmpty) return true;
-  bool hit(String? s) =>
-      s != null && s.isNotEmpty && stripDiacritics(s.toLowerCase()).contains(q);
-  return hit(a.exactText) ||
+  if (q.isEmpty) return (_) => true;
+  bool test(String s) => stripDiacritics(s.toLowerCase()).contains(q);
+  bool hit(String? s) => s != null && s.isNotEmpty && test(s);
+  return (a) =>
+      hit(a.exactText) ||
       hit(a.note) ||
       hit(a.name) ||
       hit(a.bookName) ||
@@ -162,32 +227,41 @@ bool _annotationMatches(Annotation a, String query) {
 
 // ── Search field ────────────────────────────────────────────────────────
 
-class _SearchField extends StatelessWidget {
+class _SearchField extends ConsumerWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final String query;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
 
+  /// The Rx pattern ran past its time limit.
+  final bool patternTooSlow;
+
   const _SearchField({
     required this.controller,
+    required this.focusNode,
     required this.query,
     required this.onChanged,
     required this.onClear,
+    this.patternTooSlow = false,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
+    final rxOn = ref.watch(annotationsRegexProvider);
+    final patternError = rxOn && query.trim().isNotEmpty
+        ? regexError(query)
+        : null;
+    final size = ResponsiveBreakpoint.isDesktop(context)
+        ? SearchBoxSize.panel
+        : SearchBoxSize.screen;
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimensions.md,
-        AppDimensions.xs,
-        AppDimensions.md,
-        AppDimensions.sm,
-      ),
+      padding: searchBoxPadding(size),
+      // No fill of its own: the panel's background shows round the box, as
+      // in every other panel (in light mode `surface` differs from it).
       decoration: BoxDecoration(
-        color: colors.surface,
         border: Border(
           bottom: BorderSide(
             color: colors.outlineVariant.withValues(alpha: 0.4),
@@ -196,45 +270,38 @@ class _SearchField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
-        style: AppTypography.bodyTranslation.copyWith(
-          fontSize: 14,
-          color: colors.onSurface,
-        ),
-        decoration: InputDecoration(
+        // `.m`, `.t`, `.n` are regex: rx keeps them as typed.
+        inputFormatters: rxOn ? const [] : const [VelthuisInputFormatter()],
+        style: searchBoxTextStyle(context, size: size),
+        decoration: searchBoxDecoration(
+          context,
           hintText: loc.searchAnnotations,
-          hintStyle: AppTypography.bodyTranslation.copyWith(
-            fontSize: 13.5,
-            color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-          ),
-          prefixIcon: Icon(
-            Icons.search,
-            size: 18,
-            color: colors.onSurfaceVariant,
-          ),
-          suffixIcon: query.isEmpty
-              ? null
-              : IconButton(
+          size: size,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (query.isNotEmpty)
+                IconButton(
                   onPressed: onClear,
                   tooltip: loc.clearSearch,
-                  icon: Icon(
-                    Icons.clear,
-                    size: 16,
-                    color: colors.onSurfaceVariant,
-                  ),
+                  icon: const Icon(Icons.clear),
                 ),
-          isDense: true,
-          filled: true,
-          fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 8,
+              if (!rxOn) const VelthuisHelpIcon(),
+              RegexToggleButton(
+                on: rxOn,
+                onToggle: () =>
+                    ref.read(annotationsRegexProvider.notifier).state = !rxOn,
+              ),
+            ],
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-            borderSide: BorderSide.none,
-          ),
+          errorText: patternError != null
+              ? loc.invalidPattern(patternError)
+              : patternTooSlow
+              ? loc.patternTooSlow
+              : null,
         ),
       ),
     );
@@ -622,6 +689,9 @@ class _BookChip extends StatelessWidget {
 class _AnnotationsList extends ConsumerStatefulWidget {
   final AnnotationType? filter;
   final String query;
+
+  /// Which annotations the search keeps (the parent's matcher, plain or Rx).
+  final bool Function(Annotation) matches;
   final Set<String> selectedBooks;
   final Set<String> dismissed;
 
@@ -634,6 +704,7 @@ class _AnnotationsList extends ConsumerStatefulWidget {
   const _AnnotationsList({
     required this.filter,
     required this.query,
+    required this.matches,
     required this.selectedBooks,
     required this.dismissed,
     this.onClearSearch,
@@ -665,7 +736,7 @@ class _AnnotationsListState extends ConsumerState<_AnnotationsList> {
         // Search → type filter → book filter → swiped-away filter.
         final searched = widget.query.trim().isEmpty
             ? all
-            : all.where((a) => _annotationMatches(a, widget.query)).toList();
+            : all.where(widget.matches).toList();
         final byType = searched
             .where((a) => widget.filter == null || a.type == widget.filter)
             .toList();

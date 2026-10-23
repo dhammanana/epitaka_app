@@ -777,6 +777,17 @@ class AppLocalizations {
   String get failedToLoadPreview => _t('Failed to load preview:');
   String get velthuisTyping => _t('Velthuis typing');
   String get sanskrit => _t('Sanskrit');
+  String get regularExpression => _t('Regular expression');
+
+  /// `Invalid pattern: REASON` (a regex that does not compile)
+  String invalidPattern(String reason) => '${_t('Invalid pattern:')} $reason';
+
+  /// A regex ran past its time limit (a nested repeat such as `(a+)+`).
+  String get patternTooSlow => _t('Pattern too slow');
+
+  /// `N matches, first SHOWN shown` (a dictionary regex with too many hits)
+  String regexMatchesShown(int n, int shown) =>
+      '$n ${_t('matches, first')} $shown ${_t('shown')}';
   String get sectionHeadings => _t('Section headings');
 
   /// `N found` (heading results card badge)

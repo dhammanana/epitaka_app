@@ -154,15 +154,29 @@ class SearchResultsNavigator extends ChangeNotifier {
     selected = 0;
     notifyListeners();
   }
+
+  /// Select the header row of the book at [summaryIndex]. Done before a fold
+  /// so [rebuild] keeps the selection on the book row, not on a vanished hit.
+  void selectBook(int summaryIndex) {
+    final row = rows.indexWhere(
+      (r) =>
+          r.kind == SearchRowKind.bookHeader && r.summaryIndex == summaryIndex,
+    );
+    if (row < 0 || row == selected) return;
+    selected = row;
+    notifyListeners();
+  }
 }
 
-/// Handle the search-navigation keys (j/k, ↑/↓, Enter/Space, Esc) for a
+/// Handle the search-navigation keys (j/k, ↑/↓, ←/→, Enter/Space, Esc) for a
 /// focused results list. Returns whether the key was consumed.
 KeyEventResult handleSearchNavKey(
   KeyEvent event,
   SearchResultsNavigator nav, {
   required VoidCallback onActivate,
   required VoidCallback onEscape,
+  required void Function(int summaryIndex) onExpandBook,
+  required void Function(int summaryIndex) onCollapseBook,
 }) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
     return KeyEventResult.ignored;
@@ -173,9 +187,33 @@ KeyEventResult handleSearchNavKey(
     nav.moveNext();
     return KeyEventResult.handled;
   }
+  if (key == LogicalKeyboardKey.arrowUp && nav.selected == 0) {
+    // Only the arrow leaves the list at the top; the rebindable key stays put.
+    onEscape();
+    return KeyEventResult.handled;
+  }
   if (key == LogicalKeyboardKey.arrowUp ||
       AppShortcuts.matches('search-prev', event)) {
     nav.movePrevious();
+    return KeyEventResult.handled;
+  }
+  if (key == LogicalKeyboardKey.arrowRight) {
+    final row = nav.selectedRow;
+    if (row != null &&
+        row.kind == SearchRowKind.bookHeader &&
+        !row.summary!.isExpanded) {
+      onExpandBook(row.summaryIndex);
+    }
+    return KeyEventResult.handled;
+  }
+  if (key == LogicalKeyboardKey.arrowLeft) {
+    final row = nav.selectedRow;
+    if (row != null &&
+        row.summary != null &&
+        row.summary!.isExpanded) {
+      nav.selectBook(row.summaryIndex);
+      onCollapseBook(row.summaryIndex);
+    }
     return KeyEventResult.handled;
   }
   if (key == LogicalKeyboardKey.enter ||

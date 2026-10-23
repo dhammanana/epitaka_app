@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../../search/services/regex_search.dart';
 import 'dpd_database.dart';
+import 'dpd_headword_extensions.dart';
 import 'tables.dart';
 import '../utils/diacritics.dart';
 import '../utils/fuzzy_rank.dart';
@@ -336,6 +338,57 @@ class DpdDao extends DatabaseAccessor<DpdDatabase> with _$DpdDaoMixin {
       ).compareTo(paliSortKey(b.headword.lemma1)),
     );
     return results;
+  }
+
+  /// Every headword's id and clean lemma in Pāli order, read once per
+  /// database.
+  Future<List<({int id, String clean})>>? _lemmas;
+
+  /// The headwords whose clean lemma [pattern] matches, in Pāli order: how
+  /// many there are, and the first [limit] of them. The lemmas are filtered
+  /// in Dart (89,706 rows, 6–12 ms per pattern on a desktop), so the
+  /// database runs no regex. The filter is a regex job (spec K): it throws
+  /// [RegexTooSlow] for a runaway pattern, and [onJob] gets the job so the
+  /// caller can cancel it.
+  Future<({int total, List<DpdHeadwordWithRoot> first})> searchLemmaRegex(
+    String pattern, {
+    int limit = 100,
+    void Function(RegexJob<Object?> job)? onJob,
+  }) async {
+    final List<({int id, String clean})> lemmas;
+    try {
+      lemmas = await (_lemmas ??= _loadLemmas());
+    } catch (_) {
+      // A failed read must not stay cached for the rest of the session.
+      _lemmas = null;
+      rethrow;
+    }
+    final job = startRegexMatch(pattern, [
+      for (final l in lemmas) [l.clean],
+    ]);
+    onJob?.call(job);
+    final hits = (await job.result).hits;
+    return (
+      total: hits.length,
+      first: await _fetchHeadwords({
+        for (final i in hits.take(limit)) lemmas[i].id,
+      }),
+    );
+  }
+
+  Future<List<({int id, String clean})>> _loadLemmas() async {
+    final rows = await (selectOnly(
+      dpdHeadwords,
+    )..addColumns([dpdHeadwords.id, dpdHeadwords.lemma1])).get();
+    final keyed = [
+      for (final r in rows)
+        (
+          id: r.read(dpdHeadwords.id)!,
+          clean: lemmaCleanOf(r.read(dpdHeadwords.lemma1)!),
+          key: paliSortKey(r.read(dpdHeadwords.lemma1)!),
+        ),
+    ]..sort((a, b) => a.key.compareTo(b.key));
+    return [for (final k in keyed) (id: k.id, clean: k.clean)];
   }
 
   // ── Single entry ──────────────────────────────────────────────────────────

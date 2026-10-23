@@ -1,9 +1,9 @@
 /// A main search with a book open loads every hit of that book. The old code
 /// did it 30 hits at a time, re-running both FTS queries and publishing new
 /// state per page (117 pages for "dhamma" in Paṭṭh-v, about 5 minutes on a
-/// Pixel 8 Pro). The order of the hits and the page sizes must stay exactly
-/// as the page loop produced them; only the number of queries and publishes
-/// may change.
+/// Pixel 8 Pro). The order of the hits and the page sizes must stay as the
+/// page loop produced them, less the paragraphs it listed a second time;
+/// only the number of queries and publishes may change.
 ///
 /// Runs the REAL [SearchNotifier] against real FTS indexes built from
 /// in-memory fixtures (the `search_fts_test.dart` set-up).
@@ -124,7 +124,7 @@ void main() {
     await epiDb.close();
   });
 
-  ProviderContainer makeContainer() {
+  ProviderContainer makeContainer({bool bookOpen = true}) {
     final container = ProviderContainer(
       overrides: [
         appDbProvider.overrideWith((ref) async => appDb),
@@ -140,9 +140,13 @@ void main() {
         }),
         readerTabsProvider.overrideWith(
           (ref) => ReaderTabsNotifier(
-            const ReaderTabsState(
-              tabs: [ReaderTabInfo(bookId: _openBook, bookName: _openBook)],
-            ),
+            bookOpen
+                ? const ReaderTabsState(
+                    tabs: [
+                      ReaderTabInfo(bookId: _openBook, bookName: _openBook),
+                    ],
+                  )
+                : const ReaderTabsState(tabs: []),
           ),
         ),
       ],
@@ -171,20 +175,48 @@ void main() {
     final results = container.read(searchProvider) as SearchResults;
     final summary = results.bookSummaries.first;
     expect(summary.book.bookId, _openBook);
-    expect(summary.totalCount, _paliHits + _transOnly + _transBoth);
+    // Paragraphs 1–15 match in the Pāli and the English and count once.
+    expect(summary.totalCount, _paliHits + _transOnly);
 
-    expect(
-      [for (final page in summary.loadedPages) page.length],
-      _expectedPageSizes,
-    );
     expect(
       [
         for (final page in summary.loadedPages)
-          for (final item in page) item.paraId,
+          [for (final item in page) item.paraId],
       ],
-      _expectedParaIds,
+      _expectedPages(),
     );
+    expect(summary.fullyLoaded, isTrue);
     expect(publishes, lessThanOrEqualTo(2));
+  });
+
+  test('"Show more" lists each paragraph once and stops at the last', () async {
+    // No book open, so nothing loads until the book is expanded.
+    final container = makeContainer(bookOpen: false);
+    final notifier = container.read(searchProvider.notifier);
+    await notifier.search(query: 'dhamma');
+    BookResultSummary book() =>
+        (container.read(searchProvider) as SearchResults).bookSummaries
+            .firstWhere((s) => s.book.bookId == _openBook);
+    expect(book().isExpanded, isFalse);
+
+    final index = (container.read(searchProvider) as SearchResults)
+        .bookSummaries
+        .indexWhere((s) => s.book.bookId == _openBook);
+    await notifier.expandBook(index);
+    var taps = 0;
+    while (!book().fullyLoaded && taps < 20) {
+      await notifier.loadMoreForBook(index);
+      taps++;
+    }
+
+    final ids = [
+      for (final page in book().loadedPages)
+        for (final item in page) item.paraId,
+    ];
+    expect(ids.toSet().length, ids.length, reason: 'a paragraph repeats');
+    expect(ids.toSet(), {for (var p = 1; p <= 125; p++) p});
+    expect(book().totalCount, ids.length);
+    expect(book().fullyLoaded, isTrue);
   });
 
   test('a book collapsed while the rest of its hits load stays collapsed', () async {
@@ -213,9 +245,11 @@ void main() {
   });
 }
 
-// Written out from a run of the page loop before the change.
-const _expectedPageSizes = <int>[54, 40, 30, 10];
-const _expectedParaIds = <int>[
+// Written out from a run of the page loop before the change. That run listed
+// a paragraph twice when it matched in the Pāli on one page and in the
+// English on another; each now shows once, at its first place.
+const _oldPageSizes = <int>[54, 40, 30, 10];
+const _oldParaIds = <int>[
   35, 77, 29, 71, 7, 49, 91, 23, 65, 14, 17, 56, 59, 98, 1, 43, 85, 8, 11, 50,
   53, 92, 95, 37, 79, 2, 5, 44, 47, 86, 3, 15, 103, 107, 111, 115, 119, 123,
   6, 10, 102, 106, 110, 114, 118, 122, 9, 13, 101, 105, 109, 113, 117, 121,
@@ -225,3 +259,17 @@ const _expectedParaIds = <int>[
   42, 45, 84, 87, 36, 39, 78, 81, 30, 33, 72, 75, 24, 27, 66, 69, 18, 60, 12,
   54, 96, 6, 48, 90,
 ];
+
+List<List<int>> _expectedPages() {
+  final shown = <int>{};
+  final pages = <List<int>>[];
+  var start = 0;
+  for (final size in _oldPageSizes) {
+    pages.add([
+      for (final id in _oldParaIds.sublist(start, start + size))
+        if (shown.add(id)) id,
+    ]);
+    start += size;
+  }
+  return pages;
+}
