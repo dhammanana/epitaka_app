@@ -26,7 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'dpd_fixture.dart';
 
 class _ReadyIndex extends IndexController {
-  _ReadyIndex(Ref ref) : super(ref);
+  _ReadyIndex(super.ref);
 
   @override
   Future<void> checkStatus() async {
@@ -171,6 +171,57 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
     expect(find.text('Stop'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Download'), findsNothing);
+  });
+
+  testWidgets('while an import unpacks, the download size is not shown', (
+    tester,
+  ) async {
+    final container = await gateContainer(
+      tester,
+      File('${dir.path}/missing/dpd-mobile.db'),
+    );
+    container
+        .read(translationDownloadProvider.notifier)
+        .report(
+          kDpdDownloadKey,
+          const TranslationDownloadState(status: DownloadStatus.extracting),
+        );
+
+    await tester.pumpWidget(
+      wrap(container, const IndexGate(child: Text('THE APP'))),
+    );
+    await settle(tester);
+
+    expect(find.text('Unpacking and checking…'), findsOneWidget);
+    expect(find.textContaining('Download size'), findsNothing);
+  });
+
+  testWidgets('when unpacking fails, the size and the button come back', (
+    tester,
+  ) async {
+    final container = await gateContainer(
+      tester,
+      File('${dir.path}/missing/dpd-mobile.db'),
+    );
+    container
+        .read(translationDownloadProvider.notifier)
+        .report(
+          kDpdDownloadKey,
+          const TranslationDownloadState(
+            status: DownloadStatus.error,
+            errorMessage: 'No database file found in the archive',
+          ),
+        );
+
+    await tester.pumpWidget(
+      wrap(container, const IndexGate(child: Text('THE APP'))),
+    );
+    await settle(tester);
+
+    expect(find.text('Download size: 200 MB'), findsOneWidget);
+    expect(find.text('No database file found in the archive'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+    expect(find.text('Import from file…'), findsOneWidget);
   });
 
   testWidgets('with the DPD file in place the app opens', (tester) async {

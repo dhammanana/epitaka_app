@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
 import '../../../core/models/translation_version.dart';
@@ -30,6 +31,54 @@ const kDpdCoreAsset = CoreAsset(
 final dpdLatestReleaseProvider = FutureProvider.autoDispose<DpdRelease>(
   (ref) => DpdReleaseService().fetchLatest(),
 );
+
+/// Removes the copy the file picker made of the reader's file, but only when
+/// it lies under the picker's folder in [cacheDir]: any other path is the
+/// reader's own file, and the app never deletes that.
+Future<void> deletePickerCopy(String path, Directory cacheDir) async {
+  if (!p.isWithin(p.join(cacheDir.path, 'file_picker'), path)) return;
+  try {
+    await File(path).delete();
+  } on FileSystemException {
+    // Only a cache copy; the system clears the cache itself.
+  }
+}
+
+/// The bytes an interrupted download left on disk, or 0. [partialName] is
+/// the partial of the release the next press will download
+/// ([partialZipName]); when the release is not known yet, the largest partial
+/// of any release counts. A partial of an older release is not counted when
+/// the name is known, because the next download deletes it. Nothing is
+/// counted while a download or unpack runs. It reads again whenever a download
+/// state changes, so Stop and a failure show their partial.
+final dpdPartialBytesProvider = FutureProvider.autoDispose.family<int, String?>((
+  ref,
+  partialName,
+) async {
+  final state = ref.watch(translationDownloadProvider)[kDpdDownloadKey];
+  if (state != null &&
+      (state.status == DownloadStatus.downloading ||
+          state.status == DownloadStatus.extracting)) {
+    return 0;
+  }
+  final file = await ref.watch(dpdDatabaseFileProvider.future);
+  var largest = 0;
+  try {
+    await for (final entity in file.parent.list()) {
+      final name = p.basename(entity.path);
+      final matches = partialName != null
+          ? name == partialName
+          : name.startsWith('$kDpdFilename.') && name.endsWith('.zip.part');
+      if (entity is File && matches) {
+        final length = await entity.length();
+        if (length > largest) largest = length;
+      }
+    }
+  } on FileSystemException {
+    return 0;
+  }
+  return largest;
+});
 
 String formatDpdSize(int bytes) => '${(bytes / (1024 * 1024)).round()} MB';
 
@@ -127,9 +176,32 @@ Future<bool> installDpdRelease(
     versionKey: kDpdDownloadKey,
     expectedBytes: target.size,
     expectedZipSha256: target.sha256,
+    resume: true,
     verify: verifyDpdDownload,
     swap: (replace, invalidate) => swapDpdDatabase(invalidate, replace),
     dbDir: dbDir,
     client: client,
   );
+}
+
+/// Installs the zip the reader picked, as [installDpdRelease] installs a
+/// download, with the same checks. The picked file is never deleted. [dbDir]
+/// is for tests.
+Future<bool> importDpdZip(
+  WidgetRef ref,
+  String path, {
+  Directory? dbDir,
+}) {
+  return ref
+      .read(translationDownloadProvider.notifier)
+      .importCoreZip(
+        zip: File(path),
+        filename: kDpdFilename,
+        displayName: kDpdDisplayName,
+        ref: ref,
+        versionKey: kDpdDownloadKey,
+        verify: verifyDpdDownload,
+        swap: (replace, invalidate) => swapDpdDatabase(invalidate, replace),
+        dbDir: dbDir,
+      );
 }
