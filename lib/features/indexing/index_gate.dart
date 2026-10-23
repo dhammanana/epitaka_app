@@ -391,9 +391,14 @@ class _IndexGateState extends ConsumerState<IndexGate>
     // brightness-specific color, which in dark mode is a derived variant
     // that won't match any preset.
     final paliColor = settings.paliColorFor(brightness);
-    final transColor = settings.translationColorFor(brightness);
+    // Translations default to one colour per language; the picker shows the
+    // primary language's.
+    final transPair = settings.translationColorPairFor(
+      settings.primaryTranslationLang,
+    );
+    final transColor = transPair.resolve(brightness);
     final paliLightColor = settings.paliColorPair.light;
-    final transLightColor = settings.translationColorPair.light;
+    final transLightColor = transPair.light;
 
     return Scaffold(
       body: SafeArea(

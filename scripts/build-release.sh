@@ -64,7 +64,7 @@ echo ""
 # Copy core databases into Android asset pack
 mkdir -p "$ASSET_DIR"
 
-for file in epitaka.db epitaka_en.db dpd-dictionary.db; do
+for file in epitaka.db epitaka_en.db; do
     if [ ! -f "$DATA_DIR/$file" ]; then
         echo "ERROR: $DATA_DIR/$file not found"
         exit 1

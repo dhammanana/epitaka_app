@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -17,8 +16,7 @@ import '../../../core/utils/pali_text_utils.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -385,28 +383,15 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             decoration: searchBoxDecoration(
               context,
               hintText: loc.searchPaliShort,
-              suffixIcon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_searchController.text.isNotEmpty) ...[
-                    IconButton(
-                      icon: Icon(Icons.search, size: 18),
-                      color: colors.primary,
-                      onPressed: _executeSearch,
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                        ref.read(searchProvider.notifier).clear();
-                      },
-                    ),
-                  ],
-                  if (!regexOn) const VelthuisHelpIcon(),
-                  if (!kIsWeb)
-                    RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-                ],
+              suffixIcon: SearchBoxSuffixActions(
+                showClear: _searchController.text.isNotEmpty,
+                onClear: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                  ref.read(searchProvider.notifier).clear();
+                },
+                regexOn: regexOn,
+                onToggleRegex: _toggleRegex,
               ),
               errorText: patternMessage,
             ),

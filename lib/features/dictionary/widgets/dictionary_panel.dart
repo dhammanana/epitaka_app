@@ -17,8 +17,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../search/services/regex_search.dart';
 import '../../dpd/providers/lookup_history.dart';
@@ -556,24 +555,32 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                       ? const []
                       : const [VelthuisInputFormatter()],
                   textInputAction: TextInputAction.search,
-                  decoration: searchBoxDecoration(
-                    context,
-                    hintText: loc.searchPali,
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_searchController.text.isNotEmpty)
-                          IconButton(
-                            icon: Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              _searchController.clear();
-                              _onSearchChanged('');
+                    decoration: searchBoxDecoration(
+                      context,
+                      hintText: loc.searchPali,
+                      suffixIcon: SearchBoxSuffixActions(
+                        showClear: _searchController.text.isNotEmpty,
+                        onClear: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                        },
+                        regexOn: regexOn,
+                        onToggleRegex: _toggleRegex,
+                        extraItems: [
+                          SearchBoxMoreItem(
+                            id: 'show-icons',
+                            label: loc.searchIconsShow,
+                            icon: Icons.tune,
+                            checked: ref.watch(dictionaryHeaderIconsProvider),
+                            onTap: () {
+                              final icons = ref.read(
+                                dictionaryHeaderIconsProvider.notifier,
+                              );
+                              icons.set(!ref.read(dictionaryHeaderIconsProvider));
                             },
                           ),
-                        if (!regexOn) const VelthuisHelpIcon(),
-                        RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-                      ],
-                    ),
+                        ],
+                      ),
                     errorText:
                         _patternError != null &&
                             _queryIsRegex &&

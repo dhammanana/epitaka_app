@@ -778,6 +778,7 @@ class AppLocalizations {
   String get velthuisTyping => _t('Velthuis typing');
   String get sanskrit => _t('Sanskrit');
   String get regularExpression => _t('Regular expression');
+  String get moreOptions => _t('More options');
 
   /// `Invalid pattern: REASON` (a regex that does not compile)
   String invalidPattern(String reason) => '${_t('Invalid pattern:')} $reason';
@@ -1148,6 +1149,9 @@ class AppLocalizations {
       _t('You can show them again in Dictionary Settings.');
   String get dictionaryHeaderIconsShow =>
       _t('Show the icons in the dictionary header');
+  /// The dictionary's advanced icon row, moved to the search box's "more"
+  /// menu to be hidden by default.
+  String get searchIconsShow => _t('Show icons');
   String get dictionaryHeaderHistoryTitle => _t('Search history');
   String get dpdAudioVoice => _t('Pronunciation voice');
   String get dpdVoiceMale => _t('Male');

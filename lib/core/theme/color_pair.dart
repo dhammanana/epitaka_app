@@ -54,23 +54,39 @@ class ColorPair {
 
   /// Default pair for Pāli text.
   static const ColorPair pali = ColorPair(
-    light: Color(0xFF7A2E1D), // terracotta
+    light: Color(0xFF000000), // black
     dark: ColorPair._paliDark,
   );
-  static const Color _paliDark = Color(0xFFFFB4A3); // light salmon
+  static const Color _paliDark = Color(0xFFE8E1D9); // warm off-white
 
-  /// Default pair for translation text.
+  /// Neutral fallback for translation text, used where no language is known.
   static const ColorPair translation = ColorPair(
     light: Color(0xFF33312E), // warm charcoal
     dark: ColorPair._transDark,
   );
   static const Color _transDark = Color(0xFFE0D6CC); // light beige
 
+  /// Translation colours in display order. Takes no language list, so any
+  /// number of translations works; the palette cycles past its length.
+  static const List<Color> translationPalette = [
+    Color(0xFF4A6FA5), // steel blue
+    Color(0xFF3C6E47), // forest green
+    Color(0xFF2A6B6B), // teal
+    Color(0xFF994532), // rust
+    Color(0xFF6A1B9A), // purple
+    Color(0xFF5D4037), // brown
+  ];
+
+  /// The preset pair for the translation at [index] in the visible order.
+  static ColorPair translationAt(int index) => ColorPair.fromLight(
+    translationPalette[index % translationPalette.length],
+  );
+
   Map<String, dynamic> toJson() => {
-        'light': light.toARGB32().toRadixString(16).padLeft(8, '0'),
-        'dark': dark.toARGB32().toRadixString(16).padLeft(8, '0'),
-        'darkPicked': darkPicked,
-      };
+    'light': light.toARGB32().toRadixString(16).padLeft(8, '0'),
+    'dark': dark.toARGB32().toRadixString(16).padLeft(8, '0'),
+    'darkPicked': darkPicked,
+  };
 
   factory ColorPair.fromJson(Map<String, dynamic> json) {
     final lightHex = json['light'] as String?;

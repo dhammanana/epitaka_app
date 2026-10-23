@@ -9,7 +9,6 @@ import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/widgets/search_screen.dart';
 import 'package:epitaka/router/app_router.dart';
 import 'package:epitaka/shared/utils/app_navigation.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,12 +101,12 @@ void main() {
   });
 
   testWidgets(
-      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      'Velthuis turns into diacritics; the more menu shows, empty or with text',
       (tester) async {
     await _pumpSearch(tester, null);
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byIcon(Icons.more_vert),
     );
     expect(help, findsOneWidget);
 

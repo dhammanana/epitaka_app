@@ -13,8 +13,7 @@ import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../search/services/regex_search.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
@@ -272,27 +271,16 @@ class _LibraryBrowserState extends ConsumerState<LibraryBrowser> {
                           size: isDesktop
                               ? SearchBoxSize.panel
                               : SearchBoxSize.screen,
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_filterQuery.isNotEmpty)
-                                IconButton(
-                                  icon: Icon(Icons.clear, size: 16),
-                                  onPressed: () {
-                                    _filterController.clear();
-                                    setState(() => _filterQuery = '');
-                                  },
-                                ),
-                              if (!rxOn) const VelthuisHelpIcon(),
-                              RegexToggleButton(
-                                on: rxOn,
-                                onToggle: () =>
-                                    ref
-                                            .read(libraryRegexProvider.notifier)
-                                            .state =
-                                        !rxOn,
-                              ),
-                            ],
+                          suffixIcon: SearchBoxSuffixActions(
+                            showClear: _filterQuery.isNotEmpty,
+                            onClear: () {
+                              _filterController.clear();
+                              setState(() => _filterQuery = '');
+                            },
+                            regexOn: rxOn,
+                            onToggleRegex: () =>
+                                ref.read(libraryRegexProvider.notifier).state =
+                                    !rxOn,
                           ),
                           errorText: patternError != null
                               ? loc.invalidPattern(patternError)

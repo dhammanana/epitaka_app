@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -15,8 +14,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../providers/search_provider.dart';
 import 'search_history_chips.dart';
@@ -342,37 +340,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           context,
           hintText: loc.searchPaliTexts,
           size: SearchBoxSize.screen,
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_searchController.text.isNotEmpty) ...[
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  color: colors.primary,
-                  onPressed: _executeSearch,
-                  tooltip: loc.search,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _onSearchChanged('');
-                    ref.read(searchProvider.notifier).clear();
-                  },
-                  tooltip: loc.clear,
-                ),
-              ],
-              if (!regexOn) const VelthuisHelpIcon(),
-              if (!kIsWeb)
-                RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-            ],
+          suffixIcon: SearchBoxSuffixActions(
+            showClear: _searchController.text.isNotEmpty,
+            onClear: () {
+              _searchController.clear();
+              _onSearchChanged('');
+              ref.read(searchProvider.notifier).clear();
+            },
+            regexOn: regexOn,
+            onToggleRegex: _toggleRegex,
           ),
           errorText: patternMessage,
-          prefixIcon: IconButton(
-            icon: Icon(Icons.search, color: colors.onSurfaceVariant),
-            onPressed: _executeSearch,
-            tooltip: loc.search,
-          ),
         ),
         style: searchBoxTextStyle(context, size: SearchBoxSize.screen),
         onChanged: _onSearchChanged,

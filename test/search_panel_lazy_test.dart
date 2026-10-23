@@ -9,7 +9,6 @@ import 'package:epitaka/core/models/app_models.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/widgets/search_panel.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -131,12 +130,12 @@ Future<void> _focusResults(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      'Velthuis turns into diacritics; the more menu shows, empty or with text',
       (tester) async {
     await _pump(tester);
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byIcon(Icons.more_vert),
     );
     expect(help, findsOneWidget);
 

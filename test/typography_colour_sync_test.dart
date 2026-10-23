@@ -16,38 +16,41 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('a colour saved on a card the old way moves into the reading colour', () async {
-    const old = Color(0xFF3D3D8F);
-    const oldEn = Color(0xFF2A6B6B);
-    final prefs = await SharedPreferences.getInstance();
+  test(
+    'a colour saved on a card the old way moves into the reading colour',
+    () async {
+      const old = Color(0xFF3D3D8F);
+      const oldEn = Color(0xFF2A6B6B);
+      final prefs = await SharedPreferences.getInstance();
 
-    // An earlier version stored the colour inside the typography.
-    final before = SettingsNotifier(null)..init(prefs);
-    await before.setTranslationEnabled('en', true);
-    await before.setPaliTypography(
-      before.state.typography.pali.copyWith(color: old),
-    );
-    await before.setLanguageTypography(
-      'en',
-      before.state.typography.typographyFor('en').copyWith(color: oldEn),
-    );
+      // An earlier version stored the colour inside the typography.
+      final before = SettingsNotifier(null)..init(prefs);
+      await before.setTranslationEnabled('en', true);
+      await before.setPaliTypography(
+        before.state.typography.pali.copyWith(color: old),
+      );
+      await before.setLanguageTypography(
+        'en',
+        before.state.typography.typographyFor('en').copyWith(color: oldEn),
+      );
 
-    // Next start: the colours move into the pairs; the card copies clear.
-    final after = SettingsNotifier(null)..init(prefs);
-    await Future<void>.delayed(Duration.zero);
-    // The old card colour applied in both modes, so both keep it.
-    expect(after.state.paliColorPair.light, old);
-    expect(after.state.paliColorPair.dark, old);
-    expect(after.state.typography.pali.color, isNull);
-    expect(after.state.translationColorPair.light, oldEn);
-    expect(after.state.translationColorPair.dark, oldEn);
-    expect(after.state.typography.typographyFor('en').color, isNull);
+      // Next start: the colours move into the pairs; the card copies clear.
+      final after = SettingsNotifier(null)..init(prefs);
+      await Future<void>.delayed(Duration.zero);
+      // The old card colour applied in both modes, so both keep it.
+      expect(after.state.paliColorPair.light, old);
+      expect(after.state.paliColorPair.dark, old);
+      expect(after.state.typography.pali.color, isNull);
+      expect(after.state.translationColorPairFor('en').light, oldEn);
+      expect(after.state.translationColorPairFor('en').dark, oldEn);
+      expect(after.state.typography.typographyFor('en').color, isNull);
 
-    // And it stays moved on the start after that.
-    final again = SettingsNotifier(null)..init(prefs);
-    expect(again.state.paliColorPair.light, old);
-    expect(again.state.typography.pali.color, isNull);
-  });
+      // And it stays moved on the start after that.
+      final again = SettingsNotifier(null)..init(prefs);
+      expect(again.state.paliColorPair.light, old);
+      expect(again.state.typography.pali.color, isNull);
+    },
+  );
 
   Future<(ProviderContainer, Finder)> pumpPaliCard(
     WidgetTester tester, {
@@ -92,7 +95,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final card = find.byKey(const ValueKey('pali_typography'));
-    await tester.tap(find.descendant(of: card, matching: find.text('Pāli')).first);
+    await tester.tap(
+      find.descendant(of: card, matching: find.text('Pāli')).first,
+    );
     await tester.pumpAndSettle();
     return (container, card);
   }
@@ -141,6 +146,63 @@ void main() {
     expect(swatch.isSelected, isTrue);
   });
 
+  testWidgets('a colour picked on one translation card leaves the other', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final container = ProviderContainer(
+      overrides: [
+        localTranslationVersionsProvider.overrideWith(
+          (ref) async => const <TranslationVersion>[],
+        ),
+        mergedTranslationVersionsProvider.overrideWith(
+          (ref) async => const <TranslationVersion>[],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(settingsProvider.notifier)
+      ..init(await SharedPreferences.getInstance());
+    await notifier.setTranslationEnabled('en', true);
+    await notifier.setTranslationEnabled('my', true);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          supportedLocales: AppLocalizationsDelegate.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizationsDelegate(),
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: ThemeData.light(),
+          home: const Scaffold(
+            body: SingleChildScrollView(child: TranslationTextSection()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final enCard = find.byKey(const ValueKey('translation_typography_en'));
+    await tester.tap(enCard);
+    await tester.pumpAndSettle();
+
+    const picked = Color(0xFF3D3D8F);
+    await tapSwatch(tester, enCard, picked);
+
+    final settings = container.read(settingsProvider);
+    expect(settings.translationColorPairFor('en').light, picked);
+    // The other language keeps its own preset colour.
+    expect(settings.translationColorPairFor('my'), ColorPair.translationAt(1));
+  });
+
   testWidgets('in dark mode a picked colour is drawn exactly as picked', (
     tester,
   ) async {
@@ -171,8 +233,9 @@ void main() {
         expect(ColorPair.fromJson(raw).darkPicked, isFalse, reason: '$raw');
       }
       expect(
-        ColorPair.fromJson(ColorPair.pali.toJson()..remove('darkPicked'))
-            .darkPicked,
+        ColorPair.fromJson(
+          ColorPair.pali.toJson()..remove('darkPicked'),
+        ).darkPicked,
         isFalse,
       );
     });
@@ -187,23 +250,26 @@ void main() {
       expect(ColorPair.fromJson(pair.toJson()), pair);
     });
 
-    test('a light pick derives the dark colour only before a dark pick', () async {
-      final prefs = await SharedPreferences.getInstance();
-      final n = SettingsNotifier(null)..init(prefs);
-      const firstLight = Color(0xFF3C6E47);
-      await n.setPaliColor(firstLight);
-      expect(n.state.paliColorPair.dark, ColorPair.deriveDark(firstLight));
+    test(
+      'a light pick derives the dark colour only before a dark pick',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final n = SettingsNotifier(null)..init(prefs);
+        const firstLight = Color(0xFF3C6E47);
+        await n.setPaliColor(firstLight);
+        expect(n.state.paliColorPair.dark, ColorPair.deriveDark(firstLight));
 
-      const myDark = Color(0xFF4A6FA5);
-      await n.setPaliColorPair(n.state.paliColorPair.withDark(myDark));
-      await n.setPaliColor(const Color(0xFFB5651D));
-      expect(n.state.paliColorPair.light, const Color(0xFFB5651D));
-      expect(n.state.paliColorPair.dark, myDark);
+        const myDark = Color(0xFF4A6FA5);
+        await n.setPaliColorPair(n.state.paliColorPair.withDark(myDark));
+        await n.setPaliColor(const Color(0xFFB5651D));
+        expect(n.state.paliColorPair.light, const Color(0xFFB5651D));
+        expect(n.state.paliColorPair.dark, myDark);
 
-      // It stays that way after a restart.
-      final again = SettingsNotifier(null)..init(prefs);
-      await again.setPaliColor(const Color(0xFF7A2E1D));
-      expect(again.state.paliColorPair.dark, myDark);
-    });
+        // It stays that way after a restart.
+        final again = SettingsNotifier(null)..init(prefs);
+        await again.setPaliColor(const Color(0xFF7A2E1D));
+        expect(again.state.paliColorPair.dark, myDark);
+      },
+    );
   });
 }

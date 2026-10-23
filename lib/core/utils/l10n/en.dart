@@ -539,6 +539,8 @@ const Map<String, String> en = {
   'Velthuis typing': 'Velthuis typing',
   'Sanskrit': 'Sanskrit',
   'Regular expression': 'Regular expression',
+  'More options': 'More options',
+  'Show icons': 'Show icons',
   'Invalid pattern:': 'Invalid pattern:',
   'Pattern too slow': 'Pattern too slow',
   'matches, first': 'matches, first',

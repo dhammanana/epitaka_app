@@ -24,7 +24,6 @@ import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/reader/widgets/reader_keyboard_navigation.dart';
 import 'package:epitaka/router/app_router.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'helpers/type_keys.dart';
 
 const _paraCount = 40;
@@ -403,7 +402,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(TextField).first,
-        matching: find.byType(VelthuisHelpIcon),
+        matching: find.byIcon(Icons.more_vert),
       ),
       findsOneWidget,
     );

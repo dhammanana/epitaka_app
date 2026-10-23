@@ -10,8 +10,7 @@ import 'package:epitaka/features/search/services/regex_search.dart';
 import 'package:epitaka/features/search/widgets/search_panel.dart';
 import 'package:epitaka/features/search/widgets/search_screen.dart';
 import 'package:epitaka/shared/utils/app_navigation.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'package:epitaka/shared/widgets/search_box_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -158,17 +157,14 @@ Future<_Mounted> _pumpPanel(WidgetTester tester) async {
 }
 
 Finder get _field => find.byType(TextField).first;
-Finder get _rx => find.byType(RegexToggleButton);
-Finder get _help =>
-    find.descendant(of: _field, matching: find.byType(VelthuisHelpIcon));
+Finder get _menuButton =>
+    find.descendant(of: _field, matching: find.byIcon(Icons.more_vert));
 
 String _text(WidgetTester tester) =>
     tester.widget<TextField>(_field).controller!.text;
 
-Future<void> _toggle(WidgetTester tester) async {
-  await tester.tap(_rx);
-  await tester.pump();
-}
+Future<void> _toggle(WidgetTester tester) =>
+    regexToggleByTapIn(tester, _field);
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -178,18 +174,26 @@ void main() {
     ('Search sidebar', _pumpPanel),
   ]) {
     group(name, () {
-      testWidgets('rx shows on an empty box and sits after the clear button', (
+      testWidgets('an empty box ends in the more menu, and it holds the '
+          'help and rx; X appears while there is text, before the menu', (
         tester,
       ) async {
         await pump(tester);
-        expect(_rx, findsOneWidget);
+        expect(_menuButton, findsOneWidget);
+        // The menu shares the Velthuis help and the rx switch.
+        await tester.tap(_menuButton);
+        await tester.pumpAndSettle();
+        expect(find.text('Velthuis typing'), findsOneWidget);
+        expect(find.text('Regular expression'), findsOneWidget);
+        // A tap outside closes the menu.
+        await closeMoreMenu(tester);
 
         await typeKeys(tester, _field, 'dhamma');
         await tester.pump(const Duration(milliseconds: 200));
         final clear = find.byIcon(Icons.clear);
         expect(clear, findsOneWidget);
         expect(
-          tester.getCenter(_rx).dx,
+          tester.getCenter(_menuButton).dx,
           greaterThan(tester.getCenter(clear).dx),
         );
       });
@@ -207,19 +211,18 @@ void main() {
         expect(_text(tester), 'a.m');
       });
 
-      testWidgets('rx on hides the Velthuis help, the distance chip and '
-          'the suggestions', (tester) async {
+      testWidgets('rx on hides the distance chip and the suggestions', (
+        tester,
+      ) async {
         await pump(tester);
         await typeKeys(tester, _field, 'dhamm');
         await tester.pump(const Duration(milliseconds: 200));
-        expect(_help, findsOneWidget);
         expect(find.text('Dist'), findsOneWidget);
         expect(find.text('dhammassa'), findsOneWidget);
 
         await _toggle(tester);
         await typeKeys(tester, _field, 'a');
         await tester.pump(const Duration(milliseconds: 200));
-        expect(_help, findsNothing);
         expect(find.text('Dist'), findsNothing);
         expect(find.text('dhammassa'), findsNothing);
       });

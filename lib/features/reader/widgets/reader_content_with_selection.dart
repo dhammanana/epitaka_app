@@ -21,6 +21,7 @@ class ReaderContentWithSelection extends StatelessWidget {
     required this.colors,
     required this.paliColor,
     required this.translationColor,
+    this.translationColors = const {},
     required this.enabledLangs,
     required this.langTypographies,
     required this.itemScrollController,
@@ -51,6 +52,9 @@ class ReaderContentWithSelection extends StatelessWidget {
   final ColorScheme colors;
   final Color paliColor;
   final Color translationColor;
+
+  /// Resolved translation colour per language code.
+  final Map<String, Color> translationColors;
   final List<String> enabledLangs;
   final Map<String, LanguageTypography> langTypographies;
 
@@ -109,6 +113,7 @@ class ReaderContentWithSelection extends StatelessWidget {
       colors: colors,
       paliColor: paliColor,
       translationColor: translationColor,
+      translationColors: translationColors,
       enabledLangs: enabledLangs,
       langTypographies: langTypographies,
       itemScrollController: itemScrollController,

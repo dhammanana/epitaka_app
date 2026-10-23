@@ -6,7 +6,6 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
 import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,7 +83,7 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller!.text;
 
   testWidgets(
-      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      'Velthuis turns into diacritics; the more menu shows, empty or with text',
       (tester) async {
     await pumpPanel(
       tester,
@@ -98,7 +97,7 @@ void main() {
     await tester.pumpAndSettle();
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byIcon(Icons.more_vert),
     );
     expect(textFieldText(tester), isEmpty);
     expect(help, findsOneWidget);

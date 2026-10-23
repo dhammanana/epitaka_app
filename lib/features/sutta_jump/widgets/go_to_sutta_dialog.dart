@@ -9,8 +9,7 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/pali_text.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../search/services/regex_search.dart';
 import '../services/sutta_code_service.dart';
@@ -262,13 +261,14 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 labelText: l10n.goToSutta,
                 hintText: l10n.goToSuttaHint,
                 prefixIcon: const Icon(Icons.near_me_outlined),
-                // This box has no clear button: rx sits before the help.
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!regexOn) const VelthuisHelpIcon(),
-                    RegexToggleButton(on: regexOn, onToggle: _toggleRegex),
-                  ],
+                suffixIcon: SearchBoxSuffixActions(
+                  showClear: _controller.text.isNotEmpty,
+                  onClear: () {
+                    _controller.clear();
+                    _update('');
+                  },
+                  regexOn: regexOn,
+                  onToggleRegex: _toggleRegex,
                 ),
                 errorText: _resultsFor != text
                     ? null

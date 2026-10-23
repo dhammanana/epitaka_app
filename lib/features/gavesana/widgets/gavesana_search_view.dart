@@ -6,8 +6,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 import '../../search/providers/search_provider.dart';
@@ -145,29 +145,12 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
         context,
         hintText: loc.askAboutTipitaka,
         size: _boxSize,
-        suffixIcon: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_queryController.text.isNotEmpty) ...[
-              IconButton(
-                icon: const Icon(Icons.search),
-                color: colors.primary,
-                onPressed: _executeSearch,
-                tooltip: loc.search,
-              ),
-              IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: _clearSearch,
-                tooltip: loc.clear,
-              ),
-            ],
-            const VelthuisHelpIcon(sanskrit: false),
-          ],
-        ),
-        prefixIcon: IconButton(
-          icon: Icon(Icons.search, color: colors.onSurfaceVariant),
-          onPressed: _executeSearch,
-          tooltip: loc.search,
+        suffixIcon: SearchBoxSuffixActions(
+          showClear: _queryController.text.isNotEmpty,
+          onClear: _clearSearch,
+          velthuisHelp: true,
+          sanskrit: false,
+          onToggleRegex: null,
         ),
       ),
       style: searchBoxTextStyle(context, size: _boxSize),

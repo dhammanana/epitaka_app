@@ -48,6 +48,7 @@ class ReaderContentList extends StatefulWidget {
     required this.colors,
     required this.paliColor,
     required this.translationColor,
+    this.translationColors = const {},
     required this.enabledLangs,
     required this.langTypographies,
     required this.itemScrollController,
@@ -78,8 +79,12 @@ class ReaderContentList extends StatefulWidget {
   /// Resolved Pāli text color.
   final Color paliColor;
 
-  /// Resolved translation text color.
+  /// Resolved translation text color (fallback for languages missing from
+  /// [translationColors]).
   final Color translationColor;
+
+  /// Resolved translation text color per language code.
+  final Map<String, Color> translationColors;
 
   /// Enabled translation language codes.
   final List<String> enabledLangs;
@@ -152,6 +157,7 @@ class _ReaderContentConfig {
   final ParagraphDisplayMode displayMode;
   final Color paliColor;
   final Color translationColor;
+  final Map<String, Color> translationColors;
   final LanguageTypography paliTypography;
   final Map<String, LanguageTypography> langTypographies;
   final List<String> enabledLangs;
@@ -172,6 +178,7 @@ class _ReaderContentConfig {
     required this.displayMode,
     required this.paliColor,
     required this.translationColor,
+    required this.translationColors,
     required this.paliTypography,
     required this.langTypographies,
     required this.enabledLangs,
@@ -213,6 +220,7 @@ class _ReaderContentConfig {
       ),
       paliColor: widget.paliColor,
       translationColor: widget.translationColor,
+      translationColors: widget.translationColors,
       paliTypography: settings.typography.pali,
       langTypographies: widget.langTypographies,
       enabledLangs: widget.enabledLangs,
@@ -242,6 +250,7 @@ class _ReaderContentConfig {
         other.displayMode == displayMode &&
         other.paliColor == paliColor &&
         other.translationColor == translationColor &&
+        mapEquals(other.translationColors, translationColors) &&
         other.paliTypography == paliTypography &&
         mapEquals(other.langTypographies, langTypographies) &&
         listEquals(other.enabledLangs, enabledLangs) &&
@@ -264,6 +273,10 @@ class _ReaderContentConfig {
     displayMode,
     paliColor,
     translationColor,
+    Object.hashAllUnordered([
+      for (final entry in translationColors.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
     paliTypography,
     Object.hashAllUnordered(langTypographies.keys),
     Object.hashAll(enabledLangs),
@@ -331,6 +344,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
     displayMode: ParagraphDisplayMode.lineByLine,
     paliColor: const Color(0x00000000),
     translationColor: const Color(0x00000000),
+    translationColors: const {},
     paliTypography: const LanguageTypography(),
     langTypographies: const {},
     enabledLangs: const [],
@@ -436,6 +450,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
         displayMode: config.displayMode,
         paliColor: config.paliColor,
         translationColor: config.translationColor,
+        translationColors: config.translationColors,
         paliTypography: config.paliTypography,
         langTypographies: config.langTypographies,
         enabledLangCodes: config.enabledLangs,

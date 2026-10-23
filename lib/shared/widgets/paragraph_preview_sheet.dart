@@ -9,6 +9,7 @@ import '../../core/providers/settings_provider.dart';
 import '../../core/utils/app_localizations.dart';
 import '../../core/theme/app_dimensions.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/theme/color_pair.dart';
 import '../../core/utils/native_lookup_service.dart';
 import '../../features/dictionary/widgets/dictionary_open.dart';
 import 'pali_text.dart';
@@ -389,11 +390,19 @@ class _ParagraphPreviewSheetState
     final paliColor = ref
         .watch(settingsProvider.select((s) => s.paliColorPair))
         .resolve(brightness);
-    final transColor = ref
-        .watch(settingsProvider.select((s) => s.translationColorPair))
-        .resolve(brightness);
     final typography = ref.watch(settingsProvider.select((s) => s.typography));
     final w = widget;
+    // Per-language colours in visible order, exactly as the reader draws
+    // them: each language keeps its own colour.
+    final transPairs = ref.watch(
+      settingsProvider.select((s) => s.translationColorPairs),
+    );
+    final transColors = <String, Color>{
+      for (final e in transPairs.entries) e.key: e.value.resolve(brightness),
+    };
+    final transColor = transColors.isEmpty
+        ? ColorPair.translation.resolve(brightness)
+        : transColors.values.first;
     final hasHeading =
         w.heading != null &&
         w.heading!.isNotEmpty &&
@@ -608,6 +617,7 @@ class _ParagraphPreviewSheetState
                                         colors: colors,
                                         paliColor: paliColor,
                                         transColor: transColor,
+                                        transColors: transColors,
                                         paliTypo: paliTypo,
                                         typography: typography,
                                         onPaliWordTap: (word) {

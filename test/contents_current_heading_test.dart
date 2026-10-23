@@ -19,7 +19,6 @@ import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/contents/providers/contents_provider.dart';
 import 'package:epitaka/features/contents/screens/contents_screen.dart';
 import 'package:epitaka/features/contents/widgets/contents_panel.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'helpers/type_keys.dart';
 
 /// 20 headings with ascending paraIds — mirrors how `contentsProvider`
@@ -187,7 +186,7 @@ void main() {
       await tester.pumpAndSettle();
       final help = find.descendant(
         of: find.byType(TextField),
-        matching: find.byType(VelthuisHelpIcon),
+        matching: find.byIcon(Icons.more_vert),
       );
       expect(help, findsOneWidget);
       await typeKeys(tester, find.byType(TextField), 'paali');

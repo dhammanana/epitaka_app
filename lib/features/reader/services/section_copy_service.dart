@@ -221,7 +221,7 @@ class SectionCopyService {
       try {
         final brightness = Theme.of(context).brightness;
         paliColor = settings.paliColorPair.resolve(brightness);
-        transColor = settings.translationColorPair.resolve(brightness);
+        transColor = settings.translationColorFor(brightness);
       } catch (_) {
         paliColor = const Color(0xFF7A2E1D);
         transColor = const Color(0xFF33312E);
@@ -323,7 +323,7 @@ class SectionCopyService {
       try {
         final brightness = Theme.of(context).brightness;
         paliColor = settings.paliColorPair.resolve(brightness);
-        transColor = settings.translationColorPair.resolve(brightness);
+        transColor = settings.translationColorFor(brightness);
       } catch (_) {
         paliColor = const Color(0xFF7A2E1D);
         transColor = const Color(0xFF33312E);

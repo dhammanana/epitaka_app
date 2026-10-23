@@ -81,333 +81,326 @@ class _TranslationSettingsBodyState
         120,
       ),
       children: [
-          Text(
-            loc.translationsDownloads,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.onSurface,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
+        Text(
+          loc.translationsDownloads,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          loc.manageTranslationsSubtitle,
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppDimensions.lg),
+        _buildUpdateBanner(colors),
+        const SizedBox(height: AppDimensions.lg),
+        SettingsSection(
+          title: loc.displayMode,
+          colors: colors,
+          children: [
+            _ModeSelector(
+              currentMode: settings.showTranslation
+                  ? settings.translationDisplayMode
+                  : null,
+              showTranslation: settings.showTranslation,
+              onSelectMode: (mode) {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setTranslationDisplayMode(mode);
+                if (!settings.showTranslation) {
+                  ref.read(settingsProvider.notifier).setShowTranslation(true);
+                }
+              },
+              onToggleTranslation: (show) {
+                ref.read(settingsProvider.notifier).setShowTranslation(show);
+              },
+              colors: colors,
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            loc.manageTranslationsSubtitle,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.onSurfaceVariant,
+            const SizedBox(height: 4),
+            _ShowBookLinksTile(
+              value: settings.showBookLinks,
+              onChanged: (v) {
+                ref.read(settingsProvider.notifier).setShowBookLinks(v);
+              },
+              colors: colors,
             ),
-          ),
-          const SizedBox(height: AppDimensions.lg),
-          _buildUpdateBanner(colors),
-          const SizedBox(height: AppDimensions.lg),
-          SettingsSection(
-            title: loc.displayMode,
-            colors: colors,
-            children: [
-              _ModeSelector(
-                currentMode: settings.showTranslation
-                    ? settings.translationDisplayMode
-                    : null,
-                showTranslation: settings.showTranslation,
-                onSelectMode: (mode) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setTranslationDisplayMode(mode);
-                  if (!settings.showTranslation) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setShowTranslation(true);
-                  }
-                },
-                onToggleTranslation: (show) {
-                  ref.read(settingsProvider.notifier).setShowTranslation(show);
-                },
-                colors: colors,
+          ],
+        ),
+        const SizedBox(height: AppDimensions.lg),
+        const PaliTextSection(),
+        const TranslationTextSection(),
+        const SizedBox(height: AppDimensions.lg),
+        SettingsSection(
+          title: loc.translationOrder,
+          colors: colors,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimensions.md,
+                AppDimensions.sm,
+                AppDimensions.md,
+                AppDimensions.sm,
               ),
-              const SizedBox(height: 4),
-              _ShowBookLinksTile(
-                value: settings.showBookLinks,
-                onChanged: (v) {
-                  ref.read(settingsProvider.notifier).setShowBookLinks(v);
-                },
-                colors: colors,
+              child: Text(
+                loc.reorderTranslationsHint,
+                style: AppTypography.labelSmall.copyWith(
+                  color: colors.onSurfaceVariant,
+                  height: 1.4,
+                ),
               ),
-            ],
-          ),
-          const SizedBox(height: AppDimensions.lg),
-          const PaliTextSection(),
-          const TranslationTextSection(),
-          const SizedBox(height: AppDimensions.lg),
-          SettingsSection(
-            title: loc.translationOrder,
-            colors: colors,
-            children: [
+            ),
+            if (reorderableCodes.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppDimensions.md,
-                  AppDimensions.sm,
+                  0,
                   AppDimensions.md,
+                  AppDimensions.md,
+                ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppDimensions.md),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest.withValues(
+                      alpha: 0.35,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    loc.noTranslationsDownloadedYet,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimensions.sm,
+                  0,
+                  AppDimensions.sm,
                   AppDimensions.sm,
                 ),
-                child: Text(
-                  loc.reorderTranslationsHint,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                    height: 1.4,
-                  ),
+                child: ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  children: reorderableCodes.asMap().entries.map((entry) {
+                    final code = entry.value;
+                    final index = entry.key;
+                    final langName = TranslationLanguageRegistry.englishName(
+                      code,
+                    );
+                    final nativeName = TranslationLanguageRegistry.nativeName(
+                      code,
+                    );
+                    return _ReorderableTranslationTile(
+                      key: ValueKey(code),
+                      index: index,
+                      code: code,
+                      langName: langName,
+                      nativeName: nativeName,
+                      colors: colors,
+                    );
+                  }).toList(),
+                  onReorderItem: (oldIndex, newIndex) {
+                    // onReorderItem returns the FINAL index (Flutter already
+                    // adjusts for the removed item) — do NOT decrement.
+                    final reordered = List<String>.from(reorderableCodes);
+                    final moved = reordered.removeAt(oldIndex);
+                    reordered.insert(newIndex, moved);
+
+                    // Rebuild the FULL enabled list, keeping non-downloaded
+                    // (e.g. not-yet-downloaded) languages in place and only
+                    // applying the new order to the downloaded subset.
+                    final reorderedQueue = List<String>.from(reordered);
+                    final full = settings.enabledTranslations.map((code) {
+                      if (!downloadedCodes.contains(code)) return code;
+                      return reorderedQueue.removeAt(0);
+                    }).toList();
+
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setTranslationsOrder(full);
+                  },
                 ),
               ),
-              if (reorderableCodes.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppDimensions.md,
-                    0,
-                    AppDimensions.md,
-                    AppDimensions.md,
-                  ),
-                  child: Container(
-                    width: double.infinity,
+          ],
+        ),
+        const SizedBox(height: AppDimensions.lg),
+        SettingsSection(
+          title: loc.translationDatabases,
+          colors: colors,
+          children: [
+            mergedVersionsAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(AppDimensions.lg),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              error: (e, _) => Padding(
+                padding: const EdgeInsets.all(AppDimensions.md),
+                child: Text(
+                  '${loc.error} $e',
+                  style: AppTypography.labelSmall.copyWith(color: colors.error),
+                ),
+              ),
+              data: (versions) {
+                if (versions.isEmpty) {
+                  return Padding(
                     padding: const EdgeInsets.all(AppDimensions.md),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceContainerHighest.withValues(
-                        alpha: 0.35,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
                     child: Text(
-                      loc.noTranslationsDownloadedYet,
+                      loc.noTranslationsFound,
                       style: AppTypography.labelSmall.copyWith(
                         color: colors.onSurfaceVariant,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppDimensions.sm,
-                    0,
-                    AppDimensions.sm,
-                    AppDimensions.sm,
-                  ),
-                  child: ReorderableListView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    buildDefaultDragHandles: false,
-                    children: reorderableCodes.asMap().entries.map((entry) {
-                      final code = entry.value;
-                      final index = entry.key;
-                      final langName = TranslationLanguageRegistry.englishName(
-                        code,
-                      );
-                      final nativeName = TranslationLanguageRegistry.nativeName(
-                        code,
-                      );
-                      return _ReorderableTranslationTile(
-                        key: ValueKey(code),
-                        index: index,
-                        code: code,
-                        langName: langName,
-                        nativeName: nativeName,
-                        colors: colors,
-                      );
-                    }).toList(),
-                    onReorderItem: (oldIndex, newIndex) {
-                      // onReorderItem returns the FINAL index (Flutter already
-                      // adjusts for the removed item) — do NOT decrement.
-                      final reordered = List<String>.from(reorderableCodes);
-                      final moved = reordered.removeAt(oldIndex);
-                      reordered.insert(newIndex, moved);
-
-                      // Rebuild the FULL enabled list, keeping non-downloaded
-                      // (e.g. not-yet-downloaded) languages in place and only
-                      // applying the new order to the downloaded subset.
-                      final reorderedQueue = List<String>.from(reordered);
-                      final full = settings.enabledTranslations.map((code) {
-                        if (!downloadedCodes.contains(code)) return code;
-                        return reorderedQueue.removeAt(0);
-                      }).toList();
-
-                      ref
-                          .read(settingsProvider.notifier)
-                          .setTranslationsOrder(full);
-                    },
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: AppDimensions.lg),
-          SettingsSection(
-            title: loc.translationDatabases,
-            colors: colors,
-            children: [
-              mergedVersionsAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.all(AppDimensions.lg),
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-                error: (e, _) => Padding(
-                  padding: const EdgeInsets.all(AppDimensions.md),
-                  child: Text(
-                    '${loc.error} $e',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: colors.error,
-                    ),
-                  ),
-                ),
-                data: (versions) {
-                  if (versions.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(AppDimensions.md),
-                      child: Text(
-                        loc.noTranslationsFound,
-                        style: AppTypography.labelSmall.copyWith(
-                          color: colors.onSurfaceVariant,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
+                  );
+                }
+                final grouped = <String, List<TranslationVersion>>{};
+                for (final v in versions) {
+                  grouped.putIfAbsent(v.languageCode, () => []);
+                  grouped[v.languageCode]!.add(v);
+                }
+                final langCodes = grouped.keys.toList();
+                langCodes.sort((a, b) {
+                  final aEnabled = settings.enabledTranslations.contains(a);
+                  final bEnabled = settings.enabledTranslations.contains(b);
+                  if (aEnabled && bEnabled) {
+                    return settings.enabledTranslations
+                        .indexOf(a)
+                        .compareTo(settings.enabledTranslations.indexOf(b));
+                  }
+                  if (aEnabled) return -1;
+                  if (bEnabled) return 1;
+                  return a.compareTo(b);
+                });
+                return Column(
+                  children: langCodes.expand((code) {
+                    final langVersions = grouped[code]!;
+                    final langName = TranslationLanguageRegistry.englishName(
+                      code,
                     );
-                  }
-                  final grouped = <String, List<TranslationVersion>>{};
-                  for (final v in versions) {
-                    grouped.putIfAbsent(v.languageCode, () => []);
-                    grouped[v.languageCode]!.add(v);
-                  }
-                  final langCodes = grouped.keys.toList();
-                  langCodes.sort((a, b) {
-                    final aEnabled = settings.enabledTranslations.contains(a);
-                    final bEnabled = settings.enabledTranslations.contains(b);
-                    if (aEnabled && bEnabled) {
-                      return settings.enabledTranslations
-                          .indexOf(a)
-                          .compareTo(settings.enabledTranslations.indexOf(b));
-                    }
-                    if (aEnabled) return -1;
-                    if (bEnabled) return 1;
-                    return a.compareTo(b);
-                  });
-                  return Column(
-                    children: langCodes.expand((code) {
-                      final langVersions = grouped[code]!;
-                      final langName = TranslationLanguageRegistry.englishName(
-                        code,
-                      );
-                      final nativeName = TranslationLanguageRegistry.nativeName(
-                        code,
-                      );
-                      final isAnyEnabled = settings.enabledTranslations
-                          .contains(code);
-                      return [
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            top: AppDimensions.sm,
-                            bottom: 2,
+                    final nativeName = TranslationLanguageRegistry.nativeName(
+                      code,
+                    );
+                    final isAnyEnabled = settings.enabledTranslations.contains(
+                      code,
+                    );
+                    return [
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: AppDimensions.sm,
+                          bottom: 2,
+                        ),
+                        child: _LanguageHeader(
+                          code: code,
+                          englishName: langName,
+                          nativeName: nativeName,
+                          isAnyEnabled: isAnyEnabled,
+                          isAnyVersionInstalled: langVersions.any(
+                            (v) => v.isAvailable,
                           ),
-                          child: _LanguageHeader(
-                            code: code,
-                            englishName: langName,
-                            nativeName: nativeName,
-                            isAnyEnabled: isAnyEnabled,
-                            isAnyVersionInstalled: langVersions.any(
-                              (v) => v.isAvailable,
-                            ),
-                            colors: colors,
-                            onEnableChanged: (enabled) {
-                              final notifier = ref.read(
-                                settingsProvider.notifier,
-                              );
-                              notifier.setTranslationEnabled(code, enabled);
-                              // Auto-select the first available version when
-                              // enabling, if none is selected yet.  This way
-                              // the user doesn't have to also tap "Select this
-                              // version" separately — the nissaya (or default)
-                              // version just works after enabling the language.
-                              if (enabled) {
-                                final currentSuffix =
-                                    settings.translationVersionMap[code];
-                                if (currentSuffix == null ||
-                                    currentSuffix.isEmpty) {
-                                  final available = langVersions
-                                      .where((v) => v.isAvailable)
-                                      .toList();
-                                  if (available.isNotEmpty) {
-                                    notifier.setTranslationVersion(
-                                      code,
-                                      available.first.suffix,
-                                    );
-                                  }
+                          colors: colors,
+                          onEnableChanged: (enabled) {
+                            final notifier = ref.read(
+                              settingsProvider.notifier,
+                            );
+                            notifier.setTranslationEnabled(code, enabled);
+                            // Auto-select the first available version when
+                            // enabling, if none is selected yet.  This way
+                            // the user doesn't have to also tap "Select this
+                            // version" separately — the nissaya (or default)
+                            // version just works after enabling the language.
+                            if (enabled) {
+                              final currentSuffix =
+                                  settings.translationVersionMap[code];
+                              if (currentSuffix == null ||
+                                  currentSuffix.isEmpty) {
+                                final available = langVersions
+                                    .where((v) => v.isAvailable)
+                                    .toList();
+                                if (available.isNotEmpty) {
+                                  notifier.setTranslationVersion(
+                                    code,
+                                    available.first.suffix,
+                                  );
                                 }
                               }
-                            },
+                            }
+                          },
+                        ),
+                      ),
+                      ...langVersions.map((v) {
+                        final versionKey =
+                            v.suffix != null && v.suffix!.isNotEmpty
+                            ? '${v.languageCode}_${v.suffix}'
+                            : v.languageCode;
+                        final dlState =
+                            downloadStates[versionKey] ??
+                            const TranslationDownloadState();
+                        final selectedSuffix =
+                            settings.translationVersionMap[code];
+
+                        return _TranslationVersionTile(
+                          version: v,
+                          downloadState: dlState,
+                          isEnabled: isAnyEnabled,
+                          selectedSuffix: selectedSuffix,
+                          colors: colors,
+                          onDownload: () {
+                            ref
+                                .read(translationDownloadProvider.notifier)
+                                .downloadVersion(v, ref);
+                          },
+                          onDelete: () => _confirmDeleteVersion(v),
+                          onCancel:
+                              dlState.status == DownloadStatus.downloading ||
+                                  dlState.status == DownloadStatus.extracting
+                              ? () => ref
+                                    .read(translationDownloadProvider.notifier)
+                                    .cancelDownload(versionKey)
+                              : null,
+                          onEnableChanged: (enabled) {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setTranslationEnabled(code, enabled);
+                          },
+                          onVersionChanged: (String? suffix) {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setTranslationVersion(code, suffix);
+                          },
+                        );
+                      }),
+                      if (langCodes.last != code)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppDimensions.sm,
+                          ),
+                          child: Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: colors.outlineVariant.withValues(
+                              alpha: 0.25,
+                            ),
                           ),
                         ),
-                        ...langVersions.map((v) {
-                          final versionKey =
-                              v.suffix != null && v.suffix!.isNotEmpty
-                              ? '${v.languageCode}_${v.suffix}'
-                              : v.languageCode;
-                          final dlState =
-                              downloadStates[versionKey] ??
-                              const TranslationDownloadState();
-                          final selectedSuffix =
-                              settings.translationVersionMap[code];
-
-                          return _TranslationVersionTile(
-                            version: v,
-                            downloadState: dlState,
-                            isEnabled: isAnyEnabled,
-                            selectedSuffix: selectedSuffix,
-                            colors: colors,
-                            onDownload: () {
-                              ref
-                                  .read(translationDownloadProvider.notifier)
-                                  .downloadVersion(v, ref);
-                            },
-                            onDelete: () => _confirmDeleteVersion(v),
-                            onCancel:
-                                dlState.status == DownloadStatus.downloading ||
-                                    dlState.status == DownloadStatus.extracting
-                                ? () => ref
-                                      .read(
-                                        translationDownloadProvider.notifier,
-                                      )
-                                      .cancelDownload(versionKey)
-                                : null,
-                            onEnableChanged: (enabled) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setTranslationEnabled(code, enabled);
-                            },
-                            onVersionChanged: (String? suffix) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setTranslationVersion(code, suffix);
-                            },
-                          );
-                        }),
-                        if (langCodes.last != code)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: AppDimensions.sm,
-                            ),
-                            child: Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: colors.outlineVariant.withValues(
-                                alpha: 0.25,
-                              ),
-                            ),
-                          ),
-                      ];
-                    }).toList(),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
+                    ];
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -909,7 +902,11 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (v.isNissaya) ...[
-                    _StatusChip(label: loc.nissaya, color: Colors.teal, colors: colors),
+                    _StatusChip(
+                      label: loc.nissaya,
+                      color: Colors.teal,
+                      colors: colors,
+                    ),
                     const SizedBox(width: 6),
                   ],
                   if (_hasUpdate && v.hasDownloadUrl)
@@ -1369,18 +1366,18 @@ class _VersionInfoState extends State<_VersionInfo> {
     final loc = AppLocalizations.of(context);
     final version = widget.version;
     final colors = widget.colors;
-    final hasNewerVersion = _installedDate != null &&
+    final hasNewerVersion =
+        _installedDate != null &&
         version.updatedAt != null &&
         _installedDate!.compareTo(version.updatedAt!) < 0;
     final items = <String, String>{
       loc.filename: version.filename,
-      loc.type: version.isNissaya
-          ? loc.nissayaDesc
-          : loc.standardTranslation,
+      loc.type: version.isNissaya ? loc.nissayaDesc : loc.standardTranslation,
       loc.language: version.englishName,
       loc.suffix: version.suffix ?? loc.defaultLabel,
       if (version.fileSize != null)
-        loc.size: '${(version.fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
+        loc.size:
+            '${(version.fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
       // The version actually on this device (old date).
       if (_installedDate != null) loc.installedOn: _installedDate!,
       // The newest available date from the manifest.
@@ -1554,18 +1551,20 @@ class TranslationTextSection extends ConsumerWidget {
                   ? 'Thus have I heard…'
                   : TranslationLanguageRegistry.nativeName(code),
               typography: settings.typography.typographyFor(code),
-              defaultColor: ColorPair.translation.resolve(
-                Theme.of(context).brightness,
-              ),
-              // One translation colour for every language, the same one the
-              // reading-colours screen edits.
-              colorPair: settings.translationColorPair,
+              defaultColor: ColorPair.translationAt(
+                settings.visibleTranslationLangs.indexOf(code),
+              ).resolve(Theme.of(context).brightness),
+              // Each language has its own colour: a preset until the user
+              // picks one, and a pick here changes only this language.
+              colorPair: settings.translationColorPairFor(code),
               onColorChanged: (c) {
                 final notifier = ref.read(settingsProvider.notifier);
-                final pair = ref.read(settingsProvider).translationColorPair;
                 _isDark(context)
-                    ? notifier.setTranslationColorPair(pair.withDark(c))
-                    : notifier.setTranslationColor(c);
+                    ? notifier.setTranslationColorPairForLang(
+                        code,
+                        settings.translationColorPairFor(code).withDark(c),
+                      )
+                    : notifier.setTranslationColorForLang(code, c);
               },
               fontChoices: translationFontChoices(code),
               onTypographyChanged: (typo) {

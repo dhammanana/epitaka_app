@@ -7,8 +7,6 @@ import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/sutta_jump/services/sutta_code_service.dart';
 import 'package:epitaka/features/sutta_jump/widgets/go_to_sutta_dialog.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -203,7 +201,7 @@ void main() {
     }
 
     Future<void> toggleRx(WidgetTester tester) async {
-      await tester.tap(find.byType(RegexToggleButton));
+      await regexToggleByTapIn(tester, find.byType(TextField));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
@@ -218,30 +216,21 @@ void main() {
       expect(find.byType(GoToSuttaDialog), findsNothing);
     }
 
-    testWidgets('rx sits after the Velthuis help; on, the help hides and rx stays put', (
-      tester,
-    ) async {
+    testWidgets('the more menu holds the help and rx', (tester) async {
       await pumpHost(tester);
       final field = find.byType(TextField);
-      final rx = find.descendant(
+      final menu = find.descendant(
         of: field,
-        matching: find.byType(RegexToggleButton),
+        matching: find.byIcon(Icons.more_vert),
       );
-      final help = find.descendant(
-        of: field,
-        matching: find.byType(VelthuisHelpIcon),
-      );
-      expect(rx, findsOneWidget);
-      expect(help, findsOneWidget);
-      // Order: the help icon first, then rx.
-      expect(tester.getTopLeft(help).dx < tester.getTopLeft(rx).dx, isTrue);
-      final rxBefore = tester.getTopLeft(rx);
-
-      await tester.tap(rx);
+      expect(menu, findsOneWidget);
+      // The Velthuis help and rx moved into the menu.
+      await tester.tap(menu);
       await tester.pumpAndSettle();
-      expect(help, findsNothing);
-      expect(rx, findsOneWidget);
-      expect(tester.getTopLeft(rx), rxBefore);
+      expect(find.text('Velthuis typing'), findsOneWidget);
+      expect(find.text('Regular expression'), findsOneWidget);
+      // Close the menu before the dialog itself closes.
+      await closeMoreMenu(tester);
       await closeWithEscape(tester);
     });
 

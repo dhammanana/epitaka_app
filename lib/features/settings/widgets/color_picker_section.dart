@@ -10,7 +10,8 @@ import 'color_swatch.dart';
 
 /// Predefined color options for Pāli text.
 const List<Color> kPaliTextPresetColors = [
-  Color(0xFF7A2E1D), // Default warm brown
+  Color(0xFF000000), // Default black
+  Color(0xFF7A2E1D), // Warm brown
   Color(0xFF994532), // Rust red
   Color(0xFFB5651D), // Golden amber
   Color(0xFF8B1A1A), // Deep red
@@ -21,6 +22,9 @@ const List<Color> kPaliTextPresetColors = [
 ];
 
 /// Predefined color options for translation text.
+///
+/// Includes the colours the reader assigns to translations by position, so
+/// every default stays selectable here.
 const List<Color> kTranslationTextPresetColors = [
   Color(0xFF33312E), // Default dark gray
   Color(0xFF221A14), // Espresso
@@ -30,6 +34,9 @@ const List<Color> kTranslationTextPresetColors = [
   Color(0xFF6B635A), // Charcoal
   Color(0xFF2E7D32), // Green
   Color(0xFF5D4037), // Brown
+  Color(0xFF2A6B6B), // Teal
+  Color(0xFF994532), // Rust
+  Color(0xFF6A1B9A), // Purple
 ];
 
 // ── Color Picker Section Widget ───────────────────────────────────────────

@@ -382,25 +382,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // closures would capture build-scope state, get a fresh identity every
   // build, and make [ReaderToolbarController.update] notify on every frame.
   void _handleTtsPrev() => _handleTtsTransport(
-        () => ref.read(ttsReadingProvider.notifier).skipBackward(),
-      );
+    () => ref.read(ttsReadingProvider.notifier).skipBackward(),
+  );
 
   void _handleTtsPlayPause() => _handleTtsTransport(() {
-        final notifier = ref.read(ttsReadingProvider.notifier);
-        if (ref.read(ttsReadingProvider).isPaused) {
-          notifier.resumeReading();
-        } else {
-          notifier.pauseReading();
-        }
-      });
+    final notifier = ref.read(ttsReadingProvider.notifier);
+    if (ref.read(ttsReadingProvider).isPaused) {
+      notifier.resumeReading();
+    } else {
+      notifier.pauseReading();
+    }
+  });
 
   void _handleTtsNext() => _handleTtsTransport(
-        () => ref.read(ttsReadingProvider.notifier).skipForward(),
-      );
+    () => ref.read(ttsReadingProvider.notifier).skipForward(),
+  );
 
   void _handleTtsFollow() => _handleTtsTransport(
-        () => _tts.follow(ref.read(ttsReadingProvider).bookId ?? ''),
-      );
+    () => _tts.follow(ref.read(ttsReadingProvider).bookId ?? ''),
+  );
 
   void _handleTtsMore() {
     final activeTab = ref.read(readerTabsProvider).activeTab;
@@ -794,7 +794,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       (w) => quick?.hasContent(w) ?? false,
     );
     if (lookupWord != word) {
-      developer.log('[DBG] quote-run join: "$word" → "$lookupWord"', name: 'epitaka.dict');
+      developer.log(
+        '[DBG] quote-run join: "$word" → "$lookupWord"',
+        name: 'epitaka.dict',
+      );
     }
 
     // Update active lookup highlight for the reader view.
@@ -1323,11 +1326,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final brightness = Theme.of(context).brightness;
     final resolvedPaliColor = settings.paliColorPair.resolve(brightness);
-    final resolvedTransColor = settings.translationColorPair.resolve(
-      brightness,
-    );
+    final resolvedTransColor = settings.translationColorFor(brightness);
 
     final enabledLangs = settings.visibleTranslationLangs;
+
+    // Each translation language draws in its own colour so two translations
+    // of the same line can be told apart.
+    final resolvedTransColors = <String, Color>{
+      for (final langCode in enabledLangs)
+        langCode: settings.translationColorForLang(brightness, langCode),
+    };
 
     final langTypographies = <String, LanguageTypography>{};
     for (final langCode in enabledLangs) {
@@ -1715,6 +1723,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                           activeTab,
                           resolvedPaliColor,
                           resolvedTransColor,
+                          resolvedTransColors,
                           enabledLangs,
                           langTypographies,
                           ttsCurrentLineId,
@@ -1858,6 +1867,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     ReaderTabInfo activeTab,
     Color paliColor,
     Color translationColor,
+    Map<String, Color> translationColors,
     List<String> enabledLangs,
     Map<String, LanguageTypography> langTypographies,
     int? ttsHighlightLineId,
@@ -1960,6 +1970,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       colors: colors,
       paliColor: paliColor,
       translationColor: translationColor,
+      translationColors: translationColors,
       enabledLangs: enabledLangs,
       langTypographies: langTypographies,
       itemScrollController: _scroll.scrollControllerFor(activeTab.bookId),

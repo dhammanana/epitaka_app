@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:epitaka/core/utils/responsive_breakpoint.dart'
     show ResponsiveBreakpoint;
 import 'package:epitaka/shared/providers/side_panel_provider.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'package:epitaka/shared/widgets/search_box_actions.dart';
 import 'package:epitaka/shared/widgets/search_box_decoration.dart';
 import 'package:epitaka/shared/widgets/wide_bottom_sheet.dart';
 import 'package:flutter/material.dart';
@@ -774,23 +773,37 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                         context,
                                       ).searchPali,
                                       size: SearchBoxSize.screen,
-                                      suffixIcon: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (_searchController.text.isNotEmpty)
-                                            IconButton(
-                                              icon: const Icon(Icons.clear),
-                                              onPressed: () {
-                                                _searchController.clear();
-                                                _onSearchChanged('');
-                                                _focusNode.requestFocus();
-                                              },
+                                      suffixIcon: SearchBoxSuffixActions(
+                                        showClear:
+                                            _searchController.text.isNotEmpty,
+                                        onClear: () {
+                                          _searchController.clear();
+                                          _onSearchChanged('');
+                                          _focusNode.requestFocus();
+                                        },
+                                        regexOn: regexOn,
+                                        onToggleRegex: _toggleRegex,
+                                        extraItems: [
+                                          SearchBoxMoreItem(
+                                            id: 'show-icons',
+                                            label: AppLocalizations.of(
+                                              context,
+                                            ).searchIconsShow,
+                                            icon: Icons.tune,
+                                            checked: ref.watch(
+                                              dictionaryHeaderIconsProvider,
                                             ),
-                                          if (!regexOn)
-                                            const VelthuisHelpIcon(),
-                                          RegexToggleButton(
-                                            on: regexOn,
-                                            onToggle: _toggleRegex,
+                                            onTap: () {
+                                              final icons = ref.read(
+                                                dictionaryHeaderIconsProvider
+                                                    .notifier,
+                                              );
+                                              icons.set(
+                                                !ref.read(
+                                                  dictionaryHeaderIconsProvider,
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ],
                                       ),

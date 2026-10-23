@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/settings_provider.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/theme/color_pair.dart';
 import '../../core/utils/pali_script_converter.dart';
 import '../../core/utils/pali_text_utils.dart';
 import '../../features/reader/utils/reader_word_hit_test.dart'
@@ -97,9 +98,17 @@ class PreviewContent extends ConsumerWidget {
     final paliColor = ref
         .watch(settingsProvider.select((s) => s.paliColorPair))
         .resolve(brightness);
-    final transColor = ref
-        .watch(settingsProvider.select((s) => s.translationColorPair))
-        .resolve(brightness);
+    // Per-language colours in visible order, exactly as the reader draws
+    // them: each language keeps its own colour.
+    final transPairs = ref.watch(
+      settingsProvider.select((s) => s.translationColorPairs),
+    );
+    final transColors = <String, Color>{
+      for (final e in transPairs.entries) e.key: e.value.resolve(brightness),
+    };
+    final transColor = transColors.isEmpty
+        ? ColorPair.translation.resolve(brightness)
+        : transColors.values.first;
     final typography = ref.watch(settingsProvider.select((s) => s.typography));
 
     return Column(
@@ -135,6 +144,7 @@ class PreviewContent extends ConsumerWidget {
             colors: colors,
             paliColor: paliColor,
             transColor: transColor,
+            transColors: transColors,
             paliTypo: paliTypo,
             typography: typography,
             onPaliWordTap: onPaliWordTap,
@@ -166,6 +176,10 @@ class PreviewLine extends StatelessWidget {
   final ColorScheme colors;
   final Color paliColor;
   final Color transColor;
+
+  /// Resolved translation colour per language code; languages missing here
+  /// draw with [transColor].
+  final Map<String, Color> transColors;
   final LanguageTypography paliTypo;
   final TypographySettings typography;
 
@@ -182,6 +196,7 @@ class PreviewLine extends StatelessWidget {
     required this.colors,
     required this.paliColor,
     required this.transColor,
+    this.transColors = const {},
     required this.paliTypo,
     required this.typography,
     this.onPaliWordTap,
@@ -225,7 +240,7 @@ class PreviewLine extends StatelessWidget {
                 final langTypo = typography.typographyFor(tEntry.key);
                 return _buildTranslationLine(
                   tEntry.value,
-                  transColor,
+                  transColors[tEntry.key] ?? transColor,
                   langTypo,
                 );
               }),

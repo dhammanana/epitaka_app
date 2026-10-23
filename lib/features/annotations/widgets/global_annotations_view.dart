@@ -29,9 +29,8 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/diacritics.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
 import '../../search/services/regex_search.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../shared/utils/app_navigation.dart';
@@ -280,22 +279,12 @@ class _SearchField extends ConsumerWidget {
           context,
           hintText: loc.searchAnnotations,
           size: size,
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (query.isNotEmpty)
-                IconButton(
-                  onPressed: onClear,
-                  tooltip: loc.clearSearch,
-                  icon: const Icon(Icons.clear),
-                ),
-              if (!rxOn) const VelthuisHelpIcon(),
-              RegexToggleButton(
-                on: rxOn,
-                onToggle: () =>
-                    ref.read(annotationsRegexProvider.notifier).state = !rxOn,
-              ),
-            ],
+          suffixIcon: SearchBoxSuffixActions(
+            showClear: query.isNotEmpty,
+            onClear: onClear,
+            regexOn: rxOn,
+            onToggleRegex: () =>
+                ref.read(annotationsRegexProvider.notifier).state = !rxOn,
           ),
           errorText: patternError != null
               ? loc.invalidPattern(patternError)

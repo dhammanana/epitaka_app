@@ -11,8 +11,6 @@ import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/annotations/models/annotation.dart';
 import 'package:epitaka/features/annotations/providers/annotations_provider.dart';
 import 'package:epitaka/features/annotations/screens/annotations_screen.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -203,24 +201,29 @@ void main() {
 
   group('Rx and Velthuis (spec J)', () {
     Finder field() => find.byType(TextField);
-    Finder help() =>
-        find.descendant(of: field(), matching: find.byType(VelthuisHelpIcon));
-    Future<void> rxOn(WidgetTester tester) async {
-      await tester.tap(find.byType(RegexToggleButton));
-      await tester.pumpAndSettle();
-    }
+    Future<void> rxOn(WidgetTester tester) =>
+        regexToggleByTapIn(tester, field());
 
-    testWidgets('Rx sits after the clear button and the help; '
-        'Velthuis works with Rx off', (tester) async {
+    testWidgets('the box ends in X, then the more menu that holds the '
+        'help; Velthuis works with Rx off from the menu', (tester) async {
       await tester.pumpWidget(_build());
       await tester.pumpAndSettle();
-      expect(help(), findsOneWidget);
+      // The Velthuis card opens from the more menu.
+      await openVelthuisHelpIn(tester, field());
+      expect(find.textContaining('→'), findsWidgets);
+      // Close the dialog before the next step.
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
       await typeKeys(tester, field(), 'paali');
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field()).controller!.text, 'pāli');
-      final rx = tester.getCenter(find.byType(RegexToggleButton)).dx;
-      expect(rx, greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx));
-      expect(rx, greaterThan(tester.getCenter(help()).dx));
+      expect(
+        tester.getCenter(
+          find.descendant(of: field(), matching: find.byIcon(Icons.more_vert)),
+        ).dx,
+        greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx),
+      );
     });
 
     testWidgets('Alt+R in the box turns Rx on, then off', (tester) async {
@@ -235,7 +238,7 @@ void main() {
       expect(rxOnIn(tester, field()), isFalse);
     });
 
-    testWidgets('Rx on keeps `.m`, hides the help, and matches exact '
+    testWidgets('Rx on keeps `.m`, and matches exact '
         'diacritics', (tester) async {
       await tester.pumpWidget(_build());
       await tester.pumpAndSettle();
@@ -243,7 +246,6 @@ void main() {
       await typeKeys(tester, field(), 'a.m');
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field()).controller!.text, 'a.m');
-      expect(help(), findsNothing);
 
       await _search(tester, 'sattā');
       expect(find.textContaining('sabbe sattā'), findsOneWidget);

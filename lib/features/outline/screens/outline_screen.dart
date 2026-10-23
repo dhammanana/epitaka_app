@@ -23,8 +23,7 @@ import '../../../core/utils/velthuis.dart';
 import '../../../router/app_router.dart';
 import '../../../shared/widgets/filter_list_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../search/services/regex_search.dart';
 import '../models/outline_models.dart';
@@ -392,22 +391,12 @@ class _OutlineHeader extends ConsumerWidget {
           context,
           hintText: loc.searchContents,
           size: SearchBoxSize.screen,
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (searching)
-                IconButton(
-                  icon: const Icon(Icons.clear),
-                  tooltip: loc.clear,
-                  onPressed: onClearSearch,
-                ),
-              if (!rxOn) const VelthuisHelpIcon(),
-              RegexToggleButton(
-                on: rxOn,
-                onToggle: () =>
-                    ref.read(outlineRegexProvider.notifier).state = !rxOn,
-              ),
-            ],
+          suffixIcon: SearchBoxSuffixActions(
+            showClear: searching,
+            onClear: onClearSearch,
+            regexOn: rxOn,
+            onToggleRegex: () =>
+                ref.read(outlineRegexProvider.notifier).state = !rxOn,
           ),
           errorText: error != null
               ? loc.invalidPattern(error)

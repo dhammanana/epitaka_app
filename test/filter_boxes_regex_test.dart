@@ -26,8 +26,6 @@ import 'package:epitaka/shared/providers/side_panel_provider.dart';
 import 'package:epitaka/features/desktop/desktop_shell.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
 import 'package:epitaka/shared/widgets/filter_list_nav.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -186,9 +184,8 @@ Future<void> _openLibrary(WidgetTester tester) async {
 }
 
 Finder get _field => find.byType(TextField).first;
-Finder get _rx => find.byType(RegexToggleButton);
-Finder get _help =>
-    find.descendant(of: _field, matching: find.byType(VelthuisHelpIcon));
+Finder get _menuButton =>
+    find.descendant(of: _field, matching: find.byIcon(Icons.more_vert));
 
 /// Which of the three titles the list shows.
 Set<String> _shown() => {
@@ -235,50 +232,43 @@ void main() {
     ('Library', _openLibrary),
   ]) {
     group(name, () {
-      testWidgets('Rx sits after the Velthuis help and the other icons, and stays put; '
-          'on, it keeps `.m` and hides the help', (tester) async {
+      testWidgets('each box ends in X, then the more menu; the menu holds '
+          'the help and rx, and on, it keeps `.m`', (tester) async {
         await open(tester);
-        expect(_rx, findsOneWidget);
-        expect(_help, findsOneWidget);
-        expect(
-          tester.getCenter(_rx).dx,
-          greaterThan(tester.getCenter(_help).dx),
-        );
-        final rxBefore = tester.getCenter(_rx);
-        for (final icon in [Icons.close, Icons.clear]) {
-          final other = find.descendant(
-            of: _field,
-            matching: find.byIcon(icon),
-          );
-          if (other.evaluate().isNotEmpty) {
-            expect(
-              tester.getCenter(_rx).dx,
-              greaterThan(tester.getCenter(other).dx),
-            );
-          }
-        }
-
-        await tester.tap(_rx);
+        expect(_menuButton, findsOneWidget);
+        // The Velthuis help and rx live in the menu now.
+        await tester.tap(_menuButton);
         await tester.pumpAndSettle();
-        expect(tester.getCenter(_rx), rxBefore);
+        expect(find.text('Velthuis typing'), findsOneWidget);
+        expect(find.text('Regular expression'), findsOneWidget);
+        await closeMoreMenu(tester);
+
+        // Typing shows X before the menu.
+        await _type(tester, 'a');
+        final clear = find.byIcon(Icons.clear);
+        expect(clear, findsOneWidget);
+        expect(
+          tester.getCenter(_menuButton).dx,
+          greaterThan(tester.getCenter(clear).dx),
+        );
+
+        // rx on keeps `.m` as typed.
+        await regexToggleByTapIn(tester, _field);
         await _type(tester, 'a.m');
         expect(tester.widget<TextField>(_field).controller!.text, 'a.m');
-        expect(_help, findsNothing);
       });
 
       testWidgets('a pattern filters with exact diacritics; off, the plain '
           'filter folds them', (tester) async {
         await open(tester);
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
 
         await _type(tester, '^sām');
         expect(_shown(), {_long});
         await _type(tester, '^sam');
         expect(_shown(), {_short});
 
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
         await _type(tester, 'sam');
         expect(_shown(), {_long, _short});
       });
@@ -286,8 +276,7 @@ void main() {
       testWidgets('a runaway pattern ends as "Pattern too slow" at the '
           'field', (tester) async {
         await open(tester);
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
         await tester.enterText(_field, _runaway);
         await tester.pumpAndSettle();
         await _passLimit(tester);
@@ -296,8 +285,7 @@ void main() {
 
       testWidgets('X during a runaway pattern leaves no late answer', (tester) async {
         await open(tester);
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
         await tester.enterText(_field, _runaway);
         await tester.pumpAndSettle();
         await tester.tap(find.byIcon(Icons.clear));
@@ -310,8 +298,7 @@ void main() {
       testWidgets('a pattern that does not compile shows at the field and '
           'empties the list', (tester) async {
         await open(tester);
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
         await _type(tester, '(');
         expect(find.textContaining('Invalid pattern:'), findsOneWidget);
         expect(_shown(), isEmpty);
@@ -342,12 +329,8 @@ void main() {
         'toggle; X clears the box', (tester) async {
       await open(tester);
       expect(_field, findsOneWidget);
-      // The only search icon is the one inside the box: no toggle.
-      expect(find.byIcon(Icons.search), findsOneWidget);
-      expect(
-        find.descendant(of: _field, matching: find.byIcon(Icons.search)),
-        findsOneWidget,
-      );
+      // No search icon anywhere now: the box is text plus X and the menu.
+      expect(find.byIcon(Icons.search), findsNothing);
       if (title != null) expect(find.text(title), findsNothing);
       expect(find.byIcon(Icons.clear), findsNothing);
 
@@ -581,8 +564,7 @@ void main() {
 
       testWidgets('works with Rx on', (tester) async {
         await open(tester);
-        await tester.tap(_rx);
-        await tester.pumpAndSettle();
+        await regexToggleByTapIn(tester, _field);
         await _type(tester, 'ā');
         await key(tester, LogicalKeyboardKey.arrowDown);
         expect(boxHasCursor(tester), isFalse);

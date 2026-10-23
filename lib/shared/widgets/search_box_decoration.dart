@@ -6,13 +6,15 @@ import '../../core/theme/app_typography.dart';
 /// The gap above and below every search box, the same everywhere.
 const double kSearchBoxGap = AppDimensions.sm;
 
-/// The padding round a search box: [kSearchBoxGap] above and below, and the
-/// same side margin in every desktop panel (the Search sidebar's) and on
-/// every phone screen (the Search screen's).
+/// The padding round a search box: [kSearchBoxGap] above and below, and a
+/// slim side margin in every desktop panel (the Search sidebar's) and on
+/// every phone screen (the Search screen's). It was the desktop margin wide
+/// on phones too; the row kept the word from filling out on a phone, so it
+/// is one gutter-grain now.
 EdgeInsets searchBoxPadding(SearchBoxSize size) => EdgeInsets.symmetric(
   horizontal: size == SearchBoxSize.panel
       ? AppDimensions.sm
-      : AppDimensions.marginMobile,
+      : AppDimensions.sm + 2,
   vertical: kSearchBoxGap,
 );
 
@@ -21,14 +23,14 @@ EdgeInsets searchBoxPadding(SearchBoxSize size) => EdgeInsets.symmetric(
 enum SearchBoxSize { panel, screen }
 
 /// The look of the Search boxes, shared by every box that searches Pāli so
-/// they cannot drift apart: filled, rounded, no border line, a search icon
-/// first. [prefixIcon] replaces the plain search icon (the phone Search
-/// screen makes it a button).
+/// they cannot drift apart: filled, rounded, no border line, and — for room
+/// — no leading icon; the box ends in the suffix's clear button and "more"
+/// menu (search_box_actions.dart). The text field padding below reads fresh
+/// from that.
 InputDecoration searchBoxDecoration(
   BuildContext context, {
   required String hintText,
   SearchBoxSize size = SearchBoxSize.panel,
-  Widget? prefixIcon,
   Widget? suffixIcon,
   String? errorText,
 }) {
@@ -37,13 +39,6 @@ InputDecoration searchBoxDecoration(
   return InputDecoration(
     hintText: hintText,
     isDense: panel,
-    prefixIcon:
-        prefixIcon ??
-        Icon(
-          Icons.search,
-          size: panel ? 18 : null,
-          color: colors.onSurfaceVariant,
-        ),
     suffixIcon: suffixIcon,
     errorText: errorText,
     filled: true,
@@ -55,9 +50,11 @@ InputDecoration searchBoxDecoration(
       ),
       borderSide: BorderSide.none,
     ),
+    // The screen box's inner padding is a grain narrower than the panel's:
+    // on a phone the row held the word from filling out the box.
     contentPadding: panel
-        ? const EdgeInsets.symmetric(horizontal: AppDimensions.sm, vertical: 8)
-        : const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: 12),
+        ? const EdgeInsets.symmetric(horizontal: AppDimensions.md, vertical: 8)
+        : const EdgeInsets.symmetric(horizontal: AppDimensions.sm + 2, vertical: 12),
   );
 }
 

@@ -1,17 +1,43 @@
-## What's new in version 1.1.8 (build 39)
+## What's new in version 1.1.11 (build 42)
 
-- [Fix] UI, performance of the dictionary sheet.
 - Update translation manifest
-- [Add] support mdx dictionary
-- [Fix] Vimaṃsā UI
-- [Fix] lag of search in desktop
-- [Fix] Stamp the release tag version into every platform's build
-- [Fix] Install libunwind-dev for Linux CI gstreamer dependency
-- [Fix] Resolve dependencies on CI instead of enforcing stale lockfile
-- [Fix] Sinhala copy wrong. Let wrodwrap handle with default settings.
-- Update translation manifest
-- [Fix] Update dpd dictionary UI.
-- Update translation manifest
-- [Fix] Support 32bits android, indexes, UI fix
-- [Add] Linux .deb package to the release pipeline
-- [Fix] Outline. Let it display from local epitaka_en.db
+- [Add] Down arrow enters found rows in Library, Contents, Outline
+- [Fix] Rx button keeps its place and spacing when switched on
+- [Add] Resume and import from file for the DPD download
+- [Add] Keyboard path between the Search box and its results
+- [Fix] Rx switch keeps the cursor in the dictionary and Search boxes
+- [Add] Alt+R toggles Rx in the search box that has the cursor
+- [Add] Regex search in every Pāḷi search box, count hits once
+- [Add] Velthuis typing and a help card in every Pāli search box
+- [Fix] State the measured sizes in the far-selection test comment
+- [Fix] Shrink the far-selection search test from 25 s to 4 s
+- [Fix] Search page commit race and far keyboard selection
+- [Fix] Lighter thumb drag, book open and index build
+- [Fix] Find, first search and sidebar search no longer freeze
+- [Fix] Faster search and find in big books, release closed books
+- [Add] Timing lines, frame summary and a profile install recipe
+- [Fix] Clear saved dictionary switches after the tests that set them
+- [Fix] Summary test resets saved settings before its lookups
+- [Fix] Word-sync tests cover the dictionary on both sides
+- [Add] Combined full test run, nearly three times faster
+- [Fix] History list takes keyboard focus, Escape closes it
+- [Fix] Dictionary icons hide button says where to show them again
+- [Fix] DPD review fixes - Stop during release lookup, guarded saves, tests
+- [Add] Dictionary shortcuts, extra-dictionary tiers, feedback versions
+- [Add] DPD dictionary icon row in the sidebar header and sheet
+- [Fix] DPD other dictionaries - a typed word that is a headword is searched as itself, so kāya no longer shows ka
+- [Fix] DPD summary jump - the card title lands one line below the top and stays there while cards above it load
+- [Fix] DPD panel - a stale reader word no longer returns after a width drag, theme change or sidebar move
+- [Add] DPD downloads - first-run and upgrade download, daily update check with notice, safe swap, old dictionary file removed
+- [Add] DPD Brief level - tap a word in a summary line to look it up, numbers alone look nothing up
+- [Fix] DPD full review - suggestion order, deconstruction lookups, Brief lines, family crash, history order, jump back, damaged settings
+- [Add] DPD search bar - tiered suggestions, closest matches, sutta dot on tap, shared saved back/forward history with chips
+- [Add] android-run recipe - live run on the phone with hot reload
+- [Add] DPD dictionaries settings page - ordered dictionary list, external dictionaries, summary with jump, text size, panel reopen
+- [Add] DPD Vitthāra level - Saṅkhitta summary, inflections, families, roots, frequency, sutta info, audio, feedback links
+- [Add] Full DPD mobile database - Majjhima entries in the dictionary, replacing the slim dpd-dictionary file
+- [Fix] One-line paragraphs land below the Find bar
+- [Fix] Side-by-side line jumps land on the Pāḷi line
+- [Fix] Bring 20 stale tests back in line with the app
+- [Add] script to convert dpd dictionary for epitaka
+- [Add] Add sc_id to the Vīmaṃsā indexer and heading while copying

@@ -3,7 +3,6 @@ import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/outline/models/outline_models.dart';
 import 'package:epitaka/features/outline/providers/outline_provider.dart';
 import 'package:epitaka/features/outline/screens/outline_screen.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +10,7 @@ import 'helpers/type_keys.dart';
 
 void main() {
   testWidgets(
-      'outline search: Velthuis turns into diacritics; the help icon shows',
+      'outline search: Velthuis turns into diacritics; the more menu shows',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -52,7 +51,7 @@ void main() {
     await tester.pumpAndSettle();
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byIcon(Icons.more_vert),
     );
     expect(help, findsOneWidget);
 

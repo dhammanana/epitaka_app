@@ -474,8 +474,16 @@ class AppSettings {
   /// Pāli text color pair (light + dark mode).
   final ColorPair paliColorPair;
 
-  /// Translation text color pair (light + dark mode).
+  /// Legacy single translation colour pair (light + dark mode). Kept so old
+  /// saves can be read once and moved into [translationColorOverrides];
+  /// editing one when several translations are shown no longer applies to
+  /// all of them.
   final ColorPair translationColorPair;
+
+  /// Translation colours the user picked, keyed by language code. Any code
+  /// works — there is no fixed language list. A language without an entry
+  /// draws in its preset palette colour.
+  final Map<String, ColorPair> translationColorOverrides;
 
   /// Languages whose translations are currently shown to the user: the
   /// explicitly enabled ones, or the primary translation when none are
@@ -493,15 +501,46 @@ class AppSettings {
   Color paliColorFor(Brightness brightness) =>
       paliColorPair.resolve(brightness);
 
-  /// Convenience: resolve translation color for the current brightness.
-  Color translationColorFor(Brightness brightness) =>
-      translationColorPair.resolve(brightness);
+  /// Convenience: the colour used where one translation colour is needed
+  /// (copying, the onboarding picker): the first visible language's.
+  Color translationColorFor(Brightness brightness) => translationColorPairFor(
+    visibleTranslationLangs.isEmpty
+        ? primaryTranslationLang
+        : visibleTranslationLangs.first,
+  ).resolve(brightness);
+
+  /// Whether the user picked a translation colour for any language.
+  bool get hasCustomTranslationColor =>
+      translationColorOverrides.isNotEmpty ||
+      translationColorPair != ColorPair.translation;
+
+  /// Every visible language's colour pair, in display order.
+  Map<String, ColorPair> get translationColorPairs => {
+    for (final code in visibleTranslationLangs)
+      code: translationColorPairFor(code),
+  };
+
+  /// The colour pair used for [langCode]'s translation: that language's own
+  /// pick when the user made one, otherwise the preset colour for its
+  /// position among the visible translations. Picking a colour for one
+  /// language never changes another's.
+  ColorPair translationColorPairFor(String langCode) {
+    final picked = translationColorOverrides[langCode];
+    if (picked != null) return picked;
+    final langs = visibleTranslationLangs;
+    final index = langs.indexOf(langCode);
+    return ColorPair.translationAt(index < 0 ? langs.length : index);
+  }
+
+  /// Resolve [langCode]'s translation colour for [brightness].
+  Color translationColorForLang(Brightness brightness, String langCode) =>
+      translationColorPairFor(langCode).resolve(brightness);
 
   /// The Pāli color for light mode (legacy access).
   Color get paliColor => paliColorPair.light;
 
   /// The translation color for light mode (legacy access).
-  Color get translationColor => translationColorPair.light;
+  Color get translationColor => translationColorFor(Brightness.light);
 
   final String pageNumberingSystem;
   final bool keepScreenOn;
@@ -646,7 +685,7 @@ class AppSettings {
   /// 'hi' (Hindi/Sanskrit). Hindi enables Devanagari conversion + replacement.
   final String ttsScript;
 
-  static const Color defaultPaliColor = Color(0xFF7A2E1D);
+  static const Color defaultPaliColor = Color(0xFF000000);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
   const AppSettings({
@@ -663,6 +702,7 @@ class AppSettings {
     this.accentColor = AppColors.accentSaffron,
     this.paliColorPair = ColorPair.pali,
     this.translationColorPair = ColorPair.translation,
+    this.translationColorOverrides = const {},
     this.pageNumberingSystem = 'vri',
     this.keepScreenOn = false,
     this.ttsVoice = 'default',
@@ -717,6 +757,7 @@ class AppSettings {
     Color? accentColor,
     ColorPair? paliColorPair,
     ColorPair? translationColorPair,
+    Map<String, ColorPair>? translationColorOverrides,
     String? pageNumberingSystem,
     bool? keepScreenOn,
     String? ttsVoice,
@@ -773,6 +814,8 @@ class AppSettings {
       accentColor: accentColor ?? this.accentColor,
       paliColorPair: paliColorPair ?? this.paliColorPair,
       translationColorPair: translationColorPair ?? this.translationColorPair,
+      translationColorOverrides:
+          translationColorOverrides ?? this.translationColorOverrides,
       pageNumberingSystem: pageNumberingSystem ?? this.pageNumberingSystem,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       ttsVoice: ttsVoice ?? this.ttsVoice,
@@ -828,7 +871,32 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void init(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
+    _moveLegacyTranslationColourIntoLanguages();
     _moveCardColoursIntoReadingColours();
+  }
+
+  // Every translation used to share one colour. That single colour moves to
+  // each language shown at the time, so changing one language later leaves
+  // the others alone.
+  void _moveLegacyTranslationColourIntoLanguages() {
+    final legacy = state.translationColorPair;
+    if (legacy == ColorPair.translation) return;
+    if (state.translationColorOverrides.isNotEmpty) return;
+    final langs = state.visibleTranslationLangs;
+    if (langs.isEmpty) return;
+    final overrides = {for (final code in langs) code: legacy};
+    state = state.copyWith(
+      translationColorOverrides: overrides,
+      translationColorPair: ColorPair.translation,
+    );
+    _prefs?.setString(
+      'translation_color_pair',
+      jsonEncode(ColorPair.translation.toJson()),
+    );
+    _prefs?.setString(
+      'translation_color_overrides',
+      _saveTranslationColours(overrides),
+    );
   }
 
   // Typography cards used to store their own colour, which silently won
@@ -856,7 +924,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       orElse: () => coloured.keys.first,
     );
     final keptColor = coloured[keep]!.color!;
-    setTranslationColorPair(
+    setTranslationColorPairForLang(
+      keep,
       ColorPair(light: keptColor, dark: keptColor, darkPicked: true),
     );
     for (final e in coloured.entries) {
@@ -905,6 +974,25 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
     return fallback;
   }
+
+  Map<String, ColorPair> _loadTranslationColours() {
+    final prefs = _prefs;
+    if (prefs == null) return const {};
+    final raw = prefs.getString('translation_color_overrides');
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map(
+        (code, value) =>
+            MapEntry(code, ColorPair.fromJson(value as Map<String, dynamic>)),
+      );
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  String _saveTranslationColours(Map<String, ColorPair> colours) =>
+      jsonEncode(colours.map((code, pair) => MapEntry(code, pair.toJson())));
 
   Map<String, LanguageTypography> _loadLanguageOverrides() {
     final prefs = _prefs;
@@ -1141,6 +1229,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         ColorPair.translation,
         legacyHexKey: 'translation_color',
       ),
+      translationColorOverrides: _loadTranslationColours(),
       pageNumberingSystem: prefs.getString('page_numbering') ?? 'vri',
       keepScreenOn: prefs.getBool('keep_screen_on') ?? false,
       ttsVoice: prefs.getString('tts_voice') ?? 'default',
@@ -1160,8 +1249,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       libraryExpandLevel:
           LibraryExpandLevel.values[prefs.getInt('library_expand_level') ??
               LibraryExpandLevel.category.index],
-      mdxCollapseByDefault:
-          prefs.getBool('mdx_collapse_by_default') ?? true,
+      mdxCollapseByDefault: prefs.getBool('mdx_collapse_by_default') ?? true,
       stripVariantAnnotations:
           prefs.getBool('strip_variant_annotations') ?? true,
       showBookLinks: prefs.getBool('show_book_links') ?? true,
@@ -1169,11 +1257,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       wordLookupGesture: _safeWordLookupGesture(
         prefs.getInt('word_lookup_gesture'),
       ),
-      textAlign: TextAlignOption.values[
-          (prefs.getInt('text_align') ?? TextAlignOption.justify.index).clamp(
-            0,
-            TextAlignOption.values.length - 1,
-          )],
+      textAlign:
+          TextAlignOption.values[(prefs.getInt('text_align') ??
+                  TextAlignOption.justify.index)
+              .clamp(0, TextAlignOption.values.length - 1)],
       lineHeight: (prefs.getInt('line_height') ?? 0).clamp(0, 100),
       paragraphSpacing: (prefs.getInt('paragraph_spacing') ?? 8).clamp(0, 100),
       translationVersionMap: _loadTranslationVersionMap(),
@@ -1188,9 +1275,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       analyticsEnabled: prefs.getBool('analytics_enabled') ?? true,
       crashReportsEnabled: prefs.getBool('crash_reports_enabled') ?? true,
       toolbarItems: _loadToolbarItems(),
-      shortcutOverrides: decodeOverrides(
-        prefs.getString('shortcut_overrides'),
-      ),
+      shortcutOverrides: decodeOverrides(prefs.getString('shortcut_overrides')),
       quoteTemplate: _migrateQuoteTemplate(
         prefs.getString('quote_template') ??
             '- {book_name} > {heading} VRI p.{vri_page}',
@@ -1440,20 +1525,58 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('pali_color_pair', jsonEncode(pair.toJson()));
   }
 
-  Future<void> setTranslationColor(Color lightColor) async {
-    final pair = state.translationColorPair.withLight(lightColor);
-    state = state.copyWith(translationColorPair: pair);
-    await _prefs?.setString(
-      'translation_color_pair',
-      jsonEncode(pair.toJson()),
+  /// Pick a light-mode colour for one translation language. Other languages
+  /// keep theirs.
+  Future<void> setTranslationColorForLang(
+    String langCode,
+    Color lightColor,
+  ) async {
+    await setTranslationColorPairForLang(
+      langCode,
+      state.translationColorPairFor(langCode).withLight(lightColor),
     );
   }
 
-  Future<void> setTranslationColorPair(ColorPair pair) async {
-    state = state.copyWith(translationColorPair: pair);
+  /// Pick a full pair (e.g. a dark-mode colour) for one language.
+  Future<void> setTranslationColorPairForLang(
+    String langCode,
+    ColorPair pair,
+  ) async {
+    final overrides = {...state.translationColorOverrides, langCode: pair};
+    state = state.copyWith(translationColorOverrides: overrides);
     await _prefs?.setString(
-      'translation_color_pair',
-      jsonEncode(pair.toJson()),
+      'translation_color_overrides',
+      _saveTranslationColours(overrides),
+    );
+  }
+
+  /// Set one colour for every translation currently shown. Used where only a
+  /// single translation colour can be offered (onboarding).
+  Future<void> setTranslationColor(Color lightColor) async {
+    await setTranslationColorPair(
+      state
+          .translationColorPairFor(
+            state.visibleTranslationLangs.isEmpty
+                ? state.primaryTranslationLang
+                : state.visibleTranslationLangs.first,
+          )
+          .withLight(lightColor),
+    );
+  }
+
+  /// Apply [pair] to every translation currently shown.
+  Future<void> setTranslationColorPair(ColorPair pair) async {
+    final langs = state.visibleTranslationLangs.isEmpty
+        ? [state.primaryTranslationLang]
+        : state.visibleTranslationLangs;
+    final overrides = {
+      ...state.translationColorOverrides,
+      for (final code in langs) code: pair,
+    };
+    state = state.copyWith(translationColorOverrides: overrides);
+    await _prefs?.setString(
+      'translation_color_overrides',
+      _saveTranslationColours(overrides),
     );
   }
 

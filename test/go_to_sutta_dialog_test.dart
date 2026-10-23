@@ -5,7 +5,6 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/sutta_jump/widgets/go_to_sutta_dialog.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -166,13 +165,18 @@ void main() {
   testWidgets('a Velthuis name turns into diacritics and finds the sutta',
       (tester) async {
     await pumpHost(tester);
-    expect(
+    // The Velthuis card opens from the search box's more menu.
+    await tester.tap(
       find.descendant(
         of: find.byType(TextField),
-        matching: find.byType(VelthuisHelpIcon),
+        matching: find.byIcon(Icons.more_vert),
       ),
-      findsOneWidget,
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Velthuis typing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
     await typeKeys(tester, find.byType(TextField), 'satipa.t.thaana');
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),

@@ -9,8 +9,7 @@ import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
 import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'package:epitaka/shared/widgets/search_box_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +20,8 @@ import 'helpers/regex_hotkey.dart';
 import 'helpers/type_keys.dart';
 
 Finder get _field => find.byType(TextField).first;
-Finder get _rx => find.byType(RegexToggleButton);
+Finder get _menuButton =>
+    find.descendant(of: _field, matching: find.byIcon(Icons.more_vert));
 
 Finder _rich(String text) => find.byWidgetPredicate(
   (w) => w is RichText && w.text.toPlainText().contains(text),
@@ -41,7 +41,7 @@ Future<void> _preloadPatterns(
 });
 
 Future<void> _toggle(WidgetTester tester) async {
-  await tester.tap(_rx);
+  await regexToggleByTapIn(tester, _field);
   await settleShell(tester);
 }
 
@@ -84,29 +84,38 @@ void main() {
         return c;
       }
 
-      testWidgets('rx shows on an empty box and sits after the clear '
-          'button; on, it keeps `.m` and hides the Velthuis help', (
+      testWidgets('an empty box ends in the more menu, and X appears '
+          'before it while there is text; on, rx keeps `.m`', (
         tester,
       ) async {
         await pump(tester);
-        expect(_rx, findsOneWidget);
-        final help = find.descendant(
-          of: _field,
-          matching: find.byType(VelthuisHelpIcon),
-        );
-        expect(help, findsOneWidget);
+        expect(_menuButton, findsOneWidget);
+        // The Velthuis help and rx live in the menu now.
+        await tester.tap(_menuButton);
+        await settleShell(tester);
+        expect(find.text('Velthuis typing'), findsOneWidget);
+        expect(find.text('Regular expression'), findsOneWidget);
+        await closeMoreMenu(tester);
+        await settleShell(tester);
 
-        await _toggle(tester);
+        // Off, the batch-notation dot turns into the nasal sign.
         await typeKeys(tester, _field, 'a.m');
         await settleShell(tester);
-        expect(fieldText(tester), 'a.m');
-        expect(help, findsNothing);
+        expect(fieldText(tester), 'aṃ');
         final clear = find.byIcon(Icons.clear);
         expect(clear, findsOneWidget);
         expect(
-          tester.getCenter(_rx).dx,
+          tester.getCenter(_menuButton).dx,
           greaterThan(tester.getCenter(clear).dx),
         );
+
+        // On, `.m` is a pattern piece and stays as typed.
+        await _toggle(tester);
+        await tester.tap(find.byIcon(Icons.clear));
+        await settleShell(tester);
+        await typeKeys(tester, _field, 'a.m');
+        await settleShell(tester);
+        expect(fieldText(tester), 'a.m');
       });
 
       testWidgets('`^dhamma\$` lists the dhamma headwords and stays out of '

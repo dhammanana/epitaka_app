@@ -1,6 +1,6 @@
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/gavesana/widgets/gavesana_search_view.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
+import 'package:epitaka/shared/widgets/search_box_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +11,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets(
-      'Velthuis turns into diacritics; the help icon shows, empty or with text',
+      'Velthuis turns into diacritics; the box ends in the more menu, empty or with text',
       (tester) async {
     await tester.pumpWidget(
       const ProviderScope(
@@ -22,19 +22,20 @@ void main() {
       ),
     );
     await tester.pump();
-    final help = find.descendant(
+    final suffix = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byType(SearchBoxSuffixActions),
     );
-    expect(help, findsOneWidget);
+    expect(suffix, findsOneWidget);
 
-    expect(tester.widget<VelthuisHelpIcon>(help).sanskrit, isFalse);
+    // English is typed here: the help card leaves out the Sanskrit rows,
+    // so the menu carries that flag for the dialog it opens.
+    expect(tester.widget<SearchBoxSuffixActions>(suffix).sanskrit, isFalse);
 
     await typeKeys(tester, find.byType(TextField), 'paali "sati"');
     await tester.pump();
-    expect(help, findsOneWidget);
+    expect(suffix, findsOneWidget);
     expect(find.byIcon(Icons.clear), findsOneWidget);
-    // English is typed here: no Sanskrit rules, so the quote stays.
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'pāli "sati"',

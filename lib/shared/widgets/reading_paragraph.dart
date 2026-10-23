@@ -48,6 +48,10 @@ class ReadingParagraph extends StatelessWidget {
   final ParagraphDisplayMode displayMode;
   final Color paliColor;
   final Color translationColor;
+
+  /// Resolved translation colour per language code. Languages missing here
+  /// draw with [translationColor].
+  final Map<String, Color> translationColors;
   final LanguageTypography paliTypography;
   final Map<String, LanguageTypography> langTypographies;
   final List<String> enabledLangCodes;
@@ -170,8 +174,9 @@ class ReadingParagraph extends StatelessWidget {
     this.showPali = true,
     this.showTranslation = true,
     this.displayMode = ParagraphDisplayMode.lineByLine,
-    this.paliColor = const Color(0xFF7A2E1D),
+    this.paliColor = const Color(0xFF000000),
     this.translationColor = const Color(0xFF33312E),
+    this.translationColors = const {},
     this.paliTypography = const LanguageTypography(fontSize: 19),
     this.langTypographies = const {},
     this.enabledLangCodes = const [],
@@ -883,9 +888,10 @@ class ReadingParagraph extends StatelessWidget {
     final versionLabel = translationVersionLabels[langCode];
 
     final baseLineHeight = _translationLineHeight(typo);
+    final lineColor = translationColors[langCode] ?? translationColor;
 
     final style = typo != null
-        ? typo.toTextStyle(fallbackColor: translationColor).copyWith(
+        ? typo.toTextStyle(fallbackColor: lineColor).copyWith(
             height: baseLineHeight,
           )
         : TextStyle(
@@ -893,7 +899,7 @@ class ReadingParagraph extends StatelessWidget {
             fontSize: translationFontSize,
             fontWeight: FontWeight.w400,
             height: baseLineHeight,
-            color: translationColor.withValues(alpha: 0.8),
+            color: lineColor.withValues(alpha: 0.8),
           );
 
     return Padding(

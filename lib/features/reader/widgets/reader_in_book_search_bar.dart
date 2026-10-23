@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_shortcuts.dart';
-import '../../../shared/widgets/regex_toggle_button.dart';
-import '../../../shared/widgets/velthuis_help_icon.dart';
+import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 
 /// In-book search bar shown as an overlay at the top of the reader.
@@ -61,6 +60,14 @@ class ReaderInBookSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final currentMatch = currentMatchIndex + 1; // 1-based display
+    // The row's buttons run close so the box takes the width it can (its
+    // phone bar is the whole of the reader's edge-to-edge padding).
+    final compact = IconButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      minimumSize: const Size(36, 36),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -75,7 +82,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
             color: colors.onSurfaceVariant,
             onPressed: onClose,
             tooltip: loc.closeSearch,
-            visualDensity: VisualDensity.compact,
+            style: compact,
           ),
           const SizedBox(width: 4),
           // Search field
@@ -113,25 +120,14 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 decoration: searchBoxDecoration(
                   context,
                   hintText: loc.findInBook,
-                  suffixIcon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Visibility(
-                        visible: controller.text.isNotEmpty,
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            controller.clear();
-                            onQueryChanged('');
-                          },
-                        ),
-                      ),
-                      if (!regexOn) const VelthuisHelpIcon(),
-                      RegexToggleButton(on: regexOn, onToggle: onToggleRegex),
-                    ],
+                  suffixIcon: SearchBoxSuffixActions(
+                    showClear: controller.text.isNotEmpty,
+                    onClear: () {
+                      controller.clear();
+                      onQueryChanged('');
+                    },
+                    regexOn: regexOn,
+                    onToggleRegex: onToggleRegex,
                   ),
                 ),
                 style: searchBoxTextStyle(context),
@@ -203,7 +199,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 : colors.onSurfaceVariant.withValues(alpha: 0.3),
             onPressed: matchCount > 0 ? onPrevious : null,
             tooltip: loc.previousMatch,
-            visualDensity: VisualDensity.compact,
+            style: compact,
           ),
           // Next match
           IconButton(
@@ -213,7 +209,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
                 : colors.onSurfaceVariant.withValues(alpha: 0.3),
             onPressed: matchCount > 0 ? onNext : null,
             tooltip: loc.nextMatch,
-            visualDensity: VisualDensity.compact,
+            style: compact,
           ),
           // Separator
           Container(
@@ -231,7 +227,7 @@ class ReaderInBookSearchBar extends StatelessWidget {
               loc.searchTipitakaFull,
               'find-everywhere',
             ),
-            visualDensity: VisualDensity.compact,
+            style: compact,
           ),
         ],
       ),

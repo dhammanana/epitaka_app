@@ -23,7 +23,7 @@ import '../../features/settings/widgets/settings_dialog.dart';
 import '../../features/sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../shared/providers/side_panel_provider.dart';
 import '../../shared/providers/vimamsa_panel_provider.dart';
-import '../../shared/widgets/regex_toggle_button.dart';
+import '../../shared/widgets/search_box_actions.dart';
 
 /// True on a native macOS build (never true on web or other platforms).
 bool get _isMacOS => !kIsWeb && Platform.isMacOS;

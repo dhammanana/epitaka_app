@@ -966,7 +966,7 @@ class ReaderCopyService {
       try {
         final brightness = Theme.of(context).brightness;
         paliColor = settings.paliColorPair.resolve(brightness);
-        transColor = settings.translationColorPair.resolve(brightness);
+        transColor = settings.translationColorFor(brightness);
       } catch (e) {
         developer.log(
           '[COPY] Theme resolution failed: $e',

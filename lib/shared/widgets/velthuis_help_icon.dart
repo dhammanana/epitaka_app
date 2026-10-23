@@ -30,8 +30,9 @@ class VelthuisHelpIcon extends StatelessWidget {
     for (final (from, to) in rules) '${from.padRight(3)}  →  $to',
   ].join('\n');
 
-  @override
-  Widget build(BuildContext context) {
+  /// The card the icon hangs on its tooltip and the search box's "more"
+  /// menu opens as a dialog share.
+  static TextSpan message(BuildContext context, {required bool sanskrit}) {
     final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -45,19 +46,27 @@ class VelthuisHelpIcon extends StatelessWidget {
       fontWeight: FontWeight.bold,
       color: colors.onSurface,
     );
+    return TextSpan(
+      children: [
+        TextSpan(text: '${loc.velthuisTyping}\n', style: heading),
+        TextSpan(text: _lines(rows), style: mono),
+        TextSpan(text: '\n${_lines(velthuisDoubleVowels)}', style: mono),
+        if (sanskrit) ...[
+          TextSpan(text: '\n\n${loc.sanskrit}\n', style: heading),
+          TextSpan(text: _lines(sanskritRows), style: mono),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return Tooltip(
-      richMessage: TextSpan(
-        children: [
-          TextSpan(text: '${loc.velthuisTyping}\n', style: heading),
-          TextSpan(text: _lines(rows), style: mono),
-          TextSpan(text: '\n${_lines(velthuisDoubleVowels)}', style: mono),
-          if (sanskrit) ...[
-            TextSpan(text: '\n\n${loc.sanskrit}\n', style: heading),
-            TextSpan(text: _lines(sanskritRows), style: mono),
-          ],
-        ],
-      ),
+      richMessage: message(context, sanskrit: sanskrit),
       waitDuration: Duration.zero,
       showDuration: const Duration(seconds: 10),
       triggerMode: TooltipTriggerMode.tap,
@@ -81,4 +90,30 @@ class VelthuisHelpIcon extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Opens the Velthuis help card as a dialog — the search box's "more" menu
+/// help item. The in-box [VelthiusHelpIcon] hangs the same card off a
+/// tooltip's hover.
+Future<void> showVelthuisHelp(BuildContext context, {bool sanskrit = true}) {
+  final colors = Theme.of(context).colorScheme;
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: colors.surfaceContainerHigh,
+      contentPadding: const EdgeInsets.all(12),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
+          child: Text.rich(VelthuisHelpIcon.message(dialogContext, sanskrit: sanskrit)),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: Navigator.of(dialogContext).pop,
+          child: Text(AppLocalizations.of(dialogContext).close),
+        ),
+      ],
+    ),
+  );
 }

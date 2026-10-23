@@ -15,8 +15,6 @@ import 'package:epitaka/features/reader/providers/reader_provider.dart';
 import 'package:epitaka/features/reader/providers/reader_search_notifier.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/features/reader/widgets/reader_in_book_search_bar.dart';
-import 'package:epitaka/shared/widgets/regex_toggle_button.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -312,17 +310,21 @@ void main() {
       return (controller, events);
     }
 
-    testWidgets('rx sits after the clear button and reports a tap', (
+    testWidgets('the menu sits after the clear button and reports a tap', (
       tester,
     ) async {
       final (_, events) = await pumpBar(tester, regexOn: false);
       await typeKeys(tester, find.byType(TextField), 'a');
       await tester.pump();
+      final menu = find.descendant(
+        of: find.byType(TextField),
+        matching: find.byIcon(Icons.more_vert),
+      );
       expect(
-        tester.getCenter(find.byType(RegexToggleButton)).dx,
+        tester.getCenter(menu).dx,
         greaterThan(tester.getCenter(find.byIcon(Icons.clear)).dx),
       );
-      await tester.tap(find.byType(RegexToggleButton));
+      await regexToggleByTapIn(tester, find.byType(TextField));
       expect(events, ['toggle']);
     });
 
@@ -332,17 +334,14 @@ void main() {
       expect(events, ['toggle']);
     });
 
-    testWidgets('rx on keeps `.m` and hides the Velthuis help; off turns it '
-        'into ṃ', (tester) async {
+    testWidgets('rx on keeps `.m`; off turns it into ṃ', (tester) async {
       var (controller, _) = await pumpBar(tester, regexOn: true);
       await typeKeys(tester, find.byType(TextField), 'a.m');
       expect(controller.text, 'a.m');
-      expect(find.byType(VelthuisHelpIcon), findsNothing);
 
       (controller, _) = await pumpBar(tester, regexOn: false);
       await typeKeys(tester, find.byType(TextField), 'a.m');
       expect(controller.text, 'aṃ');
-      expect(find.byType(VelthuisHelpIcon), findsOneWidget);
     });
 
     testWidgets('an invalid pattern shows in place of the count', (

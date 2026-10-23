@@ -13,7 +13,9 @@ final dictionaryHeaderIconsProvider =
     );
 
 class DictionaryHeaderIconsNotifier extends StateNotifier<bool> {
-  DictionaryHeaderIconsNotifier() : super(true) {
+  // Hidden by default: the row reached the search box's "more" menu, which
+  // shows it again. A user who has already toggled it keeps that choice.
+  DictionaryHeaderIconsNotifier() : super(false) {
     _load();
   }
 

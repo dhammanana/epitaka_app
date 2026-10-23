@@ -13,7 +13,6 @@ import 'package:epitaka/core/providers/database_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/library/widgets/library_browser.dart';
-import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 import 'helpers/type_keys.dart';
 
 Future<EpitakaDatabase> _seedDatabase() async {
@@ -128,13 +127,13 @@ void main() {
         reason: 'searching the library threw an exception');
   });
 
-  testWidgets('Velthuis turns into diacritics; the help icon shows',
+  testWidgets('Velthuis turns into diacritics; the more menu shows',
       (tester) async {
     await pumpBrowser(tester);
     await revealSearch(tester);
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byType(VelthuisHelpIcon),
+      matching: find.byIcon(Icons.more_vert),
     );
     expect(help, findsOneWidget);
 
