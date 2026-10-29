@@ -103,14 +103,14 @@
         "default": {
           "displayName": "Default",
           "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo.zip",
-          "size": 11097874,
-          "dbSize": 69767168,
-          "updated": "2026-10-20",
+          "size": 14080130,
+          "dbSize": 91611136,
+          "updated": "2026-10-29",
           "compulsory": false,
-          "checksum": "9bea274d6ac8470007352fa4da018843a755c788ed92eb26802ee54d57dfdd16",
-          "version": "2026-10-20-9bea274d",
-          "versionedFile": "epitaka_lo_20261020-9bea274d.zip",
-          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo_20261020-9bea274d.zip"
+          "checksum": "2d57ae379488010340d7c3ff5504fe324cc67fbf10d434ce536c68fd0cd00056",
+          "version": "2026-10-29-2d57ae37",
+          "versionedFile": "epitaka_lo_20261029-2d57ae37.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_lo_20261029-2d57ae37.zip"
         }
       }
     },
@@ -378,6 +378,42 @@
           "version": "2026-10-20-1ac9951d",
           "versionedFile": "epitaka_fr_20261020-1ac9951d.zip",
           "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_fr_20261020-1ac9951d.zip"
+        }
+      }
+    },
+    "cs": {
+      "englishName": "Czech",
+      "nativeName": "Čeština",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_cs.zip",
+          "size": 49227092,
+          "dbSize": 150196224,
+          "updated": "2026-10-29",
+          "compulsory": false,
+          "checksum": "3e079f5092a5c7c2363eff825a54a9b59b0f996b20236a3ed3c3ccf85146ca8d",
+          "version": "2026-10-29-3e079f50",
+          "versionedFile": "epitaka_cs_20261029-3e079f50.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_cs_20261029-3e079f50.zip"
+        }
+      }
+    },
+    "mr": {
+      "englishName": "Marathi",
+      "nativeName": "मराठी",
+      "versions": {
+        "default": {
+          "displayName": "Default",
+          "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_mr.zip",
+          "size": 68448384,
+          "dbSize": 338563072,
+          "updated": "2026-10-29",
+          "compulsory": false,
+          "checksum": "0665687b7042256055c7888da26d10f8764b448aa820bf3c7659858713aab03c",
+          "version": "2026-10-29-0665687b",
+          "versionedFile": "epitaka_mr_20261029-0665687b.zip",
+          "versionedUrl": "https://github.com/dhammanana/epitaka_app/releases/download/latest/epitaka_mr_20261029-0665687b.zip"
         }
       }
     }
