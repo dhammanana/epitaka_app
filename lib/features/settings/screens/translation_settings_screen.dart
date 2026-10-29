@@ -1567,6 +1567,9 @@ class TranslationTextSection extends ConsumerWidget {
                     : notifier.setTranslationColorForLang(code, c);
               },
               fontChoices: translationFontChoices(code),
+              // The card style previews resolve this language's family, so
+              // Devanagari-script translations show their bundled font.
+              langCode: code,
               onTypographyChanged: (typo) {
                 ref
                     .read(settingsProvider.notifier)
@@ -1600,6 +1603,9 @@ class _LanguageTypographyCard extends StatefulWidget {
   // its reading font, as the reader does), or ready text for translations.
   final String previewText;
   final Script? previewScript;
+  // The translation this card styles, so the preview resolves the family
+  // per language (Devanagari translations draw with their bundled font).
+  final String? langCode;
   // Null hides the show/hide checkbox (translation cards: turning one off
   // would make its own card vanish).
   final ValueChanged<bool>? onEnabledChanged;
@@ -1618,6 +1624,7 @@ class _LanguageTypographyCard extends StatefulWidget {
     required this.fontChoices,
     required this.previewText,
     this.previewScript,
+    this.langCode,
     this.onEnabledChanged,
     required this.onTypographyChanged,
     required this.colors,
@@ -1834,10 +1841,17 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                           widget.previewScript!,
                         ),
                   style: typo
-                      .toTextStyle(fallbackColor: effectiveColor)
+                      .toTextStyle(
+                        fallbackColor: effectiveColor,
+                        langCode: widget.langCode,
+                      )
                       .copyWith(
                         fontFamily: widget.previewScript == null
-                            ? typo.fontFamily.fontFamily
+                            ? widget.langCode == null
+                                  ? typo.fontFamily.fontFamily
+                                  : typo.fontFamily.fontFamilyForLanguage(
+                                      widget.langCode,
+                                    )
                             : paliReadingFontFamily(
                                 widget.previewScript!,
                                 typo.fontFamily,

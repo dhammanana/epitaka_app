@@ -198,6 +198,28 @@ enum ReadingFontFamily {
     }
   }
 
+  /// Flutter fontFamily for translation text in [langCode].
+  ///
+  /// Devanagari-script translations (Hindi, Nepali) cannot use the Roman
+  /// serif/sans fonts: NotoSerif and DejaVu carry no Devanagari glyphs, so
+  /// the text falls back to a system font whose shaping distorts conjuncts
+  /// and vowel signs. Substitute the bundled Devanagari fonts instead —
+  /// serif → NotoSerifDevanagari; there is no bundled Devanagari
+  /// monospace, so Sans-Serif and Monospace both → NotoSansDevanagari.
+  String fontFamilyForLanguage(String? langCode) {
+    const devanagariLangs = {'hi', 'ne'};
+    if (langCode == null || !devanagariLangs.contains(langCode)) {
+      return fontFamily;
+    }
+    switch (this) {
+      case ReadingFontFamily.serif:
+        return 'NotoSerifDevanagari';
+      case ReadingFontFamily.sansSerif:
+      case ReadingFontFamily.mono:
+        return 'NotoSansDevanagari';
+    }
+  }
+
   // WebViews cannot load Flutter's bundled fonts, so they get the matching
   // CSS generic family instead.
   String get cssGenericFamily {
@@ -294,9 +316,13 @@ class LanguageTypography {
   Color effectiveColor(Color fallback) => color ?? fallback;
 
   /// Build the [TextStyle] for this typography.
-  TextStyle toTextStyle({required Color fallbackColor}) {
+  ///
+  /// Pass [langCode] for translation text so the family is resolved per
+  /// language (Devanagari-script translations get their bundled fonts —
+  /// see [ReadingFontFamily.fontFamilyForLanguage]).
+  TextStyle toTextStyle({required Color fallbackColor, String? langCode}) {
     return TextStyle(
-      fontFamily: fontFamily.fontFamily,
+      fontFamily: fontFamily.fontFamilyForLanguage(langCode),
       fontSize: fontSize,
       height: lineHeight,
       fontWeight: bold ? FontWeight.w700 : FontWeight.w400,

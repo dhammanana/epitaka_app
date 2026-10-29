@@ -216,7 +216,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
       case SearchRowKind.headingCard:
         return _SearchRowHighlight(
           key: selectedKey,
-          selected: isSelected && (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
+          selected:
+              isSelected &&
+              (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
           colors: colors,
           child: _HeadingResultsCard(
             headings: state.headings,
@@ -279,7 +281,9 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
           GroupRowHighlight(
             // The load-more row never carried the scroll key.
             key: row.kind == SearchRowKind.loadMore ? null : selectedKey,
-            selected: isSelected && (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
+            selected:
+                isSelected &&
+                (widget.resultsFocusNode ?? _internalFocusNode).hasFocus,
             colors: colors,
             child: content,
           ),
@@ -834,62 +838,62 @@ class _HeadingResultsCardState extends ConsumerState<_HeadingResultsCard> {
             const Divider(height: 1, indent: 12, endIndent: 12),
             // ── Heading items ─────────────────────────────────────────
             ...headings.map(
-            (heading) => InkWell(
-              onTap: () => onTap(heading),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.md,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.subdirectory_arrow_right,
-                      size: 14,
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Heading titles and book names are Pāli — render
-                          // them in the user's script, like the reader does.
-                          PaliTextStatic(
-                            heading.title,
-                            script,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.onSurface,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (heading.bookName != null &&
-                              heading.bookName!.isNotEmpty)
+              (heading) => InkWell(
+                onTap: () => onTap(heading),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.md,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.subdirectory_arrow_right,
+                        size: 14,
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Heading titles and book names are Pāli — render
+                            // them in the user's script, like the reader does.
                             PaliTextStatic(
-                              heading.bookName!,
+                              heading.title,
                               script,
-                              style: AppTypography.labelSmall.copyWith(
-                                color: colors.onSurfaceVariant,
-                                fontSize: 10,
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.onSurface,
+                                fontWeight: FontWeight.w500,
                               ),
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
-                        ],
+                            if (heading.bookName != null &&
+                                heading.bookName!.isNotEmpty)
+                              PaliTextStatic(
+                                heading.bookName!,
+                                script,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                  fontSize: 10,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 16,
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                  ],
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ],
         ],
       ),
@@ -947,6 +951,7 @@ class _SearchResultItemTile extends ConsumerWidget {
     final transTextStyle =
         transTypo?.toTextStyle(
           fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
+          langCode: activeLang,
         ) ??
         TextStyle(
           fontSize: 12,

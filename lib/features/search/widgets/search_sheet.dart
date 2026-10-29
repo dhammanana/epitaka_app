@@ -421,13 +421,15 @@ class _SearchResultTile extends ConsumerWidget {
         .toTextStyle(fallbackColor: colors.onSurface)
         .copyWith(fontSize: paliTypo.fontSize * 0.95);
     final visibleLangs = settings.visibleTranslationLangs;
+    final transLang = visibleLangs.isNotEmpty
+        ? visibleLangs.first
+        : settings.primaryTranslationLang;
     final transStyle = settings.typography
-        .typographyFor(
-          visibleLangs.isNotEmpty
-              ? visibleLangs.first
-              : settings.primaryTranslationLang,
-        )
-        .toTextStyle(fallbackColor: colors.onSurfaceVariant);
+        .typographyFor(transLang)
+        .toTextStyle(
+          fallbackColor: colors.onSurfaceVariant,
+          langCode: transLang,
+        );
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppDimensions.radiusMd),

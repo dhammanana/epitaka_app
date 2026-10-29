@@ -242,6 +242,7 @@ class PreviewLine extends StatelessWidget {
                   tEntry.value,
                   transColors[tEntry.key] ?? transColor,
                   langTypo,
+                  langCode: tEntry.key,
                 );
               }),
             ],
@@ -370,11 +371,15 @@ class PreviewLine extends StatelessWidget {
   Widget _buildTranslationLine(
     String text,
     Color transColor,
-    LanguageTypography? langTypo,
-  ) {
+    LanguageTypography? langTypo, {
+    String? langCode,
+  }) {
     final effectiveFallback = transColor;
     final style = langTypo != null
-        ? langTypo.toTextStyle(fallbackColor: effectiveFallback)
+        ? langTypo.toTextStyle(
+            fallbackColor: effectiveFallback,
+            langCode: langCode,
+          )
         : TextStyle(
             fontFamily: AppTypography.translationFont,
             fontSize: 17,

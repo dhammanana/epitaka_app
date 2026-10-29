@@ -259,8 +259,7 @@ class ReadingParagraph extends StatelessWidget {
           _buildContentWithVerticalLine(context, colors),
 
         // Paragraph spacing
-        if (_paragraphSpacing > 0)
-          SizedBox(height: _paragraphSpacing),
+        if (_paragraphSpacing > 0) SizedBox(height: _paragraphSpacing),
       ],
     );
   }
@@ -741,8 +740,9 @@ class ReadingParagraph extends StatelessWidget {
         final style = TextStyle(
           fontSize: paliTypography.fontSize,
           fontWeight: paliTypography.bold ? FontWeight.w700 : FontWeight.w400,
-          fontStyle:
-              paliTypography.italic ? FontStyle.italic : FontStyle.normal,
+          fontStyle: paliTypography.italic
+              ? FontStyle.italic
+              : FontStyle.normal,
           height: _paliLineHeight,
           color: paliTypography.effectiveColor(paliColor),
           fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
@@ -891,9 +891,9 @@ class ReadingParagraph extends StatelessWidget {
     final lineColor = translationColors[langCode] ?? translationColor;
 
     final style = typo != null
-        ? typo.toTextStyle(fallbackColor: lineColor).copyWith(
-            height: baseLineHeight,
-          )
+        ? typo
+              .toTextStyle(fallbackColor: lineColor, langCode: langCode)
+              .copyWith(height: baseLineHeight)
         : TextStyle(
             fontFamily: AppTypography.translationFont,
             fontSize: translationFontSize,

@@ -47,7 +47,7 @@ class ReadingColorsScreen extends ConsumerWidget {
         );
     final transStyle = settings.typography
         .typographyFor(previewLang)
-        .toTextStyle(fallbackColor: previewTrans);
+        .toTextStyle(fallbackColor: previewTrans, langCode: previewLang);
 
     return Scaffold(
       appBar: SettingsAppBar(colors: colors),

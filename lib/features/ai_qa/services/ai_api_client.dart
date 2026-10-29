@@ -46,6 +46,11 @@ const int kTranslatorMaxOutputTokens = 65000;
 /// Derived from [kEpitakaTools] (`features/mcp/epitaka_tool_registry.dart`),
 /// the single source of truth shared by Vīmaṃsā/Gavesana and the MCP
 /// server — add new tools there and both surfaces pick them up.
+///
+/// Gemini-style only (upper-cased schema types): the Anthropic and
+/// OpenAI-compatible payload branches ignore these and build their tools
+/// from the registry's lowercase JSON Schema ([jsonSchemaToolDeclarations])
+/// instead.
 final List<Map<String, dynamic>> kAiToolDeclarations = geminiToolDeclarations();
 
 /// Default system prompt for the Vīmaṃsā tool model (chat + Q&A).
@@ -544,14 +549,18 @@ class AiApiClient {
             });
           }
         }
-        // Convert Gemini function declarations to Anthropic tools format.
-        final claudeTools = toolDeclarations
+        // Anthropic takes JSON Schema directly and validates it strictly
+        // (input_schema.type must be exactly 'object', types are
+        // case-sensitive). Build the tools from the registry's original
+        // lowercase schemas — reusing the Gemini declarations here would
+        // send upper-cased types (OBJECT/STRING) and be rejected with a 400.
+        final claudeTools = jsonSchemaToolDeclarations()
             .where((d) => (d['name'] as String? ?? '') != 'final_answer')
             .map((d) {
               return {
                 'name': d['name'],
                 'description': d['description'],
-                'input_schema': d['parameters'] ?? {'type': 'object'},
+                'input_schema': d['parameters'],
               };
             })
             .toList();
@@ -589,8 +598,9 @@ class AiApiClient {
             });
           }
         }
-        // Convert Gemini function declarations to OpenAI tools format
-        final openaiTools = toolDeclarations.map((d) {
+        // OpenAI tools take JSON Schema directly, so use the registry's
+        // lowercase schemas as well (same reason as the Anthropic branch).
+        final openaiTools = jsonSchemaToolDeclarations().map((d) {
           return {
             'type': 'function',
             'function': {

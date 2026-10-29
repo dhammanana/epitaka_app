@@ -118,10 +118,18 @@ List<ReadingFontFamily> paliFontChoices(Script script) {
 const _allFontChoiceLangs = {'de', 'en', 'id', 'pt', 'ru'};
 const _noMonoFontChoiceLangs = {'vi'};
 
+// Devanagari-script translations: serif and sans swap in the bundled
+// Devanagari fonts (see ReadingFontFamily.fontFamilyForLanguage), Monospace
+// falls back to the Devanagari sans, so the mono choice is omitted.
+const _devanagariFontChoiceLangs = {'hi', 'ne'};
+
 /// The font choices that change the look of translation text in [langCode].
 List<ReadingFontFamily> translationFontChoices(String langCode) {
   if (_allFontChoiceLangs.contains(langCode)) return ReadingFontFamily.values;
   if (_noMonoFontChoiceLangs.contains(langCode)) {
+    return const [ReadingFontFamily.serif, ReadingFontFamily.sansSerif];
+  }
+  if (_devanagariFontChoiceLangs.contains(langCode)) {
     return const [ReadingFontFamily.serif, ReadingFontFamily.sansSerif];
   }
   return const [];

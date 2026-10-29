@@ -586,60 +586,63 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
               itemBuilder: (context, index) {
                 final sug = _suggestions[index];
                 return Container(
-            key: index == _suggestionIndex ? _suggestionKey : null,
-            color: index == _suggestionIndex
-                ? colors.primary.withValues(alpha: 0.12)
-                : null,
-            child: InkWell(
-                  onTap: () => _onSuggestionSelected(sug),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppDimensions.sm,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.text_fields,
-                          size: 14,
-                          color: colors.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            sug.pali,
-                            style: AppTypography.bodyPali.copyWith(
-                            fontFamily: ref
-                                .watch(
-                                  settingsProvider.select((s) => s.typography.pali.fontFamily),
-                                )
-                                .fontFamily,
-                              fontSize: 13,
-                              color: colors.onSurface,
+                  key: index == _suggestionIndex ? _suggestionKey : null,
+                  color: index == _suggestionIndex
+                      ? colors.primary.withValues(alpha: 0.12)
+                      : null,
+                  child: InkWell(
+                    onTap: () => _onSuggestionSelected(sug),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppDimensions.sm,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.text_fields,
+                            size: 14,
+                            color: colors.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              sug.pali,
+                              style: AppTypography.bodyPali.copyWith(
+                                fontFamily: ref
+                                    .watch(
+                                      settingsProvider.select(
+                                        (s) => s.typography.pali.fontFamily,
+                                      ),
+                                    )
+                                    .fontFamily,
+                                fontSize: 13,
+                                color: colors.onSurface,
+                              ),
                             ),
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            formatCount(sug.count),
-                            style: AppTypography.labelSmall.copyWith(
-                              fontSize: 9,
-                              color: colors.onSurfaceVariant,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              formatCount(sug.count),
+                              style: AppTypography.labelSmall.copyWith(
+                                fontSize: 9,
+                                color: colors.onSurfaceVariant,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ));
+                );
               },
             ),
           ),
@@ -864,10 +867,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
       // are built. A book used to be one item holding every loaded hit,
       // which built thousands of tiles per redraw for a common word.
       itemCount: rows.length,
-      itemBuilder: (context, index) => _builtRows.track(
-        index,
-        _buildRow(index, rows, colors, query, loc),
-      ),
+      itemBuilder: (context, index) =>
+          _builtRows.track(index, _buildRow(index, rows, colors, query, loc)),
     );
   }
 
@@ -1136,6 +1137,7 @@ class _ResultItemTile extends ConsumerWidget {
     final transTextStyle =
         transTypo?.toTextStyle(
           fallbackColor: colors.onSurfaceVariant.withValues(alpha: 0.8),
+          langCode: activeLang,
         ) ??
         TextStyle(
           fontSize: 11,

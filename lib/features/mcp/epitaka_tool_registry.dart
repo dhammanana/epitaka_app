@@ -356,23 +356,52 @@ List<Map<String, dynamic>> geminiToolDeclarations() => [
   for (final tool in kEpitakaTools) tool.toGeminiDecl(),
   {
     'name': 'final_answer',
-    'description':
-        'Call this when you have collected all the information needed to answer the user\'s question. '
-        'The results will be passed to a more capable model to write the final answer. '
-        'Use the args to summarize what you found.',
-    'parameters': {
-      'type': 'OBJECT',
-      'properties': {
-        'summary': {
-          'type': 'STRING',
-          'description':
-              'Brief summary of what you found and what sources you collected.',
-        },
-      },
-      'required': ['summary'],
-    },
+    'description': _finalAnswerDescription,
+    'parameters': _toGeminiSchema(_finalAnswerParameters()),
   },
 ];
+
+/// JSON-Schema style declarations with lowercase types, for the surfaces
+/// that take normal JSON Schema: Anthropic `tools` and OpenAI-compatible
+/// `tools`. These endpoints validate the schema strictly (Anthropic requires
+/// `input_schema.type` to be exactly `'object'`), so they must use this list
+/// — never [geminiToolDeclarations()], whose types are upper-cased for the
+/// Gemini API and would be rejected with a 400.
+///
+/// Same content as the Gemini list, `final_answer` included (chat-only,
+/// never exposed over MCP).
+List<Map<String, dynamic>> jsonSchemaToolDeclarations() => [
+  for (final tool in kEpitakaTools)
+    {
+      'name': tool.name,
+      'description': tool.description,
+      'parameters': tool.inputSchema,
+    },
+  {
+    'name': 'final_answer',
+    'description': _finalAnswerDescription,
+    'parameters': _finalAnswerParameters(),
+  },
+];
+
+/// The chat-only `final_answer` pseudo-tool's description (lowercase JSON
+/// Schema; the Gemini list derives its upper-cased copy from this).
+const String _finalAnswerDescription =
+    'Call this when you have collected all the information needed to answer the user\'s question. '
+    'The results will be passed to a more capable model to write the final answer. '
+    'Use the args to summarize what you found.';
+
+Map<String, dynamic> _finalAnswerParameters() => {
+  'type': 'object',
+  'properties': {
+    'summary': {
+      'type': 'string',
+      'description':
+          'Brief summary of what you found and what sources you collected.',
+    },
+  },
+  'required': ['summary'],
+};
 
 /// Recursively upper-case JSON-Schema types for Gemini (object→OBJECT…).
 Map<String, dynamic> _toGeminiSchema(Map<String, dynamic> schema) {

@@ -44,13 +44,15 @@ class SearchResultItemTile extends ConsumerWidget {
           fontSize: paliTypo.fontSize * 0.95,
         );
     final visibleLangs = settings.visibleTranslationLangs;
+    final transLang = visibleLangs.isNotEmpty
+        ? visibleLangs.first
+        : settings.primaryTranslationLang;
     final transStyle = settings.typography
-        .typographyFor(
-          visibleLangs.isNotEmpty
-              ? visibleLangs.first
-              : settings.primaryTranslationLang,
-        )
-        .toTextStyle(fallbackColor: colors.onSurfaceVariant);
+        .typographyFor(transLang)
+        .toTextStyle(
+          fallbackColor: colors.onSurfaceVariant,
+          langCode: transLang,
+        );
     final translation = result.translation;
     final convertedQuery = searchQuery != null
         ? convertSearchQueryForScript(searchQuery!, script)
