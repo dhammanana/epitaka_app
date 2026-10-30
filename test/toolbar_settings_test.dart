@@ -117,6 +117,31 @@ void main() {
     },
   );
 
+  test(
+    'a toolbar saved before the m a ṭ buttons gets them appended, on',
+    () async {
+      final saved = [
+        for (final id in ToolbarBuiltins.defaults)
+          if (id != ToolbarBuiltins.commentaryLevels)
+            ToolbarItem(id: id, enabled: id != ToolbarBuiltins.search),
+      ];
+      SharedPreferences.setMockInitialValues({
+        'toolbar_items': jsonEncode(saved.map((i) => i.toJson()).toList()),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs);
+      notifier.init(prefs);
+
+      final items = notifier.state.toolbarItems;
+      expect(items.last.id, ToolbarBuiltins.commentaryLevels);
+      expect(items.last.enabled, isTrue);
+      expect(
+        items.firstWhere((i) => i.id == ToolbarBuiltins.search).enabled,
+        isFalse,
+      );
+    },
+  );
+
   test('reorder and toggle persist across reload', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();

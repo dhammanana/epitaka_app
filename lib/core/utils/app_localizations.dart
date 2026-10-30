@@ -843,6 +843,17 @@ class AppLocalizations {
   String get openLibraryShort => _t('Open Library');
   String get closePanel => _t('Close panel');
 
+  // ── mūla / aṭṭhakathā / ṭīkā columns ───────────────────────────────
+  String get showBeside => _t('Show beside');
+  String get lockColumns => _t('Scroll these columns together');
+  String get unlockColumns => _t('Scroll these columns separately');
+  String get thisBook => _t('This book');
+  String get noBookAtLevel => _t('No book at this level');
+  String get commentaryColumnsLabel => _t('mūla, aṭṭhakathā, ṭīkā beside');
+  String get showBesideDesc => _t(
+    'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)',
+  );
+
   // ═══════════════════════════════════════════════════════════════════════
   //  CONTENTS SCREEN
   // ═══════════════════════════════════════════════════════════════════════

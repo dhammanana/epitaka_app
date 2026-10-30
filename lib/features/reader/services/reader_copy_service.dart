@@ -33,13 +33,14 @@ import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
-import '../../settings/providers/tts_provider.dart';
+import '../providers/reader_columns_controller.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/tts_reading_provider.dart';
 import '../utils/reader_quote_utils.dart'
     show buildCitationFromTemplate, firstAvailablePageNumbers;
 import '../utils/reader_word_hit_test.dart'
     show cleanTranslationWord, selectWordAt;
+import '../widgets/commentary_level_buttons.dart' show showFamilyBesideMenu;
 import '../widgets/reader_context_menu.dart'
     show ContextMenuButton, FullWidthSelectionToolbar;
 
@@ -122,8 +123,15 @@ class ReaderCopyService {
     // Render the user's configured, enabled actions in their chosen order.
     // Never show an empty toolbar — fall back to Copy alone when every
     // action has been disabled.
+    // "Show beside" exists only where columns can show; an empty slot
+    // would still take room in the phone toolbar.
+    final columnsAvailable = ref.read(readerColumnsAvailableProvider);
     var actions = settings.contextMenuActions
         .where((a) => a.enabled && a.isAvailableHere)
+        .where(
+          (a) =>
+              a.builtinId != ContextMenuBuiltins.showBeside || columnsAvailable,
+        )
         .toList();
     if (actions.isEmpty) {
       actions = defaultContextMenuActions()
@@ -259,7 +267,7 @@ class ReaderCopyService {
                 visibleEndIndex: visibleEndIndex,
                 script: script,
               );
-              _showSnackBar(context, 'Copied!');
+              if (context.mounted) _showSnackBar(context, 'Copied!');
             } catch (_) {
               // Fallback to system selection copy if rich copy fails
               if (lastSelectedContent != null &&
@@ -267,7 +275,7 @@ class ReaderCopyService {
                 Clipboard.setData(
                   ClipboardData(text: lastSelectedContent.plainText.trim()),
                 );
-                _showSnackBar(context, 'Copied!');
+                if (context.mounted) _showSnackBar(context, 'Copied!');
               }
             } finally {
               selectableRegionState.clearSelection();
@@ -292,14 +300,14 @@ class ReaderCopyService {
                 visibleEndIndex: visibleEndIndex,
                 script: script,
               );
-              _showSnackBar(context, 'Excerpt copied!');
+              if (context.mounted) _showSnackBar(context, 'Excerpt copied!');
             } catch (_) {
               if (lastSelectedContent != null &&
                   lastSelectedContent.plainText.trim().isNotEmpty) {
                 Clipboard.setData(
                   ClipboardData(text: lastSelectedContent.plainText.trim()),
                 );
-                _showSnackBar(context, 'Excerpt copied!');
+                if (context.mounted) _showSnackBar(context, 'Excerpt copied!');
               }
             } finally {
               selectableRegionState.clearSelection();
@@ -321,7 +329,7 @@ class ReaderCopyService {
                 lineId: currentLineId,
                 text: selectedText,
               );
-              _showSnackBar(context, 'Link copied!');
+              if (context.mounted) _showSnackBar(context, 'Link copied!');
             } catch (_) {
               // Fallback: copy just the URL. App-link format so tapping it
               // opens the app; the website redirects /app → /{lang}/book.
@@ -333,7 +341,7 @@ class ReaderCopyService {
                 paraId: currentParaId,
               );
               await Clipboard.setData(ClipboardData(text: url));
-              _showSnackBar(context, 'Link copied!');
+              if (context.mounted) _showSnackBar(context, 'Link copied!');
             } finally {
               selectableRegionState.clearSelection();
             }
@@ -428,7 +436,6 @@ class ReaderCopyService {
 
             // Find the paragraph and line from the selection
             int? startParaId = currentParaId;
-            int? startLineId = currentLineId;
 
             // If we have a selection, try to get the first visible paragraph
             if (lastSelectedContent != null &&
@@ -437,7 +444,6 @@ class ReaderCopyService {
               if (visibleStartIndex >= 0 &&
                   visibleStartIndex < readerState.paragraphs.length) {
                 startParaId = readerState.paragraphs[visibleStartIndex].paraId;
-                startLineId = 1;
               }
             }
 
@@ -545,9 +551,56 @@ class ReaderCopyService {
           },
           colors: colors,
         );
+      case ContextMenuBuiltins.showBeside:
+        // ── The matching mūla / aṭṭhakathā / ṭīkā as a column ────────
+        // Wide screens only: buildContextMenu leaves it out elsewhere.
+        return ContextMenuButton(
+          icon: Icons.view_week_outlined,
+          label: loc.showBeside,
+          onTap: () {
+            final paraId = selectionStartParaId(
+              ref: ref,
+              bookId: bookId,
+              selection: lastSelectedContent,
+              visibleStartIndex: visibleStartIndex,
+              visibleEndIndex: visibleEndIndex,
+            );
+            selectableRegionState.hideToolbar();
+            showFamilyBesideMenu(
+              context: context,
+              ref: ref,
+              anchor: anchor ?? Offset.zero,
+              bookId: bookId,
+              sourceParaId: paraId,
+            ).whenComplete(selectableRegionState.clearSelection);
+          },
+          colors: colors,
+        );
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  /// The paragraph of [bookId] where [selection] starts, or null when the
+  /// selected text cannot be matched to the book.
+  static int? selectionStartParaId({
+    required WidgetRef ref,
+    required String bookId,
+    required SelectedContent? selection,
+    required int visibleStartIndex,
+    required int visibleEndIndex,
+  }) {
+    final readerState = ref.read(readerDataProvider(bookId));
+    final settings = ref.read(settingsProvider);
+    final enabledLangs = settings.visibleTranslationLangs;
+    return _getParagraphsForSelection(
+      readerState.paragraphs,
+      selection,
+      visibleStartIndex,
+      visibleEndIndex,
+      script: settings.paliScript,
+      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+    )?.firstOrNull?.paraId;
   }
 
   /// Build the toolbar button that launches an installed external app
@@ -573,7 +626,9 @@ class ReaderCopyService {
             ),
             text,
           );
-          if (!ok) _showSnackBar(context, 'Could not open the app.');
+          if (!ok && context.mounted) {
+            _showSnackBar(context, 'Could not open the app.');
+          }
         }
         selectableRegionState.clearSelection();
       },
@@ -1291,8 +1346,9 @@ class ReaderCopyService {
         break;
       }
     }
-    if (startSegIdx < 0 || endSegIdx < 0 || startSegIdx > endSegIdx)
+    if (startSegIdx < 0 || endSegIdx < 0 || startSegIdx > endSegIdx) {
       return null;
+    }
 
     // Trim only the boundary segments' tagged text to the matched range.
     final trimmedSegments = <_Segment>[];

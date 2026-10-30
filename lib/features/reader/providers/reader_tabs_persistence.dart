@@ -11,6 +11,8 @@ const _kOpenTabsKey = 'reader_open_tabs';
 /// jump requests belong to the session that made them.
 String encodeReaderTabs(ReaderTabsState state) => jsonEncode({
       'active': state.activeIndex,
+      'columns': state.columns,
+      'locks': state.columnLocks,
       'tabs': [
         for (final tab in state.tabs)
           {
@@ -33,9 +35,25 @@ ReaderTabsState? decodeReaderTabs(String raw) {
         _decodeTab(entry as Map<String, dynamic>),
     ];
     final active = (map['active'] as num?)?.toInt() ?? 0;
+    // Saved before columns existed: no 'columns' key, so no columns.
+    final openIds = tabs.map((t) => t.bookId).toSet();
+    final columns = [
+      for (final id in (map['columns'] as List?) ?? const [])
+        if (openIds.contains(id)) id as String,
+    ];
+    final locks = [
+      for (final lock in (map['locks'] as List?) ?? const []) lock as bool,
+    ];
+    final hasColumns = columns.length >= 2;
     return ReaderTabsState(
       tabs: tabs,
       activeIndex: tabs.isEmpty ? 0 : active.clamp(0, tabs.length - 1),
+      columns: hasColumns ? columns : const [],
+      // Locks belong to the saved columns; a column dropped on load would
+      // shift them onto the wrong split, so they reset then.
+      columnLocks: hasColumns && locks.length == columns.length - 1
+          ? locks
+          : const [],
     );
   } catch (e) {
     developer.log('Ignoring unreadable saved tabs: $e', name: 'epitaka.tabs');

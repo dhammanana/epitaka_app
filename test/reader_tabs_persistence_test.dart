@@ -70,6 +70,40 @@ void main() {
           isNull);
     });
 
+    test('columns round trip with the tabs', () {
+      const state = ReaderTabsState(
+        activeIndex: 0,
+        tabs: [
+          ReaderTabInfo(bookId: 'A-v', bookName: 'AN5'),
+          ReaderTabInfo(bookId: 'Mil', bookName: 'Milinda'),
+          ReaderTabInfo(bookId: 'Mp-v', bookName: 'AN5 aṭṭhakathā'),
+          ReaderTabInfo(bookId: 'Mp-t-v', bookName: 'AN5 ṭīkā'),
+        ],
+        columns: ['A-v', 'Mp-v', 'Mp-t-v'],
+      );
+
+      final decoded = decodeReaderTabs(encodeReaderTabs(state))!;
+
+      expect(decoded.columns, ['A-v', 'Mp-v', 'Mp-t-v']);
+    });
+
+    test('data saved before columns loads with none', () {
+      final decoded = decodeReaderTabs(
+          '{"active": 0, "tabs": [{"bookId": "A-v", "bookName": "AN5"}, '
+          '{"bookId": "Mp-v", "bookName": "Mp"}]}')!;
+
+      expect(decoded.columns, isEmpty);
+      expect(decoded.tabs, hasLength(2));
+    });
+
+    test('columns naming a closed tab drop it; one left is none', () {
+      final decoded = decodeReaderTabs(
+          '{"active": 0, "columns": ["A-v", "Mp-v"], '
+          '"tabs": [{"bookId": "A-v", "bookName": "AN5"}]}')!;
+
+      expect(decoded.columns, isEmpty);
+    });
+
     test('an out-of-range active index is clamped', () {
       final decoded = decodeReaderTabs(
           '{"active": 7, "tabs": [{"bookId": "a", "bookName": "A"}]}')!;

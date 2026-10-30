@@ -51,6 +51,10 @@ class ReaderBottomToolbar extends StatelessWidget {
   final VoidCallback? onAnnotationsTap;
   final VoidCallback? onAiAskTap;
 
+  /// The m a ṭ buttons, built by the caller because they read the tabs and
+  /// the book family themselves. Null on surfaces that don't offer columns.
+  final Widget? commentaryLevels;
+
   /// The ordered toolbar configuration (Settings → Toolbar). Disabled items
   /// are skipped, and items with no wired handler for this surface are
   /// skipped too. Defaults to every action, enabled, in its natural order.
@@ -77,6 +81,7 @@ class ReaderBottomToolbar extends StatelessWidget {
     this.onJumpTap,
     this.onAnnotationsTap,
     this.onAiAskTap,
+    this.commentaryLevels,
   });
 
   @override
@@ -274,6 +279,8 @@ class ReaderBottomToolbar extends StatelessWidget {
                   )
                 : null,
           );
+        case ToolbarBuiltins.commentaryLevels:
+          add(commentaryLevels);
         // Legacy id from older saved configs (migrated to aiAsk on load,
         // but still rendered the same way if one slips through).
         case ToolbarBuiltins.summarize:

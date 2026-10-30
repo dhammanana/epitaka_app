@@ -1102,4 +1102,13 @@ const Map<String, String> en = {
   'No sutta found for ': 'No sutta found for ',
   'Could not look up sutta codes. The error is in the log.':
       'Could not look up sutta codes. The error is in the log.',
+  // ── mūla / aṭṭhakathā / ṭīkā columns ─────────────────────────────
+  'Show beside': 'Show beside',
+  'Scroll these columns together': 'Scroll these columns together',
+  'Scroll these columns separately': 'Scroll these columns separately',
+  'This book': 'This book',
+  'No book at this level': 'No book at this level',
+  'mūla, aṭṭhakathā, ṭīkā beside': 'mūla, aṭṭhakathā, ṭīkā beside',
+  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)':
+      'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)',
 };

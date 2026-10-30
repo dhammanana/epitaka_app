@@ -48,6 +48,7 @@ class ReaderScrollController {
     required this.onTtsManualScroll,
     this.onFirstVisiblePosition,
     this.contentRoot,
+    this.onAnyPositions,
   });
 
   /// Riverpod reference for provider reads/writes.
@@ -86,6 +87,10 @@ class ReaderScrollController {
   /// shorter than the paragraph and no text-length estimate can tell by how
   /// much.
   final RenderBox? Function()? contentRoot;
+
+  /// Called first on every position change of any book's list, before the
+  /// guards below (the columns sync needs every column's moves).
+  final void Function(String bookId)? onAnyPositions;
 
   // One controller/listener pair per open book tab.
   final Map<String, ItemScrollController> _itemScrollControllers = {};
@@ -171,7 +176,9 @@ class ReaderScrollController {
   final Map<String, int> _lastSavedParaIdPerBook = {};
 
   /// Debounce timer for scroll-based history saves.
-  Timer? _saveHistoryTimer;
+  /// One per book: columns save their places too, and a shared timer let
+  /// each column's save cancel the active book's.
+  final Map<String, Timer> _saveHistoryTimers = {};
 
   /// Throttle: only update scroll state once per distinct paraId per book.
   final Map<String, int> _lastScrollParaId = {};
@@ -184,9 +191,9 @@ class ReaderScrollController {
   /// and TTS-auto-scroll disabling.
   double _lastViewInsets = 0;
 
-  /// Throttle: skip [onPositionsChanged] heavy work if called too
-  /// frequently.
-  DateTime? _lastPositionThrottle;
+  /// Throttle per book: skip [onPositionsChanged] heavy work if called too
+  /// frequently. Per book because columns scroll together.
+  final Map<String, DateTime> _lastPositionThrottle = {};
   static const Duration _kPositionThrottleDuration = Duration(milliseconds: 50);
 
   /// The item positions of the reader list for [bookId], or null when the
@@ -232,6 +239,21 @@ class ReaderScrollController {
     final fresh = ItemScrollController();
     _itemScrollControllers[bookId] = fresh;
     _lastControllerFetchBookId = bookId;
+    return fresh;
+  }
+
+  /// A new [ItemScrollController] for a column list that is mounting now.
+  ///
+  /// Columns build several books in one frame, so the "same book as the
+  /// last fetch" rule of [scrollControllerFor] would swap their controllers
+  /// on every rebuild. A column takes one controller when it mounts and
+  /// keeps it. The next [scrollControllerFor] call then hands out a fresh
+  /// one, because the column's list may still hold this one while the
+  /// single-tab list mounts.
+  ItemScrollController freshScrollControllerFor(String bookId) {
+    final fresh = ItemScrollController();
+    _itemScrollControllers[bookId] = fresh;
+    _lastControllerFetchBookId = null;
     return fresh;
   }
 
@@ -333,6 +355,7 @@ class ReaderScrollController {
   // Driven by ItemPositionsListener, which reports the *actual* visible
   // item indices from the layout.
   void onPositionsChanged(String bookId) {
+    onAnyPositions?.call(bookId);
     // ── Sheet-open guard: skip provider writes when a modal bottom sheet
     // is open. The dictionary and book-link sheets increment
     // dictionarySheetOpenProvider while open.
@@ -357,13 +380,17 @@ class ReaderScrollController {
 
     // Throttle: skip heavy work if called too frequently (e.g. every scroll frame)
     final now = DateTime.now();
+    final lastThrottle = _lastPositionThrottle[bookId];
     final shouldThrottle =
-        _lastPositionThrottle != null &&
-        now.difference(_lastPositionThrottle!) < _kPositionThrottleDuration;
+        lastThrottle != null &&
+        now.difference(lastThrottle) < _kPositionThrottleDuration;
 
-    // Only process positions for the active tab
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab?.bookId != bookId) return;
+    // Only process positions for the active tab, and for the other columns
+    // so their place is saved too. The selection range and the app bar
+    // belong to the active tab alone.
+    final tabs = ref.read(readerTabsProvider);
+    final isActive = tabs.activeTab?.bookId == bookId;
+    if (!isActive && !tabs.columns.contains(bookId)) return;
 
     final listener = _itemPositionsListeners[bookId];
     final positions = listener?.itemPositions.value;
@@ -391,6 +418,7 @@ class ReaderScrollController {
 
     // When throttled, skip all provider writes but keep _preciseScrollOffset
     if (shouldThrottle && _lastScrollParaId[bookId] != null) {
+      if (!isActive) return;
       // Still update visible range for selection auto-scroll
       if (visible.isNotEmpty) {
         ref
@@ -403,7 +431,7 @@ class ReaderScrollController {
       }
       return;
     }
-    _lastPositionThrottle = now;
+    _lastPositionThrottle[bookId] = now;
 
     final tabsState = ref.read(readerTabsProvider);
     final tabIndex = tabsState.tabs.indexWhere((t) => t.bookId == bookId);
@@ -438,6 +466,8 @@ class ReaderScrollController {
         }
       }
     }
+
+    if (!isActive) return;
 
     // Track visible range for copy operations
     if (visible.isNotEmpty) {
@@ -1134,8 +1164,9 @@ class ReaderScrollController {
     if (_lastSavedParaIdPerBook[bookId] == paraId) return;
     _lastSavedParaIdPerBook[bookId] = paraId;
 
-    _saveHistoryTimer?.cancel();
-    _saveHistoryTimer = Timer(const Duration(seconds: 3), () {
+    _saveHistoryTimers[bookId]?.cancel();
+    _saveHistoryTimers[bookId] = Timer(const Duration(seconds: 3), () {
+      _saveHistoryTimers.remove(bookId);
       if (!isMounted()) return;
       saveReadingHistory(bookId, bookName);
     });
@@ -1146,7 +1177,10 @@ class ReaderScrollController {
 
   /// Cancel timers and detach all per-book listeners/subscriptions.
   void dispose() {
-    _saveHistoryTimer?.cancel();
+    for (final timer in _saveHistoryTimers.values) {
+      timer.cancel();
+    }
+    _saveHistoryTimers.clear();
     for (final entry in _itemPositionsListeners.entries) {
       final listener = _positionsListenerRefs[entry.key];
       if (listener != null) {

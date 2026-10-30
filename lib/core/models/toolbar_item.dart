@@ -31,6 +31,10 @@ class ToolbarBuiltins {
   @Deprecated('Use aiAsk instead')
   static const summarize = 'summarize';
 
+  /// The m a ṭ buttons: show the open book's mūla, aṭṭhakathā or ṭīkā as a
+  /// column beside it (desktop and wide tablets only).
+  static const commentaryLevels = 'commentaryLevels';
+
   /// The built-ins in their default display order.
   static const List<String> defaults = [
     contents,
@@ -43,6 +47,7 @@ class ToolbarBuiltins {
     annotations,
     bookmark,
     outline,
+    commentaryLevels,
   ];
 
   /// Built-ins that are off by default (user can enable in Settings → Toolbar).
