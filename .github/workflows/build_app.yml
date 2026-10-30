@@ -89,7 +89,9 @@ jobs:
           ls -la android/packs/core_db/src/main/assets/
 
       - name: Extract version
-        run: scripts/app-version.sh >> "$GITHUB_ENV"
+        run: |
+          scripts/app-version.sh >> "$GITHUB_ENV"
+          dart run tool/gen_app_version.dart
 
       - name: Build Android App Bundle (prod flavor)
         # MUST pass --flavor prod: now that product flavors are declared in
@@ -102,10 +104,10 @@ jobs:
         # "Could not find 'libflutter.so'. Looked for: [armeabi-v7a, ...]"
         # (seen on POCO C61). The AAB carries per-ABI slices and Google Play
         # serves each device its matching slice.
-        run: flutter build appbundle --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
+        run: flutter build appbundle --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=APP_BUILD_NUMBER="$APP_BUILD_NUMBER"
 
       - name: Build Android APK (prod flavor)
-        run: flutter build apk --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
+        run: flutter build apk --release --flavor prod --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=APP_BUILD_NUMBER="$APP_BUILD_NUMBER"
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
@@ -153,16 +155,33 @@ jobs:
         run: mkdir -p assets/db
 
       - name: Extract version
-        run: scripts/app-version.sh >> "$GITHUB_ENV"
+        run: |
+          scripts/app-version.sh >> "$GITHUB_ENV"
+          dart run tool/gen_app_version.dart
 
       - name: Build iOS Release (no codesign)
-        run: flutter build ios --release --no-codesign --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
+        run: flutter build ios --release --no-codesign --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=APP_BUILD_NUMBER="$APP_BUILD_NUMBER"
 
-      - name: Upload iOS Artifact (app)
+      - name: Package iOS IPA
+        # --no-codesign leaves a plain Runner.app; an IPA is just that bundle
+        # under Payload/. This is an unsigned IPA: installable via Sideloadly /
+        # AltStore or after re-signing, not through the App Store.
+        run: |
+          set -e
+          rm -rf build/ios/ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -qry "$GITHUB_WORKSPACE/epitaka-ios.ipa" Payload
+          ls -la "$GITHUB_WORKSPACE/epitaka-ios.ipa"
+
+      - name: Upload iOS Artifact (app + ipa)
         uses: actions/upload-artifact@v4
         with:
           name: ios-release
-          path: build/ios/iphoneos/Runner.app
+          path: |
+            build/ios/iphoneos/Runner.app
+            epitaka-ios.ipa
 
   # -------------------------------------------------------------
   # 3. WINDOWS BUILD
@@ -215,7 +234,9 @@ jobs:
         # survive checkout on Windows; .gitattributes keeps the line endings
         # LF, which the shebang and the `case` patterns both need.
         shell: bash
-        run: bash scripts/app-version.sh >> "$GITHUB_ENV"
+        run: |
+          bash scripts/app-version.sh >> "$GITHUB_ENV"
+          dart run tool/gen_app_version.dart
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
@@ -344,7 +365,7 @@ jobs:
           # number once a build name is supplied, which would drop the exe's
           # FILEVERSION from 1.1.1.31 to 1.1.1.0. The Linux build shares that
           # same cmake code path and passes both flags for the same reason.
-          flutter build windows --release --build-name="$env:APP_VERSION" --build-number="$env:APP_BUILD_NUMBER"
+          flutter build windows --release --build-name="$env:APP_VERSION" --build-number="$env:APP_BUILD_NUMBER" --dart-define=APP_VERSION="$env:APP_VERSION" --dart-define=APP_BUILD_NUMBER="$env:APP_BUILD_NUMBER"
 
       # ---------------------------------------------------------
       # Microsoft Store MSIX
@@ -471,14 +492,16 @@ jobs:
           cd ..
 
       - name: Extract version
-        run: scripts/app-version.sh >> "$GITHUB_ENV"
+        run: |
+          scripts/app-version.sh >> "$GITHUB_ENV"
+          dart run tool/gen_app_version.dart
 
       - name: Build macOS Release
         # `flutter build macos --release` already produces a UNIVERSAL binary
         # (x86_64 + arm64) by default — the Flutter tool passes the generic
         # 'platform=macOS' destination for release builds, which builds both
         # architectures. There is no --target-platform option for macos.
-        run: flutter build macos --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
+        run: flutter build macos --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=APP_BUILD_NUMBER="$APP_BUILD_NUMBER"
 
       - name: Build DMG Installer
         run: |
@@ -621,7 +644,9 @@ jobs:
         run: flutter pub get
 
       - name: Extract version
-        run: scripts/app-version.sh >> "$GITHUB_ENV"
+        run: |
+          scripts/app-version.sh >> "$GITHUB_ENV"
+          dart run tool/gen_app_version.dart
 
       - name: Enable Linux Desktop
         run: flutter config --enable-linux-desktop
@@ -653,7 +678,7 @@ jobs:
         # --build-name writes APP_VERSION into the bundle's version.json, which
         # is what package_info_plus reads and what the in-app update check
         # compares against the latest GitHub release tag.
-        run: flutter build linux --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
+        run: flutter build linux --release --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER" --dart-define=APP_VERSION="$APP_VERSION" --dart-define=APP_BUILD_NUMBER="$APP_BUILD_NUMBER"
 
       - name: Build Linux .deb
         # Runs before the AppImage step on purpose: that step assembles AppDir/
@@ -692,8 +717,20 @@ jobs:
           export PATH="$PWD:$PATH"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
-          APPIMAGE=$(find . -maxdepth 1 -name '*.AppImage' -type f | head -n 1)
+          # linuxdeploy writes its output next to the linuxdeploy-x86_64.AppImage
+          # we downloaded, so a bare `find -name '*.AppImage' | head -n 1` can
+          # pick the tool itself and ship it as the app (v1.1.0 through v1.1.11
+          # released the 19 MB linuxdeploy binary instead of ePitaka).
+          APPIMAGE="ePitaka-${VERSION}-x86_64.AppImage"
+          if [ ! -f "$APPIMAGE" ]; then
+            APPIMAGE=$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' -type f | head -n 1)
+          fi
+          test -f "$APPIMAGE" || { echo "ERROR: no built AppImage found"; exit 1; }
           mv "$APPIMAGE" "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
+
+          # The next step tars this directory: drop AppDir/ and the downloaded
+          # tooling so the tarball holds one copy of the app, not three.
+          rm -rf AppDir linuxdeploy-x86_64.AppImage
           ls -la "$GITHUB_WORKSPACE/epitaka-linux-x64.AppImage"
 
       - name: Compress Linux Output
@@ -742,6 +779,8 @@ jobs:
             windows-release/**/*.msix
 
             macos-release/**/*.dmg
+
+            ios-release/**/*.ipa
 
             linux-release/**/*.AppImage
             linux-release/**/*.tar.gz

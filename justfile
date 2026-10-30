@@ -27,7 +27,8 @@ pull:
 # Build the Linux release, stamped with the release tag's version
 linux-build:
     @echo "Building version {{version}} ({{build_number}})"
-    flutter build linux --release --build-name={{version}} --build-number={{build_number}}
+    dart run tool/gen_app_version.dart
+    flutter build linux --release --build-name={{version}} --build-number={{build_number}} --dart-define=APP_VERSION={{version}} --dart-define=APP_BUILD_NUMBER={{build_number}}
 
 # Package the Linux build as a .deb
 linux-deb:

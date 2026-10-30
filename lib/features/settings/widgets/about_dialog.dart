@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/app_version.dart';
 
 Future<void> showEpitakaAboutDialog(BuildContext context) {
   return showDialog<void>(
@@ -18,13 +18,11 @@ class _AboutDialog extends StatelessWidget {
     final loc = AppLocalizations.of(context);
     return AlertDialog(
       title: Text(loc.about),
-      content: FutureBuilder<PackageInfo>(
-        future: PackageInfo.fromPlatform(),
+      content: FutureBuilder<AppVersion>(
+        future: loadAppVersion(),
         builder: (context, snapshot) {
-          final info = snapshot.data;
-          final version = info == null
-              ? '…'
-              : '${info.version} (${info.buildNumber})';
+          final version =
+              snapshot.data?.display ?? (snapshot.hasError ? '—' : '…');
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

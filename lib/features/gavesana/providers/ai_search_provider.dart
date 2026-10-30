@@ -229,6 +229,8 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
           .showAiResults(
             query: trimmed,
             passages: passages.take(kAiSearchMaxPassages).toList(),
+            // Highlight what the AI actually searched, not the question.
+            highlightTerms: extractSearchTerms(toolLogs),
           );
       state = AiSearchDone(
         toolLogs: [...toolLogs],

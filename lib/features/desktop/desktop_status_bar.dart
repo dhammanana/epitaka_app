@@ -71,17 +71,13 @@ class DesktopStatusBar extends ConsumerWidget {
                 final compact = constraints.maxWidth < 860;
                 return Row(
                   children: [
-                    // Left side: display-layout segmented trigger, opening
-                    // the display popup anchored above the status bar.
+                    // Left side: transport controls for the active TTS
+                    // session only — the display-layout trigger lives with
+                    // the reader toolbar in the middle group.
                     Expanded(
                       child: Row(
                         children: [
-                          _DisplayModeStatusButton(
-                            displayMode: settings.translationDisplayMode,
-                            showTranslation: settings.showTranslation,
-                          ),
                           if (showTtsTransport) ...[
-                            const SizedBox(width: 8),
                             // Transport controls for the active TTS session:
                             // Prev · Pause/Play · Next · Follow · More.
                             _StatusIconButton(
@@ -117,28 +113,39 @@ class DesktopStatusBar extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    // Flat reader toolbar (drives the active reader tab),
+                    // Middle group: display-layout trigger plus the flat
+                    // reader toolbar (drives the active reader tab),
                     // centered between the two balanced sides. Contents /
                     // search / dictionary are handled by the sidebar, so
                     // they're not wired up here.
-                    ReaderBottomToolbar(
-                      colors: colors,
-                      displayMode: settings.translationDisplayMode,
-                      showTranslation: settings.showTranslation,
-                      ttsPlayback: ttsPlayback,
-                      flat: true,
-                      compact: compact,
-                      enabled: controller.enabled,
-                      items: settings.toolbarItems,
-                      onJumpTap: controller.onJump,
-                      // Display layout has its own dedicated button on the
-                      // left of the status bar, so the flat strip skips it
-                      // here (null handler = item not rendered).
-                      onDisplayLayoutTap: null,
-                      onListenTap: controller.onListen,
-                      onStopTap: controller.onStop,
-                      onBookmarkTap: controller.onBookmark,
-                      onAiAskTap: controller.onAiAsk,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _DisplayModeStatusButton(
+                          displayMode: settings.translationDisplayMode,
+                          showTranslation: settings.showTranslation,
+                        ),
+                        const SizedBox(width: 8),
+                        ReaderBottomToolbar(
+                          colors: colors,
+                          displayMode: settings.translationDisplayMode,
+                          showTranslation: settings.showTranslation,
+                          ttsPlayback: ttsPlayback,
+                          flat: true,
+                          compact: compact,
+                          enabled: controller.enabled,
+                          items: settings.toolbarItems,
+                          onJumpTap: controller.onJump,
+                          // The display layout trigger sits just before the
+                          // strip, so the flat strip skips its own item
+                          // (null handler = item not rendered).
+                          onDisplayLayoutTap: null,
+                          onListenTap: controller.onListen,
+                          onStopTap: controller.onStop,
+                          onBookmarkTap: controller.onBookmark,
+                          onAiAskTap: controller.onAiAsk,
+                        ),
+                      ],
                     ),
                     // Right side: shell actions, end-aligned.
                     Expanded(

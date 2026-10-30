@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ColorSwatch;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,6 +7,9 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/translation_manifest_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../shared/widgets/font_size_adjuster.dart';
+import '../../settings/widgets/color_picker_section.dart'
+    show kTranslationTextPresetColors, showColorPickerScreen;
+import '../../settings/widgets/color_swatch.dart' show ColorSwatch;
 
 /// A compact popup card shown when tapping the layout toggle button in the
 /// reader bottom toolbar. Displays four layout options (No translation,
@@ -402,6 +405,7 @@ class _TranslationsSection extends ConsumerWidget {
                 final enabled = settings.enabledTranslations.contains(code);
                 return _TranslationToggleTile(
                   key: ValueKey(code),
+                  code: code,
                   englishName: TranslationLanguageRegistry.englishName(code),
                   nativeName: TranslationLanguageRegistry.nativeName(code),
                   value: enabled,
@@ -449,6 +453,7 @@ class _TranslationsSection extends ConsumerWidget {
 
 /// A checkbox row for one downloaded translation language in the popup.
 class _TranslationToggleTile extends StatelessWidget {
+  final String code;
   final String englishName;
   final String nativeName;
   final bool value;
@@ -460,6 +465,7 @@ class _TranslationToggleTile extends StatelessWidget {
 
   const _TranslationToggleTile({
     super.key,
+    required this.code,
     required this.englishName,
     required this.nativeName,
     required this.value,
@@ -500,6 +506,7 @@ class _TranslationToggleTile extends StatelessWidget {
                 ),
               ),
             ),
+            _TranslationColorButton(code: code, label: label),
             if (dragIndex != null)
               ReorderableDragStartListener(
                 index: dragIndex!,
@@ -514,6 +521,158 @@ class _TranslationToggleTile extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A small colour chip showing (and changing) the text colour of one
+/// translation. Picking a preset saves immediately — the same setting as
+/// Reading Colors in settings — so the reader repaints without leaving the
+/// display popup.
+class _TranslationColorButton extends ConsumerWidget {
+  final String code;
+  final String label;
+
+  const _TranslationColorButton({required this.code, required this.label});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+    // Compare and show the user's chosen light colour, like the settings
+    // preset swatches, so a preset stays highlighted after picking it.
+    final current = ref
+        .watch(settingsProvider)
+        .translationColorPairFor(code)
+        .light;
+
+    return Tooltip(
+      message: loc.translationTextColor,
+      child: InkWell(
+        onTap: () => _showPresets(context, current),
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: current,
+              shape: BoxShape.circle,
+              border: Border.all(color: colors.outlineVariant),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showPresets(BuildContext context, Color current) {
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  loc.translationTextColor,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Watched inside the dialog so a tap immediately highlights
+                // the new preset and the reader repaints behind it.
+                Consumer(
+                  builder: (context, ref, _) {
+                    final picked = ref
+                        .watch(settingsProvider)
+                        .translationColorPairFor(code)
+                        .light;
+                    void pick(Color c) => ref
+                        .read(settingsProvider.notifier)
+                        .setTranslationColorForLang(code, c);
+
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        ...kTranslationTextPresetColors.map(
+                          (c) => ColorSwatch(
+                            color: c,
+                            isSelected: c.toARGB32() == picked.toARGB32(),
+                            size: 30,
+                            iconSize: 14,
+                            onTap: () => pick(c),
+                          ),
+                        ),
+                        _CustomColorChip(
+                          onTap: () {
+                            Navigator.of(dialogContext).pop();
+                            showColorPickerScreen(
+                              context,
+                              title: loc.pickAColor,
+                              initialColor: current,
+                              sampleText: label,
+                              onApply: pick,
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The "pick any colour" chip at the end of the preset swatches.
+class _CustomColorChip extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CustomColorChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: colors.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.outlineVariant, width: 2),
+        ),
+        child: Icon(Icons.colorize, size: 14, color: colors.onSurfaceVariant),
       ),
     );
   }

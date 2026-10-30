@@ -454,6 +454,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<void> _reSearch() async {
     final current = state;
     if (current is SearchResults) {
+      // AI results are rebuilt from the passages already found: their query
+      // is the question the user asked, which a full-text search would treat
+      // as search words and replace the passages with unrelated hits.
+      if (_aiPassages != null) {
+        await _renderAiResults(query: current.query);
+        return;
+      }
       await search(
         query: current.query,
         distance: current.distance,
@@ -513,6 +520,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }) async {
     final gen = ++_searchGen;
     _cancelRegexJobs();
+    // A typed search replaces any AI-found passages shown before it.
+    _aiPassages = null;
+    _aiHighlightTerms = const [];
     final normalized = regex ? query : query.trim();
     if (regex) distance = 0;
     // A query made only of punctuation (",", "…") has no searchable words
@@ -880,7 +890,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
       accepted.add(built[i]);
       if (_rowsEnd(windowRows[i], windows[i].pageSize)) break;
     }
-    if (!_commitBookPages(bookId, accepted, expectedPageCount: point.pageCount)) {
+    if (!_commitBookPages(
+      bookId,
+      accepted,
+      expectedPageCount: point.pageCount,
+    )) {
       return done();
     }
     pages += accepted.length;
@@ -1350,24 +1364,44 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   // ── AI-found results (Gavesana) ──────────────────────────────────────
 
+  /// The passages of the last AI search, kept so a filter toggle re-renders
+  /// the same passages instead of running a fresh full-text search.
+  List<AiPassageRef>? _aiPassages;
+
+  /// The search terms the AI actually queried (e.g. "kim idam"), used to
+  /// highlight results — the user's question is not what was searched.
+  List<String> _aiHighlightTerms = const [];
+
   /// Display AI-found passages in the normal search results format.
   ///
   /// [passages] may contain duplicates and out-of-order entries; they are
   /// deduplicated, grouped by book and presented as fully-expanded book
-  /// summaries (like an auto-expanded FTS search). The search query is used
-  /// only for highlighting, so AI results show every line (showAllLines).
+  /// summaries (like an auto-expanded FTS search). [highlightTerms] are the
+  /// terms the AI searched for; they (not [query], the user's question) are
+  /// what gets highlighted. AI results show every line (showAllLines).
   Future<void> showAiResults({
     required String query,
     required List<AiPassageRef> passages,
+    List<String> highlightTerms = const [],
   }) async {
+    final q = query.trim();
+    if (q.isNotEmpty) {
+      try {
+        _ref.read(searchHistoryProvider.notifier).add(q);
+      } catch (_) {}
+    }
+    _aiPassages = passages;
+    _aiHighlightTerms = highlightTerms;
+    await _renderAiResults(query: query);
+  }
+
+  /// Build the results view for the passages of the last AI search,
+  /// honouring the current category/nikaya filters.
+  Future<void> _renderAiResults({required String query}) async {
+    final passages = _aiPassages;
+    if (passages == null) return;
     state = const SearchLoading();
     try {
-      final q = query.trim();
-      if (q.isNotEmpty) {
-        try {
-          _ref.read(searchHistoryProvider.notifier).add(q);
-        } catch (_) {}
-      }
       final seen = <String>{};
       final grouped = <String, List<AiPassageRef>>{};
       for (final p in passages) {
@@ -1382,6 +1416,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
           query: query,
           totalResults: 0,
           bookSummaries: const [],
+          enabledCategories: _enabledCategories,
+          enabledNikayas: _enabledNikayas,
         );
         return;
       }
@@ -1389,19 +1425,28 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final allBooks = await _allBooks();
       final bookMap = <String, BookInfo>{for (final b in allBooks) b.bookId: b};
       final activeLang = _activeTranslationLang();
-      final searchWords = normalizePaliFuzzy(
-        query,
-      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      // Split the AI's terms into words; fall back to the question when the
+      // AI used no search tool.
+      final searchWords =
+          (_aiHighlightTerms.isEmpty ? [query] : _aiHighlightTerms)
+              .map(normalizePaliFuzzy)
+              .expand((t) => t.split(RegExp(r'\s+')))
+              .where((w) => w.isNotEmpty)
+              .toList();
 
       // Sort books by id (stable, matches normal search ordering), with
-      // the currently opened book pinned first.
+      // the currently opened book pinned first. Books the filters exclude
+      // drop their passages entirely.
       final activeBookId = _ref.read(readerTabsProvider).activeTab?.bookId;
-      final bookIds = grouped.keys.toList()
-        ..sort((a, b) {
-          if (a == activeBookId) return -1;
-          if (b == activeBookId) return 1;
-          return (bookMap[a]?.id ?? 0).compareTo(bookMap[b]?.id ?? 0);
-        });
+      final bookIds =
+          grouped.keys.where((id) {
+            final book = bookMap[id];
+            return book == null || _bookPassesFilters(book);
+          }).toList()..sort((a, b) {
+            if (a == activeBookId) return -1;
+            if (b == activeBookId) return 1;
+            return (bookMap[a]?.id ?? 0).compareTo(bookMap[b]?.id ?? 0);
+          });
 
       final summaries = <BookResultSummary>[];
       for (final bookId in bookIds) {
@@ -1434,9 +1479,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query: query,
         totalResults: summaries.fold(0, (s, b) => s + b.totalCount),
         bookSummaries: summaries,
+        enabledCategories: _enabledCategories,
+        enabledNikayas: _enabledNikayas,
       );
     } catch (e) {
-      debugPrint('[SEARCH] showAiResults failed: $e');
+      debugPrint('[SEARCH] renderAiResults failed: $e');
       state = SearchError('Failed to load AI results: $e');
     }
   }
@@ -1540,6 +1587,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         paraId: ref.paraId,
         lines: lines,
         showAllLines: true,
+        highlightTerms: searchWords.isEmpty ? null : searchWords,
       );
     } catch (e) {
       debugPrint('[SEARCH] _buildAiResultItem failed: $e');
@@ -1754,6 +1802,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
     _searchGen++;
     _cancelRegexJobs();
     _debounce?.cancel();
+    _aiPassages = null;
+    _aiHighlightTerms = const [];
     _enabledCategories = {...kAllCategories};
     _enabledNikayas = {...kAllNikayas};
     state = const SearchIdle();

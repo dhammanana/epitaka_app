@@ -12,6 +12,7 @@ import '../../ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
 import '../../search/providers/search_provider.dart';
 import '../../shared/widgets/ai_error_card.dart';
+import '../../search/widgets/search_filter_panel.dart';
 import '../../search/widgets/search_results_view.dart';
 import '../providers/ai_search_provider.dart';
 
@@ -45,6 +46,9 @@ class GavesanaSearchView extends ConsumerStatefulWidget {
 class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   final _queryController = TextEditingController();
   final _focusNode = FocusNode();
+
+  /// Whether the category / nikaya chips are shown under the search box.
+  bool _showFilters = false;
 
   double get _hPad =>
       widget.dense ? AppDimensions.sm : AppDimensions.marginMobile;
@@ -107,6 +111,21 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
             children: [
               Expanded(child: _buildSearchField(colors, loc)),
               const SizedBox(width: 4),
+              // Category / nikaya filters — the same chips as normal search.
+              // Toggling one re-renders the AI passages found so far by
+              // book instead of re-running the AI search.
+              IconButton(
+                icon: Icon(
+                  _showFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  size: 20,
+                  color: _showFilters
+                      ? colors.primary
+                      : colors.onSurfaceVariant,
+                ),
+                tooltip: loc.toggleFilters,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+              ),
               // AI settings — the same sheet used by Vīmaṃsā (API key,
               // model). Lives here (not an AppBar) so the sidebar panel
               // gets it too.
@@ -123,6 +142,12 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
             ],
           ),
         ),
+
+        if (_showFilters)
+          Padding(
+            padding: EdgeInsets.fromLTRB(_hPad, 0, _hPad, AppDimensions.sm),
+            child: SearchFilterPanel(colors: colors, dense: widget.dense),
+          ),
 
         // ── Body ─────────────────────────────────────────────
         Expanded(child: _buildBody(colors, aiState, searchState, loc)),
