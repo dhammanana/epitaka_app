@@ -47,6 +47,8 @@ class ContextMenuBuiltins {
   static const share = 'share';
   static const editLineInfo =
       'editLineInfo'; // edit the line's translation remark
+  static const showBeside =
+      'showBeside'; // the matching mūla / aṭṭhakathā / ṭīkā as a column
 
   /// The built-ins in their default display order.
   static const List<String> defaults = [
@@ -63,6 +65,7 @@ class ContextMenuBuiltins {
     summarizeChapter,
     share,
     editLineInfo,
+    showBeside,
   ];
 
   /// Built-ins that only work on Apple platforms (native Look Up / Speak).

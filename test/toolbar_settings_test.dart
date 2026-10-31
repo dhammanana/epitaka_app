@@ -99,6 +99,11 @@ void main() {
       // The user's original order and toggles are preserved at the front.
       expect(ids.take(2), [ToolbarBuiltins.listen, ToolbarBuiltins.bookmark]);
       expect(items.first.enabled, isFalse);
+      // The m a ṭ buttons land right after contents, not at the end.
+      expect(
+        ids.indexOf(ToolbarBuiltins.commentaryLevels),
+        ids.indexOf(ToolbarBuiltins.contents) + 1,
+      );
 
       // No duplication when everything is already present.
       SharedPreferences.setMockInitialValues({
@@ -116,6 +121,75 @@ void main() {
       expect(completeIds.toSet(), hasLength(ToolbarBuiltins.defaults.length));
     },
   );
+
+  test(
+    'a toolbar saved before the m a ṭ buttons gets them after contents, on',
+    () async {
+      final saved = [
+        for (final id in ToolbarBuiltins.defaults)
+          if (id != ToolbarBuiltins.commentaryLevels)
+            ToolbarItem(id: id, enabled: id != ToolbarBuiltins.search),
+      ];
+      SharedPreferences.setMockInitialValues({
+        'toolbar_items': jsonEncode(saved.map((i) => i.toJson()).toList()),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = SettingsNotifier(prefs);
+      notifier.init(prefs);
+
+      final items = notifier.state.toolbarItems;
+      expect(items[1].id, ToolbarBuiltins.commentaryLevels);
+      expect(items[1].enabled, isTrue);
+      expect(
+        items.firstWhere((i) => i.id == ToolbarBuiltins.search).enabled,
+        isFalse,
+      );
+    },
+  );
+
+  test('the m a ṭ buttons follow contents wherever the user moved it', () async {
+    final saved = [
+      for (final id in [
+        ToolbarBuiltins.aiAsk,
+        ToolbarBuiltins.search,
+        ToolbarBuiltins.contents,
+        ToolbarBuiltins.listen,
+      ])
+        ToolbarItem(id: id),
+    ];
+    SharedPreferences.setMockInitialValues({
+      'toolbar_items': jsonEncode(saved.map((i) => i.toJson()).toList()),
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final notifier = SettingsNotifier(prefs);
+    notifier.init(prefs);
+
+    final ids = notifier.state.toolbarItems.map((i) => i.id).toList();
+    expect(ids.take(5), [
+      ToolbarBuiltins.aiAsk,
+      ToolbarBuiltins.search,
+      ToolbarBuiltins.contents,
+      ToolbarBuiltins.commentaryLevels,
+      ToolbarBuiltins.listen,
+    ]);
+  });
+
+  test('a saved toolbar that has the m a ṭ buttons keeps their place', () async {
+    final saved = [
+      for (final id in ToolbarBuiltins.defaults.reversed) ToolbarItem(id: id),
+    ];
+    SharedPreferences.setMockInitialValues({
+      'toolbar_items': jsonEncode(saved.map((i) => i.toJson()).toList()),
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final notifier = SettingsNotifier(prefs);
+    notifier.init(prefs);
+
+    expect(
+      notifier.state.toolbarItems.map((i) => i.id).toList(),
+      ToolbarBuiltins.defaults.reversed.toList(),
+    );
+  });
 
   test('reorder and toggle persist across reload', () async {
     SharedPreferences.setMockInitialValues({});

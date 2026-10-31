@@ -28,6 +28,9 @@ import '../../library/widgets/library_dialog.dart';
 import '../../settings/providers/tts_provider.dart';
 import '../../settings/widgets/settings_dialog.dart';
 import '../../sutta_jump/widgets/go_to_sutta_dialog.dart';
+import '../providers/display_mode_override.dart';
+import '../providers/reader_columns_controller.dart';
+import '../providers/reader_columns_sync.dart';
 import '../providers/reader_dictionary_lookup_controller.dart';
 import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_lookup_highlight_provider.dart';
@@ -43,11 +46,13 @@ import '../providers/tts_speak_unit.dart';
 import '../utils/reader_word_hit_test.dart'
     show ReaderWordHitResult, pickLookupWord;
 import '../widgets/bookmark_dialog.dart';
+import '../widgets/commentary_level_buttons.dart';
 import '../widgets/display_layout_popup.dart';
 import '../widgets/jump_sheet.dart';
 import '../widgets/reader_ai_sheet.dart';
 import '../widgets/reader_app_bar.dart';
 import '../widgets/reader_bottom_toolbar.dart';
+import '../widgets/reader_column.dart';
 import '../widgets/reader_content_with_selection.dart';
 import '../widgets/reader_context_menu_builder.dart';
 import '../widgets/reader_drag_thumb.dart';
@@ -183,6 +188,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // is highlighted for a few seconds, then fades out.
   int? _jumpHighlightParaId;
   int? _jumpHighlightLineId;
+  String? _jumpHighlightBookId;
   Timer? _jumpHighlightTimer;
 
   // App lifecycle state for background TTS optimization
@@ -191,6 +197,41 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // Silverbar: collapsible app bar on scroll
   // Using ValueNotifier so only the app bar/toolbar rebuild, not the full screen.
   final ValueNotifier<bool> _appBarCollapsed = ValueNotifier(false);
+
+  /// The keys of the single-tab reader content.
+  late final ReaderColumnKeys _singleKeys = ReaderColumnKeys(
+    contentHitTest: _contentHitTestKey,
+    selectableRegion: _selectableRegionKey,
+    autoScroll: _autoScrollOffsetController,
+  );
+
+  /// The keys of each shown column, by book.
+  final Map<String, ReaderColumnKeys> _columnKeys = {};
+
+  /// Whether the reader was at least [kReaderColumnsMinWidth] wide at the
+  /// last layout. Null until the first build guesses it from the window.
+  bool? _readerWide;
+
+  /// The columns the last build showed, in order; empty when it showed the
+  /// active tab alone.
+  List<String> _shownColumns = const [];
+
+  /// The content the selection drag in progress auto-scrolls.
+  late ScrollOffsetController _autoScrollTarget = _autoScrollOffsetController;
+
+  /// Keeps locked columns at matching paragraphs.
+  late final ReaderColumnsSync _sync = ReaderColumnsSync(
+    ref: ref,
+    isMounted: () => mounted,
+    shownColumns: () => _shownColumns,
+    scrollTo: _scrollColumnTo,
+  );
+
+  /// Read once in initState: dispose cannot use `ref`.
+  late final DisplayModeOverride _displayModeOverride;
+
+  /// Columns never slide between tabs, so their drag offset stays 0.
+  final ValueNotifier<double> _noDrag = ValueNotifier(0);
 
   /// Millis counter for tab-switch timing breakdown.
   /// Reset at the start of build() when a different tab becomes active.
@@ -213,7 +254,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final lineId = index < searchState.matchLineIds.length
         ? searchState.matchLineIds[index]
         : 1;
-    _startJumpHighlight(paraId, lineId);
+    _startJumpHighlight(paraId, lineId, activeTab.bookId);
     _scroll.jumpToParagraph(
       activeTab.bookId,
       paraId,
@@ -239,20 +280,29 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// Start the jump highlight for [paraId] / [lineId]. The highlight
   /// stays visible for [_kJumpHighlightDuration] then fades out.
-  void _startJumpHighlight(int paraId, int lineId) {
+  void _startJumpHighlight(int paraId, int lineId, String bookId) {
     _jumpHighlightTimer?.cancel();
     setState(() {
       _jumpHighlightParaId = paraId;
       _jumpHighlightLineId = lineId;
+      _jumpHighlightBookId = bookId;
     });
     _jumpHighlightTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
           _jumpHighlightParaId = null;
           _jumpHighlightLineId = null;
+          _jumpHighlightBookId = null;
         });
       }
     });
+  }
+
+  /// The keys of the content the active tab is drawn in.
+  ReaderColumnKeys _activeKeys() {
+    if (_shownColumns.isEmpty) return _singleKeys;
+    final bookId = ref.read(readerTabsProvider).activeTab?.bookId;
+    return _columnKeys[bookId] ?? _singleKeys;
   }
 
   // ── Toolbar actions ──────────────────────────────────────────────────
@@ -530,6 +580,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _displayModeOverride = ref.read(displayModeOverrideProvider);
 
     _scroll = ReaderScrollController(
       ref: ref,
@@ -542,7 +593,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       viewInsetsBottom: () => _mediaNoSubscribe(context).viewInsets.bottom,
       appBarCollapsed: _appBarCollapsed,
       contentRoot: () =>
-          _contentHitTestKey.currentContext?.findRenderObject() as RenderBox?,
+          _activeKeys().contentHitTest.currentContext?.findRenderObject()
+              as RenderBox?,
+      onAnyPositions: (bookId) => _sync.onPositions(bookId),
       onTtsManualScroll: (bookId, visible, paragraphs) =>
           _tts.handleManualScroll(bookId, visible, paragraphs),
       onFirstVisiblePosition: (bookId, topIndex, paraId) {
@@ -777,8 +830,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // ── Reading history persistence lives in [ReaderScrollController] ─────
 
   // ── Word lookup ──────────────────────────────────────────────────────
-  void _onWordLookup(String word, {ReaderWordHitResult? hit}) {
+  void _onWordLookup(
+    String word, {
+    ReaderWordHitResult? hit,
+    ReaderColumnKeys? keys,
+  }) {
     if (word.trim().isEmpty) return;
+    final region = (keys ?? _singleKeys).selectableRegion;
     developer.log('[DBG] _onWordLookup word="$word"', name: 'epitaka.dict');
 
     // Two-stage quote-run lookup: the bare tapped word keeps priority; only
@@ -800,21 +858,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       );
     }
 
-    // Update active lookup highlight for the reader view.
-    final activeTab = ref.read(readerTabsProvider).activeTab;
-    if (activeTab != null) {
+    // Update active lookup highlight for the reader view. A column names
+    // its own book: its first tap can land before it becomes the active tab.
+    final lookupBookId =
+        keys?.bookId ?? ref.read(readerTabsProvider).activeTab?.bookId;
+    if (lookupBookId != null) {
       if (hit != null) {
         ref
             .read(readerLookupHighlightProvider.notifier)
             .setHighlight(
-              ReaderLookupHighlight.fromHit(bookId: activeTab.bookId, hit: hit),
+              ReaderLookupHighlight.fromHit(bookId: lookupBookId, hit: hit),
             );
       } else {
         ref
             .read(readerLookupHighlightProvider.notifier)
             .setHighlight(
               ReaderLookupHighlight(
-                bookId: activeTab.bookId,
+                bookId: lookupBookId,
                 word: word,
                 rawWord: word,
               ),
@@ -835,7 +895,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // `hasSelection` disables the scroll-time double-tap invalidation in
     // [_handlePointerMoveForTabSwipe] and leaves stale tap state that can
     // re-trigger a lookup after the sheet closes.
-    _selectableRegionKey.currentState?.clearSelection();
+    region.currentState?.clearSelection();
     ref.read(readerSelectionProvider.notifier).clearSelection();
 
     // SelectionArea keeps processing this same double-tap AFTER the sheet
@@ -858,9 +918,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (ref.read(dictionarySheetOpenProvider) <= 0) return;
-        final region = _selectableRegionKey.currentState;
-        region?.clearSelection();
-        region?.hideToolbar();
+        final regionState = region.currentState;
+        regionState?.clearSelection();
+        regionState?.hideToolbar();
         ContextMenuController.removeAny();
         if (DateTime.now().isBefore(suppressUntil)) {
           suppressLeftoverSelection();
@@ -871,7 +931,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     suppressLeftoverSelection();
   }
 
-  void _handleSelectionChanged(SelectedContent? selection) {
+  void _handleSelectionChanged(
+    SelectedContent? selection, [
+    ReaderColumnKeys? keys,
+  ]) {
     ref.read(readerSelectionProvider.notifier).onSelectionChanged(selection);
     developer.log(
       '[DBG] onSelectionChanged plain="${selection?.plainText}" '
@@ -893,7 +956,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // sheet counter is still 0. The reliable clears are in [_onWordLookup]
     // (synchronous + post-frame backstops + reader selection-state reset).
     if (selection != null && ref.read(dictionarySheetOpenProvider) > 0) {
-      _selectableRegionKey.currentState?.clearSelection();
+      (keys ?? _singleKeys).selectableRegion.currentState?.clearSelection();
     }
 
     // Dictionary lookup is driven explicitly by the
@@ -912,11 +975,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// start of a potential tab-swipe. This runs *before* the gesture arena
   /// resolves, so it is not subject to the race between [SelectionArea]'s
   /// double-tap recognizer and the tab-swipe [GestureDetector].
-  void _handlePointerDown(PointerDownEvent event) {
+  void _handlePointerDown(PointerDownEvent event, [ReaderColumnKeys? keys]) {
     // Record start position for potential tab-swipe (mobile/tablet only —
     // decided by the actual layout, so a narrow desktop window that fell
-    // back to the phone UI keeps the swipe gestures)
-    if (!ResponsiveBreakpoint.isDesktop(context)) {
+    // back to the phone UI keeps the swipe gestures). Columns don't swipe.
+    if (!ResponsiveBreakpoint.isDesktop(context) && keys == null) {
       _swipeStartPos = event.localPosition;
       _isSwiping = false;
       _lastSwipeDx = 0;
@@ -930,10 +993,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       localPosition: event.localPosition,
       globalPosition: event.position,
       timestampMs: event.timeStamp.inMilliseconds,
-      contentHitTestKey: _contentHitTestKey,
+      contentHitTestKey: (keys ?? _singleKeys).contentHitTest,
     );
     if (result.shouldLookup) {
-      _onWordLookup(result.word!, hit: result.hit);
+      _onWordLookup(result.word!, hit: result.hit, keys: keys);
     }
   }
 
@@ -957,10 +1020,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// visible area. Flutter's built-in SelectionArea auto-scroll can't drive
   /// ScrollablePositionedList because the SelectableRegion is outside the
   /// list's internal Scrollable, so we handle it manually.
-  void _handlePointerMoveForTabSwipe(PointerMoveEvent event) {
+  void _handlePointerMoveForTabSwipe(
+    PointerMoveEvent event, [
+    ReaderColumnKeys? keys,
+  ]) {
     // ── Auto-scroll when dragging selection handle near viewport edge ──
     if (ref.read(readerSelectionProvider).hasSelection) {
-      _checkAutoScrollEdge(event);
+      _checkAutoScrollEdge(event, keys ?? _singleKeys);
     } else {
       _stopAutoScroll();
     }
@@ -982,6 +1048,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // text) — decided by the actual layout so a narrow desktop window that
     // fell back to the phone UI keeps the swipe gestures ──
     if (ResponsiveBreakpoint.isDesktop(context)) return;
+    if (keys != null) return;
     if (ref.read(readerSelectionProvider).hasSelection) return;
     if (_swipeStartPos == null) return;
 
@@ -1030,9 +1097,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [_autoScrollSpeed]. A persistent timer reads this value on each
   /// tick and scrolls if non-zero. This avoids the flicker caused by
   /// constantly cancelling and re-creating timers.
-  void _checkAutoScrollEdge(PointerMoveEvent event) {
+  void _checkAutoScrollEdge(PointerMoveEvent event, ReaderColumnKeys keys) {
+    _autoScrollTarget = keys.autoScroll;
     final renderBox =
-        _contentHitTestKey.currentContext?.findRenderObject() as RenderBox?;
+        keys.contentHitTest.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.hasSize) {
       _setAutoScrollSpeed(0);
       return;
@@ -1085,7 +1153,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final currentSpeed = _autoScrollSpeed;
       if (currentSpeed == 0) return;
       try {
-        _autoScrollOffsetController.animateScroll(
+        _autoScrollTarget.animateScroll(
           offset: currentSpeed,
           duration: const Duration(milliseconds: 16),
           curve: Curves.linear,
@@ -1109,7 +1177,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// Handle raw pointer up for tab-swipe completion.
-  void _handlePointerUpForTabSwipe(PointerUpEvent event) {
+  void _handlePointerUpForTabSwipe(
+    PointerUpEvent event, [
+    ReaderColumnKeys? keys,
+  ]) {
     // Single-tap word lookup (when enabled in settings) is confirmed on
     // pointer-up — by then we know the pointer didn't move (no scroll/drag)
     // and no text selection was created (e.g. by a long-press).
@@ -1119,11 +1190,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           pointer: event.pointer,
           globalPosition: event.position,
           timestampMs: event.timeStamp.inMilliseconds,
-          contentHitTestKey: _contentHitTestKey,
+          contentHitTestKey: (keys ?? _singleKeys).contentHitTest,
           hasSelection: ref.read(readerSelectionProvider).hasSelection,
         );
     if (result.shouldLookup) {
-      _onWordLookup(result.word!, hit: result.hit);
+      _onWordLookup(result.word!, hit: result.hit, keys: keys);
     }
     _finishTabSwipe();
   }
@@ -1199,8 +1270,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _jumpHighlightTimer?.cancel();
     _settleController.dispose();
     _dragDxNotifier.dispose();
+    _noDrag.dispose();
     _appBarCollapsed.dispose();
     _scroll.dispose();
+    // The override outlives this screen; a reader that comes back without
+    // columns would otherwise stay in line-by-line. After the frame: the
+    // switch changes settings, which cannot happen while the tree unmounts.
+    if (_shownColumns.isNotEmpty) {
+      final override = _displayModeOverride;
+      Future.microtask(() => override.remove(DisplayModeReason.columns));
+    }
     // In-book search state is managed by [inBookSearchProvider] (auto-disposed)
     super.dispose();
   }
@@ -1272,6 +1351,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
 
     if (tabsState.isEmpty) {
+      if (_shownColumns.isNotEmpty) {
+        _shownColumns = const [];
+        _switchColumnsDisplayMode(false);
+      }
       final colors = Theme.of(context).colorScheme;
       final isDesktop = ResponsiveBreakpoint.isDesktop(context);
       if (isDesktop) {
@@ -1342,6 +1425,44 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       langTypographies[langCode] = settings.typography.typographyFor(langCode);
     }
 
+    // ── Columns ──────────────────────────────────────────────────────
+    // The family books show side by side while the active tab is one of
+    // them, the reader is wide enough (measured at the last layout; the
+    // window width is the first guess) and the device is not a phone.
+    _readerWide ??= MediaQuery.widthOf(context) >= kReaderColumnsMinWidth;
+    final columnsFit = _readerWide! && !_isPhone();
+    if (ref.read(readerColumnsAvailableProvider) != columnsFit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(readerColumnsAvailableProvider.notifier).state = columnsFit;
+        }
+      });
+    }
+    // The m a ṭ slot shows on every screen, but only for a book that has a
+    // mūla, aṭṭhakathā or ṭīkā.
+    final hasFamily = ref.watch(activeBookFamilyProvider) != null;
+    final showColumns =
+        tabsState.columns.contains(activeTab.bookId) && columnsFit;
+    // A column list that mounts now needs its own controller and its saved
+    // place; the active tab's single list mounts again when columns go.
+    final newColumns = showColumns
+        ? tabsState.columns.where((id) => !_shownColumns.contains(id)).toSet()
+        : const <String>{};
+    if (!showColumns && _shownColumns.isNotEmpty) {
+      if (_shownColumns.contains(activeTab.bookId) &&
+          activeTab.initialParaId == null) {
+        _scroll.lastRestoredBookId = activeTab.bookId;
+        _restoreMountedList(activeTab);
+      } else {
+        _scroll.lastRestoredBookId = null;
+      }
+    }
+    if (showColumns != _shownColumns.isNotEmpty) {
+      _switchColumnsDisplayMode(showColumns);
+    }
+    if (showColumns && newColumns.isNotEmpty) _sync.preload(tabsState.columns);
+    _shownColumns = showColumns ? tabsState.columns : const [];
+
     // ── Resolve which paragraph to jump to ───────────────────────────
     // initialJumpId distinguishes a NEW explicit jump request (annotation
     // tap, book link, history…) from a stale rebuild — so requesting the
@@ -1350,6 +1471,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         activeTab.initialParaId != null &&
         _scroll.lastInitialJumpId(activeTab.bookId) != activeTab.initialJumpId;
     final isTabRestore =
+        !showColumns &&
         !isNewInitialParaId &&
         activeTab.currentParaId != null &&
         _scroll.lastRestoredBookId != activeTab.bookId;
@@ -1384,7 +1506,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         // small alignment (5%) so the paragraph isn't flush with the top and
         // hidden behind the app bar / search bar.
         if (targetLineId != null) {
-          _startJumpHighlight(targetParaId, targetLineId);
+          _startJumpHighlight(targetParaId, targetLineId, activeTab.bookId);
         }
         _scroll.jumpToParagraph(
           activeTab.bookId,
@@ -1439,6 +1561,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           alignment: alignment,
         );
       });
+    }
+
+    if (showColumns) {
+      for (final bookId in tabsState.columns) {
+        if (bookId == activeTab.bookId && !newColumns.contains(bookId)) {
+          continue;
+        }
+        _prepareColumn(
+          tabsState.tabs.firstWhere((t) => t.bookId == bookId),
+          mounting: newColumns.contains(bookId),
+        );
+      }
     }
 
     final globalTtsState = ref.watch(ttsProvider);
@@ -1584,6 +1718,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // dictionary, search, TTS follow). Watching it here pins its lifetime
     // to the reader.
     ref.watch(ttsSyncProvider(activeTab.bookId));
+    for (final bookId in _shownColumns) {
+      ref.watch(ttsSyncProvider(bookId));
+    }
 
     // Use paddingOf() instead of MediaQuery.of(context) to avoid
     // rebuilding the entire reader when the keyboard opens/closes.
@@ -1596,15 +1733,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // On tab restore, compute an initial scroll index so the list starts
     // near the saved position instead of flashing to the top of the book
     // before the post-frame jump correction.
-    final initialScrollIdx = () {
-      if (readerState.paragraphs.isEmpty) return 0;
-      final restoreParaId = activeTab.initialParaId ?? activeTab.currentParaId;
-      if (restoreParaId == null) return 0;
-      final idx = readerState.paragraphs.indexWhere(
-        (p) => p.paraId == restoreParaId,
-      );
-      return idx >= 0 ? idx : 0;
-    }();
+    final initialScrollIdx = _initialScrollIndexFor(activeTab, readerState);
 
     // Freeze the body height while the keyboard is open. This app is not
     // edge-to-edge, so on Android adjustResize SHRINKS the window itself:
@@ -1619,6 +1748,54 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _fixedBodyHeight = mediaNoSub.size.height;
     }
     final frozenHeight = _fixedBodyHeight ?? mediaNoSub.size.height;
+
+    final Widget content;
+    if (showColumns) {
+      content = _buildColumns(
+        context,
+        tabsState,
+        settings,
+        colors,
+        resolvedPaliColor,
+        resolvedTransColor,
+        resolvedTransColors,
+        enabledLangs,
+        langTypographies,
+      );
+    } else {
+      content = Stack(
+        children: [
+          _buildReaderContentWithSelection(
+            context,
+            readerState,
+            settings,
+            colors,
+            activeTab,
+            resolvedPaliColor,
+            resolvedTransColor,
+            resolvedTransColors,
+            enabledLangs,
+            langTypographies,
+            ttsCurrentLineId,
+            ttsCurrentParaId,
+            ttsCurrentIsPali,
+            ttsWordOnCurrentLine?.lineId,
+            ttsWordOnCurrentLine?.wordIndex,
+            ttsWordOnCurrentLine?.lineText,
+            initialScrollIdx,
+          ),
+          // ── Overlays (only for the active tab) ─────────────────
+          // Draggable scroll thumb
+          Positioned(
+            right: 2,
+            top: 0,
+            bottom: 0,
+            width: 28,
+            child: _buildDragThumb(activeTab.bookId, readerState),
+          ),
+        ],
+      );
+    }
 
     return Scaffold(
       // The on-screen keyboard (in-book search field) must NOT resize the
@@ -1703,57 +1880,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 child: Stack(
                   children: [
                     // ── Swipeable tab content with finger-following slide ──
-                    CallbackShortcuts(
-                      bindings: {
-                        for (final a in AppShortcuts.activatorsFor(
-                          'reader-copy',
-                        ))
-                          a: () => ReaderContextMenuBuilder.copyShortcut(
-                            context: context,
-                            ref: ref,
-                          ),
+                    // The layout only measures the width for the columns
+                    // gate; everything inside is built here, in build().
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        _noteReaderWidth(constraints.maxWidth);
+                        return CallbackShortcuts(
+                          bindings: {
+                            for (final a in AppShortcuts.activatorsFor(
+                              'reader-copy',
+                            ))
+                              a: () => ReaderContextMenuBuilder.copyShortcut(
+                                context: context,
+                                ref: ref,
+                              ),
+                          },
+                          child: Focus(autofocus: true, child: content),
+                        );
                       },
-                      child: Focus(
-                        autofocus: true,
-                        child: _buildReaderContentWithSelection(
-                          context,
-                          readerState,
-                          settings,
-                          colors,
-                          activeTab,
-                          resolvedPaliColor,
-                          resolvedTransColor,
-                          resolvedTransColors,
-                          enabledLangs,
-                          langTypographies,
-                          ttsCurrentLineId,
-                          ttsCurrentParaId,
-                          ttsCurrentIsPali,
-                          ttsWordOnCurrentLine?.lineId,
-                          ttsWordOnCurrentLine?.wordIndex,
-                          ttsWordOnCurrentLine?.lineText,
-                          initialScrollIdx,
-                        ),
-                      ),
-                    ),
-                    // ── Overlays (only for the active tab) ─────────────────
-                    // Draggable scroll thumb
-                    Positioned(
-                      right: 2,
-                      top: 0,
-                      bottom: 0,
-                      width: 28,
-                      child:
-                          readerState.isLoaded &&
-                              readerState.paragraphs.isNotEmpty
-                          ? ReaderDragThumb(
-                              readerState: readerState,
-                              itemScrollController: _scroll
-                                  .itemScrollControllerFor(activeTab.bookId),
-                              itemPositionsListener: _scroll
-                                  .itemPositionsListenerFor(activeTab.bookId),
-                            )
-                          : const SizedBox.shrink(),
                     ),
                     // In-book search bar overlay
                     if (ref.watch(inBookSearchProvider).showSearchBar)
@@ -1838,6 +1982,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                               onBookmarkTap: _handleToolbarBookmark,
                               onAnnotationsTap: _handleToolbarAnnotations,
                               onAiAskTap: _handleToolbarAiAsk,
+                              // Null, not hidden: an empty slot still takes
+                              // a spacer in the pill.
+                              commentaryLevels: !hasFamily
+                                  ? null
+                                  : _isPhone()
+                                  ? const CommentaryLevelsMenuButton()
+                                  : const CommentaryLevelButtons(),
                             ),
                           ),
                         ),
@@ -1876,9 +2027,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsWordLineId,
     int? ttsWordIndex,
     String? ttsWordLineText,
-    int initialScrollIndex,
-  ) {
+    int initialScrollIndex, {
+    ReaderColumnKeys? columnKeys,
+    bool focused = true,
+  }) {
     final dictSheetOpen = ref.watch(dictionarySheetOpenProvider) > 0;
+    final keys = columnKeys ?? _singleKeys;
+    // A column took its controller when it mounted (see _prepareColumn).
+    final itemScrollController = columnKeys != null
+        ? _scroll.itemScrollControllerFor(activeTab.bookId) ??
+              _scroll.freshScrollControllerFor(activeTab.bookId)
+        : _scroll.scrollControllerFor(activeTab.bookId);
 
     // Hand the scroll controller / positions listener to the keyboard
     // navigation layer (j/k reading cursor + Cmd/Ctrl+J). Registration is
@@ -1886,7 +2045,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final keyboardBridge = ref.read(readerKeyboardBridgeProvider);
     keyboardBridge.register(
       activeTab.bookId,
-      _scroll.scrollControllerFor(activeTab.bookId),
+      itemScrollController,
       _scroll.positionsListenerFor(activeTab.bookId),
     );
     // ↑/↓ with the page focused step the find-bar matches. Checking `mounted`
@@ -1938,8 +2097,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // the paragraph(s) a highlight actually touches rebuild.
     final highlightBundle = ReaderHighlightBundle(
       bookId: activeTab.bookId,
+      // Find runs on the focused column only.
       searchQuery:
-          ref.watch(inBookSearchProvider).effectiveQuery ??
+          (focused ? ref.watch(inBookSearchProvider).effectiveQuery : null) ??
           activeTab.searchQuery,
       lookupHighlight: activeLookupHighlight,
       ttsHighlightLineId: ttsHighlightLineId,
@@ -1948,8 +2108,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       ttsWordLineId: ttsWordLineId,
       ttsWordIndex: ttsWordIndex,
       ttsWordLineText: ttsWordLineText,
-      jumpHighlightLineId: _jumpHighlightLineId,
-      jumpHighlightParaId: _jumpHighlightParaId,
+      jumpHighlightLineId: _jumpHighlightBookId == activeTab.bookId
+          ? _jumpHighlightLineId
+          : null,
+      jumpHighlightParaId: _jumpHighlightBookId == activeTab.bookId
+          ? _jumpHighlightParaId
+          : null,
       ttsTargetParaId: ref
           .read(ttsSyncProvider(activeTab.bookId))
           .ttsTargetParaId,
@@ -1973,26 +2137,34 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       translationColors: translationColors,
       enabledLangs: enabledLangs,
       langTypographies: langTypographies,
-      itemScrollController: _scroll.scrollControllerFor(activeTab.bookId),
+      itemScrollController: itemScrollController,
       itemPositionsListener: _scroll.positionsListenerFor(activeTab.bookId),
       scrollOffsetListener: _scroll.scrollOffsetListenerFor(activeTab.bookId),
       onScrollDelta: (delta) =>
           _scroll.onScrollOffsetChanged(activeTab.bookId, delta),
       initialScrollIndex: initialScrollIndex,
-      contentHitTestKey: _contentHitTestKey,
-      dragDxNotifier: _dragDxNotifier,
-      selectableRegionKey: _selectableRegionKey,
-      onPointerDown: _handlePointerDown,
-      onPointerMove: _handlePointerMoveForTabSwipe,
-      onPointerUp: _handlePointerUpForTabSwipe,
+      contentHitTestKey: keys.contentHitTest,
+      dragDxNotifier: columnKeys != null ? _noDrag : _dragDxNotifier,
+      selectableRegionKey: keys.selectableRegion,
+      onPointerDown: columnKeys == null
+          ? _handlePointerDown
+          : (e) => _handlePointerDown(e, columnKeys),
+      onPointerMove: columnKeys == null
+          ? _handlePointerMoveForTabSwipe
+          : (e) => _handlePointerMoveForTabSwipe(e, columnKeys),
+      onPointerUp: columnKeys == null
+          ? _handlePointerUpForTabSwipe
+          : (e) => _handlePointerUpForTabSwipe(e, columnKeys),
       onPointerCancel: _handlePointerCancelForTabSwipe,
-      scrollOffsetController: _autoScrollOffsetController,
-      onSelectionChanged: _handleSelectionChanged,
+      scrollOffsetController: keys.autoScroll,
+      onSelectionChanged: columnKeys == null
+          ? _handleSelectionChanged
+          : (selection) => _handleSelectionChanged(selection, columnKeys),
       contextMenuBuilder: (context, state) => ReaderContextMenuBuilder.build(
         context: context,
         ref: ref,
         selectableRegionState: state,
-        contentHitTestKey: _contentHitTestKey,
+        contentHitTestKey: keys.contentHitTest,
       ),
       highlightBundle: highlightBundle,
       showBookLinks: settings.showBookLinks,
@@ -2028,6 +2200,319 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
 
     return content;
+  }
+
+  /// The list index to start [tab]'s list at, so a restore or a jump does
+  /// not flash the top of the book first.
+  int _initialScrollIndexFor(ReaderTabInfo tab, ReaderDataState readerState) {
+    if (readerState.paragraphs.isEmpty) return 0;
+    final restoreParaId = tab.initialParaId ?? tab.currentParaId;
+    if (restoreParaId == null) return 0;
+    final idx = readerState.paragraphs.indexWhere(
+      (p) => p.paraId == restoreParaId,
+    );
+    return idx >= 0 ? idx : 0;
+  }
+
+  Widget _buildDragThumb(String bookId, ReaderDataState readerState) {
+    return readerState.isLoaded && readerState.paragraphs.isNotEmpty
+        ? ReaderDragThumb(
+            readerState: readerState,
+            itemScrollController: _scroll.itemScrollControllerFor(bookId),
+            itemPositionsListener: _scroll.itemPositionsListenerFor(bookId),
+          )
+        : const SizedBox.shrink();
+  }
+
+  /// Records whether the reader is wide enough for columns, and rebuilds
+  /// when that changes while there are columns to show.
+  void _noteReaderWidth(double width) {
+    final wide = width >= kReaderColumnsMinWidth;
+    if (wide == _readerWide) return;
+    _readerWide = wide;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(readerColumnsAvailableProvider.notifier).state =
+          wide && !_isPhone();
+      if (ref.read(readerTabsProvider).columns.isNotEmpty) setState(() {});
+    });
+  }
+
+  /// Side-by-side does not fit a column, so it gives way to line-by-line
+  /// while columns show. After the frame: the switch changes settings.
+  void _switchColumnsDisplayMode(bool showing) {
+    final override = _displayModeOverride;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (showing) {
+        // A screen gone in the same frame already removed the reason.
+        if (mounted) override.add(DisplayModeReason.columns);
+      } else {
+        override.remove(DisplayModeReason.columns);
+      }
+    });
+  }
+
+  /// Same rule as the scroll controller's phone check, without subscribing.
+  bool _isPhone() =>
+      !PlatformInfo.isDesktop &&
+      _mediaNoSubscribe(context).size.shortestSide < 700;
+
+  /// Gets a column ready for this frame: a column whose list mounts now
+  /// takes its own scroll controller and keys, then jumps to its saved
+  /// place; any column jumps to a newly requested paragraph.
+  void _prepareColumn(ReaderTabInfo tab, {required bool mounting}) {
+    final bookId = tab.bookId;
+    if (mounting) {
+      _scroll.freshScrollControllerFor(bookId);
+      _columnKeys[bookId] = ReaderColumnKeys(bookId: bookId);
+      _sync.forget(bookId);
+    }
+    final isNewJump =
+        tab.initialParaId != null &&
+        _scroll.lastInitialJumpId(bookId) != tab.initialJumpId;
+    if (isNewJump) {
+      final paraId = tab.initialParaId!;
+      final lineId = tab.initialLineId;
+      _scroll.setLastInitialJumpId(bookId, tab.initialJumpId);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (lineId != null) _startJumpHighlight(paraId, lineId, bookId);
+        _scroll.jumpToParagraph(
+          bookId,
+          paraId,
+          alignment: lineId != null ? 0.0 : 0.05,
+          lineId: lineId,
+        );
+      });
+    } else if (mounting && tab.initialParaId == null) {
+      _restoreMountedList(tab);
+    }
+  }
+
+  /// Jumps [tab]'s newly mounted list back to where the book was shown.
+  ///
+  /// The fractional offset is recorded on every position change, while the
+  /// tab's paragraph id goes through a throttle and can still name the
+  /// place before the last jump. The alignment rule is the tab restore's in
+  /// build().
+  void _restoreMountedList(ReaderTabInfo tab) {
+    final bookId = tab.bookId;
+    final paragraphs = ref.read(readerDataProvider(bookId)).paragraphs;
+    final offset = _scroll.preciseScrollOffsetFor(bookId) ?? tab.scrollOffset;
+    int? paraId = tab.currentParaId;
+    var alignment = 0.0;
+    if (offset != null && paragraphs.isNotEmpty) {
+      paraId = paragraphs[offset.ceil().clamp(0, paragraphs.length - 1)].paraId;
+      alignment = offset - offset.ceil();
+    }
+    if (paraId == null) return;
+    final target = paraId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scroll.jumpToParagraph(
+        bookId,
+        target,
+        animate: false,
+        alignment: alignment,
+      );
+    });
+  }
+
+  /// Scrolls [bookId]'s column until [paraId] is at the top, for the sync.
+  /// Animated, so a following column is seen travelling to its place
+  /// (live test: a jump felt abrupt); a plain list scroll, without the
+  /// app-bar and fine-scroll work of [ReaderScrollController.jumpToParagraph].
+  ///
+  /// A column that is still mounting or loading its book gets up to 30
+  /// frames to be ready, as [ReaderScrollController.jumpToParagraph] does.
+  Future<void> _scrollColumnTo(String bookId, int paraId) async {
+    for (var frame = 0; frame < 30 && mounted; frame++) {
+      final controller = _scroll.itemScrollControllerFor(bookId);
+      final index = ref
+          .read(readerDataProvider(bookId))
+          .paragraphs
+          .indexWhere((p) => p.paraId == paraId);
+      if (controller != null && controller.isAttached && index >= 0) {
+        // The package's scroll future can stay open for good (a scroll
+        // cancelled before its first frame), which would keep the column
+        // out of the sync; same limit as jumpToParagraph.
+        return controller
+            .scrollTo(
+              index: index,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeInOut,
+            )
+            .timeout(const Duration(seconds: 5));
+      }
+      await WidgetsBinding.instance.endOfFrame;
+    }
+  }
+
+  /// The split line between two columns, with the button that locks or
+  /// unlocks their scrolling together.
+  Widget _buildSplit(int split, bool locked, ColorScheme colors) {
+    return SizedBox(
+      key: ValueKey('reader-column-split-$split'),
+      width: 16,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          VerticalDivider(width: 1, thickness: 1, color: colors.outlineVariant),
+          Material(
+            color: colors.surface,
+            shape: const CircleBorder(),
+            child: IconButton(
+              key: ValueKey('column-lock-$split'),
+              icon: ColumnLockGlyph(
+                locked: locked,
+                color: locked ? colors.primary : colors.onSurfaceVariant,
+              ),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 16, height: 24),
+              tooltip: locked
+                  ? AppLocalizations.of(context).unlockColumns
+                  : AppLocalizations.of(context).lockColumns,
+              onPressed: () =>
+                  ref.read(readerTabsProvider.notifier).toggleColumnLock(split),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The read-aloud highlight inputs for [bookId], worked out as build()
+  /// does for the active tab.
+  ({
+    int? lineId,
+    int? paraId,
+    bool? isPali,
+    int? wordLineId,
+    int? wordIndex,
+    String? wordLineText,
+  })
+  _ttsHighlightFor(String bookId) {
+    final reading = ref.watch(ttsReadingProvider);
+    if (reading.bookId != bookId ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return (
+        lineId: null,
+        paraId: null,
+        isPali: null,
+        wordLineId: null,
+        wordIndex: null,
+        wordLineText: null,
+      );
+    }
+    final word = kTtsWordHighlightEnabled
+        ? ref.watch(ttsWordHighlightProvider)
+        : null;
+    final onLine =
+        word != null &&
+        word.paraId == reading.currentParaId &&
+        word.lineId == reading.currentLineId;
+    return (
+      lineId: reading.currentLineId,
+      paraId: reading.currentParaId,
+      isPali: reading.currentIsPali,
+      wordLineId: onLine ? word.lineId : null,
+      wordIndex: onLine ? word.wordIndex : null,
+      wordLineText: onLine ? word.lineText : null,
+    );
+  }
+
+  void _focusColumn(String bookId) {
+    final tabs = ref.read(readerTabsProvider);
+    final index = tabs.tabs.indexWhere((t) => t.bookId == bookId);
+    if (index >= 0 && index != tabs.activeIndex) {
+      ref.read(readerTabsProvider.notifier).switchTo(index);
+      // The visible range belongs to the active tab; refresh it now so a
+      // selection made right after the focus change matches this column.
+      _scroll.onPositionsChanged(bookId);
+    }
+  }
+
+  /// The family books side by side, each a full reader under its header.
+  Widget _buildColumns(
+    BuildContext context,
+    ReaderTabsState tabsState,
+    AppSettings settings,
+    ColorScheme colors,
+    Color paliColor,
+    Color translationColor,
+    Map<String, Color> translationColors,
+    List<String> enabledLangs,
+    Map<String, LanguageTypography> langTypographies,
+  ) {
+    final activeBookId = tabsState.activeTab?.bookId;
+    final children = <Widget>[];
+    for (final bookId in tabsState.columns) {
+      final tab = tabsState.tabs.firstWhere((t) => t.bookId == bookId);
+      final readerState = ref.watch(readerDataProvider(bookId));
+      final tts = _ttsHighlightFor(bookId);
+      final focused = bookId == activeBookId;
+      if (children.isNotEmpty) {
+        final split = tabsState.columns.indexOf(bookId) - 1;
+        children.add(
+          _buildSplit(split, tabsState.isSplitLocked(split), colors),
+        );
+      }
+      // Keyed on the Expanded: a column opening to the left of others must
+      // move their lists, not rebuild them.
+      children.add(
+        Expanded(
+          key: ValueKey('reader-column-$bookId'),
+          child: ReaderColumn(
+            title: readerState.bookName ?? tab.bookName,
+            focused: focused,
+            onFocus: () => _focusColumn(bookId),
+            onClose: () => ref
+                .read(readerTabsProvider.notifier)
+                .closeTab(tabsState.tabs.indexWhere((t) => t.bookId == bookId)),
+            child: Stack(
+              children: [
+                _buildReaderContentWithSelection(
+                  context,
+                  readerState,
+                  settings,
+                  colors,
+                  tab,
+                  paliColor,
+                  translationColor,
+                  translationColors,
+                  enabledLangs,
+                  langTypographies,
+                  tts.lineId,
+                  tts.paraId,
+                  tts.isPali,
+                  tts.wordLineId,
+                  tts.wordIndex,
+                  tts.wordLineText,
+                  _initialScrollIndexFor(tab, readerState),
+                  columnKeys: _columnKeys.putIfAbsent(
+                    bookId,
+                    () => ReaderColumnKeys(bookId: bookId),
+                  ),
+                  focused: focused,
+                ),
+                Positioned(
+                  right: 2,
+                  top: 0,
+                  bottom: 0,
+                  width: 28,
+                  child: _buildDragThumb(bookId, readerState),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 
   /// Build the in-book search bar shown as an overlay at the top of the reader.

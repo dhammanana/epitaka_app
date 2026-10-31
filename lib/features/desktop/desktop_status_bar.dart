@@ -7,6 +7,8 @@ import '../../core/utils/platform_info.dart';
 import '../../features/ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../features/reader/providers/reader_tabs_provider.dart';
 import '../../features/reader/providers/tts_reading_provider.dart';
+import '../../features/reader/providers/reader_columns_controller.dart';
+import '../../features/reader/widgets/commentary_level_buttons.dart';
 import '../../features/reader/widgets/display_layout_popup.dart';
 import '../../features/reader/widgets/reader_bottom_toolbar.dart';
 import '../../features/settings/providers/tts_provider.dart';
@@ -144,6 +146,10 @@ class DesktopStatusBar extends ConsumerWidget {
                           onStopTap: controller.onStop,
                           onBookmarkTap: controller.onBookmark,
                           onAiAskTap: controller.onAiAsk,
+                          commentaryLevels:
+                              ref.watch(activeBookFamilyProvider) != null
+                              ? CommentaryLevelButtons(enabled: controller.enabled)
+                              : null,
                         ),
                       ],
                     ),

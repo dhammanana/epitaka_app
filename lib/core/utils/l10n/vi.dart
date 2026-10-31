@@ -908,4 +908,15 @@ const Map<String, String> vi = {
   'Search Google': 'Tìm trên Google',
   'Show full error': 'Hiện lỗi đầy đủ',
   'Hide full error': 'Ẩn lỗi đầy đủ',
+  // ── mūla / aṭṭhakathā / ṭīkā columns ─────────────────────────────
+  'Show beside': 'Hiện bên cạnh',
+  'Scroll these columns together': 'Cuộn các cột này cùng nhau',
+  'Scroll these columns separately': 'Cuộn các cột này riêng',
+  'This book': 'Sách này',
+  'No book at this level': 'Không có sách ở cấp này',
+  'mūla, aṭṭhakathā, ṭīkā': 'mūla, aṭṭhakathā, ṭīkā',
+  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column, or in a new tab where columns do not fit':
+      'Hiện mūla, aṭṭhakathā hoặc ṭīkā tương ứng thành một cột, hoặc trong thẻ mới khi màn hình hẹp',
+  'Open mūla / aṭṭhakathā / ṭīkā': 'Mở mūla / aṭṭhakathā / ṭīkā',
+  'Open in a tab': 'Mở trong thẻ mới',
 };
