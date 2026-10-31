@@ -50,12 +50,13 @@ List<String> _splitRefs(String? refs) =>
 /// Builds the family of every book that links to another, from all `books`
 /// rows in table order.
 ///
-/// The category alone does not give the level: seven manuals filed as ṭīkā
-/// have a ṭīkā of their own that names them as its aṭṭhakathā, and the
-/// Visuddhimagga ṭīkā names the Visuddhimagga as its mūla. So a book's level
-/// is the slot other books name it in, and the category only for books no
-/// one names. Some links are written on one side only, so the family is
-/// every book linked in either direction.
+/// The category gives the level, except where it would put a book on one
+/// level with a book it links to: seven manuals filed as ṭīkā have a ṭīkā of
+/// their own, also filed as ṭīkā, that names them as its aṭṭhakathā. Those
+/// take the slot other books name them in. The slot does not win otherwise:
+/// the Visuddhimagga ṭīkā names the Visuddhimagga as its mūla, but it is
+/// filed, and read, as aṭṭhakathā. Some links are written on one side only,
+/// so the family is every book linked in either direction.
 Map<String, BookFamily> buildBookFamilies(Iterable<BookRefsRow> rows) {
   final order = <String, int>{};
   final namedLevel = <String, BookLevel>{};
@@ -79,8 +80,14 @@ Map<String, BookFamily> buildBookFamilies(Iterable<BookRefsRow> rows) {
     }
   }
 
-  BookLevel? levelOf(String bookId) =>
-      namedLevel[bookId] ?? categoryLevel[bookId];
+  BookLevel? levelOf(String bookId) {
+    final own = categoryLevel[bookId];
+    if (own == null) return namedLevel[bookId];
+    final sharesLevel = (linked[bookId] ?? const <String>{}).any(
+      (other) => order.containsKey(other) && categoryLevel[other] == own,
+    );
+    return sharesLevel ? (namedLevel[bookId] ?? own) : own;
+  }
 
   final families = <String, BookFamily>{};
   for (final MapEntry(key: bookId, value: others) in linked.entries) {

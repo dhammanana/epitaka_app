@@ -121,8 +121,9 @@ void main() {
 
   testWidgets('a level with no book is greyed out', (tester) async {
     await _pump(tester, ReaderTabsState(tabs: [_tab('Vism-i')]));
-    // Vism-i sits at the mūla level and has a ṭīkā but no aṭṭhakathā.
-    expect(_letterColor(tester, 'attha').a, lessThan(0.5));
+    // Vism-i is an aṭṭhakathā with a ṭīkā and no mūla.
+    expect(_letterColor(tester, 'mula').a, lessThan(0.5));
+    expect(_box(tester, 'attha').border, isNotNull, reason: 'its own level');
     expect(_letterColor(tester, 'tika').a, 1);
   });
 

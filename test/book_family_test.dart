@@ -265,13 +265,15 @@ void main() {
     },
   );
 
-  test('the Visuddhimagga sits at the mūla level, as its ṭīkā names it', () {
+  test('the Visuddhimagga stays at the aṭṭhakathā level it is filed at', () {
+    // Its ṭīkā names it in the mūla slot; the category wins, as no linked
+    // book shares its level.
     const expected = {
-      BookLevel.mula: ['Vism-i'],
-      BookLevel.attha: <String>[],
+      BookLevel.mula: <String>[],
+      BookLevel.attha: ['Vism-i'],
       BookLevel.tika: ['Vism-mht-i'],
     };
-    expect(families['Vism-i']!.level, BookLevel.mula);
+    expect(families['Vism-i']!.level, BookLevel.attha);
     expect(booksOf('Vism-i'), expected);
     expect(booksOf('Vism-mht-i'), expected);
   });
