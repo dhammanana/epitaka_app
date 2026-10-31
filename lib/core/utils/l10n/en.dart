@@ -1108,7 +1108,9 @@ const Map<String, String> en = {
   'Scroll these columns separately': 'Scroll these columns separately',
   'This book': 'This book',
   'No book at this level': 'No book at this level',
-  'mūla, aṭṭhakathā, ṭīkā beside': 'mūla, aṭṭhakathā, ṭīkā beside',
-  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)':
-      'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)',
+  'mūla, aṭṭhakathā, ṭīkā': 'mūla, aṭṭhakathā, ṭīkā',
+  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column, or in a new tab where columns do not fit':
+      'Show the matching mūla, aṭṭhakathā or ṭīkā as a column, or in a new tab where columns do not fit',
+  'Open mūla / aṭṭhakathā / ṭīkā': 'Open mūla / aṭṭhakathā / ṭīkā',
+  'Open in a tab': 'Open in a tab',
 };

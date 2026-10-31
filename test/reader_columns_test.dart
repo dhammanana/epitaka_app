@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/features/reader/providers/reader_columns_controller.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
+import 'package:epitaka/features/reader/services/book_family_service.dart';
 import 'package:epitaka/features/reader/widgets/reader_column.dart';
 
 import 'helpers/reader_columns_harness.dart';
@@ -148,12 +149,49 @@ void main() {
       await pumpFrames(tester, 40);
     });
 
-    testWidgets('the buttons hide below the width gate', (tester) async {
-      await pumpColumns(tester, size: const Size(830, 900), withColumns: false);
+    testWidgets('below the width gate, A opens the aṭṭhakathā as a tab at '
+        'sutta 36', (tester) async {
+      final container = await pumpColumns(
+        tester,
+        size: const Size(830, 900),
+        withColumns: false,
+      );
+      final controller = container.read(readerColumnsControllerProvider);
+
+      await tester.tap(levelButton('attha'));
+      await pumpFrames(tester, 20);
+      var state = container.read(readerTabsProvider);
+      expect(state.activeTab!.bookId, 'Mp-v');
+      expect(state.columns, isEmpty);
+      expect(find.byType(ReaderColumn), findsNothing);
+      expect(controller.readingParaId('Mp-v'), 99);
+
+      await tester.tap(levelButton('mula'));
+      await pumpFrames(tester, 20);
+      state = container.read(readerTabsProvider);
+      expect(state.activeTab!.bookId, 'A-v');
+      expect(controller.readingParaId('A-v'), 222);
+      // Let the 3 s reading-history save the moves started run out.
+      await pumpFrames(tester, 40);
+    });
+
+    testWidgets('a book with no family shows no m a ṭ', (tester) async {
+      await pumpColumns(
+        tester,
+        withColumns: false,
+        overrides: [bookFamiliesProvider.overrideWith((ref) async => const {})],
+      );
       expect(
         find.byKey(const ValueKey('commentary-level-attha')),
         findsNothing,
       );
+
+      // The selection entry hides too, under either of its labels.
+      await tester.longPressAt(wordCenter(tester, 'kāladānāni'));
+      await pumpFrames(tester, 3);
+      expect(find.text('Show beside'), findsNothing);
+      expect(find.text('Open mūla / aṭṭhakathā / ṭīkā'), findsNothing);
+      await pumpFrames(tester, 40);
     });
   });
 
@@ -213,6 +251,63 @@ void main() {
     expect(current().columns, viaMenu.columns);
     expect(current().para, viaMenu.para);
     // Let the 3 s reading-history save the moves started run out.
+    await pumpFrames(tester, 40);
+  });
+
+  testWidgets('below the gate the selection entry opens the book as a tab', (
+    tester,
+  ) async {
+    final container = await pumpColumns(
+      tester,
+      size: const Size(830, 900),
+      withColumns: false,
+    );
+    final controller = container.read(readerColumnsControllerProvider);
+
+    await tester.longPressAt(wordCenter(tester, 'kāladānāni'));
+    await pumpFrames(tester, 3);
+    expect(find.text('Show beside'), findsNothing);
+    await tester.tap(find.text('Open mūla / aṭṭhakathā / ṭīkā'));
+    await pumpFrames(tester, 3);
+    await tester.tap(find.textContaining('aṭṭhakathā — '));
+    await pumpFrames(tester, 20);
+
+    final state = container.read(readerTabsProvider);
+    expect(state.activeTab!.bookId, 'Mp-v');
+    expect(state.columns, isEmpty);
+    expect(controller.readingParaId('Mp-v'), 99);
+    // Let the 3 s reading-history save the moves started run out.
+    await pumpFrames(tester, 40);
+  });
+
+  testWidgets('a word that sutta 35 also has still opens sutta 36', (
+    tester,
+  ) async {
+    final container = await pumpColumns(tester, withColumns: false);
+    final asked = <int>[];
+    container.listen(readerTabsProvider, (_, next) {
+      final para = next.tabs
+          .where((t) => t.bookId == 'Mp-v')
+          .firstOrNull
+          ?.initialParaId;
+      if (para != null) asked.add(para);
+    });
+
+    // "bhikkhave" is in the last line of sutta 36 and in sutta 35's lines,
+    // which sit inside the window the selection is matched in.
+    await tester.longPressAt(
+      wordCenter(tester, 'bhikkhave', within: 'imāni kho'),
+    );
+    await pumpFrames(tester, 3);
+    await tester.tap(find.text('Show beside'));
+    await pumpFrames(tester, 3);
+    await tester.tap(find.textContaining('aṭṭhakathā — '));
+    await pumpFrames(tester, 20);
+
+    // The paragraph the column was asked for. The tab drops it once the
+    // column has jumped, and the drawn reading paragraph cannot tell 97
+    // from 99 (Mp-v 97 and 98 are one short line each).
+    expect(asked.first, 99, reason: 'sutta 36, not 35 (Mp-v 97)');
     await pumpFrames(tester, 40);
   });
 

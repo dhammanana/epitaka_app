@@ -147,7 +147,7 @@ class DesktopStatusBar extends ConsumerWidget {
                           onBookmarkTap: controller.onBookmark,
                           onAiAskTap: controller.onAiAsk,
                           commentaryLevels:
-                              ref.watch(readerColumnsAvailableProvider)
+                              ref.watch(activeBookFamilyProvider) != null
                               ? CommentaryLevelButtons(enabled: controller.enabled)
                               : null,
                         ),

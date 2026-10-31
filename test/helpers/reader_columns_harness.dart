@@ -123,6 +123,7 @@ Future<ProviderContainer> pumpColumns(
   Size size = const Size(1500, 900),
   bool withColumns = true,
   TranslationDisplayMode mode = TranslationDisplayMode.lineByLine,
+  List<Override> overrides = const [],
 }) async {
   final db = await tester.runAsync(seedAn5);
   final container = ProviderContainer(
@@ -145,6 +146,7 @@ Future<ProviderContainer> pumpColumns(
         );
         return notifier;
       }),
+      ...overrides,
     ],
   );
   addTearDown(container.dispose);
@@ -223,12 +225,17 @@ String drawnText(WidgetTester tester, Finder of) {
 
 Finder columnAt(int index) => find.byType(ReaderColumn).at(index);
 
-/// The middle of the first drawn [needle], in global coordinates.
-Offset wordCenter(WidgetTester tester, String needle) {
+/// The middle of the first drawn [needle], in global coordinates. With
+/// [within], the first [needle] inside the paragraph that draws [within]
+/// (for a word that other paragraphs draw too).
+Offset wordCenter(WidgetTester tester, String needle, {String? within}) {
   for (final e in find.byType(RichText).evaluate()) {
     final rp = e.renderObject;
     if (rp is! RenderParagraph || !rp.attached || !rp.hasSize) continue;
-    final i = rp.text.toPlainText().indexOf(needle);
+    final text = rp.text.toPlainText();
+    final from = within == null ? 0 : text.indexOf(within);
+    if (from < 0) continue;
+    final i = text.indexOf(needle, from);
     if (i < 0) continue;
     final box = rp
         .getBoxesForSelection(

@@ -849,10 +849,12 @@ class AppLocalizations {
   String get unlockColumns => _t('Scroll these columns separately');
   String get thisBook => _t('This book');
   String get noBookAtLevel => _t('No book at this level');
-  String get commentaryColumnsLabel => _t('mūla, aṭṭhakathā, ṭīkā beside');
+  String get commentaryColumnsLabel => _t('mūla, aṭṭhakathā, ṭīkā');
   String get showBesideDesc => _t(
-    'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)',
+    'Show the matching mūla, aṭṭhakathā or ṭīkā as a column, or in a new tab where columns do not fit',
   );
+  String get openFamilyBook => _t('Open mūla / aṭṭhakathā / ṭīkā');
+  String get openInTab => _t('Open in a tab');
 
   // ═══════════════════════════════════════════════════════════════════════
   //  CONTENTS SCREEN

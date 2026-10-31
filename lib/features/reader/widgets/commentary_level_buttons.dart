@@ -21,7 +21,8 @@ const _levelNames = {
 };
 
 /// The m a ṭ buttons: show the active book's mūla, aṭṭhakathā or ṭīkā as a
-/// column beside it, from the paragraph being read in the active tab.
+/// column beside it, or as a tab where columns do not fit, from the
+/// paragraph being read in the active tab.
 ///
 /// The active book's own level is outlined, a level with no book is
 /// greyed out, and a level already shown as a column is filled; pressing it
@@ -33,15 +34,13 @@ class CommentaryLevelButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(readerColumnsAvailableProvider)) {
-      return const SizedBox.shrink();
-    }
+    final columnsFit = ref.watch(readerColumnsAvailableProvider);
     final tabs = ref.watch(readerTabsProvider);
     final active = tabs.activeTab;
     if (active == null) return const SizedBox.shrink();
-    final family = ref.watch(bookFamilyProvider(active.bookId)).valueOrNull;
+    final family = ref.watch(activeBookFamilyProvider);
     final names = ref.watch(canonBookNamesProvider).valueOrNull ?? const {};
-    final shown = tabs.columns.contains(active.bookId)
+    final shown = columnsFit && tabs.columns.contains(active.bookId)
         ? tabs.columns
         : const <String>[];
 
@@ -64,6 +63,7 @@ class CommentaryLevelButtons extends ConsumerWidget {
                 .firstOrNull,
             names: names,
             enabled: enabled,
+            columnsFit: columnsFit,
             onOpen: open,
           ),
       ],
@@ -79,6 +79,7 @@ class _LevelButton extends StatelessWidget {
     required this.shownBookId,
     required this.names,
     required this.enabled,
+    required this.columnsFit,
     required this.onOpen,
   });
 
@@ -88,6 +89,7 @@ class _LevelButton extends StatelessWidget {
   final String? shownBookId;
   final Map<String, String> names;
   final bool enabled;
+  final bool columnsFit;
   final void Function(String bookId) onOpen;
 
   @override
@@ -103,7 +105,9 @@ class _LevelButton extends StatelessWidget {
         ? loc.noBookAtLevel
         : shown && books.length == 1
         ? loc.close
-        : loc.showBeside;
+        : columnsFit
+        ? loc.showBeside
+        : loc.openInTab;
     final tooltip = '${_levelNames[level]} — $action';
 
     // Every state draws the same 30 px box, and a forced strut gives all
@@ -172,6 +176,60 @@ class _LevelButton extends StatelessWidget {
   }
 }
 
+/// The phone's m a ṭ: one toolbar slot that opens the family menu, because
+/// the phone toolbar has no room for three letters (2026-10-31).
+class CommentaryLevelsMenuButton extends ConsumerWidget {
+  const CommentaryLevelsMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookId = ref.watch(
+      readerTabsProvider.select((s) => s.activeTab?.bookId),
+    );
+    if (bookId == null) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: AppLocalizations.of(context).commentaryColumnsLabel,
+      child: InkWell(
+        key: const ValueKey('commentary-levels-menu'),
+        borderRadius: BorderRadius.circular(9999),
+        onTap: () {
+          final box = context.findRenderObject()! as RenderBox;
+          showFamilyBesideMenu(
+            context: context,
+            ref: ref,
+            anchor: box.localToGlobal(Offset.zero),
+            bookId: bookId,
+          );
+        },
+        // Same 38 px footprint as the icon buttons beside it.
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            height: 22,
+            child: Center(
+              child: Text(
+                'maṭ',
+                strutStyle: const StrutStyle(
+                  fontSize: 15,
+                  height: 1.2,
+                  forceStrutHeight: true,
+                ),
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Lists the family books of [bookId] in a menu at the global [anchor] and
 /// shows the chosen one beside it, matched to [sourceParaId].
 ///
@@ -194,7 +252,11 @@ Future<void> showFamilyBesideMenu({
   final names = await ref.read(canonBookNamesProvider.future);
   if (!navigator.mounted) return;
   final tabs = ref.read(readerTabsProvider);
-  final shown = tabs.columns.contains(bookId) ? tabs.columns : const [];
+  final shown =
+      ref.read(readerColumnsAvailableProvider) &&
+          tabs.columns.contains(bookId)
+      ? tabs.columns
+      : const <String>[];
 
   final chosen = await showMenu<String>(
     context: navigator.context,

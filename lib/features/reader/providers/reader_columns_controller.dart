@@ -51,7 +51,8 @@ class ReaderColumnsController {
 
   /// Shows [targetBookId] beside [sourceBookId] at the paragraph matching
   /// [sourceParaId] (default: [readingParaId]), or takes it out when it
-  /// already shows there.
+  /// already shows there. Where columns do not fit, opens [targetBookId] as
+  /// the active tab at that paragraph instead.
   Future<void> openFamilyColumn(
     String targetBookId, {
     required String sourceBookId,
@@ -72,11 +73,20 @@ class ReaderColumnsController {
     int? sourceParaId,
   ) async {
     final family = await _ref.read(bookFamilyProvider(sourceBookId).future);
-    if (family == null) return;
+    if (family == null || targetBookId == sourceBookId) return;
+    final inFamily = BookLevel.values.any(
+      (level) => family.booksAt(level).contains(targetBookId),
+    );
+    if (!inFamily) return;
+    // No room for columns (phones, narrow windows): the book opens as a
+    // tab, and a press never closes one.
+    final asColumn = _ref.read(readerColumnsAvailableProvider);
 
     final columns = _ref.read(readerTabsProvider).columns;
     final closing =
-        columns.contains(sourceBookId) && columns.contains(targetBookId);
+        asColumn &&
+        columns.contains(sourceBookId) &&
+        columns.contains(targetBookId);
     sourceParaId ??= readingParaId(sourceBookId);
     int? targetParaId;
     if (!closing && sourceParaId != null) {
@@ -96,23 +106,39 @@ class ReaderColumnsController {
     }
     final names = await _ref.read(canonBookNamesProvider.future);
 
-    _ref
-        .read(readerTabsProvider.notifier)
-        .toggleFamilyColumn(
-          ReaderTabInfo(
-            bookId: targetBookId,
-            bookName: names[targetBookId] ?? targetBookId,
-            initialParaId: targetParaId,
-          ),
-          sourceBookId: sourceBookId,
-          family: family,
-        );
+    final target = ReaderTabInfo(
+      bookId: targetBookId,
+      bookName: names[targetBookId] ?? targetBookId,
+      initialParaId: targetParaId,
+    );
+    final tabs = _ref.read(readerTabsProvider.notifier);
+    if (asColumn) {
+      tabs.toggleFamilyColumn(
+        target,
+        sourceBookId: sourceBookId,
+        family: family,
+      );
+    } else {
+      tabs.openTab(target);
+    }
   }
 }
 
 /// Whether the reader is wide enough to show columns (set by the reader
-/// after each layout). The m a ṭ buttons hide while it is false.
+/// after each layout). While it is false, the m a ṭ buttons and the
+/// selection entry open the chosen book as a tab instead.
 final readerColumnsAvailableProvider = StateProvider<bool>((ref) => false);
+
+/// The family of the active tab's book: null when no book is open, while
+/// the families load, or when the book links to no other book. The m a ṭ
+/// buttons and the selection entry hide on those books (user, 2026-10-31).
+final activeBookFamilyProvider = Provider<BookFamily?>((ref) {
+  final bookId = ref.watch(
+    readerTabsProvider.select((s) => s.activeTab?.bookId),
+  );
+  if (bookId == null) return null;
+  return ref.watch(bookFamiliesProvider).valueOrNull?[bookId];
+});
 
 final readerColumnsControllerProvider = Provider<ReaderColumnsController>(
   (ref) => ReaderColumnsController(ref),

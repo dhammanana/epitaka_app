@@ -51,11 +51,13 @@ ReaderTabInfo _tab(String bookId) =>
 
 Future<ProviderContainer> _pump(
   WidgetTester tester,
-  ReaderTabsState tabs,
-) async {
+  ReaderTabsState tabs, {
+  bool columnsFit = true,
+  Widget child = const CommentaryLevelButtons(),
+}) async {
   final container = ProviderContainer(
     overrides: [
-      readerColumnsAvailableProvider.overrideWith((ref) => true),
+      readerColumnsAvailableProvider.overrideWith((ref) => columnsFit),
       bookFamiliesProvider.overrideWith((ref) async => _families),
       canonBookNamesProvider.overrideWith((ref) async => _names),
       readerTabsProvider.overrideWith((ref) => ReaderTabsNotifier(tabs)),
@@ -70,13 +72,13 @@ Future<ProviderContainer> _pump(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(
-        localizationsDelegates: [
+      child: MaterialApp(
+        localizationsDelegates: const [
           AppLocalizationsDelegate(),
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
         ],
-        home: Scaffold(body: Center(child: CommentaryLevelButtons())),
+        home: Scaffold(body: Center(child: child)),
       ),
     ),
   );
@@ -144,5 +146,52 @@ void main() {
     await tester.tap(find.text('Vajirabuddhi-Pārājikavaṇṇanā'));
     await tester.pumpAndSettle();
     expect(container.read(readerTabsProvider).columns, ['Vin-i', 'Vjb-prj']);
+  });
+
+  testWidgets('below the gate a shown column is not marked', (tester) async {
+    await _pump(
+      tester,
+      ReaderTabsState(
+        tabs: [_tab('Vin-i'), _tab('Sp-i')],
+        columns: const ['Vin-i', 'Sp-i'],
+      ),
+      columnsFit: false,
+    );
+    expect(_box(tester, 'attha').color, isNull);
+  });
+
+  testWidgets('below the gate a tap opens the book as the active tab', (
+    tester,
+  ) async {
+    final container = await _pump(
+      tester,
+      ReaderTabsState(tabs: [_tab('Vin-i')]),
+      columnsFit: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('commentary-level-attha')));
+    await tester.pumpAndSettle();
+    final state = container.read(readerTabsProvider);
+    expect(state.activeTab!.bookId, 'Sp-i');
+    expect(state.columns, isEmpty);
+  });
+
+  testWidgets('the phone button lists the family and opens the chosen book '
+      'as a tab', (tester) async {
+    final container = await _pump(
+      tester,
+      ReaderTabsState(tabs: [_tab('Vin-i')]),
+      columnsFit: false,
+      child: const CommentaryLevelsMenuButton(),
+    );
+    await tester.tap(find.byKey(const ValueKey('commentary-levels-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('mūla — This book'), findsOneWidget);
+    expect(find.byType(CheckedPopupMenuItem<String>), findsNWidgets(5));
+
+    await tester.tap(find.text('ṭīkā — Vajirabuddhi-Pārājikavaṇṇanā'));
+    await tester.pumpAndSettle();
+    final state = container.read(readerTabsProvider);
+    expect(state.activeTab!.bookId, 'Vjb-prj');
+    expect(state.columns, isEmpty);
   });
 }

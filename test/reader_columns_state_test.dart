@@ -266,12 +266,16 @@ void main() {
             )
             as Map<String, dynamic>;
 
-    ProviderContainer container() {
+    ProviderContainer container({bool columnsFit = true}) {
       final c = ProviderContainer(
         overrides: [
+          readerColumnsAvailableProvider.overrideWith((ref) => columnsFit),
           bookFamiliesProvider.overrideWith((ref) async => _families),
           canonBookNamesProvider.overrideWith(
-            (ref) async => {'Mp-v': 'Pañcakanipāta-aṭṭhakathā'},
+            (ref) async => {
+              'A-v': 'Aṅguttaranikāya 5',
+              'Mp-v': 'Pañcakanipāta-aṭṭhakathā',
+            },
           ),
           paragraphNumberIndexProvider.overrideWith((ref, bookId) async {
             final book = an5Numbers[bookId] as Map<String, dynamic>;
@@ -333,5 +337,79 @@ void main() {
       );
       expect(c.read(readerTabsProvider).columns, isEmpty);
     });
+
+    test('where columns do not fit, the book opens as the active tab at '
+        'the match', () async {
+      final c = container(columnsFit: false);
+      await c
+          .read(readerColumnsControllerProvider)
+          .openFamilyColumn('Mp-v', sourceBookId: 'A-v', sourceParaId: 222);
+      final state = c.read(readerTabsProvider);
+      expect(state.tabs.map((t) => t.bookId), ['A-v', 'Mp-v']);
+      expect(state.activeTab!.bookId, 'Mp-v');
+      expect(state.activeTab!.initialParaId, 99);
+      expect(state.columns, isEmpty);
+    });
+
+    test('...and from the aṭṭhakathā back to the mūla tab', () async {
+      final c = container(columnsFit: false);
+      final controller = c.read(readerColumnsControllerProvider);
+      await controller.openFamilyColumn(
+        'Mp-v',
+        sourceBookId: 'A-v',
+        sourceParaId: 222,
+      );
+      await controller.openFamilyColumn(
+        'A-v',
+        sourceBookId: 'Mp-v',
+        sourceParaId: 99,
+      );
+      final state = c.read(readerTabsProvider);
+      expect(state.tabs, hasLength(2));
+      expect(state.activeTab!.bookId, 'A-v');
+      expect(state.activeTab!.initialParaId, 222);
+      expect(state.columns, isEmpty);
+    });
+
+    test('a shown column is not closed on a narrow screen', () async {
+      final c = container(columnsFit: false);
+      c
+          .read(readerTabsProvider.notifier)
+          .toggleFamilyColumn(
+            _tab('Mp-v', paraId: 99),
+            sourceBookId: 'A-v',
+            family: an5,
+          );
+      expect(c.read(readerTabsProvider).columns, ['A-v', 'Mp-v']);
+      await c
+          .read(readerColumnsControllerProvider)
+          .openFamilyColumn('Mp-v', sourceBookId: 'A-v', sourceParaId: 222);
+      final state = c.read(readerTabsProvider);
+      expect(state.tabs.map((t) => t.bookId), ['A-v', 'Mp-v']);
+      expect(state.activeTab!.bookId, 'Mp-v');
+      expect(state.columns, ['A-v', 'Mp-v']);
+    });
+  });
+
+  test('activeBookFamilyProvider is null without a tab or a family', () async {
+    final c = ProviderContainer(
+      overrides: [bookFamiliesProvider.overrideWith((ref) async => _families)],
+    );
+    addTearDown(c.dispose);
+    expect(c.read(activeBookFamilyProvider), isNull);
+
+    final tabs = c.read(readerTabsProvider.notifier);
+    tabs.openTab(_an5);
+    expect(
+      c.read(activeBookFamilyProvider),
+      isNull,
+      reason: 'the families have not loaded yet',
+    );
+
+    await c.read(bookFamiliesProvider.future);
+    expect(c.read(activeBookFamilyProvider)!.bookId, 'A-v');
+
+    tabs.openTab(_tab('Mil'));
+    expect(c.read(activeBookFamilyProvider), isNull);
   });
 }

@@ -914,7 +914,9 @@ const Map<String, String> vi = {
   'Scroll these columns separately': 'Cuộn các cột này riêng',
   'This book': 'Sách này',
   'No book at this level': 'Không có sách ở cấp này',
-  'mūla, aṭṭhakathā, ṭīkā beside': 'mūla, aṭṭhakathā, ṭīkā bên cạnh',
-  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column (wide screens)':
-      'Hiện mūla, aṭṭhakathā hoặc ṭīkā tương ứng thành một cột (màn hình rộng)',
+  'mūla, aṭṭhakathā, ṭīkā': 'mūla, aṭṭhakathā, ṭīkā',
+  'Show the matching mūla, aṭṭhakathā or ṭīkā as a column, or in a new tab where columns do not fit':
+      'Hiện mūla, aṭṭhakathā hoặc ṭīkā tương ứng thành một cột, hoặc trong thẻ mới khi màn hình hẹp',
+  'Open mūla / aṭṭhakathā / ṭīkā': 'Mở mūla / aṭṭhakathā / ṭīkā',
+  'Open in a tab': 'Mở trong thẻ mới',
 };

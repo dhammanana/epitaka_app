@@ -1438,6 +1438,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       });
     }
+    // The m a ṭ slot shows on every screen, but only for a book that has a
+    // mūla, aṭṭhakathā or ṭīkā.
+    final hasFamily = ref.watch(activeBookFamilyProvider) != null;
     final showColumns =
         tabsState.columns.contains(activeTab.bookId) && columnsFit;
     // A column list that mounts now needs its own controller and its saved
@@ -1981,9 +1984,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                               onAiAskTap: _handleToolbarAiAsk,
                               // Null, not hidden: an empty slot still takes
                               // a spacer in the pill.
-                              commentaryLevels: columnsFit
-                                  ? const CommentaryLevelButtons()
-                                  : null,
+                              commentaryLevels: !hasFamily
+                                  ? null
+                                  : _isPhone()
+                                  ? const CommentaryLevelsMenuButton()
+                                  : const CommentaryLevelButtons(),
                             ),
                           ),
                         ),

@@ -34,6 +34,7 @@ import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
 import '../providers/reader_columns_controller.dart';
+import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/tts_reading_provider.dart';
 import '../utils/reader_quote_utils.dart'
@@ -43,6 +44,7 @@ import '../utils/reader_word_hit_test.dart'
 import '../widgets/commentary_level_buttons.dart' show showFamilyBesideMenu;
 import '../widgets/reader_context_menu.dart'
     show ContextMenuButton, FullWidthSelectionToolbar;
+import 'book_family_service.dart' show bookFamiliesProvider;
 
 /// One selectable unit of text (a Pāli line, or one enabled translation of
 /// a line) used for selection-range matching and trimming.
@@ -123,14 +125,14 @@ class ReaderCopyService {
     // Render the user's configured, enabled actions in their chosen order.
     // Never show an empty toolbar — fall back to Copy alone when every
     // action has been disabled.
-    // "Show beside" exists only where columns can show; an empty slot
-    // would still take room in the phone toolbar.
-    final columnsAvailable = ref.read(readerColumnsAvailableProvider);
+    // A book with no mūla, aṭṭhakathā or ṭīkā gets no entry (user,
+    // 2026-10-31); an empty slot would still take room in the phone toolbar.
+    final hasFamily =
+        ref.read(bookFamiliesProvider).valueOrNull?[bookId] != null;
     var actions = settings.contextMenuActions
         .where((a) => a.enabled && a.isAvailableHere)
         .where(
-          (a) =>
-              a.builtinId != ContextMenuBuiltins.showBeside || columnsAvailable,
+          (a) => a.builtinId != ContextMenuBuiltins.showBeside || hasFamily,
         )
         .toList();
     if (actions.isEmpty) {
@@ -552,11 +554,13 @@ class ReaderCopyService {
           colors: colors,
         );
       case ContextMenuBuiltins.showBeside:
-        // ── The matching mūla / aṭṭhakathā / ṭīkā as a column ────────
-        // Wide screens only: buildContextMenu leaves it out elsewhere.
+        // ── The matching mūla / aṭṭhakathā / ṭīkā as a column or tab ──
+        // Books with no family: buildContextMenu leaves it out.
         return ContextMenuButton(
           icon: Icons.view_week_outlined,
-          label: loc.showBeside,
+          label: ref.read(readerColumnsAvailableProvider)
+              ? loc.showBeside
+              : loc.openFamilyBook,
           onTap: () {
             final paraId = selectionStartParaId(
               ref: ref,
@@ -564,6 +568,12 @@ class ReaderCopyService {
               selection: lastSelectedContent,
               visibleStartIndex: visibleStartIndex,
               visibleEndIndex: visibleEndIndex,
+              nearParaIndex: _paragraphIndexAt(
+                ref: ref,
+                bookId: bookId,
+                contentHitTestKey: contentHitTestKey,
+                at: anchor,
+              ),
             );
             selectableRegionState.hideToolbar();
             showFamilyBesideMenu(
@@ -589,6 +599,7 @@ class ReaderCopyService {
     required SelectedContent? selection,
     required int visibleStartIndex,
     required int visibleEndIndex,
+    int? nearParaIndex,
   }) {
     final readerState = ref.read(readerDataProvider(bookId));
     final settings = ref.read(settingsProvider);
@@ -600,7 +611,45 @@ class ReaderCopyService {
       visibleEndIndex,
       script: settings.paliScript,
       enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+      nearParaIndex: nearParaIndex,
     )?.firstOrNull?.paraId;
+  }
+
+  /// The index of the visible paragraph under the global point [at], from
+  /// the height of [at] inside the content box and the list's visible item
+  /// positions; the closest one when none contains it. Null when the box,
+  /// the point or the positions are missing.
+  static int? _paragraphIndexAt({
+    required WidgetRef ref,
+    required String bookId,
+    required GlobalKey? contentHitTestKey,
+    required Offset? at,
+  }) {
+    final box = contentHitTestKey?.currentContext?.findRenderObject();
+    // A zero anchor is Flutter's fallback, not a real position.
+    if (at == null || at == Offset.zero) return null;
+    if (box is! RenderBox || !box.hasSize || box.size.height <= 0) return null;
+    final positions = ref
+        .read(readerKeyboardBridgeProvider)
+        .positionsListenerFor(bookId)
+        ?.itemPositions
+        .value;
+    if (positions == null || positions.isEmpty) return null;
+    final height = box.globalToLocal(at).dy / box.size.height;
+    int? closest;
+    var closestGap = double.infinity;
+    for (final p in positions) {
+      final gap = height < p.itemLeadingEdge
+          ? p.itemLeadingEdge - height
+          : height > p.itemTrailingEdge
+          ? height - p.itemTrailingEdge
+          : 0.0;
+      if (gap < closestGap) {
+        closest = p.index;
+        closestGap = gap;
+      }
+    }
+    return closest;
   }
 
   /// Build the toolbar button that launches an installed external app
@@ -1136,6 +1185,7 @@ class ReaderCopyService {
     int visibleEndIndex, {
     Script script = Script.roman,
     Set<String>? enabledLangCodes,
+    int? nearParaIndex,
   }) {
     if (selection == null || selection.plainText.trim().isEmpty) {
       return null;
@@ -1148,6 +1198,7 @@ class ReaderCopyService {
       visibleStartIndex: visibleStartIndex,
       visibleEndIndex: visibleEndIndex,
       enabledLangCodes: enabledLangCodes,
+      nearParaIndex: nearParaIndex,
     );
     if (trimmed != null && trimmed.isNotEmpty) {
       return trimmed;
@@ -1157,6 +1208,43 @@ class ReaderCopyService {
     // SelectedContent.plainText (the exact text from Flutter's
     // SelectionArea) rather than guessing from the visible range.
     return null;
+  }
+
+  /// The start of the occurrence of [needle] in [combined] whose paragraph
+  /// is nearest paragraph index [near] (ties go to the earlier one), or the
+  /// first occurrence when none of them sits in a known paragraph.
+  ///
+  /// A word such as "bhikkhave" occurs in many paragraphs of the window; the
+  /// first one is rarely the one the user selected.
+  static int _occurrenceNearParagraph(
+    String combined,
+    String needle,
+    List<_Segment> segments,
+    List<int> segEnd,
+    Map<int, int> indexOfPara,
+    int near,
+  ) {
+    var best = -1;
+    var bestDistance = 0;
+    var seg = 0;
+    for (
+      var pos = combined.indexOf(needle);
+      pos >= 0;
+      pos = combined.indexOf(needle, pos + 1)
+    ) {
+      // The first segment that reaches [pos], as the caller finds it.
+      while (seg < segments.length - 1 && pos > segEnd[seg]) {
+        seg++;
+      }
+      final index = indexOfPara[segments[seg].paraId];
+      if (index == null) continue;
+      final distance = (index - near).abs();
+      if (best < 0 || distance < bestDistance) {
+        best = pos;
+        bestDistance = distance;
+      }
+    }
+    return best < 0 ? combined.indexOf(needle) : best;
   }
 
   /// Builds the exact selected sub-range of content as trimmed
@@ -1178,6 +1266,7 @@ class ReaderCopyService {
     int visibleStartIndex = 0,
     int visibleEndIndex = 0,
     Set<String>? enabledLangCodes,
+    int? nearParaIndex,
   }) {
     // Check for hidden characters (U+FFFC from WidgetSpan, zero-width chars)
     final hasFffc = selectedText.contains('\u{FFFC}');
@@ -1311,7 +1400,19 @@ class ReaderCopyService {
       'start="${combinedText.length > 100 ? combinedText.substring(0, 100) : combinedText}"',
       name: 'epitaka.copy',
     );
-    final matchPos = combinedText.indexOf(needle);
+    final matchPos = nearParaIndex == null
+        ? combinedText.indexOf(needle)
+        : _occurrenceNearParagraph(
+            combinedText,
+            needle,
+            segments,
+            segEnd,
+            {
+              for (var i = 0; i < allParagraphs.length; i++)
+                allParagraphs[i].paraId: i,
+            },
+            nearParaIndex,
+          );
     developer.log(
       '[COPY_MATCH] indexOf result=$matchPos (needleLen=${needle.length})',
       name: 'epitaka.copy',
