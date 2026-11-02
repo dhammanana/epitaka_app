@@ -21,7 +21,9 @@ enum AppLanguage {
   burmese('my', 'မြန်မာ'),
   sinhala('si', 'සිංහල'),
   vietnamese('vi', 'Tiếng Việt'),
-  lao('lo', 'ລາວ');
+  lao('lo', 'ລາວ'),
+  chinese('zh', '简体中文'),
+  hindi('hi', 'हिन्दी');
 
   final String code;
   final String nativeName;
@@ -1439,8 +1441,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   Future<void> setAppLanguage(AppLanguage lang) async {
-    state = state.copyWith(appLanguage: lang);
+    // The Pāli script follows the UI language: English → roman, Hindi →
+    // devanagari, Thai → thai, … (see [scriptForLanguageCode]).
+    final script = scriptForLanguageCode(lang.code);
+    state = state.copyWith(appLanguage: lang, paliScript: script);
     await _prefs?.setString('app_language', lang.code);
+    await _prefs?.setString('pali_script', script.name);
   }
 
   Future<void> setThemePreference(ThemePreference pref) async {

@@ -25,7 +25,7 @@ abstract final class AppStrings {
     'lo': lo,
     'th': th,
     'zh': zh,
-    'hi': zh,
+    'hi': hi,
   };
 
   /// Locale codes shown in the language picker, in display order.

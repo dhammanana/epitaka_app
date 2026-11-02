@@ -14,7 +14,6 @@ import '../../../core/utils/platform_info.dart';
 import '../../../router/app_router.dart' show AppRoutes;
 import '../../search/providers/search_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
-import '../../fonts/screens/font_library_screen.dart';
 import '../../mcp/widgets/mcp_settings_tile.dart';
 
 import '../widgets/index_progress_screen.dart';
@@ -237,25 +236,6 @@ class SettingsGeneralSection extends ConsumerWidget {
         _LanguagePickerTile(colors: colors),
         _ScriptPickerTile(),
         _LibraryExpandTile(colors: colors),
-        // Script Converter — reachable on desktop too (no drawer there;
-        // the settings dialog embeds this section).
-        _SettingsTile(
-          icon: Icons.swap_horiz,
-          title: loc.scriptConverter,
-          subtitle: loc.scriptConverterSubtitle,
-          onTap: () => context.push(AppRoutes.scriptConverter),
-        ),
-        // Font Library — download Google Fonts and use them for Pāli.
-        _SettingsTile(
-          icon: Icons.font_download_outlined,
-          title: loc.fontLibrary,
-          subtitle: loc.fontLibrarySubtitle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const FontLibraryScreen(),
-            ),
-          ),
-        ),
       ],
     );
   }

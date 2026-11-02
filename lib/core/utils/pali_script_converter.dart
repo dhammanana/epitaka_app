@@ -56,6 +56,20 @@ extension ScriptEnglishName on Script {
   };
 }
 
+/// Pali [Script] that matches a UI language code.
+///
+/// Derived from [listOfScripts] (whose `localeCode` is the language a script
+/// is written in), so adding a UI language needs no change here:
+/// `hi` → devanagari, `th` → thai, `kn` → kannada, … while languages without
+/// their own Pali script (English, French, Chinese, Vietnamese …) get
+/// [Script.roman].
+Script scriptForLanguageCode(String languageCode) {
+  for (final info in listOfScripts) {
+    if (info.localeCode == languageCode) return info.script;
+  }
+  return Script.roman;
+}
+
 class _CodePointRange {
   final int start;
   final int end;
@@ -95,7 +109,7 @@ const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
     script: Script.roman,
     nameInLocale: 'Roman',
-    localeCode: 'ro',
+    localeCode: 'en',
     codePointRanges: [
       _CodePointRange(start: 0x0000, end: 0x017F),
       _CodePointRange(start: 0x1E00, end: 0x1EFF),
@@ -136,14 +150,14 @@ const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
     script: Script.bengali,
     nameInLocale: 'বাংলা',
-    localeCode: 'be',
+    localeCode: 'bn',
     codePointRanges: [_CodePointRange(start: 0x0980, end: 0x09FF)],
     index: 8,
   ),
   ScriptInfo(
     script: Script.gurmukhi,
     nameInLocale: 'ਗੁਰਮੁਖੀ',
-    localeCode: 'gm',
+    localeCode: 'pa',
     codePointRanges: [_CodePointRange(start: 0x0A00, end: 0x0A7F)],
     index: 9,
   ),
@@ -157,7 +171,7 @@ const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
     script: Script.gujarati,
     nameInLocale: 'ગુજરાતી',
-    localeCode: 'gj',
+    localeCode: 'gu',
     codePointRanges: [_CodePointRange(start: 0x0A80, end: 0x0AFF)],
     index: 11,
   ),
@@ -171,14 +185,14 @@ const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
     script: Script.kannada,
     nameInLocale: 'ಕನ್ನಡ',
-    localeCode: 'ka',
+    localeCode: 'kn',
     codePointRanges: [_CodePointRange(start: 0x0C80, end: 0x0CFF)],
     index: 13,
   ),
   ScriptInfo(
     script: Script.malayalam,
     nameInLocale: 'മലയാളം',
-    localeCode: 'mm',
+    localeCode: 'ml',
     codePointRanges: [_CodePointRange(start: 0x0D00, end: 0x0D7F)],
     index: 14,
   ),
@@ -196,14 +210,14 @@ const List<ScriptInfo> listOfScripts = [
   ScriptInfo(
     script: Script.tibetan,
     nameInLocale: 'བོད་སྐད།',
-    localeCode: 'tb',
+    localeCode: 'bo',
     codePointRanges: [_CodePointRange(start: 0x0F00, end: 0x0FFF)],
     index: 16,
   ),
   ScriptInfo(
     script: Script.cyrillic,
     nameInLocale: 'кириллица',
-    localeCode: 'cy',
+    localeCode: 'ru',
     codePointRanges: [
       _CodePointRange(start: 0x0400, end: 0x04FF),
       _CodePointRange(start: 0x0300, end: 0x036F),
