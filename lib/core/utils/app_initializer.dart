@@ -10,6 +10,7 @@ import '../utils/database_initializer.dart';
 import '../utils/startup_timing.dart';
 import '../../core/config/supabase_config.dart';
 import '../../features/annotations/providers/annotations_provider.dart';
+import '../../features/fonts/services/font_library_service.dart';
 import '../../features/settings/services/download_notification_service.dart';
 import '../../features/settings/services/tts_audio_handler.dart';
 
@@ -46,6 +47,25 @@ class AppInitializer {
     // 3. Load settings from SharedPreferences (needed for theme, font, etc.)
     await _loadSettingsOnce();
     StartupTiming.mark('preferences opened');
+
+    // 4. Re-register fonts downloaded through the Font Library so the first
+    //    frame already renders Pāli with the user's choice. Files are local
+    //    and the catalog is a bundled asset, so this is cheap.
+    await _restoreDownloadedFonts();
+  }
+
+  Future<void> _restoreDownloadedFonts() async {
+    try {
+      // path_provider's FFI can stall (see database_initializer.dart); a
+      // late session simply keeps the bundled fonts until it is retried.
+      await FontLibraryService.instance.restore().timeout(
+        const Duration(seconds: 3),
+      );
+    } catch (e) {
+      // Never block startup on fonts: the built-in families are the fallback.
+      developer.log('[FONTS] restore failed: $e');
+    }
+    StartupTiming.mark('downloaded fonts ready');
   }
 
   /// Initialize non-critical services in the background after first frame.

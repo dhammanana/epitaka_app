@@ -85,6 +85,12 @@ class TtsReadingState {
 
   bool get currentIsPali => currentLine?.isPali ?? false;
 
+  /// Language of the line currently being spoken ('si' for Pāli, the
+  /// translation's code otherwise). The reader highlights the row for THIS
+  /// language, so a second translation is followed on its own line instead
+  /// of reusing the first translation's row.
+  String? get currentLanguage => currentLine?.language;
+
   /// Progress: 0.0 to 1.0 (unit-granular when batched).
   double get progress => units.isNotEmpty
       ? (currentUnitIndex + 1) / units.length

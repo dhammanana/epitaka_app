@@ -323,6 +323,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final query =
         item.highlightTerms?.join(' ') ??
         (currentState is SearchResults ? currentState.query : null);
+    // The reader highlights with the same rule this search used.
+    final fuzzy = currentState is SearchResults ? currentState.fuzzy : true;
 
     // Find the first matching line's lineId for precise line-level jumping
     final int? initialLineId;
@@ -345,11 +347,58 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             initialParaId: item.paraId,
             initialLineId: initialLineId,
             searchQuery: query,
+            searchQueryFuzzy: fuzzy,
           ),
         );
     // On desktop, the reader is already visible side-by-side — just switch tabs.
     // On mobile, navigate to the reader (popping back to an existing one).
     if (context.mounted) openReaderRoute(context);
+  }
+
+  void _toggleFuzzy() async {
+    final on = ref.read(searchFuzzyProvider);
+    await ref.read(searchFuzzyProvider.notifier).set(!on);
+    if (_searchController.text.isNotEmpty) _executeSearch();
+  }
+
+  /// The Fuzzy pill (smaller than the Search screen's): ON, every term is
+  /// a prefix; OFF, whole words only.
+  Widget _fuzzyChip(ColorScheme colors, AppLocalizations loc) {
+    final on = ref.watch(searchFuzzyProvider);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleFuzzy,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: on ? colors.secondaryContainer : colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              on ? Icons.blur_on : Icons.center_focus_strong,
+              size: 12,
+              color: on
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              on ? loc.fuzzy : loc.exact,
+              style: AppTypography.labelSmall.copyWith(
+                fontSize: 10,
+                color: on
+                    ? colors.onSecondaryContainer
+                    : colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -419,6 +468,12 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             children: [
               Row(
                 children: [
+                  // Fuzzy chip, compact for the panel (see the Search
+                  // screen's _fuzzyChip). A pattern sets its own matching.
+                  if (!regexOn) ...[
+                    _fuzzyChip(colors, loc),
+                    const SizedBox(width: 6),
+                  ],
                   // A pattern sets its own word distance.
                   if (!regexOn)
                     PopupMenuButton<int>(
@@ -1117,14 +1172,16 @@ class _ResultItemTile extends ConsumerWidget {
     final script = settings.paliScript;
 
     // Extract search terms from the current query, or in regex mode from
-    // the pieces the pattern matched.
+    // the pieces the pattern matched. Fuzzy off keeps the diacritics, so a
+    // whole-word search never lights up a folded spelling (`assā` → `assa`).
     final List<String> searchTerms;
+    final bool fuzzy;
     if (searchState is SearchResults) {
       final q = item.highlightTerms?.join(' ') ?? searchState.query;
-      searchTerms = normalizePaliFuzzy(
-        q,
-      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      fuzzy = searchState.fuzzy;
+      searchTerms = paliSearchHighlightTerms(q, fuzzy: fuzzy);
     } else {
+      fuzzy = true;
       searchTerms = const [];
     }
 
@@ -1197,6 +1254,7 @@ class _ResultItemTile extends ConsumerWidget {
                 child: _PanelLineTile(
                   line: line,
                   searchTerms: searchTerms,
+                  fuzzy: fuzzy,
                   paliTextStyle: paliTextStyle,
                   transTextStyle: transTextStyle,
                   colors: colors,
@@ -1216,6 +1274,11 @@ class _ResultItemTile extends ConsumerWidget {
 class _PanelLineTile extends StatelessWidget {
   final SearchResultLine line;
   final List<String> searchTerms;
+
+  /// Whether the search folded diacritics (Fuzzy on). Off, the highlight
+  /// matches only the exact whole word.
+  final bool fuzzy;
+
   final TextStyle paliTextStyle;
   final TextStyle transTextStyle;
   final ColorScheme colors;
@@ -1225,6 +1288,7 @@ class _PanelLineTile extends StatelessWidget {
   const _PanelLineTile({
     required this.line,
     required this.searchTerms,
+    this.fuzzy = true,
     required this.paliTextStyle,
     required this.transTextStyle,
     required this.colors,
@@ -1254,6 +1318,7 @@ class _PanelLineTile extends StatelessWidget {
             _buildHighlightedPaliText(
               text: line.pali,
               searchTerms: searchTerms,
+              fuzzy: fuzzy,
               script: script,
               style: paliTextStyle.copyWith(
                 fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
@@ -1267,6 +1332,7 @@ class _PanelLineTile extends StatelessWidget {
               child: _buildHighlightedTranslationText(
                 text: line.translation!,
                 searchTerms: searchTerms,
+                fuzzy: fuzzy,
                 style: transTextStyle.copyWith(
                   fontSize: (transTextStyle.fontSize ?? 12) - 1,
                   height: transTextStyle.height ?? 1.2,
@@ -1285,6 +1351,7 @@ class _PanelLineTile extends StatelessWidget {
   Widget _buildHighlightedPaliText({
     required String text,
     required List<String> searchTerms,
+    required bool fuzzy,
     required Script script,
     required TextStyle style,
     required Color highlightColor,
@@ -1312,6 +1379,7 @@ class _PanelLineTile extends StatelessWidget {
       baseStyle: effStyle,
       terms: searchTerms,
       isPali: true,
+      fuzzy: fuzzy,
       highlightColor: highlightColor,
       beforeChars: 30,
       afterChars: 45,
@@ -1330,6 +1398,7 @@ class _PanelLineTile extends StatelessWidget {
   Widget _buildHighlightedTranslationText({
     required String text,
     required List<String> searchTerms,
+    required bool fuzzy,
     required TextStyle style,
     required Color highlightColor,
   }) {
@@ -1347,6 +1416,7 @@ class _PanelLineTile extends StatelessWidget {
       baseStyle: style,
       terms: searchTerms,
       isPali: false,
+      fuzzy: fuzzy,
       highlightColor: highlightColor,
       beforeChars: 25,
       afterChars: 40,

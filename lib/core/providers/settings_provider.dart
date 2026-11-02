@@ -523,6 +523,15 @@ class AppSettings {
     return const [];
   }
 
+  /// Translation languages TTS reads, in display order: every visible
+  /// translation, or just the first when [ttsFirstTranslationOnly] is on.
+  List<String> get ttsTranslationLangs {
+    final langs = visibleTranslationLangs;
+    return ttsFirstTranslationOnly && langs.isNotEmpty
+        ? [langs.first]
+        : langs;
+  }
+
   /// Convenience: resolve Pāli color for the current brightness.
   Color paliColorFor(Brightness brightness) =>
       paliColorPair.resolve(brightness);
@@ -590,6 +599,11 @@ class AppSettings {
   /// (converted to Devanagari/Hindi — the best voice for Pāli), or both.
   /// Defaults to [TtsSpeakMode.translation].
   final TtsSpeakMode ttsSpeakMode;
+
+  /// Whether TTS reads only the first visible translation instead of all
+  /// of them. Off by default: every visible translation is read in the
+  /// order the reader shows them.
+  final bool ttsFirstTranslationOnly;
 
   /// Quote/citation format when copying text.
   final CopyQuoteFormat copyQuoteFormat;
@@ -737,6 +751,7 @@ class AppSettings {
     this.ttsPaliSpeed = 1.0,
     this.ttsPitch = 1.0,
     this.ttsSpeakMode = TtsSpeakMode.translation,
+    this.ttsFirstTranslationOnly = false,
     this.ttsScript = 'hi',
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
@@ -792,6 +807,7 @@ class AppSettings {
     double? ttsPaliSpeed,
     double? ttsPitch,
     TtsSpeakMode? ttsSpeakMode,
+    bool? ttsFirstTranslationOnly,
     String? ttsScript,
     CopyQuoteFormat? copyQuoteFormat,
     CopyScope? copyDefaultScope,
@@ -850,6 +866,8 @@ class AppSettings {
       ttsPaliSpeed: ttsPaliSpeed ?? this.ttsPaliSpeed,
       ttsPitch: ttsPitch ?? this.ttsPitch,
       ttsSpeakMode: ttsSpeakMode ?? this.ttsSpeakMode,
+      ttsFirstTranslationOnly:
+          ttsFirstTranslationOnly ?? this.ttsFirstTranslationOnly,
       ttsScript: ttsScript ?? this.ttsScript,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
@@ -1277,6 +1295,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsPaliSpeed: prefs.getDouble('tts_pali_speed') ?? 1.0,
       ttsPitch: prefs.getDouble('tts_pitch') ?? 1.0,
       ttsSpeakMode: _parseTtsSpeakMode(prefs.getString('tts_speak_mode')),
+      ttsFirstTranslationOnly:
+          prefs.getBool('tts_first_translation_only') ?? false,
       ttsScript: prefs.getString('tts_script') ?? 'hi',
       copyQuoteFormat: _parseCopyQuoteFormat(
         prefs.getString('copy_quote_format') ?? 'none',
@@ -1660,6 +1680,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('tts_speak_mode', mode.name);
   }
 
+  /// Set whether TTS reads only the first visible translation (true) or
+  /// all of them in display order (false).
+  Future<void> setTtsFirstTranslationOnly(bool value) async {
+    state = state.copyWith(ttsFirstTranslationOnly: value);
+    await _prefs?.setBool('tts_first_translation_only', value);
+  }
+
   /// Set the script/language for Pāli TTS (Kannada, Telugu, Sinhala, Hindi).
   Future<void> setTtsScript(String script) async {
     state = state.copyWith(ttsScript: script);
@@ -1922,6 +1949,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
     state = state.copyWith(translationVersionMap: current);
     await _prefs?.setString('translation_version_map', jsonEncode(current));
+  }
+
+  /// Re-emit the current settings so widgets rebuild after a change that
+  /// lives outside [AppSettings] — currently the downloaded Pāli font, which
+  /// [paliReadingFontFamily] resolves from a global (see
+  /// `setDownloadedPaliFonts`).
+  void refresh() {
+    state = state.copyWith();
   }
 
   /// Returns the display name for a script in the current app language.

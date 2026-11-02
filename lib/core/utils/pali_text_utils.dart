@@ -16,6 +16,23 @@ import 'pali_script_converter.dart';
 /// here before converting, so every display surface is affected uniformly.
 bool stripVariantAnnotations = true;
 
+/// Downloaded font family per Pāli script, set by the Font Library
+/// (`features/fonts`) at startup and whenever the user picks a font.
+///
+/// A font only lists the scripts it can actually render, so a hit here always
+/// means the family has the needed glyphs; everything else keeps the bundled
+/// font from [scriptFontFamily].
+Map<Script, String> _downloadedPaliFonts = const <Script, String>{};
+
+/// Applies the user's downloaded-font choice; an empty map restores the
+/// built-in fonts. See [paliReadingFontFamily].
+void setDownloadedPaliFonts(Map<Script, String> byScript) {
+  _downloadedPaliFonts = Map<Script, String>.unmodifiable(byScript);
+}
+
+/// The downloaded family chosen for [script], or null for the built-in one.
+String? downloadedPaliFontFor(Script script) => _downloadedPaliFonts[script];
+
 /// Strips Pāli variant annotations wrapped in square brackets (`[...]`).
 /// Returns [text] unchanged when [stripVariantAnnotations] is false.
 String _applyVariantStripping(String text) {
@@ -39,6 +56,10 @@ String _applyVariantStripping(String text) {
 /// Tibetan is an exception: Android's platform font stack includes Noto
 /// Sans Tibetan, but iOS has NO system Tibetan font at all, so we bundle
 /// NotoSerifTibetan and return it here (fixes tofu boxes on iOS).
+///
+/// Korean is bundled for the same reason: iOS and recent Android ship a
+/// Hangul font, but older Android builds and some emulators fall back to
+/// tofu, so NotoSansKR ships with the app.
 String? scriptFontFamily(Script script) {
   switch (script) {
     case Script.sinhala:
@@ -63,6 +84,9 @@ String? scriptFontFamily(Script script) {
     case Script.tibetan:
       // Bundled — iOS ships no system Tibetan font (see doc comment above).
       return 'NotoSerifTibetan';
+    case Script.korean:
+      // Bundled — Hangul coverage is not guaranteed on every OS.
+      return 'NotoSansKR';
     case Script.bengali:
     case Script.gurmukhi:
     case Script.gujarati:
@@ -82,6 +106,10 @@ String? scriptFontFamily(Script script) {
 /// Scripts with only one bundled font ignore the choice and keep
 /// [scriptFontFamily].
 String? paliReadingFontFamily(Script script, ReadingFontFamily choice) {
+  // A font the user downloaded wins for the scripts it declares; its coverage
+  // was checked when the choice was made (see setDownloadedPaliFonts).
+  final downloaded = _downloadedPaliFonts[script];
+  if (downloaded != null) return downloaded;
   switch (script) {
     case Script.roman:
     case Script.cyrillic:

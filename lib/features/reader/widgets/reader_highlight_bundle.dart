@@ -22,6 +22,10 @@ class ReaderHighlightBundle {
   /// Active in-book search query (already display-normalized by the caller).
   final String? searchQuery;
 
+  /// Whether [searchQuery] is a Fuzzy search (diacritics folded). False is a
+  /// whole-word one: the highlight then matches only the exact word.
+  final bool searchQueryFuzzy;
+
   /// Active dictionary lookup highlight (tapped word).
   final ReaderLookupHighlight? lookupHighlight;
 
@@ -32,6 +36,10 @@ class ReaderHighlightBundle {
   /// True when the spoken item is a Pali line, false for translation.
   /// Null = unknown/legacy (highlights translation).
   final bool? ttsHighlightIsPali;
+
+  /// Language of the translation being spoken ('en', 'vi', …): selects the
+  /// translation ROW the reader underlines. Null = first rendered language.
+  final String? ttsHighlightLang;
 
   // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
   // into the line's words plus the line's speak substring (rendered as-is
@@ -85,10 +93,12 @@ class ReaderHighlightBundle {
   const ReaderHighlightBundle({
     required this.bookId,
     this.searchQuery,
+    this.searchQueryFuzzy = true,
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.ttsHighlightIsPali,
+    this.ttsHighlightLang,
     this.ttsWordLineId,
     this.ttsWordIndex,
     this.ttsWordLineText,
@@ -124,6 +134,7 @@ class ReaderHighlightBundle {
 
     final ttsLine = ttsHighlightParaId == paraId ? ttsHighlightLineId : null;
     final ttsIsPali = ttsLine != null ? ttsHighlightIsPali : null;
+    final ttsLang = ttsLine != null ? ttsHighlightLang : null;
     // The spoken word only applies to the spoken line itself.
     final onSpokenLine = ttsLine != null && ttsWordLineId == ttsLine;
     final wordIndex = onSpokenLine ? ttsWordIndex : null;
@@ -143,9 +154,11 @@ class ReaderHighlightBundle {
 
     return ReaderHighlightSlice(
       searchQuery: searchQuery,
+      searchQueryFuzzy: searchQueryFuzzy,
       lookupHighlight: lookupForPara,
       ttsHighlightLineId: ttsLine,
       ttsHighlightIsPali: ttsIsPali,
+      ttsHighlightLang: ttsLang,
       ttsWordIndex: wordIndex,
       ttsWordLineText: wordLineText,
       jumpHighlightLineId: jumpLine,
@@ -161,11 +174,19 @@ class ReaderHighlightBundle {
 /// actually applies to one paragraph, with value equality.
 class ReaderHighlightSlice {
   final String? searchQuery;
+
+  /// Whether [searchQuery] is a Fuzzy search (diacritics folded).
+  final bool searchQueryFuzzy;
+
   final ReaderLookupHighlight? lookupHighlight;
 
   /// Line ID highlighted by TTS *in this paragraph* (null otherwise).
   final int? ttsHighlightLineId;
   final bool? ttsHighlightIsPali;
+
+  /// Spoken translation language for [ttsHighlightLineId] (null = the first
+  /// rendered translation).
+  final String? ttsHighlightLang;
 
   // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
   // into the line's words plus the line's speak substring (null = none).
@@ -184,9 +205,11 @@ class ReaderHighlightSlice {
 
   const ReaderHighlightSlice({
     this.searchQuery,
+    this.searchQueryFuzzy = true,
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightIsPali,
+    this.ttsHighlightLang,
     this.ttsWordIndex,
     this.ttsWordLineText,
     this.jumpHighlightLineId,
@@ -214,9 +237,11 @@ class ReaderHighlightSlice {
     if (identical(this, other)) return true;
     return other is ReaderHighlightSlice &&
         other.searchQuery == searchQuery &&
+        other.searchQueryFuzzy == searchQueryFuzzy &&
         identical(other.lookupHighlight, lookupHighlight) &&
         other.ttsHighlightLineId == ttsHighlightLineId &&
         other.ttsHighlightIsPali == ttsHighlightIsPali &&
+        other.ttsHighlightLang == ttsHighlightLang &&
         other.ttsWordIndex == ttsWordIndex &&
         other.ttsWordLineText == ttsWordLineText &&
         other.jumpHighlightLineId == jumpHighlightLineId &&
@@ -229,9 +254,11 @@ class ReaderHighlightSlice {
   @override
   int get hashCode => Object.hash(
     searchQuery,
+    searchQueryFuzzy,
     lookupHighlight,
     ttsHighlightLineId,
     ttsHighlightIsPali,
+    ttsHighlightLang,
     ttsWordIndex,
     ttsWordLineText,
     jumpHighlightLineId,

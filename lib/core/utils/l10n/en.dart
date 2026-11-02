@@ -400,6 +400,7 @@ const Map<String, String> en = {
   'System Default': 'System Default',
   'Config': 'Config',
   'Speak': 'Speak',
+  'Only first translation': 'Only first translation',
   'Reads the translation aloud': 'Reads the translation aloud',
   'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation':
       'Reads the Pāli aloud, written in Devanagari (Hindi) for the best pronunciation',
@@ -513,6 +514,7 @@ const Map<String, String> en = {
   // ── Search ──────────────────────────────────────────────────────────
   'Search Pāli texts…': 'Search Pāli texts…',
   'Fuzzy': 'Fuzzy',
+  'Exact': 'Exact',
   'Word distance': 'Word distance',
   'Any distance': 'Any distance',
   'Within': 'Within',

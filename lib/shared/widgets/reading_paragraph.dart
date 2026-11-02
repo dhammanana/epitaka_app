@@ -57,6 +57,12 @@ class ReadingParagraph extends StatelessWidget {
   final List<String> enabledLangCodes;
   final String? searchQuery;
 
+  /// Whether [searchQuery] came from a Fuzzy search (prefix terms, diacritics
+  /// folded). False is a whole-word search, so the highlight matches only the
+  /// exact word — `assā` never lights up `assa`, as the search never matched
+  /// it either.
+  final bool searchQueryFuzzy;
+
   /// Line ID to highlight during TTS reading.
   final int? ttsHighlightLineId;
 
@@ -68,6 +74,12 @@ class ReadingParagraph extends StatelessWidget {
   /// True when the TTS item being spoken is Pali, false for translation.
   /// Null highlights the translation (legacy behavior).
   final bool? ttsHighlightIsPali;
+
+  /// Language of the translation currently being spoken ('en', 'vi', …).
+  /// Selects WHICH translation row of the line carries the TTS underline
+  /// and spoken word; null (or a language not rendered on this line) falls
+  /// back to the first rendered translation.
+  final String? ttsHighlightLang;
 
   // WORD-HIGHLIGHT: spoken word for [ttsHighlightLineId] — 0-based index
   // into the line's words plus the line's speak substring (translation:
@@ -184,10 +196,12 @@ class ReadingParagraph extends StatelessWidget {
     this.showBookLinks = true,
     this.translationVersionLabels = const {},
     this.searchQuery,
+    this.searchQueryFuzzy = true,
     this.lookupHighlight,
     this.ttsHighlightLineId,
     this.ttsHighlightParaId,
     this.ttsHighlightIsPali,
+    this.ttsHighlightLang,
     this.ttsHighlightWordIndex,
     this.ttsHighlightWordLineText,
     this.jumpHighlightLineId,
@@ -662,6 +676,7 @@ class ReadingParagraph extends StatelessWidget {
                 colors,
                 isTranslationHighlighted,
                 lineId: lineId,
+                spokenLang: ttsHighlightLang,
                 remarks: line.remarks,
                 wordIndex: isTranslationHighlighted ? ttsWordIndex : null,
                 wordLineText: isTranslationHighlighted ? ttsWordLineText : null,
@@ -803,17 +818,19 @@ class ReadingParagraph extends StatelessWidget {
   /// (translation notes keyed by language code) contains a note for a
   /// rendered language, a small note is appended below that line.
   ///
-  /// Only the FIRST (spoken) translation is ever highlighted — the engine
-  /// speaks the first enabled language only, so the underline container
-  /// wraps that line alone while the remaining languages render normally.
-  /// [wordIndex]/[wordLineText] locate the spoken word inside the spoken
-  /// (first-language) line's speak text.
+  /// Every enabled translation is spoken now, so the underline follows
+  /// [spokenLang]: the row for the language currently being read gets the
+  /// shared TTS container and [wordIndex]/[wordLineText], while the other
+  /// languages render normally. When [spokenLang] is null (or this line has
+  /// no text in it) the first rendered translation is treated as spoken,
+  /// preserving single-language behavior.
   Widget _buildTranslationBlock(
     BuildContext context,
     Map<String, String> translations,
     ColorScheme colors,
     bool isHighlighted, {
     required int lineId,
+    String? spokenLang,
     Map<String, List<TranslationRemark>> remarks = const {},
     int? wordIndex,
     String? wordLineText,
@@ -821,12 +838,26 @@ class ReadingParagraph extends StatelessWidget {
     final langs = enabledLangCodes.isNotEmpty ? enabledLangCodes : null;
     if (langs == null || langs.isEmpty) return const SizedBox.shrink();
 
-    Widget? firstLine;
-    final rest = <Widget>[];
+    // Resolve the spoken row up front: the requested language when this
+    // line actually renders it, otherwise the first rendered translation.
+    String? firstRendered;
+    for (final code in langs) {
+      if ((translations[code] ?? '').trim().isNotEmpty) {
+        firstRendered = code;
+        break;
+      }
+    }
+    final spoken = spokenLang != null &&
+            (translations[spokenLang] ?? '').trim().isNotEmpty
+        ? spokenLang
+        : firstRendered;
+
+    final children = <Widget>[];
     for (final langCode in langs) {
       final text = translations[langCode];
       if (text == null || text.trim().isEmpty) continue;
       final typo = langTypographies[langCode];
+      final isSpoken = langCode == spoken;
       final lineWidget = _buildTranslationLine(
         context,
         langCode,
@@ -834,44 +865,32 @@ class ReadingParagraph extends StatelessWidget {
         typo,
         colors,
         lineId: lineId,
-        // WORD-HIGHLIGHT: word range targets the spoken (first) language.
-        wordIndex: firstLine == null ? wordIndex : null,
-        wordLineText: firstLine == null ? wordLineText : null,
+        // WORD-HIGHLIGHT: the word range targets the spoken language's row.
+        wordIndex: isSpoken ? wordIndex : null,
+        wordLineText: isSpoken ? wordLineText : null,
       );
-      if (firstLine == null) {
-        firstLine = lineWidget;
-      } else {
-        rest.add(lineWidget);
-      }
+      children.add(
+        isHighlighted && isSpoken
+            // The spoken row alone gets the shared underline container;
+            // other languages and remark notes stay plain.
+            ? Container(
+                decoration: ttsActiveLineDecoration(colors),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: lineWidget,
+              )
+            : lineWidget,
+      );
       final remarkList = remarks[langCode];
       if (remarkList != null && remarkList.any((r) => r.hasContent)) {
-        rest.add(
+        children.add(
           _buildRemarkNote(context, langCode, lineId, remarkList, colors),
         );
       }
     }
-    if (firstLine == null) return const SizedBox.shrink();
-
-    if (!isHighlighted) {
-      // Fast path: no highlight container.
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [firstLine, ...rest],
-      );
-    }
-
-    // Highlighted path: the spoken (first) line alone gets the shared
-    // underline container; other languages and remark notes stay plain.
+    if (children.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          decoration: ttsActiveLineDecoration(colors),
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: firstLine,
-        ),
-        ...rest,
-      ],
+      children: children,
     );
   }
 
@@ -1357,6 +1376,7 @@ class ReadingParagraph extends StatelessWidget {
             query,
             span.style ?? baseStyle,
             colors,
+            fuzzy: searchQueryFuzzy,
           );
           result.addAll(subSpans);
         } else {
@@ -1582,7 +1602,11 @@ class ReadingParagraph extends StatelessWidget {
     return normalized.replaceAll(RegExp(r'<[^>]*>'), '');
   }
 
-  List<_HighlightInterval> _findTermIntervals(String text, List<String> terms) {
+  List<_HighlightInterval> _findTermIntervals(
+    String text,
+    List<String> terms, {
+    bool fuzzy = true,
+  }) {
     final intervals = <_HighlightInterval>[];
     if (terms.isEmpty) return intervals;
 
@@ -1594,6 +1618,21 @@ class ReadingParagraph extends StatelessWidget {
       final termLen = term.length;
       final maxStart = textLen - termLen;
       if (maxStart < 0) continue;
+
+      if (!fuzzy) {
+        // Whole-word (Fuzzy off): the term must be spelled exactly —
+        // diacritics included — and stand alone as a word.
+        for (
+          var at = lowerText.indexOf(term);
+          at >= 0;
+          at = lowerText.indexOf(term, at + 1)
+        ) {
+          if (isWholePaliWord(lowerText, at, termLen)) {
+            intervals.add(_HighlightInterval(at, at + termLen));
+          }
+        }
+        continue;
+      }
 
       int pos = 0;
       while (pos <= maxStart) {
@@ -1654,16 +1693,15 @@ class ReadingParagraph extends StatelessWidget {
     String text,
     String query,
     TextStyle baseStyle,
-    ColorScheme colors,
-  ) {
+    ColorScheme colors, {
+    bool fuzzy = true,
+  }) {
     if (query.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
-    final terms = normalizePaliFuzzy(
-      query,
-    ).toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final terms = paliSearchHighlightTerms(query, fuzzy: fuzzy);
     if (terms.isEmpty) return [TextSpan(text: text, style: baseStyle)];
 
-    final intervals = _findTermIntervals(text, terms);
+    final intervals = _findTermIntervals(text, terms, fuzzy: fuzzy);
     if (intervals.isEmpty) {
       return [TextSpan(text: text, style: baseStyle)];
     }

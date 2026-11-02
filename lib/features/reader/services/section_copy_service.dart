@@ -1526,6 +1526,8 @@ class SectionCopyService {
         return "'Noto Sans Malayalam','Nirmala UI','Kartika',sans-serif";
       case Script.tamil:
         return "'Noto Sans Tamil','Nirmala UI','Latha',sans-serif";
+      case Script.korean:
+        return "'Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif";
       case Script.taitham:
         return "'Noto Sans Tai Tham','Leelawadee UI',sans-serif";
       case Script.brahmi:

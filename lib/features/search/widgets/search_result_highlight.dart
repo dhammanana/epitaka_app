@@ -13,8 +13,13 @@ import '../../../shared/utils/html_text_parser.dart';
 ///
 /// [html] may contain simple HTML tags (`<b>`, `<i>`, …) which are parsed
 /// into styled spans; [baseStyle] is the default text style. When [isPali] is
-/// true the Pāli fuzzy normalization is used for matching, otherwise
+/// true the Pāli terms are matched through the search's own rules, otherwise
 /// case-insensitive substring matching is used (translations).
+///
+/// [fuzzy] mirrors the search's Fuzzy chip. ON, a Pāli term matches with
+/// diacritics folded (`assā` finds `assa`); OFF the search was a whole-word
+/// one, so a term matches only its exact, whole word — `assā` never lights up
+/// `assa`, which the search never matched either.
 List<InlineSpan> buildSearchSnippetSpans({
   required String html,
   required TextStyle baseStyle,
@@ -23,12 +28,17 @@ List<InlineSpan> buildSearchSnippetSpans({
   required Color highlightColor,
   int beforeChars = 40,
   int afterChars = 70,
+  bool fuzzy = true,
 }) {
   final allSpans = HtmlTextParser.parse(html, baseStyle);
 
   final nterms = isPali
       ? terms
-            .map(normalizePaliFuzzy)
+            .map(
+              (t) => fuzzy
+                  ? normalizePaliFuzzy(t)
+                  : cleanPaliForIndexing(t).toLowerCase(),
+            )
             .where((t) => t.isNotEmpty)
             .toList()
       : terms.map((t) => t.toLowerCase()).where((t) => t.isNotEmpty).toList();
@@ -46,7 +56,12 @@ List<InlineSpan> buildSearchSnippetSpans({
   }
   final plainText = plain.toString();
 
-  final match = _firstMatch(plainText, nterms, isPali: isPali);
+  final match = _firstMatch(
+    plainText,
+    nterms,
+    isPali: isPali,
+    fuzzy: fuzzy,
+  );
   if (match == null) return allSpans;
 
   // Compute the window, snapped to word boundaries so we never start or end
@@ -70,6 +85,7 @@ List<InlineSpan> buildSearchSnippetSpans({
       nterms,
       baseStyle: baseStyle,
       isPali: isPali,
+      fuzzy: fuzzy,
       highlightColor: highlightColor,
     );
   }
@@ -97,6 +113,7 @@ List<InlineSpan> buildSearchSnippetSpans({
     nterms,
     baseStyle: baseStyle,
     isPali: isPali,
+    fuzzy: fuzzy,
     highlightColor: highlightColor,
   );
 }
@@ -107,23 +124,22 @@ List<InlineSpan> buildSearchSnippetSpans({
   String text,
   List<String> nterms, {
   required bool isPali,
+  required bool fuzzy,
 }) {
   int? bestStart;
   int bestEnd = -1;
 
   if (isPali) {
+    final lower = text.toLowerCase();
     for (final nt in nterms) {
-      int pos = 0;
-      while (pos <= text.length - nt.length) {
-        final candidate = text.substring(pos, pos + nt.length);
-        if (normalizePaliFuzzy(candidate) == nt) {
-          if (bestStart == null || pos < bestStart) {
-            bestStart = pos;
-            bestEnd = pos + nt.length;
-          }
-          break; // first occurrence of this term is enough
-        }
-        pos++;
+      final starts = fuzzy
+          ? _foldedStarts(lower, nt)
+          : _wholeWordStarts(lower, nt);
+      if (starts.isEmpty) continue;
+      final pos = starts.first;
+      if (bestStart == null || pos < bestStart) {
+        bestStart = pos;
+        bestEnd = pos + nt.length;
       }
     }
   } else {
@@ -141,6 +157,36 @@ List<InlineSpan> buildSearchSnippetSpans({
   return (bestStart, bestEnd);
 }
 
+/// Start indices where [term] occurs in [text] with diacritics folded: the
+/// Fuzzy ON rule. [text] is the lowercased haystack.
+List<int> _foldedStarts(String text, String term) {
+  final starts = <int>[];
+  var pos = 0;
+  while (pos <= text.length - term.length) {
+    if (normalizePaliFuzzy(text.substring(pos, pos + term.length)) == term) {
+      starts.add(pos);
+      pos += term.length;
+    } else {
+      pos++;
+    }
+  }
+  return starts;
+}
+
+/// Start indices where [term] occurs in [text] as a whole word, exactly as
+/// spelled: the Fuzzy OFF rule. [text] is the lowercased haystack.
+List<int> _wholeWordStarts(String text, String term) {
+  final starts = <int>[];
+  for (
+    var at = text.indexOf(term);
+    at >= 0;
+    at = text.indexOf(term, at + 1)
+  ) {
+    if (isWholePaliWord(text, at, term.length)) starts.add(at);
+  }
+  return starts;
+}
+
 /// Highlight every term match within [spans] using [highlightColor].
 ///
 /// [baseStyle] is the fallback for spans parsed without an explicit style
@@ -150,6 +196,7 @@ List<InlineSpan> _highlightSpans(
   List<String> nterms, {
   required TextStyle baseStyle,
   required bool isPali,
+  required bool fuzzy,
   required Color highlightColor,
 }) {
   final result = <InlineSpan>[];
@@ -166,16 +213,13 @@ List<InlineSpan> _highlightSpans(
     // Find match ranges in this span's text.
     final ranges = <MapEntry<int, int>>[];
     if (isPali) {
+      final lower = spanText.toLowerCase();
       for (final nt in nterms) {
-        int pos = 0;
-        while (pos <= spanText.length - nt.length) {
-          final candidate = spanText.substring(pos, pos + nt.length);
-          if (normalizePaliFuzzy(candidate) == nt) {
-            ranges.add(MapEntry(pos, pos + nt.length));
-            pos += nt.length;
-          } else {
-            pos++;
-          }
+        final starts = fuzzy
+            ? _foldedStarts(lower, nt)
+            : _wholeWordStarts(lower, nt);
+        for (final start in starts) {
+          ranges.add(MapEntry(start, start + nt.length));
         }
       }
     } else {

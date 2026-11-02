@@ -119,6 +119,37 @@ String normalizePaliFuzzy(String text) {
       .trim();
 }
 
+/// The words a search highlight matches, from [query].
+///
+/// Fuzzy (prefix) search folds diacritics, so `assā` finds `assa`; Fuzzy off
+/// is a whole-word search, so the terms keep their diacritics and match only
+/// that exact word.
+List<String> paliSearchHighlightTerms(String query, {required bool fuzzy}) {
+  final words = fuzzy
+      ? normalizePaliFuzzy(query)
+      : cleanPaliForIndexing(query).toLowerCase();
+  return words.split(_whitespaceRun).where((w) => w.isNotEmpty).toList();
+}
+
+final _wordChar = RegExp(r'[\p{L}\p{M}\p{N}]', unicode: true);
+
+/// Whether the [length] characters of [text] starting at [start] form a whole
+/// word: no letter, digit or combining mark touches either end.
+///
+/// Used by whole-word (Fuzzy off) highlighting, which must not light up part
+/// of a longer word. Scripts that write Pāli without spaces (Thai, Myanmar)
+/// keep the source's spaces, so the boundaries still exist there.
+bool isWholePaliWord(String text, int start, int length) {
+  final end = start + length;
+  if (start > 0 && _wordChar.hasMatch(text.substring(start - 1, start))) {
+    return false;
+  }
+  if (end < text.length && _wordChar.hasMatch(text.substring(end, end + 1))) {
+    return false;
+  }
+  return true;
+}
+
 final _incomingUrl = RegExp(r'https?://\S+', caseSensitive: false);
 final _incomingApostrophe = RegExp('[\'‘’ʼ]');
 final _incomingHyphen = RegExp('[-‐‑­]');

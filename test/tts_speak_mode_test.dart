@@ -68,7 +68,7 @@ void main() {
     test('translation mode: only translation items with the lang', () {
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.translation,
         activeReplacements: emptyReplacements,
       );
@@ -82,7 +82,7 @@ void main() {
         () {
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.pali,
         activeReplacements: emptyReplacements,
       );
@@ -96,7 +96,7 @@ void main() {
     test('pali items carry the Roman source for engine fallback', () {
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.pali,
         activeReplacements: emptyReplacements,
       );
@@ -105,7 +105,7 @@ void main() {
       // Translation items carry no Roman source.
       final both = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.both,
         activeReplacements: emptyReplacements,
       );
@@ -116,7 +116,7 @@ void main() {
     test('both mode: Pāli item first, then translation, same lineId', () {
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.both,
         activeReplacements: emptyReplacements,
       );
@@ -129,6 +129,100 @@ void main() {
       expect(lines[2].language, 'si');
       expect(lines[3].language, 'en');
       expect(lines[3].text, 'all');
+    });
+
+    final defaultBracketRule = [
+      TtsReplacement(
+        id: 1,
+        pattern: r'\[.*?\]',
+        replacement: '',
+        isRegex: true,
+        enabled: true,
+        createdAt: DateTime(2026),
+      ),
+    ];
+
+    test('default bracket rule cleans Pali and translation lines alike', () {
+      final bracketed = [
+        _para(1, [
+          _line(
+            1,
+            pali: 'dhammo [dhamma] hoti',
+            translations: {'en': 'the [true] dhamma'},
+          ),
+        ]),
+      ];
+
+      // Without the rule the bracketed alternative reaches the engine.
+      final uncleaned = ReaderTtsController.buildTtsLines(
+        bracketed,
+        langs: const ['en'],
+        mode: TtsSpeakMode.both,
+        activeReplacements: emptyReplacements,
+      );
+      expect(uncleaned[0].text.contains('['), isTrue);
+
+      final cleaned = ReaderTtsController.buildTtsLines(
+        bracketed,
+        langs: const ['en'],
+        mode: TtsSpeakMode.both,
+        activeReplacements: defaultBracketRule,
+      );
+      // Pali line (Sinhala) and its Roman fallback source are cleaned too.
+      expect(cleaned[0].text.contains('['), isFalse);
+      expect(cleaned[0].paliRoman, 'dhammo  hoti');
+      // Translation line cleaned as well.
+      expect(cleaned[1].text, 'the  dhamma');
+    });
+
+    test('both mode reads every enabled translation in display order', () {
+      final multiLang = [
+        _para(1, [
+          _line(
+            1,
+            pali: 'dhammo',
+            translations: {'en': 'the dhamma', 'th': 'the teaching (th)'},
+          ),
+        ]),
+      ];
+      final lines = ReaderTtsController.buildTtsLines(
+        multiLang,
+        langs: const ['en', 'th'],
+        mode: TtsSpeakMode.both,
+        activeReplacements: emptyReplacements,
+      );
+      expect(lines.map((l) => l.language), ['si', 'en', 'th']);
+      expect(lines.map((l) => l.lineId), [1, 1, 1]);
+      expect(lines[2].text, 'the teaching (th)');
+    });
+
+    test('skips a translation language missing from a line', () {
+      final partial = [
+        _para(1, [
+          _line(1, pali: 'dhammo', translations: {'en': 'the dhamma'}),
+        ]),
+      ];
+      final lines = ReaderTtsController.buildTtsLines(
+        partial,
+        langs: const ['en', 'th'],
+        mode: TtsSpeakMode.translation,
+        activeReplacements: emptyReplacements,
+      );
+      expect(lines.map((l) => l.language), ['en']);
+    });
+
+    test('ttsTranslationLangs respects the first-translation-only option', () {
+      const settings = AppSettings(
+        enabledTranslations: ['en', 'th'],
+        ttsFirstTranslationOnly: true,
+      );
+      expect(settings.ttsTranslationLangs, ['en']);
+      expect(
+        settings.copyWith(ttsFirstTranslationOnly: false).ttsTranslationLangs,
+        ['en', 'th'],
+      );
+      // Off by default: every enabled translation is read.
+      expect(const AppSettings().ttsFirstTranslationOnly, isFalse);
     });
 
     test('applies TTS replacement rules to translation text', () {
@@ -144,7 +238,7 @@ void main() {
       ];
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.translation,
         activeReplacements: rules,
       );
@@ -160,7 +254,7 @@ void main() {
       ];
       final lines = ReaderTtsController.buildTtsLines(
         withEmpty,
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.both,
         activeReplacements: emptyReplacements,
       );
@@ -304,7 +398,7 @@ void main() {
       // Starting from paragraph 102 (index 1)
       final lines = ReaderTtsController.buildTtsLines(
         paragraphs.sublist(1),
-        lang: 'en',
+        langs: const ['en'],
         mode: TtsSpeakMode.translation,
         activeReplacements: [],
       );

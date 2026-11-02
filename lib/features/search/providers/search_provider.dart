@@ -4,6 +4,8 @@ import 'dart:isolate';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/database/epitaka_database.dart';
@@ -14,6 +16,7 @@ import '../../../core/providers/app_db_provider.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/database_initializer.dart';
 import '../../../core/utils/pali_search_utils.dart';
 import '../../indexing/index_controller.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
@@ -206,6 +209,11 @@ class SearchResults extends SearchState {
   /// [query] is a regular expression (the rx button was on).
   final bool regex;
 
+  /// The Fuzzy state this search ran with: true, terms are prefixes;
+  /// false, terms are whole words. Kept so pages loaded later ("Show
+  /// more", expansion) query with the same values the counts used.
+  final bool fuzzy;
+
   const SearchResults({
     required this.query,
     required this.totalResults,
@@ -215,6 +223,7 @@ class SearchResults extends SearchState {
     this.enabledCategories = kAllCategories,
     this.enabledNikayas = kAllNikayas,
     this.regex = false,
+    this.fuzzy = true,
   });
 }
 
@@ -267,13 +276,53 @@ final incomingSearchProvider = StateProvider<IncomingSearch?>((ref) => null);
 /// broken.
 final searchRegexProvider = StateProvider<bool>((ref) => false);
 
-/// Starts a regex scan of the Pāli search copy. Tests replace it to scan a
-/// fixture file and to count the scans.
+/// The Fuzzy chip of the Search screen (on the sidebar and bottom sheet too,
+/// through [search]) — like TPR's: ON, every term is a prefix (`katv*`
+/// finds `katva`, `katvā`, `katvāna`); OFF, every term is a whole word
+/// (exact: `katvā` only, `katvāna` and bare `katv` no). Saved, because a
+/// loose match silently left on is exactly what whole-word searching is
+/// there to avoid.
+final searchFuzzyProvider =
+    StateNotifierProvider<SearchFuzzyNotifier, bool>((ref) {
+  return SearchFuzzyNotifier();
+});
+
+class SearchFuzzyNotifier extends StateNotifier<bool> {
+  static const prefsKey = 'tipitaka_search_fuzzy';
+
+  SearchFuzzyNotifier() : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      state = prefs.getBool(prefsKey) ?? true;
+    } catch (_) {}
+  }
+
+  /// Set the mode and re-run the current search ([SearchNotifier.search]
+  /// reads this provider each time state changes).
+  Future<void> set(bool fuzzy) async {
+    if (state == fuzzy) return;
+    state = fuzzy;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(prefsKey, fuzzy);
+    } catch (_) {}
+  }
+}
+
+/// Starts a regex scan of the Pāli search copy. The scan reads the text
+/// from epitaka.db (the FTS index is contentless — no text to read), so its
+/// default needs that path. Tests replace it to scan a fixture file and to
+/// count the scans.
 final regexScanProvider =
     Provider<Future<RegexJob<List<RegexHit>>> Function(String pattern)>(
-      (ref) =>
-          (pattern) async =>
-              scanPaliRegex(await AppDatabase.defaultPath(), pattern),
+      (ref) => (pattern) async {
+        final dir = await getDatabaseDirectory();
+        return scanPaliRegex(p.join(dir.path, 'epitaka.db'), pattern);
+      },
     );
 
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
@@ -286,6 +335,7 @@ typedef _LoadPoint = ({
   String query,
   int distance,
   bool regex,
+  bool fuzzy,
   int pageCount,
   int totalCount,
   Set<int> seen,
@@ -509,10 +559,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// built with `remove_diacritics 1`, so the database layer normalizes
   /// the query the same way the index text was cleaned.
   ///
-  /// With [regex], [query] is a pattern run over the Pāli search copy of
-  /// every paragraph, with exact diacritics (see [scanPaliRegex]). It is
-  /// kept as typed, spaces included, and stays out of the search history:
-  /// re-run from there in normal mode it would mean something else.
+  /// The Fuzzy chip ([searchFuzzyProvider]) decides how a term matches:
+  /// ON, every term is a prefix (`katv*`); OFF, every term is a whole word
+  /// (exact). With [regex], [query] is a pattern run over the Pāli search
+  /// copy of every paragraph, with exact diacritics (see [scanPaliRegex]).
+  /// It is kept as typed, spaces included, and stays out of the search
+  /// history: re-run from there in normal mode it would mean something
+  /// else.
   Future<void> search({
     required String query,
     int distance = 0,
@@ -525,6 +578,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
     _aiHighlightTerms = const [];
     final normalized = regex ? query : query.trim();
     if (regex) distance = 0;
+    // Regex has its own lane; the Fuzzy chip does not reach it.
+    final fuzzy = regex ? true : _ref.read(searchFuzzyProvider);
     // A query made only of punctuation (",", "…") has no searchable words
     // after cleaning — treat it like an empty query instead of running a
     // pointless search.
@@ -582,6 +637,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
                   normalized,
                   langCode: _activeTranslationLang(),
                   distance: distance,
+                  exact: !fuzzy,
                 );
               } catch (_) {
                 return <String, int>{};
@@ -644,6 +700,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
           enabledCategories: _enabledCategories,
           enabledNikayas: _enabledNikayas,
           regex: regex,
+          fuzzy: fuzzy,
         );
         return;
       }
@@ -697,6 +754,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         enabledCategories: _enabledCategories,
         enabledNikayas: _enabledNikayas,
         regex: regex,
+        fuzzy: fuzzy,
       );
 
       // If auto-expanded, load every book concurrently instead of one
@@ -823,6 +881,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         query: point.query,
         distance: point.distance,
         regex: point.regex,
+        fuzzy: point.fuzzy,
         offset: first.offset,
         limit: first.pageSize,
       );
@@ -833,6 +892,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         [firstRows],
         seen: point.seen,
         regex: point.regex,
+        fuzzy: point.fuzzy,
       )).single;
       if (gen != _searchGen) return done();
       if (!_commitBookPages(bookId, [
@@ -858,6 +918,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       query: point.query,
       distance: point.distance,
       regex: point.regex,
+      fuzzy: point.fuzzy,
       offset: start,
       limit: -1,
     );
@@ -880,6 +941,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       windowRows,
       seen: point.seen,
       regex: point.regex,
+      fuzzy: point.fuzzy,
     );
     if (gen != _searchGen) return done();
 
@@ -919,6 +981,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       query: current.query,
       distance: current.distance,
       regex: current.regex,
+      fuzzy: current.fuzzy,
       pageCount: summary.loadedPages.length,
       totalCount: summary.totalCount,
       seen: {
@@ -990,19 +1053,22 @@ class SearchNotifier extends StateNotifier<SearchState> {
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
       regex: current.regex,
+      fuzzy: current.fuzzy,
     );
     return true;
   }
 
   /// The Pāli and translation FTS rows of [bookId] in rank order, [limit]
   /// rows of each from [offset]. With [regex], the cached regex hits in text
-  /// order, and no translation rows.
+  /// order, and no translation rows. [fuzzy] mirrors the state the counts
+  /// ran with — true for prefix terms, false for whole words.
   Future<({List<SearchResultRow> pali, List<SearchResultRow> trans})>
   _fetchBookRows({
     required String bookId,
     required String query,
     required int distance,
     required bool regex,
+    required bool fuzzy,
     required int offset,
     required int limit,
   }) async {
@@ -1036,6 +1102,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
         distance: distance,
         limit: limit,
         offset: offset,
+        exact: !fuzzy,
       ),
     ];
     if (activeLang != null) {
@@ -1047,6 +1114,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
           distance: distance,
           limit: limit,
           offset: offset,
+          exact: !fuzzy,
         ),
       );
     } else {
@@ -1069,6 +1137,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     List<({List<SearchResultRow> pali, List<SearchResultRow> trans})> windows, {
     Set<int> seen = const {},
     bool regex = false,
+    bool fuzzy = true,
   }) async {
     final activeLang = _activeTranslationLang();
     final searchWords = regex
@@ -1213,15 +1282,29 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // FTS index stores normalized text, but the sentences table stores
       // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
       // Regex mode marks its lines below, in a regex job.
+      //
+      // Fuzzy off (whole-word search): a word only marks a line it makes up
+      // on its own — the same rule the quoted FTS terms used to pick this
+      // paragraph.
       final bool isMatch;
       if (regex) {
         isMatch = false;
-      } else {
+      } else if (fuzzy) {
         final paliNormalized = normalizePaliFuzzy(pali);
         var matched = searchWords.any((w) => paliNormalized.contains(w));
         if (!matched && lineTrans != null) {
           final transNormalized = normalizePaliFuzzy(lineTrans);
           matched = searchWords.any((w) => transNormalized.contains(w));
+        }
+        isMatch = matched;
+      } else {
+        final paliTokens = normalizePaliFuzzy(pali).split(RegExp(r'\s+')).toSet();
+        var matched = searchWords.any(paliTokens.contains);
+        if (!matched && lineTrans != null) {
+          final transTokens = normalizePaliFuzzy(
+            lineTrans,
+          ).split(RegExp(r'\s+')).toSet();
+          matched = searchWords.any(transTokens.contains);
         }
         isMatch = matched;
       }

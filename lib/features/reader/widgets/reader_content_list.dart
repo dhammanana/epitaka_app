@@ -457,6 +457,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
         bookLinks: paraLinks,
         showBookLinks: config.showBookLinks,
         searchQuery: slice.searchQuery,
+        searchQueryFuzzy: slice.searchQueryFuzzy,
         lookupHighlight: slice.lookupHighlight,
         ttsHighlightLineId: slice.ttsHighlightLineId,
         // The slice only carries a TTS line for THIS paragraph, so the
@@ -465,6 +466,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
             ? paragraph.paraId
             : null,
         ttsHighlightIsPali: slice.ttsHighlightIsPali,
+        ttsHighlightLang: slice.ttsHighlightLang,
         ttsHighlightWordIndex: slice.ttsWordIndex,
         ttsHighlightWordLineText: slice.ttsWordLineText,
         jumpHighlightLineId: slice.jumpHighlightLineId,

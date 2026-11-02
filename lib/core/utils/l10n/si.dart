@@ -349,6 +349,7 @@ const Map<String, String> si = {
   // ── Search ──────────────────────────────────────────────────────────
   'Search Pāli texts…': 'පාලි පාඨ සොයන්න…',
   'Fuzzy': 'අපැහැදිලි',
+  'Exact': 'නිශ්චිත',
   'Word distance': 'වචන දුර',
   'Any distance': 'ඕනෑම දුරක්',
   'Within': 'තුළ',

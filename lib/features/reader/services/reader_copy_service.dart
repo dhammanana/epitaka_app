@@ -430,11 +430,10 @@ class ReaderCopyService {
             if (readerState.paragraphs.isEmpty) return;
 
             final settings = ref.read(settingsProvider);
-            final enabledLangs = settings.visibleTranslationLangs;
-            final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
+            final langs = settings.ttsTranslationLangs;
             final mode = settings.ttsSpeakMode;
 
-            if (lang == null && mode == TtsSpeakMode.translation) return;
+            if (langs.isEmpty && mode == TtsSpeakMode.translation) return;
 
             // Find the paragraph and line from the selection
             int? startParaId = currentParaId;
@@ -461,7 +460,7 @@ class ReaderCopyService {
             final lines = ReaderTtsController.buildTtsLines(
               readerState.paragraphs
                   .sublist(readerState.paragraphs.indexWhere((p) => p.paraId == startParaId)),
-              lang: lang,
+              langs: langs,
               mode: mode,
               activeReplacements: activeReplacements,
             );

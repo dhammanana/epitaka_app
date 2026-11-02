@@ -1,0 +1,189 @@
+{
+  "_comment": "Catalog of Google Fonts that can be downloaded into the app. URLs point at the upstream google/fonts repository (raw TTFs, no API key). 'scripts' lists the Pali scripts the font can render; the font is offered for those scripts and ignored elsewhere.",
+  "fonts": [
+    {
+      "id": "literata",
+      "name": "Literata",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["roman"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/literata/Literata%5Bopsz,wght%5D.ttf"
+    },
+    {
+      "id": "ebgaramond",
+      "name": "EB Garamond",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["roman"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ebgaramond/EBGaramond%5Bwght%5D.ttf"
+    },
+    {
+      "id": "crimsonpro",
+      "name": "Crimson Pro",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["roman"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/crimsonpro/CrimsonPro%5Bwght%5D.ttf"
+    },
+    {
+      "id": "sourceserif4",
+      "name": "Source Serif 4",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["roman"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sourceserif4/SourceSerif4%5Bopsz,wght%5D.ttf"
+    },
+    {
+      "id": "robotoslab",
+      "name": "Roboto Slab",
+      "category": "serif",
+      "license": "Apache 2.0",
+      "scripts": ["roman"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/apache/robotoslab/RobotoSlab%5Bwght%5D.ttf"
+    },
+    {
+      "id": "notoserif",
+      "name": "Noto Serif",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["roman", "cyrillic"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserif/NotoSerif%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosans",
+      "name": "Noto Sans",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["roman", "cyrillic"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notoserifsinhala",
+      "name": "Noto Serif Sinhala",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["sinhala"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsinhala/NotoSerifSinhala%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosanssinhala",
+      "name": "Noto Sans Sinhala",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["sinhala"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssinhala/NotoSansSinhala%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notoserifdevanagari",
+      "name": "Noto Serif Devanagari",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["devanagari"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifdevanagari/NotoSerifDevanagari%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansdevanagari",
+      "name": "Noto Sans Devanagari",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["devanagari"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notoserifthai",
+      "name": "Noto Serif Thai",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["thai"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifthai/NotoSerifThai%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansthai",
+      "name": "Noto Sans Thai",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["thai"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansthai/NotoSansThai%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansmyanmar",
+      "name": "Noto Sans Myanmar",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["myanmar"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmyanmar/NotoSansMyanmar%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosanskhmer",
+      "name": "Noto Sans Khmer",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["khmer"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskhmer/NotoSansKhmer%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notoseriftamil",
+      "name": "Noto Serif Tamil",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["tamil"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftamil/NotoSerifTamil%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosanstamil",
+      "name": "Noto Sans Tamil",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["tamil"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstamil/NotoSansTamil%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosanskannada",
+      "name": "Noto Sans Kannada",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["kannada"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskannada/NotoSansKannada%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansmalayalam",
+      "name": "Noto Sans Malayalam",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["malayalam"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmalayalam/NotoSansMalayalam%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansgujarati",
+      "name": "Noto Sans Gujarati",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["gujarati"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgujarati/NotoSansGujarati%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansgurmukhi",
+      "name": "Noto Sans Gurmukhi",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["gurmukhi"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgurmukhi/NotoSansGurmukhi%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notosansbengali",
+      "name": "Noto Sans Bengali",
+      "category": "sans",
+      "license": "OFL",
+      "scripts": ["bengali"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth,wght%5D.ttf"
+    },
+    {
+      "id": "notoseriftibetan",
+      "name": "Noto Serif Tibetan",
+      "category": "serif",
+      "license": "OFL",
+      "scripts": ["tibetan"],
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftibetan/NotoSerifTibetan%5Bwght%5D.ttf"
+    }
+  ]
+}

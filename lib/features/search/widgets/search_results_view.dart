@@ -325,6 +325,8 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
             initialParaId: item.paraId,
             initialLineId: initialLineId,
             searchQuery: query,
+            // The reader highlights with the same rule this search used.
+            searchQueryFuzzy: widget.state.fuzzy,
           ),
         );
     openReaderRoute(context);
@@ -926,19 +928,15 @@ class _SearchResultItemTile extends ConsumerWidget {
     final script = settings.paliScript;
 
     // Extract search terms from the current query, or in regex mode from
-    // the pieces the pattern matched.
+    // the pieces the pattern matched. Fuzzy off keeps the diacritics, so a
+    // whole-word search never lights up a folded spelling (`assā` → `assa`).
     final highlightQuery = searchState is SearchResults
         ? item.highlightTerms?.join(' ') ?? searchState.query
         : '';
-    final List<String> searchTerms;
-    if (searchState is SearchResults) {
-      final query = highlightQuery;
-      searchTerms = normalizePaliFuzzy(
-        query,
-      ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    } else {
-      searchTerms = const [];
-    }
+    final bool fuzzy = searchState is SearchResults ? searchState.fuzzy : true;
+    final List<String> searchTerms = searchState is SearchResults
+        ? paliSearchHighlightTerms(highlightQuery, fuzzy: fuzzy)
+        : const [];
 
     // Get typography for Pali
     final paliTypo = settings.typography.pali;
@@ -1031,6 +1029,7 @@ class _SearchResultItemTile extends ConsumerWidget {
                   line: line,
                   searchTerms: searchTerms,
                   query: rawQuery,
+                  fuzzy: fuzzy,
                   paliTextStyle: paliTextStyle,
                   transTextStyle: transTextStyle,
                   colors: colors,
@@ -1055,6 +1054,10 @@ class _LineTile extends StatelessWidget {
   /// into the display script for highlighting.
   final String query;
 
+  /// Whether the search folded diacritics (Fuzzy on). Off, the highlight
+  /// matches only the exact whole word.
+  final bool fuzzy;
+
   final TextStyle paliTextStyle;
   final TextStyle transTextStyle;
   final ColorScheme colors;
@@ -1065,6 +1068,7 @@ class _LineTile extends StatelessWidget {
     required this.line,
     required this.searchTerms,
     required this.query,
+    this.fuzzy = true,
     required this.paliTextStyle,
     required this.transTextStyle,
     required this.colors,
@@ -1097,6 +1101,7 @@ class _LineTile extends StatelessWidget {
               text: line.pali,
               searchTerms: searchTerms,
               query: query,
+              fuzzy: fuzzy,
               script: script,
               style: paliTextStyle.copyWith(
                 fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
@@ -1112,6 +1117,7 @@ class _LineTile extends StatelessWidget {
               child: _buildHighlightedTranslationText(
                 text: line.translation!,
                 searchTerms: searchTerms,
+                fuzzy: fuzzy,
                 style: transTextStyle.copyWith(
                   fontSize: transTextStyle.fontSize ?? 12,
                   height: transTextStyle.height ?? 1.3,
@@ -1132,6 +1138,7 @@ class _LineTile extends StatelessWidget {
     required List<String> searchTerms,
     required String query,
     required Script script,
+    required bool fuzzy,
     required TextStyle style,
     required Color highlightColor,
   }) {
@@ -1158,15 +1165,17 @@ class _LineTile extends StatelessWidget {
     // text and the found word stays unhighlighted.
     final List<String> terms = script == Script.roman
         ? searchTerms
-        : (normalizePaliFuzzy(
+        : paliSearchHighlightTerms(
             convertSearchQueryForScript(query, script),
-          ).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList());
+            fuzzy: fuzzy,
+          );
 
     final spans = buildSearchSnippetSpans(
       html: converted,
       baseStyle: effStyle,
       terms: terms.isEmpty ? searchTerms : terms,
       isPali: true,
+      fuzzy: fuzzy,
       highlightColor: highlightColor,
       beforeChars: 40,
       afterChars: 60,
@@ -1185,6 +1194,7 @@ class _LineTile extends StatelessWidget {
   Widget _buildHighlightedTranslationText({
     required String text,
     required List<String> searchTerms,
+    required bool fuzzy,
     required TextStyle style,
     required Color highlightColor,
   }) {
@@ -1202,6 +1212,7 @@ class _LineTile extends StatelessWidget {
       baseStyle: style,
       terms: searchTerms,
       isPali: false,
+      fuzzy: fuzzy,
       highlightColor: highlightColor,
       beforeChars: 35,
       afterChars: 55,

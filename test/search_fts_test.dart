@@ -244,12 +244,74 @@ void main() {
       expect(await hits('namo tassa'), {('dn1', 7)});
     });
 
-    test('results carry a highlighted snippet', () async {
+    test('result rows come back from the map table; no text inside a '
+        'contentless index (schema v3)', () async {
       final rows = await appDb.searchFts('cakkhu');
       expect(rows, isNotEmpty);
-      final snippet = rows.first.snippet;
-      expect(snippet, contains('<b>'));
-      expect(snippet, contains('cakkhu'));
+      expect((rows.first.bookId, rows.first.firstParaId), ('dn1', 1));
+      // The FTS table is contentless (`content=''`): snippet and paliText
+      // are no longer produced by the index. The provider re-reads every
+      // hit's lines from epitaka.db `sentences` instead (and the paragraph
+      // preview builds its snippet from those lines).
+      expect(rows.first.snippet, isEmpty);
+      expect(rows.first.paliText, isEmpty);
+    });
+  });
+
+  group('exact · whole-word terms (the Fuzzy chip off)', () {
+    Future<Set<(String, int)>> exact(String query, {int distance = 0}) async {
+      final rows = await appDb.searchFts(query, distance: distance, exact: true);
+      return {for (final r in rows) (r.bookId, r.firstParaId ?? -1)};
+    }
+
+    test('`katva` exact matches every paragraph holding the whole token '
+        '`katva` (= `katvā`) — but not when only a longer form exists',
+        () async {
+      // kv10 and vbh20 also carry a bare `katvā` next to their `katvāna`,
+      // so they match on the bare token itself.
+      expect(
+        await exact('katva'),
+        {('dn1', 3), ('dn1', 6), ('kv', 10), ('vbh', 20)},
+      );
+    });
+
+    test('a truncated term matches nothing exact — that is what the fuzzy '
+        '(prefix) mode is for', () async {
+      expect(await exact('katv'), isEmpty);
+      expect(await exact('pandit'), isEmpty); // the token is `pandito`
+      expect(await exact('rup'), isEmpty); // tokens are `rupe` and `rupam`
+    });
+
+    test('`dhamma` exact means the end-less form: `dhammā`/`dhammaṃ` fold '
+        'to different tokens than the bare word', () async {
+      // dn1 5 `sabbe dhammā anattā` has the bare token (folded dhammā);
+      // dn1 4 `dhammaṃ khetta` and kv10 `dhammaṃ` fold to `dhammam` and
+      // stay out.
+      expect(await exact('dhamma'), {('dn1', 5)});
+    });
+
+    test('exact two-word query with distance still finds the pair', () async {
+      // "katvā na upeti so paṇḍito": katva … pandito are 4 tokens apart.
+      expect(await exact('katva pandito', distance: 3), {('dn1', 3)});
+      expect(await exact('katva pandito', distance: 2), isEmpty);
+    });
+
+    test('exact counts per book drop the prefix-only and folded-ṃ matches',
+        () async {
+      expect(
+        await appDb.countPaliResultsByBook('katv', exact: true),
+        isEmpty,
+      );
+      expect(
+        await appDb.countPaliResultsByBook('katva', exact: true),
+        {'dn1': 2, 'kv': 1, 'vbh': 1},
+      );
+      expect(
+        await appDb
+            .searchTranslationFts('en', 'dhamma', exact: true)
+            .then((rows) => rows.map((r) => r.firstParaId)),
+        contains(10),
+      );
     });
   });
 

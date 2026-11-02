@@ -74,6 +74,7 @@ void main() {
                     isTtsLineVisible: true,
                     onFollowTts: () {},
                     onSpeakModeChanged: (_) {},
+                    onFirstTranslationOnlyChanged: (_) {},
                   );
                 });
                 return const Scaffold(body: SizedBox());

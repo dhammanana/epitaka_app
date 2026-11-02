@@ -4,6 +4,7 @@ import 'my.dart';
 import 'si.dart';
 import 'lo.dart';
 import 'th.dart';
+import 'zh.dart';
 
 /// Registry of all supported UI languages.
 ///
@@ -22,10 +23,11 @@ abstract final class AppStrings {
     'si': si,
     'lo': lo,
     'th': th,
+    'zh': zh,
   };
 
   /// Locale codes shown in the language picker, in display order.
-  static const List<String> supportedCodes = ['en', 'vi', 'my', 'si', 'lo', 'th'];
+  static const List<String> supportedCodes = ['en', 'vi', 'my', 'si', 'lo', 'th', 'zh'];
 
   /// Resolve the string table for a locale code, falling back to English
   /// when the code is unknown.

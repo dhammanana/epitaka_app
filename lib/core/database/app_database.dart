@@ -35,17 +35,23 @@ typedef IndexProgressCallback = void Function(double progress, String status);
 ///        PIPELINE change only — deliberately NOT a version bump (user
 ///        decision 2026-10-03), so existing installs are not rebuilt:
 ///        only fresh builds (new installs, manual "Rebuild search index",
-///        or the next real bump) include variant content. Flip this
-///        constant to 3 to force that migration — it rebuilds ONLY the
-///        Pāli index; translation indexes have their own constant.
-const int kSearchIndexSchemaVersion = 2;
+///        or the next real bump) include variant content.
+///   v3 — the FTS table is CONTENTLESS (`content=''`): it stores only the
+///        token index, and each paragraph's text lives once already in
+///        epitaka.db. The (book_id, para_id) of every row moves into a
+///        plain `search_fts_map` table keyed by rowid. The tokenizer and
+///        cleaning pipeline are unchanged — this is a storage change, and
+///        a table created with UNINDEXED columns cannot be converted in
+///        place, so every install rebuilds once.
+const int kSearchIndexSchemaVersion = 3;
 
 /// Schema version for the per-language TRANSLATION indexes
 /// (`search_fts_<lang>`). Separate from [kSearchIndexSchemaVersion] so a
 /// Pāli pipeline/schema change never forces needless rebuilds of every
 /// installed translation index — the translation build has its own
-/// cleaning pipeline which did not change.
-const int kTranslationSearchIndexSchemaVersion = 2;
+/// cleaning pipeline. v3 mirrors the Pāli index: contentless FTS with a
+/// `search_fts_<lang>_map` table.
+const int kTranslationSearchIndexSchemaVersion = 3;
 
 /// Thrown by [AppDatabase.open] when `app_data.db` cannot be opened even
 /// after a journal-file cleanup retry. Callers should catch this and let
@@ -450,13 +456,49 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
+
+  /// Replacement rules seeded on first run and on the v8 upgrade so TTS
+  /// always starts with sane defaults.
+  ///
+  /// `\[.*?\]` (regex) drops the bracketed alternative readings the canon
+  /// stores inline (e.g. `[evaṃ]`), which the engine would otherwise read
+  /// out loud as literal text. Rules are ordinary rows: the user can edit,
+  /// disable or delete them.
+  @visibleForTesting
+  static const defaultTtsReplacements =
+      <({String pattern, String replacement, bool isRegex})>[
+        (pattern: r'\[.*?\]', replacement: '', isRegex: true),
+      ];
+
+  /// Insert any default replacement rule that isn't already present.
+  ///
+  /// Matches by pattern, so it is safe to run repeatedly and never
+  /// duplicates a rule the user already has (including one they disabled).
+  Future<void> ensureDefaultTtsReplacements() async {
+    for (final rule in defaultTtsReplacements) {
+      final existing = await (select(
+        ttsReplacements,
+      )..where((r) => r.pattern.equals(rule.pattern))).getSingleOrNull();
+      if (existing != null) continue;
+      await into(ttsReplacements).insert(
+        TtsReplacementsCompanion(
+          pattern: Value(rule.pattern),
+          replacement: Value(rule.replacement),
+          isRegex: Value(rule.isRegex),
+          enabled: const Value(true),
+          createdAt: Value(DateTime.now()),
+        ),
+      );
+    }
+  }
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (Migrator m) async {
         await m.createAll();
+        await ensureDefaultTtsReplacements();
       },
       onUpgrade: (Migrator m, int from, int to) async {
         if (from < 2) {
@@ -577,6 +619,13 @@ class AppDatabase extends _$AppDatabase {
               await customStatement('DROP TABLE annotations_old');
             }
           }
+        }
+        if (from < 8) {
+          // Seed the default TTS replacement rules (v2 already created the
+          // table for older installs; fresh ones got it in onCreate).
+          try {
+            await ensureDefaultTtsReplacements();
+          } catch (_) {}
         }
       },
       beforeOpen: (details) async {
@@ -1313,14 +1362,29 @@ class AppDatabase extends _$AppDatabase {
     // was the cause of the "works, then corrupted after restart" bug).
     await transaction(() async {
       await customStatement('DROP TABLE IF EXISTS search_fts');
+      await customStatement('DROP TABLE IF EXISTS search_fts_map');
       await customStatement('DROP TABLE IF EXISTS search_words');
 
+      // Contentless FTS (content=''): the virtual table stores only the
+      // token index (a third of the size with the text inside). The text
+      // itself lives once already in epitaka.db's `sentences`, where every
+      // result reader fetches it — search results, the paragraph preview
+      // and the AI tools all re-read the lines per paragraph. Because a
+      // contentless table keeps NO columns (not even UNINDEXED ones), the
+      // row's (book_id, para_id) moves into a plain map table keyed by the
+      // rowid the insert chose, and every query joins it back.
       await customStatement(
         'CREATE VIRTUAL TABLE search_fts USING fts5('
-        '  book_id UNINDEXED,'
-        '  para_id UNINDEXED,'
         '  pali_text,'
+        "  content='',"
         "  tokenize='unicode61 remove_diacritics 1'"
+        ')',
+      );
+      await customStatement(
+        'CREATE TABLE search_fts_map ('
+        '  id INTEGER PRIMARY KEY,'
+        '  book_id TEXT NOT NULL,'
+        '  para_id INTEGER NOT NULL'
         ')',
       );
       await customStatement(
@@ -1352,9 +1416,11 @@ class AppDatabase extends _$AppDatabase {
       // (~hundreds of thousands of times in a full build). Chunking cuts
       // it down to a handful of round-trips.
       const yieldInterval = 200;
-      const insertChunk = 200; // rows per multi-row INSERT (200×3 = 600 params)
+      const insertChunk = 200; // rows per multi-row INSERT (200×2 = 400 params)
       int yieldCounter = 0;
-      final ftsBuffer = <Object?>[]; // flat book_id, para_id, pali_text tuples
+      final ftsBuffer = <Object?>[]; // flat rowid, pali_text tuples
+      final mapBuffer = <Object?>[]; // flat id, book_id, para_id tuples
+      int nextRowId = 1; // rowids the build assigns, starting from 1
 
       await for (final pageRows in _paragraphPages(
         epitakaDb,
@@ -1373,9 +1439,13 @@ class AppDatabase extends _$AppDatabase {
           if (paliText.isEmpty) continue;
 
           ftsBuffer
-            ..add(bookId)
-            ..add(paraId)
+            ..add(nextRowId)
             ..add(paliText);
+          mapBuffer
+            ..add(nextRowId)
+            ..add(bookId)
+            ..add(paraId);
+          nextRowId++;
           insertedPages++;
           yieldCounter++;
 
@@ -1393,11 +1463,17 @@ class AppDatabase extends _$AppDatabase {
             );
           }
 
-          if (ftsBuffer.length >= insertChunk * 3) {
+          if (ftsBuffer.length >= insertChunk * 2) {
             await _flushBatchInsert(
               'search_fts',
-              'book_id, para_id, pali_text',
+              'rowid, pali_text',
               ftsBuffer,
+              2,
+            );
+            await _flushBatchInsert(
+              'search_fts_map',
+              'id, book_id, para_id',
+              mapBuffer,
               3,
             );
           }
@@ -1413,8 +1489,14 @@ class AppDatabase extends _$AppDatabase {
       }
       await _flushBatchInsert(
         'search_fts',
-        'book_id, para_id, pali_text',
+        'rowid, pali_text',
         ftsBuffer,
+        2,
+      );
+      await _flushBatchInsert(
+        'search_fts_map',
+        'id, book_id, para_id',
+        mapBuffer,
         3,
       );
 
@@ -1512,12 +1594,23 @@ class AppDatabase extends _$AppDatabase {
     // Pāli index above.
     await transaction(() async {
       await customStatement('DROP TABLE IF EXISTS $tableName');
+      await customStatement('DROP TABLE IF EXISTS ${tableName}_map');
+      // Contentless FTS — same shape as the Pāli index (see above): token
+      // index only, the paragraph's translation text stays in
+      // epitaka_<lang>.db `sentences`, and the map table keeps each row's
+      // (book_id, para_id) against the rowid the insert chose.
       await customStatement(
         'CREATE VIRTUAL TABLE $tableName USING fts5('
-        '  book_id UNINDEXED,'
-        '  para_id UNINDEXED,'
         '  translation_text,'
+        "  content='',"
         "  tokenize='unicode61 remove_diacritics 1'"
+        ')',
+      );
+      await customStatement(
+        'CREATE TABLE ${tableName}_map ('
+        '  id INTEGER PRIMARY KEY,'
+        '  book_id TEXT NOT NULL,'
+        '  para_id INTEGER NOT NULL'
         ')',
       );
       // Word suggestions for THIS language. Kept per-language (rather than
@@ -1542,8 +1635,9 @@ class AppDatabase extends _$AppDatabase {
       const yieldInterval = 200;
       const insertChunk = 200;
       int yieldCounter = 0;
-      final ftsBuffer =
-          <Object?>[]; // flat book_id, para_id, translation tuples
+      final ftsBuffer = <Object?>[]; // flat rowid, translation tuples
+      final mapBuffer = <Object?>[]; // flat id, book_id, para_id tuples
+      int nextRowId = 1;
 
       await for (final sentenceRows in _paragraphPages(
         translationDb,
@@ -1573,9 +1667,13 @@ class AppDatabase extends _$AppDatabase {
           if (translationText.isEmpty) continue;
 
           ftsBuffer
-            ..add(bookId)
-            ..add(paraId)
+            ..add(nextRowId)
             ..add(translationText);
+          mapBuffer
+            ..add(nextRowId)
+            ..add(bookId)
+            ..add(paraId);
+          nextRowId++;
           count++;
           yieldCounter++;
 
@@ -1597,11 +1695,13 @@ class AppDatabase extends _$AppDatabase {
             );
           }
 
-          if (ftsBuffer.length >= insertChunk * 3) {
+          if (ftsBuffer.length >= insertChunk * 2) {
+            await _flushBatchInsert(tableName, 'rowid, translation_text',
+                ftsBuffer, 2);
             await _flushBatchInsert(
-              tableName,
-              'book_id, para_id, translation_text',
-              ftsBuffer,
+              '${tableName}_map',
+              'id, book_id, para_id',
+              mapBuffer,
               3,
             );
           }
@@ -1613,8 +1713,14 @@ class AppDatabase extends _$AppDatabase {
       }
       await _flushBatchInsert(
         tableName,
-        'book_id, para_id, translation_text',
+        'rowid, translation_text',
         ftsBuffer,
+        2,
+      );
+      await _flushBatchInsert(
+        '${tableName}_map',
+        'id, book_id, para_id',
+        mapBuffer,
         3,
       );
 
@@ -1697,6 +1803,7 @@ class AppDatabase extends _$AppDatabase {
     String langCode,
     String query, {
     int distance = 0,
+    bool exact = false,
   }) async {
     final tableName = 'search_fts_$langCode';
 
@@ -1708,16 +1815,17 @@ class AppDatabase extends _$AppDatabase {
       query,
       distance: distance,
       joinHyphens: true,
+      exact: exact,
     );
     if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(
-        'SELECT book_id, para_id, '
-        "snippet($tableName, 1, '<b>', '</b>', '…', 48) as snippet_text "
-        'FROM $tableName '
+        'SELECT m.book_id, m.para_id '
+        'FROM $tableName f '
+        'JOIN ${tableName}_map m ON m.id = f.rowid '
         'WHERE translation_text MATCH ? '
-        'ORDER BY rank '
+        'ORDER BY f.rank '
         'LIMIT 100',
         variables: [Variable.withString(ftsQuery)],
       ).get();
@@ -1727,7 +1835,6 @@ class AppDatabase extends _$AppDatabase {
             (r) => SearchResultRow(
               bookId: r.data['book_id'] as String,
               vripage: '',
-              snippet: r.data['snippet_text'] as String? ?? '',
               firstParaId: r.data['para_id'] as int?,
             ),
           )
@@ -1752,9 +1859,16 @@ class AppDatabase extends _$AppDatabase {
   /// MATCH query is an FTS5 syntax error and the search silently returns
   /// zero results.
   ///
-  /// Words are matched as prefixes (`term*`). With [distance] > 0 and more
-  /// than one word, FTS5's NEAR() function (not the FTS3/4 infix syntax)
-  /// requires the words within [distance] tokens of each other.
+  /// Words are matched as prefixes (`term*`) so that "cakk" finds
+  /// "cakka", "cakkhu", "cakkuṃ". With [exact], each term is a quoted
+  /// whole word (`"term"`) instead: only the exact token matches, so
+  /// `katva` finds `katvā` (same token once diacritics are removed) but
+  /// not `katvāna`, and `katv` finds nothing. This is the "fuzzy off"
+  /// mode; the fuzzy search-screen state decides which one runs.
+  ///
+  /// With [distance] > 0 and more than one word, FTS5's NEAR() function
+  /// (not the FTS3/4 infix syntax) requires the words within [distance]
+  /// tokens of each other.
   ///
   /// [joinHyphens] is for the translation indexes, which were built with
   /// hyphens removed (`well-being` → `wellbeing`); the Pāli index turned
@@ -1763,6 +1877,7 @@ class AppDatabase extends _$AppDatabase {
     String query, {
     int distance = 0,
     bool joinHyphens = false,
+    bool exact = false,
   }) {
     var text = query.trim().toLowerCase();
     if (joinHyphens) text = text.replaceAll('-', '');
@@ -1783,7 +1898,9 @@ class AppDatabase extends _$AppDatabase {
         .toList();
     if (words.isEmpty) return '';
 
-    final terms = words.map((w) => '$w*').toList();
+    // Quoted in exact mode so a term only matches its own token; the
+    // cleaning above already removed any double quotes from [words].
+    final terms = words.map((w) => exact ? '"$w"' : '$w*').toList();
     if (distance > 0 && terms.length > 1) {
       return 'NEAR(${terms.join(' ')}, $distance)';
     }
@@ -1795,17 +1912,19 @@ class AppDatabase extends _$AppDatabase {
   Future<Map<String, int>> countPaliResultsByBook(
     String query, {
     int distance = 0,
+    bool exact = false,
   }) async {
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return {};
 
     try {
       final rows = await customSelect(
-        'SELECT book_id, COUNT(*) as cnt '
-        'FROM search_fts '
-        'WHERE pali_text MATCH ? '
-        'GROUP BY book_id '
-        'ORDER BY book_id',
+        'SELECT m.book_id, COUNT(*) as cnt '
+        'FROM search_fts f '
+        'JOIN search_fts_map m ON m.id = f.rowid '
+        'WHERE f.pali_text MATCH ? '
+        'GROUP BY m.book_id '
+        'ORDER BY m.book_id',
         variables: [Variable.withString(ftsQuery)],
       ).get();
 
@@ -1826,25 +1945,29 @@ class AppDatabase extends _$AppDatabase {
     String query, {
     String? langCode,
     int distance = 0,
+    bool exact = false,
   }) async {
-    final paliQuery = _buildFtsQuery(query, distance: distance);
+    final paliQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     final transTable = 'search_fts_$langCode';
     final transQuery =
         langCode != null && await isTranslationIndexBuilt(langCode)
-        ? _buildFtsQuery(query, distance: distance, joinHyphens: true)
+        ? _buildFtsQuery(query, distance: distance, joinHyphens: true, exact: exact)
         : '';
     if (transQuery.isEmpty) {
-      return countPaliResultsByBook(query, distance: distance);
+      return countPaliResultsByBook(query, distance: distance, exact: exact);
     }
     if (paliQuery.isEmpty) return {};
 
     try {
       final rows = await customSelect(
         'SELECT book_id, COUNT(*) as cnt FROM ('
-        'SELECT book_id, para_id FROM search_fts WHERE pali_text MATCH ? '
+        'SELECT m.book_id, m.para_id FROM search_fts f '
+        'JOIN search_fts_map m ON m.id = f.rowid '
+        'WHERE f.pali_text MATCH ? '
         'UNION '
-        'SELECT book_id, para_id FROM $transTable '
-        'WHERE translation_text MATCH ?'
+        'SELECT m.book_id, m.para_id FROM $transTable t '
+        'JOIN ${transTable}_map m ON m.id = t.rowid '
+        'WHERE t.translation_text MATCH ?'
         ') GROUP BY book_id ORDER BY book_id',
         variables: [
           Variable.withString(paliQuery),
@@ -1863,25 +1986,27 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Fetch paginated Pali FTS results for a specific [bookId].
-  /// Returns the matching para_ids with highlighted snippets and full text.
+  /// Returns the matching para_ids; the paragraph's lines and translations
+  /// are fetched from epitaka.db by the provider, so a contentless index
+  /// (token index only, schema v3) needs no text or snippet here.
   Future<List<SearchResultRow>> searchPaliFtsByBook(
     String bookId,
     String query, {
     int distance = 0,
     int limit = 30,
     int offset = 0,
+    bool exact = false,
   }) async {
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(
-        "SELECT book_id, para_id, "
-        "snippet(search_fts, 2, '<mark>', '</mark>', '…', 20) as snippet_text, "
-        'pali_text '
-        'FROM search_fts '
-        'WHERE pali_text MATCH ? AND book_id = ? '
-        'ORDER BY rank '
+        'SELECT m.book_id, m.para_id '
+        'FROM search_fts f '
+        'JOIN search_fts_map m ON m.id = f.rowid '
+        'WHERE f.pali_text MATCH ? AND m.book_id = ? '
+        'ORDER BY f.rank '
         'LIMIT ? OFFSET ?',
         variables: [
           Variable.withString(ftsQuery),
@@ -1897,8 +2022,6 @@ class AppDatabase extends _$AppDatabase {
               bookId: r.data['book_id'] as String,
               vripage: '',
               firstParaId: r.data['para_id'] as int?,
-              snippet: r.data['snippet_text'] as String? ?? '',
-              paliText: r.data['pali_text'] as String? ?? '',
             ),
           )
           .toList();
@@ -1915,6 +2038,7 @@ class AppDatabase extends _$AppDatabase {
     int distance = 0,
     int limit = 30,
     int offset = 0,
+    bool exact = false,
   }) async {
     final tableName = 'search_fts_$langCode';
     final exists = await isTranslationIndexBuilt(langCode);
@@ -1924,17 +2048,17 @@ class AppDatabase extends _$AppDatabase {
       query,
       distance: distance,
       joinHyphens: true,
+      exact: exact,
     );
     if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(
-        "SELECT book_id, para_id, "
-        "snippet($tableName, 2, '<mark>', '</mark>', '…', 30) as snippet_text, "
-        'translation_text '
-        'FROM $tableName '
-        'WHERE translation_text MATCH ? AND book_id = ? '
-        'ORDER BY rank '
+        'SELECT m.book_id, m.para_id '
+        'FROM $tableName t '
+        'JOIN ${tableName}_map m ON m.id = t.rowid '
+        'WHERE t.translation_text MATCH ? AND m.book_id = ? '
+        'ORDER BY t.rank '
         'LIMIT ? OFFSET ?',
         variables: [
           Variable.withString(ftsQuery),
@@ -1950,8 +2074,6 @@ class AppDatabase extends _$AppDatabase {
               bookId: r.data['book_id'] as String,
               vripage: '',
               firstParaId: r.data['para_id'] as int?,
-              snippet: r.data['snippet_text'] as String? ?? '',
-              translation: r.data['translation_text'] as String? ?? '',
             ),
           )
           .toList();
@@ -1960,27 +2082,28 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Search the Pali FTS index for [query]. Returns matching pages with
-  /// the highlighted snippet plus the full `pali_text` (so the provider can
-  /// render richer results and look up translations).
+  /// Search the Pali FTS index for [query]. Returns the matching
+  /// paragraphs (book_id + para_id); the text around a hit is fetched from
+  /// epitaka.db `sentences` by the provider.
   ///
   /// Uses FTS5 prefix matching (`term*`) so that "cakk" also finds
-  /// "cakka", "cakkhu", "cakkuṃ" etc.
+  /// "cakka", "cakkhu", "cakkuṃ" etc. With [exact], each term is a quoted
+  /// whole word instead — see [_buildFtsQuery].
   Future<List<SearchResultRow>> searchFts(
     String query, {
     int distance = 0,
+    bool exact = false,
   }) async {
-    final ftsQuery = _buildFtsQuery(query, distance: distance);
+    final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return [];
 
     try {
       final rows = await customSelect(
-        "SELECT book_id, para_id, "
-        "snippet(search_fts, 2, '<b>', '</b>', '…', 48) as snippet_text, "
-        'pali_text '
-        'FROM search_fts '
-        'WHERE pali_text MATCH ? '
-        'ORDER BY rank '
+        'SELECT m.book_id, m.para_id '
+        'FROM search_fts f '
+        'JOIN search_fts_map m ON m.id = f.rowid '
+        'WHERE f.pali_text MATCH ? '
+        'ORDER BY f.rank '
         'LIMIT 200',
         variables: [Variable.withString(ftsQuery)],
       ).get();
@@ -1991,8 +2114,6 @@ class AppDatabase extends _$AppDatabase {
               bookId: r.data['book_id'] as String,
               vripage: '',
               firstParaId: r.data['para_id'] as int?,
-              snippet: r.data['snippet_text'] as String? ?? '',
-              paliText: r.data['pali_text'] as String? ?? '',
             ),
           )
           .toList();
@@ -2515,7 +2636,7 @@ class SearchResultRow {
   const SearchResultRow({
     required this.bookId,
     required this.vripage,
-    required this.snippet,
+    this.snippet = '',
     this.paliText = '',
     this.translation,
     this.firstParaId,

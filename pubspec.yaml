@@ -128,6 +128,7 @@ flutter:
   assets:
     - assets/db/
     - assets/fonts/
+    - assets/font_catalog.json
     - assets/changelog.md
     - assets/icon.png
 
@@ -206,6 +207,16 @@ flutter:
     - family: NotoSansChakma
       fonts:
         - asset: assets/fonts/NotoSansChakma-Regular.ttf
+
+    # Bundled because Korean coverage is not guaranteed on every OS (iOS
+    # ships one, older Android builds and some emulators do not), so Hangul
+    # Pāli would fall back to tofu boxes. Static instances cut from the
+    # upstream Noto Sans KR variable font (wght 400 / 700).
+    - family: NotoSansKR
+      fonts:
+        - asset: assets/fonts/NotoSansKR-Regular.ttf
+        - asset: assets/fonts/NotoSansKR-Bold.ttf
+          weight: 700
 
     # Bundled because iOS has NO system Tibetan font (Android does) —
     # without it, Tibetan Pāli renders as boxes (tofu) on iOS.

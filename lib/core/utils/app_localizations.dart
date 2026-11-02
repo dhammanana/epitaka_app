@@ -564,6 +564,10 @@ class AppLocalizations {
   );
   String get ttsSpeakBoth => _t('Translation + Pāli');
   String get ttsSpeakBothShort => _t('Both');
+
+  /// Switch label in the TTS controls: read only the first visible
+  /// translation instead of all of them (off by default).
+  String get ttsFirstTranslationOnly => _t('Only first translation');
   String get ttsSpeakBothDesc =>
       _t('Reads the Pāli first, then its translation');
   String get ttsInstallVoice => _t('Install voice');
@@ -639,6 +643,26 @@ class AppLocalizations {
   // ═══════════════════════════════════════════════════════════════════════
 
   String get typographyFontSize => _t('Typography & Font Size');
+
+  // ── Font Library (downloadable Google Fonts) ──────────────────────────
+  String get fontLibrary => _t('Font Library');
+  String get fontLibrarySubtitle => _t('Download more fonts');
+  String get fontLibraryDesc => _t(
+    'Download any font from Google Fonts and use it for Pāli reading. '
+    'Fonts are stored on this device and applied only to the scripts they '
+    'support.',
+  );
+  String get searchFonts => _t('Search fonts…');
+  String get fontInUse => _t('In use');
+  String get useBuiltInFonts => _t('Use built-in fonts');
+  String get noFontsFound => _t('No fonts match your search.');
+  String get fontRemoveTitle => _t('Remove font?');
+  String get fontRemoveMessage => _t(
+    'The font file is deleted from this device. Pāli text falls back to the '
+    'built-in font.',
+  );
+  String fontDownloaded(String name) =>
+      '$name ${_t('downloaded and selected')}';
   String get noTranslationDatabases => _t('No translation databases found.');
   String get downloadInSettings =>
       _t('Download translations in Settings → Translations & Downloads.');
@@ -718,6 +742,7 @@ class AppLocalizations {
 
   String get searchPaliTexts => _t('Search Pāli texts…');
   String get fuzzy => _t('Fuzzy');
+  String get exact => _t('Exact');
   String get wordDistance => _t('Word distance');
   String get anyDistance => _t('Any distance');
   String get results => _t('results');

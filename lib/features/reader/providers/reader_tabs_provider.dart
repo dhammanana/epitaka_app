@@ -24,6 +24,11 @@ class ReaderTabInfo {
   /// Optional search query to highlight in the reader content.
   final String? searchQuery;
 
+  /// Whether [searchQuery] came from a Fuzzy search (prefix terms, diacritics
+  /// folded). False is a whole-word search: the reader then highlights only
+  /// the exact word, so `assā` never lights up `assa`.
+  final bool searchQueryFuzzy;
+
   /// Saved scroll offset for position preservation when switching tabs.
   final double? scrollOffset;
 
@@ -41,6 +46,7 @@ class ReaderTabInfo {
     this.initialLineId,
     this.initialJumpId,
     this.searchQuery,
+    this.searchQueryFuzzy = true,
     this.scrollOffset,
     this.currentParaId,
     this.currentLineId,
@@ -103,6 +109,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
             initialLineId: tab.initialLineId,
             initialJumpId: ++_jumpRequestCounter,
             searchQuery: tab.searchQuery,
+            searchQueryFuzzy: tab.searchQueryFuzzy,
           )
         : tab;
 
@@ -119,6 +126,10 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
         initialJumpId:
             resolvedTab.initialJumpId ?? existing.initialJumpId,
         searchQuery: resolvedTab.searchQuery ?? existing.searchQuery,
+        // A tab opened without a query keeps the one it had, mode and all.
+        searchQueryFuzzy: resolvedTab.searchQuery == null
+            ? existing.searchQueryFuzzy
+            : resolvedTab.searchQueryFuzzy,
         scrollOffset: existing.scrollOffset,
         currentParaId: existing.currentParaId,
         currentLineId: existing.currentLineId,
@@ -215,6 +226,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
         initialLineId: tab.initialLineId,
         initialJumpId: tab.initialJumpId,
         searchQuery: tab.searchQuery,
+        searchQueryFuzzy: tab.searchQueryFuzzy,
         scrollOffset: offset,
         currentParaId: paraId ?? tab.currentParaId,
         currentLineId: lineId ?? tab.currentLineId,
@@ -242,6 +254,7 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       initialLineId: null,
       initialJumpId: null,
       searchQuery: tab.searchQuery,
+      searchQueryFuzzy: tab.searchQueryFuzzy,
       scrollOffset: tab.scrollOffset,
       currentParaId: tab.currentParaId,
       currentLineId: tab.currentLineId,

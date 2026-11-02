@@ -237,6 +237,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_searchController.text.isNotEmpty) _executeSearch();
   }
 
+  void _toggleFuzzy() async {
+    final on = ref.read(searchFuzzyProvider);
+    await ref.read(searchFuzzyProvider.notifier).set(!on);
+    if (_searchController.text.isNotEmpty) _executeSearch();
+  }
+
+  /// The Fuzzy pill. ON (filled, the default): every term is a prefix, so
+  /// `katv` still finds `katvāna`. OFF (plain): whole words only, exact
+  /// matching. Same chip TPR has above its search results.
+  Widget _fuzzyChip(ColorScheme colors, AppLocalizations loc) {
+    final on = ref.watch(searchFuzzyProvider);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleFuzzy,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: on ? colors.secondaryContainer : colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              on ? Icons.blur_on : Icons.center_focus_strong,
+              size: 14,
+              color: on
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              on ? loc.fuzzy : loc.exact,
+              style: AppTypography.labelSmall.copyWith(
+                color: on
+                    ? colors.onSecondaryContainer
+                    : colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Fill the search bar with a previous query from history and run it.
   /// History and searches from outside the app hold plain words, so they
   /// run with rx off.
@@ -374,6 +420,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Row(
             children: [
+              // Fuzzy chip. ON: every term is a prefix (`katv*` finds
+              // `katvāna`); OFF: whole words only (`katvā` exactly). A
+              // pattern sets its own matching, so the chip hides for rx.
+              if (!ref.watch(searchRegexProvider)) ...[
+                _fuzzyChip(colors, loc),
+                const SizedBox(width: 8),
+              ],
+
               // Word distance selector. A pattern sets its own distance.
               if (!ref.watch(searchRegexProvider)) ...[
                 PopupMenuButton<int>(

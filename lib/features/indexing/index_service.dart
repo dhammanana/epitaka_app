@@ -269,7 +269,21 @@ class IndexService {
     final appDb = await _ref.read(appDbProvider.future);
     try {
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts');
+      await appDb.customStatement('DROP TABLE IF EXISTS search_fts_map');
       await appDb.customStatement('DROP TABLE IF EXISTS search_words');
+    } catch (_) {}
+    // Per-language tables the Pāli clear never knew about.
+    try {
+      final tables = await appDb
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name LIKE 'search_fts_%'",
+          )
+          .get();
+      for (final t in tables) {
+        final name = t.data['name'] as String;
+        await appDb.customStatement('DROP TABLE IF EXISTS "$name"');
+      }
     } catch (_) {}
   }
 
@@ -302,6 +316,7 @@ class IndexService {
     final appDb = await _ref.read(appDbProvider.future);
     try {
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts');
+      await appDb.customStatement('DROP TABLE IF EXISTS search_fts_map');
       await appDb.customStatement('DROP TABLE IF EXISTS search_words');
     } catch (_) {}
   }

@@ -345,16 +345,22 @@ class AiQaToolService {
       final scopeVars = <Variable>[];
       var scopeClause = '';
       if (bookIds != null && bookIds.isNotEmpty) {
-        scopeClause = 'AND book_id IN (${bookIds.map((_) => '?').join(',')}) ';
+        // m. — the scope filters the map table's book_id (see runFts).
+        scopeClause = 'AND m.book_id IN (${bookIds.map((_) => '?').join(',')}) ';
         scopeVars.addAll(bookIds.map((b) => Variable.withString(b)));
       }
 
       Future<List<QueryRow>> runFts(String table, String column, String match) {
+        // The FTS tables are contentless (schema v3): (book_id, para_id)
+        // lives in `_map`, keyed by the rowid the build chose, so the join
+        // is where every hit's paragraph comes from.
         return appDb
             .customSelect(
-              'SELECT book_id, para_id, bm25($table) AS s '
-              'FROM $table '
-              'WHERE $column MATCH ? $scopeClause'
+              'SELECT m.book_id, m.para_id, bm25(f) AS s '
+              'FROM $table f '
+              'JOIN ${table}_map m ON m.id = f.rowid '
+              'WHERE f.$column MATCH ? '
+              '$scopeClause'
               'ORDER BY s LIMIT ?',
               variables: [
                 Variable.withString(match),

@@ -99,7 +99,7 @@ class ReaderTtsController {
   /// What gets spoken follows [TtsSpeakMode]: the (first enabled)
   /// translation, the Pāli (converted to Sinhala script for accurate
   /// pronunciation), or both. Applies the user's TTS replacement rules to
-  /// each translation line.
+  /// every spoken line — Pāli and translation alike.
   /// No-op when no translation language is enabled.
   Future<void> startListening(
     ReaderTabInfo activeTab,
@@ -151,11 +151,10 @@ class ReaderTtsController {
 
     final settings = ref.read(settingsProvider);
     final mode = settings.ttsSpeakMode;
-    final enabledLangs = settings.visibleTranslationLangs;
-    final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
+    final langs = settings.ttsTranslationLangs;
     // Listening needs something to speak: a translation language, or
     // Pāli-only mode (which needs no translation).
-    if (lang == null && mode == TtsSpeakMode.translation) return;
+    if (langs.isEmpty && mode == TtsSpeakMode.translation) return;
 
     // Load TTS replacements
     final replaceAsyncState = ref.read(ttsReplacementsNotifierProvider);
@@ -166,7 +165,7 @@ class ReaderTtsController {
 
     final lines = buildTtsLines(
       readerState.paragraphs.sublist(startParaIndex),
-      lang: lang,
+      langs: langs,
       mode: mode,
       activeReplacements: activeReplacements,
     );
@@ -188,19 +187,22 @@ class ReaderTtsController {
   ///
   /// Pure and static so it can be unit-tested without providers.
   ///
-  /// * [TtsSpeakMode.translation] — one item per line with the translation.
+  /// * [TtsSpeakMode.translation] — one item per line per language in
+  ///   [langs].
   /// * [TtsSpeakMode.pali] — one item per line with the Pāli converted to
   ///   Sinhala script (language 'si').
-  /// * [TtsSpeakMode.both] — Pāli item first (Sinhala), then the
-  ///   translation item, mirroring the reader's Pāli-above-translation
-  ///   layout.
+  /// * [TtsSpeakMode.both] — Pāli item first (Sinhala), then one
+  ///   translation item per language in [langs], mirroring the reader's
+  ///   Pāli-above-translation layout.
   ///
-  /// [lang] is the translation language to speak (null when Pāli-only
-  /// listening with no enabled translation); [activeReplacements] are the
-  /// user's TTS replacement rules applied to translation text.
+  /// [langs] are the translation languages to speak, in display order
+  /// (empty when Pāli-only listening with no enabled translation);
+  /// [activeReplacements] are the user's TTS replacement rules, applied to
+  /// every spoken line (both Pāli and translation text) before it is handed
+  /// to the engine.
   static List<TtsLineItem> buildTtsLines(
     List<ParagraphData> paragraphs, {
-    required String? lang,
+    required List<String> langs,
     required TtsSpeakMode mode,
     required List<TtsReplacement> activeReplacements,
   }) {
@@ -211,7 +213,10 @@ class ReaderTtsController {
     for (final para in paragraphs) {
       for (final line in para.lines) {
         if (speakPali) {
-          final pali = paliForTts(line.paliText ?? '');
+          final pali = paliForTts(
+            line.paliText ?? '',
+            replacements: activeReplacements,
+          );
           if (pali.sinhala.isNotEmpty) {
             lines.add(
               TtsLineItem(
@@ -228,22 +233,15 @@ class ReaderTtsController {
           }
         }
         if (speakTranslation) {
-          final rawText = lang == null ? '' : (line.translations[lang] ?? '');
-          final stripped = stripHtmlForTts(rawText);
-          var text = stripped;
-          for (final rule in activeReplacements) {
-            try {
-              if (rule.isRegex) {
-                text = text.replaceAll(
-                  RegExp(rule.pattern),
-                  rule.replacement,
-                );
-              } else {
-                text = text.replaceAll(rule.pattern, rule.replacement);
-              }
-            } catch (_) {}
-          }
-          if (text.trim().isNotEmpty) {
+          // Every enabled translation is spoken, in the reader's display
+          // order (one item each); languages missing on this line are
+          // skipped.
+          for (final lang in langs) {
+            final text = applyTtsReplacements(
+              stripHtmlForTts(line.translations[lang] ?? ''),
+              activeReplacements,
+            );
+            if (text.trim().isEmpty) continue;
             lines.add(
               TtsLineItem(
                 paraId: para.paraId,
@@ -266,13 +264,45 @@ class ReaderTtsController {
   static String paliToSinhalaForTts(String paliText) =>
       paliForTts(paliText).sinhala;
 
+  /// Apply the user's TTS replacement rules to [text], in list order.
+  ///
+  /// Invalid regex patterns are skipped so one bad rule can never mute a
+  /// line. Pure and static so it can be unit-tested without providers; used
+  /// for every spoken line (Pāli and translation).
+  static String applyTtsReplacements(
+    String text,
+    List<TtsReplacement> rules,
+  ) {
+    var out = text;
+    for (final rule in rules) {
+      try {
+        if (rule.isRegex) {
+          out = out.replaceAll(RegExp(rule.pattern), rule.replacement);
+        } else {
+          out = out.replaceAll(rule.pattern, rule.replacement);
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
   /// Strip + normalize Pāli text to a clean Roman source, then convert to
   /// Sinhala. Returns both so the engine can fall back to another script
   /// (Devanagari / ASCII Roman) from the Roman source when the active TTS
   /// engine has no Sinhala voice — otherwise those lines are silently
   /// skipped.
-  static ({String sinhala, String roman}) paliForTts(String paliText) {
-    final stripped = stripHtmlForTts(paliText);
+  ///
+  /// [replacements] are applied to the stripped Pāli before conversion, so
+  /// both the Sinhala text and the Roman fallback source are cleaned (e.g.
+  /// the default `\[.*?\]` rule drops bracketed alternative readings).
+  static ({String sinhala, String roman}) paliForTts(
+    String paliText, {
+    List<TtsReplacement> replacements = const <TtsReplacement>[],
+  }) {
+    final stripped = applyTtsReplacements(
+      stripHtmlForTts(paliText),
+      replacements,
+    );
     if (stripped.trim().isEmpty) return (sinhala: '', roman: '');
     // Normalize any non-Roman script to Roman first (no-op for already
     // Roman text), then Roman → Sinhala.
@@ -325,6 +355,8 @@ class ReaderTtsController {
       isTtsLineVisible: isTtsLineVisible(bookId, ttsReadingState.currentParaId),
       onFollowTts: () => follow(bookId),
       onSpeakModeChanged: (mode) => applySpeakMode(mode, bookId),
+      onFirstTranslationOnlyChanged: (value) =>
+          applyFirstTranslationOnly(value, bookId),
     );
   }
 
@@ -336,7 +368,21 @@ class ReaderTtsController {
   /// away instead of having to stop and play again).
   Future<void> applySpeakMode(TtsSpeakMode mode, String bookId) async {
     ref.read(settingsProvider.notifier).setTtsSpeakMode(mode);
+    await _restartFromCurrentParagraph(bookId);
+  }
 
+  /// Toggle reading only the first visible translation instead of all of
+  /// them. Applies immediately during playback, like [applySpeakMode].
+  Future<void> applyFirstTranslationOnly(bool value, String bookId) async {
+    ref.read(settingsProvider.notifier).setTtsFirstTranslationOnly(value);
+    await _restartFromCurrentParagraph(bookId);
+  }
+
+  /// Rebuild the line list from the paragraph currently being spoken and
+  /// restart playback there, so a TTS option change is heard right away
+  /// instead of after a stop → play cycle. No-op when TTS isn't active for
+  /// [bookId].
+  Future<void> _restartFromCurrentParagraph(String bookId) async {
     final ttsState = ref.read(ttsReadingProvider);
     if (!ttsState.isActive || ttsState.bookId != bookId) return;
     final activeTab = ref.read(readerTabsProvider).activeTab;
@@ -353,9 +399,9 @@ class ReaderTtsController {
     if (startIdx < 0) return;
 
     final settings = ref.read(settingsProvider);
-    final enabledLangs = settings.visibleTranslationLangs;
-    final lang = enabledLangs.isNotEmpty ? enabledLangs.first : null;
-    if (lang == null && mode == TtsSpeakMode.translation) return;
+    final langs = settings.ttsTranslationLangs;
+    final mode = settings.ttsSpeakMode;
+    if (langs.isEmpty && mode == TtsSpeakMode.translation) return;
 
     final replaceAsyncState = ref.read(ttsReplacementsNotifierProvider);
     if (replaceAsyncState is AsyncLoading ||
@@ -366,7 +412,7 @@ class ReaderTtsController {
 
     final lines = buildTtsLines(
       readerState.paragraphs.sublist(startIdx),
-      lang: lang,
+      langs: langs,
       mode: mode,
       activeReplacements: activeReplacements,
     );
@@ -403,6 +449,8 @@ class ReaderTtsController {
     final nextParaId = next.currentParaId;
     final prevLineId = prev?.currentLineId;
     final nextLineId = next.currentLineId;
+    final prevLang = prev?.currentLanguage;
+    final nextLang = next.currentLanguage;
     if (!isMounted() || nextParaId == null) return;
     if (!isAppResumed()) return;
     final currentBookId = ref.read(readerTabsProvider).activeTab?.bookId;
@@ -411,7 +459,10 @@ class ReaderTtsController {
     // Issue 4: Also handle intra-paragraph line changes
     final paraChanged = prevParaId != nextParaId;
     final lineChanged = prevLineId != nextLineId;
-    if (!paraChanged && !lineChanged) return;
+    // Another translation of the SAME line is being read now: the highlight
+    // moves to that language's row, so follow it as well.
+    final langChanged = prevLang != nextLang;
+    if (!paraChanged && !lineChanged && !langChanged) return;
 
     // Save reading history
     final bookName = ref.read(readerDataProvider(currentBookId)).bookName;
@@ -419,6 +470,7 @@ class ReaderTtsController {
     developer.log(
       '[TTS_UI] listener: prevParaId=$prevParaId nextParaId=$nextParaId '
       'prevLineId=$prevLineId nextLineId=$nextLineId '
+      'prevLang=$prevLang nextLang=$nextLang '
       'ttsAutoScroll=${ttsSync.ttsAutoScroll}',
       name: 'epitaka.tts',
     );

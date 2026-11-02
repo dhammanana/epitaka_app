@@ -384,6 +384,7 @@ const Map<String, String> vi = {
   // ── Search ──────────────────────────────────────────────────────────
   'Search Pāli texts…': 'Tìm văn bản Pāli…',
   'Fuzzy': 'Mờ',
+  'Exact': 'Chính xác',
   'Word distance': 'Khoảng cách từ',
   'Any distance': 'Mọi khoảng cách',
   'Within': 'Trong vòng',

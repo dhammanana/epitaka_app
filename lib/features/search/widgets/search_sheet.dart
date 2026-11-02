@@ -59,10 +59,10 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   }
 
   void _onResultTap(SearchResultItem result) {
-    final query = switch (ref.read(searchProvider)) {
-      SearchResults(:final query) => query,
-      _ => null,
-    };
+    final searchState = ref.read(searchProvider);
+    final query = searchState is SearchResults ? searchState.query : null;
+    // The reader highlights with the same rule this search used.
+    final fuzzy = searchState is SearchResults ? searchState.fuzzy : true;
 
     // Find the first matching line's lineId for precise line-level jumping
     final int? initialLineId;
@@ -85,6 +85,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
             initialParaId: result.paraId,
             initialLineId: initialLineId,
             searchQuery: query,
+            searchQueryFuzzy: fuzzy,
           ),
         );
     Navigator.of(context).pop();

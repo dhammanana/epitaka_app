@@ -18,12 +18,15 @@ import 'reader_tts_widgets.dart';
 /// Translation / Pāli / Both. The caller (reader) uses it to apply the
 /// change immediately during playback (restart from the current paragraph)
 /// instead of requiring a stop → play cycle.
+/// [onFirstTranslationOnlyChanged] toggles reading only the first visible
+/// translation instead of all of them (applied the same way).
 Future<void> showTtsControlsDialog(
   BuildContext context, {
   required String bookId,
   required bool isTtsLineVisible,
   required VoidCallback onFollowTts,
   required ValueChanged<TtsSpeakMode> onSpeakModeChanged,
+  required ValueChanged<bool> onFirstTranslationOnlyChanged,
 }) {
   return showDialog(
     context: context,
@@ -32,6 +35,7 @@ Future<void> showTtsControlsDialog(
       isTtsLineVisible: isTtsLineVisible,
       onFollowTts: onFollowTts,
       onSpeakModeChanged: onSpeakModeChanged,
+      onFirstTranslationOnlyChanged: onFirstTranslationOnlyChanged,
     ),
   );
 }
@@ -41,12 +45,14 @@ class _TtsControlsDialog extends ConsumerStatefulWidget {
   final bool isTtsLineVisible;
   final VoidCallback onFollowTts;
   final ValueChanged<TtsSpeakMode> onSpeakModeChanged;
+  final ValueChanged<bool> onFirstTranslationOnlyChanged;
 
   const _TtsControlsDialog({
     required this.bookId,
     required this.isTtsLineVisible,
     required this.onFollowTts,
     required this.onSpeakModeChanged,
+    required this.onFirstTranslationOnlyChanged,
   });
 
   @override
@@ -143,6 +149,8 @@ class _TtsControlsDialogState extends ConsumerState<_TtsControlsDialog> {
                     ref.read(settingsProvider.notifier).setTtsPaliVoice(voice);
                   },
                   onSpeakModeChanged: widget.onSpeakModeChanged,
+                  onFirstTranslationOnlyChanged:
+                      widget.onFirstTranslationOnlyChanged,
                   onScriptChanged: (script) {
                     ref.read(settingsProvider.notifier).setTtsScript(script);
                   },

@@ -4,6 +4,8 @@
 
 // ported to dart by pndaza 2022
 
+import 'pali_korean.dart';
+
 // total 18 languages
 // scripts are ordered
 
@@ -26,6 +28,7 @@ enum Script {
   tibetan,
   cyrillic,
   tamil,
+  korean,
 }
 
 /// English display name of a script; the enum names are storage codes.
@@ -49,6 +52,7 @@ extension ScriptEnglishName on Script {
     Script.tibetan => 'Tibetan',
     Script.cyrillic => 'Cyrillic',
     Script.tamil => 'Tamil',
+    Script.korean => 'Korean',
   };
 }
 
@@ -212,6 +216,20 @@ const List<ScriptInfo> listOfScripts = [
     localeCode: 'ta',
     codePointRanges: [_CodePointRange(start: 0x0B80, end: 0x0BFF)],
     index: 18,
+  ),
+  // Korean is not a character map of the Sinhala tables: which jamo a
+  // consonant takes depends on its neighbours, so it is handled by the
+  // transliterator in pali_korean.dart (see convertToFunc/convertFromFunc).
+  // The index is unused and only kept for consistency with the others.
+  ScriptInfo(
+    script: Script.korean,
+    nameInLocale: '한국어',
+    localeCode: 'ko',
+    codePointRanges: [
+      _CodePointRange(start: 0xAC00, end: 0xD7A3), // Hangul syllables
+      _CodePointRange(start: 0x1100, end: 0x11FF), // Hangul jamo
+    ],
+    index: 19,
   ),
 ];
 
@@ -1810,6 +1828,8 @@ List<Function> beautifyFunc(Script script) {
       return [beautifyCommon];
     case Script.tamil:
       return [beautifyTamil, beautifyCommon];
+    case Script.korean:
+      return [beautifyCommon];
     default:
       return [];
   }
@@ -1983,6 +2003,8 @@ List<Function> convertToFunc(Script script) {
     case Script.tamil:
       // short e/o before doubled consonants first, then the char map
       return [_tamilShortEO, _convertTo];
+    case Script.korean:
+      return [_koreanTo];
     default:
       return [_convertTo];
   }
@@ -1996,6 +2018,8 @@ List<Function> convertFromFunc(Script script) {
       return [convertFromWV, fixMAbove, removeA];
     case Script.cyrillic:
       return [convertFromWV, removeA];
+    case Script.korean:
+      return [_koreanFrom];
     default:
       return [_convertFrom];
   }
@@ -2011,6 +2035,12 @@ String _convertFrom(String text, Script script) {
   final hashMaps = prepareHashMaps(script.index, Script.sinhala.index);
   return replaceByMaps(text, hashMaps);
 }
+
+// Korean uses the syllable-aware Hangul transliterator (pali_korean.dart)
+// instead of the one-character-at-a-time hash maps.
+String _koreanTo(String text, Script script) => paliKoreanFromSinhala(text);
+
+String _koreanFrom(String text, Script script) => paliKoreanToSinhala(text);
 
 String convertFromWV(String text, Script script) {
   // without vowels for roman

@@ -235,6 +235,7 @@ class TtsControlsCard extends StatelessWidget {
   final ValueChanged<String> onVoiceChanged;
   final ValueChanged<String> onPaliVoiceChanged;
   final ValueChanged<TtsSpeakMode> onSpeakModeChanged;
+  final ValueChanged<bool> onFirstTranslationOnlyChanged;
   final ValueChanged<String> onScriptChanged;
   final VoidCallback onInstallVoiceTap;
   final VoidCallback onSystemConfigTap;
@@ -253,6 +254,7 @@ class TtsControlsCard extends StatelessWidget {
     required this.onVoiceChanged,
     required this.onPaliVoiceChanged,
     required this.onSpeakModeChanged,
+    required this.onFirstTranslationOnlyChanged,
     required this.onScriptChanged,
     required this.onInstallVoiceTap,
     required this.onSystemConfigTap,
@@ -455,6 +457,29 @@ class TtsControlsCard extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: AppDimensions.sm),
+          // Translation-only option: read every visible translation (the
+          // default) or just the first one shown in the reader.
+          Row(
+            children: [
+              Icon(Icons.filter_1, size: 16, color: colors.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  loc.ttsFirstTranslationOnly,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurface,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              Switch(
+                value: settings.ttsFirstTranslationOnly,
+                onChanged: onFirstTranslationOnlyChanged,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
           ),
           const SizedBox(height: AppDimensions.md),
           // Config entry point: quiet full-width row with a gear + chevron,

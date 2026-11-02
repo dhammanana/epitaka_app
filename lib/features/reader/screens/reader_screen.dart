@@ -1593,6 +1593,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
         ? ttsReadingState.currentIsPali
         : null;
+    // Spoken translation language: picks the translation ROW to underline
+    // when several translations are enabled (the engine reads all of them).
+    final ttsCurrentLang =
+        _appLifecycleState == AppLifecycleState.resumed && isCurrentBookTts
+        ? ttsReadingState.currentLanguage
+        : null;
 
     // WORD-HIGHLIGHT: spoken-word range for the current line only. Watching
     // this provider rebuilds the screen per word, but the paragraph memo
@@ -1779,6 +1785,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             ttsCurrentLineId,
             ttsCurrentParaId,
             ttsCurrentIsPali,
+            ttsCurrentLang,
             ttsWordOnCurrentLine?.lineId,
             ttsWordOnCurrentLine?.wordIndex,
             ttsWordOnCurrentLine?.lineText,
@@ -2024,6 +2031,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? ttsHighlightLineId,
     int? ttsHighlightParaId,
     bool? ttsHighlightIsPali,
+    String? ttsHighlightLang,
     int? ttsWordLineId,
     int? ttsWordIndex,
     String? ttsWordLineText,
@@ -2095,16 +2103,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Bundle every cross-paragraph highlight input into one value-equality
     // object so the paragraph list can memoize rebuilds per paragraph: only
     // the paragraph(s) a highlight actually touches rebuild.
+    // The Find bar's own query folds diacritics always; a search-result jump
+    // carries the Fuzzy chip's mode in the tab, so the reader highlights by
+    // the same rule the search matched with.
+    final inBookQuery = ref.watch(inBookSearchProvider).effectiveQuery;
     final highlightBundle = ReaderHighlightBundle(
       bookId: activeTab.bookId,
       // Find runs on the focused column only.
-      searchQuery:
-          (focused ? ref.watch(inBookSearchProvider).effectiveQuery : null) ??
-          activeTab.searchQuery,
+      searchQuery: focused
+          ? (inBookQuery ?? activeTab.searchQuery)
+          : activeTab.searchQuery,
+      // The Find bar folds diacritics always; a search-result jump keeps the
+      // Fuzzy chip's mode it was matched with.
+      searchQueryFuzzy: focused && inBookQuery != null
+          ? true
+          : activeTab.searchQueryFuzzy,
       lookupHighlight: activeLookupHighlight,
       ttsHighlightLineId: ttsHighlightLineId,
       ttsHighlightParaId: ttsHighlightParaId,
       ttsHighlightIsPali: ttsHighlightIsPali,
+      ttsHighlightLang: ttsHighlightLang,
       ttsWordLineId: ttsWordLineId,
       ttsWordIndex: ttsWordIndex,
       ttsWordLineText: ttsWordLineText,
@@ -2388,6 +2406,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     int? lineId,
     int? paraId,
     bool? isPali,
+    String? lang,
     int? wordLineId,
     int? wordIndex,
     String? wordLineText,
@@ -2400,6 +2419,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         lineId: null,
         paraId: null,
         isPali: null,
+        lang: null,
         wordLineId: null,
         wordIndex: null,
         wordLineText: null,
@@ -2416,6 +2436,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       lineId: reading.currentLineId,
       paraId: reading.currentParaId,
       isPali: reading.currentIsPali,
+      lang: reading.currentLanguage,
       wordLineId: onLine ? word.lineId : null,
       wordIndex: onLine ? word.wordIndex : null,
       wordLineText: onLine ? word.lineText : null,
@@ -2486,6 +2507,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   tts.lineId,
                   tts.paraId,
                   tts.isPali,
+                  tts.lang,
                   tts.wordLineId,
                   tts.wordIndex,
                   tts.wordLineText,
