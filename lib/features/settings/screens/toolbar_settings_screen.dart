@@ -238,6 +238,8 @@ class _ToolbarItemRow extends StatelessWidget {
         return (Icons.edit_note, loc.annotations);
       case ToolbarBuiltins.aiAsk:
         return (Icons.auto_awesome, loc.askAi);
+      case ToolbarBuiltins.commentaryLevels:
+        return (Icons.view_week_outlined, loc.commentaryColumnsLabel);
       // Legacy saved configs may still carry the old one-shot id.
       case ToolbarBuiltins.summarize:
         return (Icons.auto_awesome, loc.askAi);

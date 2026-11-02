@@ -33,15 +33,18 @@ import '../../reader/providers/reader_provider.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../reader/widgets/translation_remark_dialog.dart';
 import '../../settings/providers/tts_replacements_provider.dart';
-import '../../settings/providers/tts_provider.dart';
+import '../providers/reader_columns_controller.dart';
+import '../providers/reader_keyboard_bridge.dart';
 import '../providers/reader_tts_controller.dart';
 import '../providers/tts_reading_provider.dart';
 import '../utils/reader_quote_utils.dart'
     show buildCitationFromTemplate, firstAvailablePageNumbers;
 import '../utils/reader_word_hit_test.dart'
     show cleanTranslationWord, selectWordAt;
+import '../widgets/commentary_level_buttons.dart' show showFamilyBesideMenu;
 import '../widgets/reader_context_menu.dart'
     show ContextMenuButton, FullWidthSelectionToolbar;
+import 'book_family_service.dart' show bookFamiliesProvider;
 
 /// One selectable unit of text (a Pāli line, or one enabled translation of
 /// a line) used for selection-range matching and trimming.
@@ -122,8 +125,15 @@ class ReaderCopyService {
     // Render the user's configured, enabled actions in their chosen order.
     // Never show an empty toolbar — fall back to Copy alone when every
     // action has been disabled.
+    // A book with no mūla, aṭṭhakathā or ṭīkā gets no entry (user,
+    // 2026-10-31); an empty slot would still take room in the phone toolbar.
+    final hasFamily =
+        ref.read(bookFamiliesProvider).valueOrNull?[bookId] != null;
     var actions = settings.contextMenuActions
         .where((a) => a.enabled && a.isAvailableHere)
+        .where(
+          (a) => a.builtinId != ContextMenuBuiltins.showBeside || hasFamily,
+        )
         .toList();
     if (actions.isEmpty) {
       actions = defaultContextMenuActions()
@@ -259,7 +269,7 @@ class ReaderCopyService {
                 visibleEndIndex: visibleEndIndex,
                 script: script,
               );
-              _showSnackBar(context, 'Copied!');
+              if (context.mounted) _showSnackBar(context, 'Copied!');
             } catch (_) {
               // Fallback to system selection copy if rich copy fails
               if (lastSelectedContent != null &&
@@ -267,7 +277,7 @@ class ReaderCopyService {
                 Clipboard.setData(
                   ClipboardData(text: lastSelectedContent.plainText.trim()),
                 );
-                _showSnackBar(context, 'Copied!');
+                if (context.mounted) _showSnackBar(context, 'Copied!');
               }
             } finally {
               selectableRegionState.clearSelection();
@@ -292,14 +302,14 @@ class ReaderCopyService {
                 visibleEndIndex: visibleEndIndex,
                 script: script,
               );
-              _showSnackBar(context, 'Excerpt copied!');
+              if (context.mounted) _showSnackBar(context, 'Excerpt copied!');
             } catch (_) {
               if (lastSelectedContent != null &&
                   lastSelectedContent.plainText.trim().isNotEmpty) {
                 Clipboard.setData(
                   ClipboardData(text: lastSelectedContent.plainText.trim()),
                 );
-                _showSnackBar(context, 'Excerpt copied!');
+                if (context.mounted) _showSnackBar(context, 'Excerpt copied!');
               }
             } finally {
               selectableRegionState.clearSelection();
@@ -321,7 +331,7 @@ class ReaderCopyService {
                 lineId: currentLineId,
                 text: selectedText,
               );
-              _showSnackBar(context, 'Link copied!');
+              if (context.mounted) _showSnackBar(context, 'Link copied!');
             } catch (_) {
               // Fallback: copy just the URL. App-link format so tapping it
               // opens the app; the website redirects /app → /{lang}/book.
@@ -333,7 +343,7 @@ class ReaderCopyService {
                 paraId: currentParaId,
               );
               await Clipboard.setData(ClipboardData(text: url));
-              _showSnackBar(context, 'Link copied!');
+              if (context.mounted) _showSnackBar(context, 'Link copied!');
             } finally {
               selectableRegionState.clearSelection();
             }
@@ -428,7 +438,6 @@ class ReaderCopyService {
 
             // Find the paragraph and line from the selection
             int? startParaId = currentParaId;
-            int? startLineId = currentLineId;
 
             // If we have a selection, try to get the first visible paragraph
             if (lastSelectedContent != null &&
@@ -437,7 +446,6 @@ class ReaderCopyService {
               if (visibleStartIndex >= 0 &&
                   visibleStartIndex < readerState.paragraphs.length) {
                 startParaId = readerState.paragraphs[visibleStartIndex].paraId;
-                startLineId = 1;
               }
             }
 
@@ -545,9 +553,103 @@ class ReaderCopyService {
           },
           colors: colors,
         );
+      case ContextMenuBuiltins.showBeside:
+        // ── The matching mūla / aṭṭhakathā / ṭīkā as a column or tab ──
+        // Books with no family: buildContextMenu leaves it out.
+        return ContextMenuButton(
+          icon: Icons.view_week_outlined,
+          label: ref.read(readerColumnsAvailableProvider)
+              ? loc.showBeside
+              : loc.openFamilyBook,
+          onTap: () {
+            final paraId = selectionStartParaId(
+              ref: ref,
+              bookId: bookId,
+              selection: lastSelectedContent,
+              visibleStartIndex: visibleStartIndex,
+              visibleEndIndex: visibleEndIndex,
+              nearParaIndex: _paragraphIndexAt(
+                ref: ref,
+                bookId: bookId,
+                contentHitTestKey: contentHitTestKey,
+                at: anchor,
+              ),
+            );
+            selectableRegionState.hideToolbar();
+            showFamilyBesideMenu(
+              context: context,
+              ref: ref,
+              anchor: anchor ?? Offset.zero,
+              bookId: bookId,
+              sourceParaId: paraId,
+            ).whenComplete(selectableRegionState.clearSelection);
+          },
+          colors: colors,
+        );
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  /// The paragraph of [bookId] where [selection] starts, or null when the
+  /// selected text cannot be matched to the book.
+  static int? selectionStartParaId({
+    required WidgetRef ref,
+    required String bookId,
+    required SelectedContent? selection,
+    required int visibleStartIndex,
+    required int visibleEndIndex,
+    int? nearParaIndex,
+  }) {
+    final readerState = ref.read(readerDataProvider(bookId));
+    final settings = ref.read(settingsProvider);
+    final enabledLangs = settings.visibleTranslationLangs;
+    return _getParagraphsForSelection(
+      readerState.paragraphs,
+      selection,
+      visibleStartIndex,
+      visibleEndIndex,
+      script: settings.paliScript,
+      enabledLangCodes: enabledLangs.isNotEmpty ? enabledLangs.toSet() : null,
+      nearParaIndex: nearParaIndex,
+    )?.firstOrNull?.paraId;
+  }
+
+  /// The index of the visible paragraph under the global point [at], from
+  /// the height of [at] inside the content box and the list's visible item
+  /// positions; the closest one when none contains it. Null when the box,
+  /// the point or the positions are missing.
+  static int? _paragraphIndexAt({
+    required WidgetRef ref,
+    required String bookId,
+    required GlobalKey? contentHitTestKey,
+    required Offset? at,
+  }) {
+    final box = contentHitTestKey?.currentContext?.findRenderObject();
+    // A zero anchor is Flutter's fallback, not a real position.
+    if (at == null || at == Offset.zero) return null;
+    if (box is! RenderBox || !box.hasSize || box.size.height <= 0) return null;
+    final positions = ref
+        .read(readerKeyboardBridgeProvider)
+        .positionsListenerFor(bookId)
+        ?.itemPositions
+        .value;
+    if (positions == null || positions.isEmpty) return null;
+    final height = box.globalToLocal(at).dy / box.size.height;
+    int? closest;
+    var closestGap = double.infinity;
+    for (final p in positions) {
+      final gap = height < p.itemLeadingEdge
+          ? p.itemLeadingEdge - height
+          : height > p.itemTrailingEdge
+          ? height - p.itemTrailingEdge
+          : 0.0;
+      if (gap < closestGap) {
+        closest = p.index;
+        closestGap = gap;
+      }
+    }
+    return closest;
   }
 
   /// Build the toolbar button that launches an installed external app
@@ -573,7 +675,9 @@ class ReaderCopyService {
             ),
             text,
           );
-          if (!ok) _showSnackBar(context, 'Could not open the app.');
+          if (!ok && context.mounted) {
+            _showSnackBar(context, 'Could not open the app.');
+          }
         }
         selectableRegionState.clearSelection();
       },
@@ -1081,6 +1185,7 @@ class ReaderCopyService {
     int visibleEndIndex, {
     Script script = Script.roman,
     Set<String>? enabledLangCodes,
+    int? nearParaIndex,
   }) {
     if (selection == null || selection.plainText.trim().isEmpty) {
       return null;
@@ -1093,6 +1198,7 @@ class ReaderCopyService {
       visibleStartIndex: visibleStartIndex,
       visibleEndIndex: visibleEndIndex,
       enabledLangCodes: enabledLangCodes,
+      nearParaIndex: nearParaIndex,
     );
     if (trimmed != null && trimmed.isNotEmpty) {
       return trimmed;
@@ -1102,6 +1208,43 @@ class ReaderCopyService {
     // SelectedContent.plainText (the exact text from Flutter's
     // SelectionArea) rather than guessing from the visible range.
     return null;
+  }
+
+  /// The start of the occurrence of [needle] in [combined] whose paragraph
+  /// is nearest paragraph index [near] (ties go to the earlier one), or the
+  /// first occurrence when none of them sits in a known paragraph.
+  ///
+  /// A word such as "bhikkhave" occurs in many paragraphs of the window; the
+  /// first one is rarely the one the user selected.
+  static int _occurrenceNearParagraph(
+    String combined,
+    String needle,
+    List<_Segment> segments,
+    List<int> segEnd,
+    Map<int, int> indexOfPara,
+    int near,
+  ) {
+    var best = -1;
+    var bestDistance = 0;
+    var seg = 0;
+    for (
+      var pos = combined.indexOf(needle);
+      pos >= 0;
+      pos = combined.indexOf(needle, pos + 1)
+    ) {
+      // The first segment that reaches [pos], as the caller finds it.
+      while (seg < segments.length - 1 && pos > segEnd[seg]) {
+        seg++;
+      }
+      final index = indexOfPara[segments[seg].paraId];
+      if (index == null) continue;
+      final distance = (index - near).abs();
+      if (best < 0 || distance < bestDistance) {
+        best = pos;
+        bestDistance = distance;
+      }
+    }
+    return best < 0 ? combined.indexOf(needle) : best;
   }
 
   /// Builds the exact selected sub-range of content as trimmed
@@ -1123,6 +1266,7 @@ class ReaderCopyService {
     int visibleStartIndex = 0,
     int visibleEndIndex = 0,
     Set<String>? enabledLangCodes,
+    int? nearParaIndex,
   }) {
     // Check for hidden characters (U+FFFC from WidgetSpan, zero-width chars)
     final hasFffc = selectedText.contains('\u{FFFC}');
@@ -1256,7 +1400,19 @@ class ReaderCopyService {
       'start="${combinedText.length > 100 ? combinedText.substring(0, 100) : combinedText}"',
       name: 'epitaka.copy',
     );
-    final matchPos = combinedText.indexOf(needle);
+    final matchPos = nearParaIndex == null
+        ? combinedText.indexOf(needle)
+        : _occurrenceNearParagraph(
+            combinedText,
+            needle,
+            segments,
+            segEnd,
+            {
+              for (var i = 0; i < allParagraphs.length; i++)
+                allParagraphs[i].paraId: i,
+            },
+            nearParaIndex,
+          );
     developer.log(
       '[COPY_MATCH] indexOf result=$matchPos (needleLen=${needle.length})',
       name: 'epitaka.copy',
@@ -1291,8 +1447,9 @@ class ReaderCopyService {
         break;
       }
     }
-    if (startSegIdx < 0 || endSegIdx < 0 || startSegIdx > endSegIdx)
+    if (startSegIdx < 0 || endSegIdx < 0 || startSegIdx > endSegIdx) {
       return null;
+    }
 
     // Trim only the boundary segments' tagged text to the matched range.
     final trimmedSegments = <_Segment>[];

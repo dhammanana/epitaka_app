@@ -31,9 +31,14 @@ class ToolbarBuiltins {
   @Deprecated('Use aiAsk instead')
   static const summarize = 'summarize';
 
+  /// The m a ṭ buttons: show the open book's mūla, aṭṭhakathā or ṭīkā as a
+  /// column where columns fit, as a tab elsewhere; one button on phones.
+  static const commentaryLevels = 'commentaryLevels';
+
   /// The built-ins in their default display order.
   static const List<String> defaults = [
     contents,
+    commentaryLevels,
     aiAsk,
     search,
     dictionary,
@@ -44,6 +49,11 @@ class ToolbarBuiltins {
     bookmark,
     outline,
   ];
+
+  /// Built-ins added after a release that go beside an older one in saved
+  /// toolbars instead of at the end: the phone toolbar scrolls sideways, so
+  /// its last slots start off-screen (2026-10-31).
+  static const Map<String, String> mergeAfter = {commentaryLevels: contents};
 
   /// Built-ins that are off by default (user can enable in Settings → Toolbar).
   static const Set<String> disabledByDefault = {bookmark};

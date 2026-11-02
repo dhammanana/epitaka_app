@@ -34,6 +34,7 @@ import '../providers/tts_reading_provider.dart';
 import '../utils/reader_position_utils.dart' as position_utils;
 import '../widgets/reader_tts_controls_dialog.dart';
 import '../widgets/reader_tts_widgets.dart' show stripHtmlForTts;
+import 'display_mode_override.dart';
 
 /// Coordinates TTS playback with the reader UI.
 class ReaderTtsController {
@@ -91,14 +92,6 @@ class ReaderTtsController {
 
   /// Request a rebuild of the owning screen (guarded by [isMounted]).
   final VoidCallback requestRebuild;
-
-  /// Reader display mode before TTS started, restored when reading stops.
-  ///
-  /// TTS temporarily forces [TranslationDisplayMode.lineByLine] because it
-  /// is the only display mode that renders per-line widgets — and therefore
-  /// the only one where the per-line GlobalKeys used by the fine-scroll can
-  /// be attached. null = TTS is not forcing a mode.
-  TranslationDisplayMode? _ttsModeBefore;
 
   /// Build the TTS line list for [activeTab] starting at the first visible
   /// paragraph and start reading.
@@ -397,28 +390,13 @@ class ReaderTtsController {
   void handleTtsStateChanged(TtsReadingState? prev, TtsReadingState next) {
     final wasActive = prev?.isActive ?? false;
     final isActive = next.isActive;
-    if (isActive && !wasActive && _ttsModeBefore == null) {
-      _ttsModeBefore = ref.read(settingsProvider).translationDisplayMode;
-      if (_ttsModeBefore != TranslationDisplayMode.lineByLine) {
-        // Temporary (non-persisting) override so the user's saved mode
-        // is untouched even if this is never undone.
-        ref
-            .read(settingsProvider.notifier)
-            .setTranslationDisplayModeTemporary(
-              TranslationDisplayMode.lineByLine,
-            );
-      }
-    } else if (!isActive && wasActive && _ttsModeBefore != null) {
-      final currentMode = ref.read(settingsProvider).translationDisplayMode;
-      // Respect a manual display-mode change made during playback;
-      // otherwise restore what the reader used before TTS started.
-      if (currentMode == TranslationDisplayMode.lineByLine ||
-          currentMode == _ttsModeBefore) {
-        ref.read(settingsProvider.notifier).setTranslationDisplayModeTemporary(
-          _ttsModeBefore!,
-        );
-      }
-      _ttsModeBefore = null;
+    // TTS forces line-by-line because it is the only display mode that
+    // renders per-line widgets — and therefore the only one where the
+    // per-line GlobalKeys used by the fine-scroll can be attached.
+    if (isActive && !wasActive) {
+      ref.read(displayModeOverrideProvider).add(DisplayModeReason.tts);
+    } else if (!isActive && wasActive) {
+      ref.read(displayModeOverrideProvider).remove(DisplayModeReason.tts);
     }
 
     final prevParaId = prev?.currentParaId;

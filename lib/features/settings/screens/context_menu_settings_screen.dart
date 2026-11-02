@@ -126,9 +126,8 @@ class _ContextMenuSettingsBodyState
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: visible.length,
-            onReorder: (oldIndex, newIndex) {
+            onReorderItem: (oldIndex, newIndex) {
               final actions = List<ContextMenuAction>.from(visible);
-              if (newIndex > oldIndex) newIndex--;
               final item = actions.removeAt(oldIndex);
               actions.insert(newIndex, item);
               // Hidden actions stay stored, each in its old slot.
@@ -572,6 +571,12 @@ class _ActionRow extends StatelessWidget {
         return (Icons.notes, loc.summarizeChapter, loc.summarizeChapterDesc);
       case ContextMenuBuiltins.share:
         return (Icons.share, loc.share, loc.shareDesc);
+      case ContextMenuBuiltins.showBeside:
+        return (
+          Icons.view_week_outlined,
+          loc.commentaryColumnsLabel,
+          loc.showBesideDesc,
+        );
       default:
         return (Icons.touch_app, id ?? '', '');
     }

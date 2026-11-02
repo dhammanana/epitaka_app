@@ -1,0 +1,145 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/providers/pali_definition_provider.dart'
+    show canonBookNamesProvider;
+import '../services/book_family_service.dart';
+import '../services/paragraph_number_index.dart';
+import 'reader_keyboard_bridge.dart';
+import 'reader_provider.dart';
+import 'reader_tabs_provider.dart';
+
+/// Opens and closes the mūla / aṭṭhakathā / ṭīkā columns.
+///
+/// The m a ṭ buttons and the right-click entry both call
+/// [openFamilyColumn], so the two routes always change the same state.
+class ReaderColumnsController {
+  ReaderColumnsController(this._ref);
+
+  final Ref _ref;
+
+  /// Opens still loading their data, as `source>target`. A second press
+  /// before the first finishes would otherwise open and close the column.
+  final Set<String> _opening = {};
+
+  /// The paragraph the reader is looking at in [bookId]: the first one that
+  /// reaches below the top tenth of the view, or the tab's saved place.
+  ///
+  /// A jump puts its paragraph just below the top edge, so the paragraph
+  /// touching the edge is usually the tail of the one before (AN 5.36 would
+  /// open the commentary on sutta 35).
+  int? readingParaId(String bookId) {
+    final positions = _ref
+        .read(readerKeyboardBridgeProvider)
+        .positionsListenerFor(bookId)
+        ?.itemPositions
+        .value;
+    final paragraphs = _ref.read(readerDataProvider(bookId)).paragraphs;
+    final reading =
+        positions?.where((p) => p.itemTrailingEdge > 0.1).toList() ?? [];
+    if (reading.isEmpty || paragraphs.isEmpty) {
+      return _ref
+          .read(readerTabsProvider)
+          .tabs
+          .where((t) => t.bookId == bookId)
+          .firstOrNull
+          ?.currentParaId;
+    }
+    reading.sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+    final index = reading.first.index;
+    return index < paragraphs.length ? paragraphs[index].paraId : null;
+  }
+
+  /// Shows [targetBookId] beside [sourceBookId] at the paragraph matching
+  /// [sourceParaId] (default: [readingParaId]), or takes it out when it
+  /// already shows there. Where columns do not fit, opens [targetBookId] as
+  /// the active tab at that paragraph instead.
+  Future<void> openFamilyColumn(
+    String targetBookId, {
+    required String sourceBookId,
+    int? sourceParaId,
+  }) async {
+    final key = '$sourceBookId>$targetBookId';
+    if (!_opening.add(key)) return;
+    try {
+      await _open(targetBookId, sourceBookId, sourceParaId);
+    } finally {
+      _opening.remove(key);
+    }
+  }
+
+  Future<void> _open(
+    String targetBookId,
+    String sourceBookId,
+    int? sourceParaId,
+  ) async {
+    final family = await _ref.read(bookFamilyProvider(sourceBookId).future);
+    if (family == null || targetBookId == sourceBookId) return;
+    final inFamily = BookLevel.values.any(
+      (level) => family.booksAt(level).contains(targetBookId),
+    );
+    if (!inFamily) return;
+    // No room for columns (phones, narrow windows): the book opens as a
+    // tab, and a press never closes one.
+    final asColumn = _ref.read(readerColumnsAvailableProvider);
+
+    final columns = _ref.read(readerTabsProvider).columns;
+    final closing =
+        asColumn &&
+        columns.contains(sourceBookId) &&
+        columns.contains(targetBookId);
+    sourceParaId ??= readingParaId(sourceBookId);
+    int? targetParaId;
+    if (!closing && sourceParaId != null) {
+      final source = await _ref.read(
+        paragraphNumberIndexProvider(sourceBookId).future,
+      );
+      final target = await _ref.read(
+        paragraphNumberIndexProvider(targetBookId).future,
+      );
+      final links = await _ref.read(
+        paragraphLinksProvider((
+          sourceBookId: sourceBookId,
+          targetBookId: targetBookId,
+        )).future,
+      );
+      targetParaId = matchParagraph(source, sourceParaId, target, links: links);
+    }
+    final names = await _ref.read(canonBookNamesProvider.future);
+
+    final target = ReaderTabInfo(
+      bookId: targetBookId,
+      bookName: names[targetBookId] ?? targetBookId,
+      initialParaId: targetParaId,
+    );
+    final tabs = _ref.read(readerTabsProvider.notifier);
+    if (asColumn) {
+      tabs.toggleFamilyColumn(
+        target,
+        sourceBookId: sourceBookId,
+        family: family,
+      );
+    } else {
+      tabs.openTab(target);
+    }
+  }
+}
+
+/// Whether the reader is wide enough to show columns (set by the reader
+/// after each layout). While it is false, the m a ṭ buttons and the
+/// selection entry open the chosen book as a tab instead.
+final readerColumnsAvailableProvider = StateProvider<bool>((ref) => false);
+
+/// The family of the active tab's book: null when no book is open, while
+/// the families load, or when the book links to no other book. The m a ṭ
+/// buttons and the selection entry hide on those books (user, 2026-10-31).
+final activeBookFamilyProvider = Provider<BookFamily?>((ref) {
+  final bookId = ref.watch(
+    readerTabsProvider.select((s) => s.activeTab?.bookId),
+  );
+  if (bookId == null) return null;
+  return ref.watch(bookFamiliesProvider).valueOrNull?[bookId];
+});
+
+final readerColumnsControllerProvider = Provider<ReaderColumnsController>(
+  (ref) => ReaderColumnsController(ref),
+);

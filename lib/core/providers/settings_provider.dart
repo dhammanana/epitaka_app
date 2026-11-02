@@ -1144,10 +1144,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
   }
 
-  /// Append any built-in toolbar actions from [ToolbarBuiltins.defaults]
-  /// that are missing from [items], preserving the user's existing order
-  /// and only touching the tail of the list. Missing items use their
-  /// default enabled state (bookmark starts off).
+  /// Add any built-in toolbar actions from [ToolbarBuiltins.defaults]
+  /// that are missing from [items], preserving the user's existing order.
+  /// A missing item goes at the end, or after the item named in
+  /// [ToolbarBuiltins.mergeAfter] when that one is present. Missing items
+  /// use their default enabled state (bookmark starts off).
   ///
   /// Legacy ids are migrated via [ToolbarBuiltins.migrateId] first so an
   /// old "summarize" entry becomes "aiAsk" in place (keeping the user's
@@ -1172,11 +1173,23 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         if (!present.contains(id)) id,
     ];
     if (missing.isEmpty) return items;
-    return [
-      ...items,
-      for (final id in missing)
-        ToolbarItem(id: id, enabled: ToolbarBuiltins.defaultEnabledFor(id)),
-    ];
+    final merged = [...items];
+    for (final id in missing) {
+      final item = ToolbarItem(
+        id: id,
+        enabled: ToolbarBuiltins.defaultEnabledFor(id),
+      );
+      final anchor = ToolbarBuiltins.mergeAfter[id];
+      final at = anchor == null
+          ? -1
+          : merged.indexWhere((i) => i.id == anchor);
+      if (at < 0) {
+        merged.add(item);
+      } else {
+        merged.insert(at + 1, item);
+      }
+    }
+    return merged;
   }
 
   /// Quote templates saved by older versions didn't start with "- ", but the

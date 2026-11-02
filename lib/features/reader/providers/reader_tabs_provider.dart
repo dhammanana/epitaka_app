@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/startup_timing.dart';
+import '../services/book_family_service.dart';
 
 /// Represents a single open reader tab.
 class ReaderTabInfo {
@@ -51,10 +52,24 @@ class ReaderTabsState {
   final List<ReaderTabInfo> tabs;
   final int activeIndex;
 
+  /// Book ids of the tabs shown side by side (mūla, aṭṭhakathā, ṭīkā of one
+  /// text, in that order), or empty. Never a single book.
+  final List<String> columns;
+
+  /// Whether each split line between two [columns] keeps the pair scrolling
+  /// together, left to right. Missing entries are locked; a change of
+  /// [columns] locks every split again.
+  final List<bool> columnLocks;
+
   const ReaderTabsState({
     required this.tabs,
     this.activeIndex = 0,
+    this.columns = const [],
+    this.columnLocks = const [],
   });
+
+  bool isSplitLocked(int split) =>
+      split >= columnLocks.length || columnLocks[split];
 
   bool get isEmpty => tabs.isEmpty;
   bool get isNotEmpty => tabs.isNotEmpty;
@@ -113,12 +128,16 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       state = ReaderTabsState(
         tabs: newTabs,
         activeIndex: existingIndex,
+        columns: state.columns,
+        columnLocks: state.columnLocks,
       );
       return;
     }
     state = ReaderTabsState(
       tabs: [...state.tabs, resolvedTab],
       activeIndex: state.tabs.length,
+      columns: state.columns,
+      columnLocks: state.columnLocks,
     );
   }
 
@@ -127,6 +146,8 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
   void closeTab(int index) {
     if (state.tabs.isEmpty || index >= state.tabs.length) return;
 
+    final closedBookId = state.tabs[index].bookId;
+    final closedColumn = state.columns.indexOf(closedBookId);
     final newTabs = [...state.tabs]..removeAt(index);
 
     if (newTabs.isEmpty) {
@@ -139,9 +160,21 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       newActiveIndex = (newActiveIndex - 1).clamp(0, newTabs.length - 1);
     }
 
+    // Closing the focused column hands focus to its neighbour column, so
+    // the remaining columns stay on screen (the reader shows columns only
+    // while the active tab is one of them).
+    if (closedColumn >= 0 && state.activeTab?.bookId == closedBookId) {
+      final rest = [...state.columns]..removeAt(closedColumn);
+      final neighbour = rest[closedColumn > 0 ? closedColumn - 1 : 0];
+      newActiveIndex = newTabs.indexWhere((t) => t.bookId == neighbour);
+    }
+
     state = ReaderTabsState(
       tabs: newTabs,
       activeIndex: newActiveIndex,
+      columns: _withoutColumn(state.columns, closedBookId),
+      // The splits move when a column goes; closing any other tab keeps them.
+      columnLocks: closedColumn >= 0 ? const [] : state.columnLocks,
     );
   }
 
@@ -151,6 +184,8 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
       state = ReaderTabsState(
         tabs: state.tabs,
         activeIndex: index,
+        columns: state.columns,
+        columnLocks: state.columnLocks,
       );
     }
   }
@@ -189,6 +224,8 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     state = ReaderTabsState(
       tabs: newTabs,
       activeIndex: state.activeIndex,
+      columns: state.columns,
+      columnLocks: state.columnLocks,
     );
   }
 
@@ -214,6 +251,8 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     state = ReaderTabsState(
       tabs: newTabs,
       activeIndex: state.activeIndex,
+      columns: state.columns,
+      columnLocks: state.columnLocks,
     );
   }
 
@@ -236,6 +275,8 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     final newTabs = [...state.tabs];
     final tab = newTabs.removeAt(oldIndex);
     newTabs.insert(newIndex, tab);
+    final columns = _inTabOrder(state.columns, newTabs);
+    final columnsMoved = !_sameOrder(columns, state.columns);
 
     // Update active index after the move
     int newActiveIndex = state.activeIndex;
@@ -253,7 +294,141 @@ class ReaderTabsNotifier extends StateNotifier<ReaderTabsState> {
     state = ReaderTabsState(
       tabs: newTabs,
       activeIndex: newActiveIndex,
+      columns: columns,
+      columnLocks: columnsMoved ? const [] : state.columnLocks,
     );
+  }
+
+  /// Show [target] as a column beside the tab of [sourceBookId], or close
+  /// its tab when it already shows.
+  ///
+  /// The target opens as a tab (or reuses its tab, jumping to
+  /// [target]'s `initialParaId` when set) while the source tab stays active.
+  /// A new tab goes beside the other columns' tabs in [family]'s level
+  /// order, and the columns show in tab order: the tab strip and the reader
+  /// always list the books alike. A book on a level that already shows
+  /// replaces that column; the replaced book stays open as a tab. When the
+  /// source is not a column yet, the columns start again from the source
+  /// alone.
+  void toggleFamilyColumn(
+    ReaderTabInfo target, {
+    required String sourceBookId,
+    required BookFamily family,
+  }) {
+    final sourceIndex = state.tabs.indexWhere((t) => t.bookId == sourceBookId);
+    if (sourceIndex < 0 || target.bookId == sourceBookId) return;
+    final levelOf = {
+      for (final level in BookLevel.values)
+        for (final bookId in family.booksAt(level)) bookId: level,
+    };
+    final targetLevel = levelOf[target.bookId];
+    if (targetLevel == null) return;
+
+    final current = state.columns.contains(sourceBookId)
+        ? state.columns.where(levelOf.containsKey).toList()
+        : [sourceBookId];
+
+    if (current.contains(target.bookId)) {
+      closeTab(state.tabs.indexWhere((t) => t.bookId == target.bookId));
+      return;
+    }
+
+    final kept = current.where((id) => levelOf[id] != targetLevel).toList();
+
+    final jumpTab = target.initialParaId != null
+        ? ReaderTabInfo(
+            bookId: target.bookId,
+            bookName: target.bookName,
+            bookDescription: target.bookDescription,
+            initialParaId: target.initialParaId,
+            initialLineId: target.initialLineId,
+            initialJumpId: ++_jumpRequestCounter,
+          )
+        : null;
+    final tabs = [...state.tabs];
+    final existingIndex = tabs.indexWhere((t) => t.bookId == target.bookId);
+    if (existingIndex < 0) {
+      tabs.insert(
+        _familyTabIndex(tabs, kept, levelOf, targetLevel),
+        jumpTab ?? target,
+      );
+    } else if (jumpTab != null) {
+      final existing = tabs[existingIndex];
+      tabs[existingIndex] = ReaderTabInfo(
+        bookId: existing.bookId,
+        bookName: existing.bookName,
+        bookDescription: existing.bookDescription,
+        initialParaId: jumpTab.initialParaId,
+        initialLineId: jumpTab.initialLineId,
+        initialJumpId: jumpTab.initialJumpId,
+        searchQuery: existing.searchQuery,
+        scrollOffset: existing.scrollOffset,
+        currentParaId: existing.currentParaId,
+        currentLineId: existing.currentLineId,
+      );
+    }
+    state = ReaderTabsState(
+      tabs: tabs,
+      activeIndex: tabs.indexWhere((t) => t.bookId == sourceBookId),
+      columns: _inTabOrder([...kept, target.bookId], tabs),
+    );
+  }
+
+  /// Where a new family tab goes: after the last column tab of a lower
+  /// level, else before the first column tab of a higher one, else last.
+  static int _familyTabIndex(
+    List<ReaderTabInfo> tabs,
+    List<String> columns,
+    Map<String, BookLevel> levelOf,
+    BookLevel level,
+  ) {
+    int? after;
+    int? before;
+    for (var i = 0; i < tabs.length; i++) {
+      final columnLevel = columns.contains(tabs[i].bookId)
+          ? levelOf[tabs[i].bookId]
+          : null;
+      if (columnLevel == null) continue;
+      if (columnLevel.index < level.index) after = i;
+      if (columnLevel.index > level.index) before ??= i;
+    }
+    if (after != null) return after + 1;
+    return before ?? tabs.length;
+  }
+
+  static List<String> _inTabOrder(
+    List<String> columns,
+    List<ReaderTabInfo> tabs,
+  ) => [
+    for (final tab in tabs)
+      if (columns.contains(tab.bookId)) tab.bookId,
+  ];
+
+  static bool _sameOrder(List<String> a, List<String> b) =>
+      a.length == b.length &&
+      [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((same) => same);
+
+  /// Locks or unlocks the split line [split] (between columns [split] and
+  /// [split] + 1).
+  void toggleColumnLock(int split) {
+    if (split < 0 || split >= state.columns.length - 1) return;
+    final locks = [
+      for (var i = 0; i < state.columns.length - 1; i++)
+        state.isSplitLocked(i),
+    ];
+    locks[split] = !locks[split];
+    state = ReaderTabsState(
+      tabs: state.tabs,
+      activeIndex: state.activeIndex,
+      columns: state.columns,
+      columnLocks: locks,
+    );
+  }
+
+  /// One book left is not a set of columns, so it clears them.
+  static List<String> _withoutColumn(List<String> columns, String bookId) {
+    final rest = columns.where((id) => id != bookId).toList();
+    return rest.length < 2 ? const [] : rest;
   }
 
   /// Close all tabs.
