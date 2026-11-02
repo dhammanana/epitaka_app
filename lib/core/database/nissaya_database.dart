@@ -185,6 +185,38 @@ class NissayaDatabase extends _$NissayaDatabase {
     return result;
   }
 
+  /// Get all sentences for a paragraph range of one book, formatted for
+  /// display (`Map<paraId, Map<lineId, transcript>>`).
+  ///
+  /// One indexed range query — used by the book-link sheet, which needs a
+  /// section's worth of nissaya lines without reading (or querying) the
+  /// whole book.
+  Future<Map<int, Map<int, String>>> getSentencesFormattedForParaRange(
+    String bookId,
+    int paraMin,
+    int paraMax,
+  ) async {
+    final rows = await customSelect(
+      'SELECT book_id, para_id, line_id, content, nissaya_id FROM sentences '
+      'WHERE book_id = ? AND para_id >= ? AND para_id <= ? '
+      'ORDER BY para_id, line_id',
+      variables: [
+        Variable.withString(bookId),
+        Variable.withInt(paraMin),
+        Variable.withInt(paraMax),
+      ],
+    ).get();
+
+    final result = <int, Map<int, String>>{};
+    for (final row in rows) {
+      final sentence = _parseRow(row.data);
+      final text = sentence.formattedText;
+      if (text.isEmpty) continue;
+      result.putIfAbsent(sentence.paraId, () => {})[sentence.lineId] = text;
+    }
+    return result;
+  }
+
   /// Get book info.
   Future<Map<String, Object?>?> getBookInfo(int bookId) async {
     final rows = await customSelect(

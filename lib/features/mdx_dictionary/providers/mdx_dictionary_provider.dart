@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/mdx_dictionary_info.dart';
@@ -237,17 +238,52 @@ class MdxDictionariesNotifier
   Future<int> getTotalIndexDirSize() async {
     try {
       final indexDir = await mdxIndexDir();
-      if (await indexDir.exists()) {
-        int totalSize = 0;
-        await for (final entity in indexDir.list(recursive: true)) {
-          if (entity is File) {
-            totalSize += await entity.length();
-          }
-        }
-        return totalSize;
-      }
+      return await dirSizeBytes(indexDir.path);
     } catch (_) {}
     return 0;
+  }
+
+  /// Size of the app-private copies in `mdx_files` (the `.mdx` files plus
+  /// their sidecars).
+  Future<int> getFilesDirSize() async {
+    try {
+      final dir = await mdxFilesDir();
+      return await dirSizeBytes(dir.path);
+    } catch (_) {}
+    return 0;
+  }
+
+  /// Size of the private copies no listed dictionary needs any more:
+  /// leftovers of removed or re-imported dictionaries.
+  Future<int> getUnusedFilesSize() async {
+    var total = 0;
+    for (final f in await _unusedCopies()) {
+      try {
+        total += await f.length();
+      } catch (_) {}
+    }
+    return total;
+  }
+
+  Future<List<File>> _unusedCopies() {
+    return unusedMdxCopies(
+      inUsePaths: {
+        for (final d in _current) ...[d.mdxPath, ...d.mddPaths],
+      },
+    );
+  }
+
+  /// Deletes the copies left behind by removed or re-imported dictionaries.
+  /// Returns the bytes freed.
+  Future<int> deleteUnusedFiles() async {
+    var freed = 0;
+    for (final f in await _unusedCopies()) {
+      try {
+        freed += await f.length();
+        await f.delete();
+      } catch (_) {}
+    }
+    return freed;
   }
 
   Future<void> clearErrorsAndRebuildAll() async {
@@ -304,6 +340,19 @@ class MdxDictionariesNotifier
         if (await f.exists()) await f.delete();
       } catch (_) {}
     }
+    // The dictionary is gone, so its app-private `.mdx`/`.mdd` copy is dead
+    // weight — tens to hundreds of MB per dictionary. Delete it now instead
+    // of leaving it in `mdx_files` forever.
+    if (target != null) {
+      try {
+        await deleteMdxCopy(
+          target.mdxPath,
+          keep: {
+            for (final d in list) ...[d.mdxPath, ...d.mddPaths],
+          },
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> addMdxFile(String mdxPath) async {
@@ -320,6 +369,11 @@ class MdxDictionariesNotifier
       if (!peek.isMdxLike) {
         await ensureMdxFileOrExplain(trimmed);
       }
+    }
+    // Check before copying: a duplicate import must not leave a second full
+    // copy in app storage.
+    if (_current.any((d) => p.equals(d.mdxPath, trimmed))) {
+      throw MdxException('Already added.', path: trimmed);
     }
     var stable = trimmed;
     try {
@@ -339,7 +393,9 @@ class MdxDictionariesNotifier
         path: trimmed,
       );
     }
-    if (_current.any((d) => d.mdxPath == trimmed || d.mdxPath == stable)) {
+    if (_current.any(
+      (d) => p.equals(d.mdxPath, trimmed) || p.equals(d.mdxPath, stable),
+    )) {
       throw MdxException('Already added.', path: trimmed);
     }
     final id = mdxIdForPath(stable);

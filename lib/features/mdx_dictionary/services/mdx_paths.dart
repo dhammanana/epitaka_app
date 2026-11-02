@@ -13,6 +13,91 @@ Future<Directory> mdxIndexDir() async {
   return dir;
 }
 
+/// The app-private folder holding copies of imported `.mdx` dictionaries and
+/// their sidecars. Created only when [create] is true, so read-only callers
+/// (size reporting) never bring an empty folder into existence.
+Future<Directory> mdxFilesDir({bool create = false}) async {
+  final base = await getDatabaseDirectory();
+  final dir = Directory(p.join(base.path, 'mdx_files'));
+  if (create && !await dir.exists()) await dir.create(recursive: true);
+  return dir;
+}
+
+/// Total size in bytes of every file under [dirPath]; 0 when it is missing.
+Future<int> dirSizeBytes(String dirPath) async {
+  var total = 0;
+  try {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) return 0;
+    await for (final e in dir.list(recursive: true, followLinks: false)) {
+      if (e is! File) continue;
+      try {
+        total += await e.length();
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return total;
+}
+
+/// Whether [name] — a file name inside the private copy folder — belongs to
+/// the copy of [mdxPath]: the `.mdx` itself or a sidecar sharing its base
+/// name (`y.mdx`, `y.mdd`, `y.1.mdd`, `y.css`, `y.js`).
+bool isMdxCopyFileName(String name, String mdxPath) {
+  final base = p.basenameWithoutExtension(mdxPath);
+  return name == p.basename(mdxPath) || name.startsWith('$base.');
+}
+
+/// Deletes the app-private copy of [mdxPath] and its same-name sidecars,
+/// leaving alone every path in [keep] (another dictionary still uses it).
+/// Files the user owns outside the `mdx_files` folder are never touched.
+/// Returns the bytes freed.
+Future<int> deleteMdxCopy(String mdxPath, {Set<String> keep = const {}}) async {
+  final dir = await mdxFilesDir();
+  if (!await dir.exists()) return 0;
+  final keepNorm = {for (final k in keep) p.normalize(k)};
+  var freed = 0;
+  try {
+    await for (final e in dir.list(followLinks: false)) {
+      if (e is! File) continue;
+      if (!isMdxCopyFileName(p.basename(e.path), mdxPath)) continue;
+      if (keepNorm.contains(p.normalize(e.path))) continue;
+      try {
+        freed += await e.length();
+        await e.delete();
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return freed;
+}
+
+/// Copies inside `mdx_files` that no listed dictionary needs any more:
+/// leftovers of removed dictionaries and old duplicate copies.
+/// [inUsePaths] holds every path the current dictionary list references.
+Future<List<File>> unusedMdxCopies({
+  required Iterable<String> inUsePaths,
+}) async {
+  final dir = await mdxFilesDir();
+  if (!await dir.exists()) return const [];
+  final paths = inUsePaths.toList();
+  final keep = {for (final path in paths) p.normalize(path)};
+  final bases = <String>{
+    for (final path in paths)
+      if (path.toLowerCase().endsWith('.mdx'))
+        p.basenameWithoutExtension(path),
+  };
+  final unused = <File>[];
+  try {
+    await for (final e in dir.list(followLinks: false)) {
+      if (e is! File) continue;
+      if (keep.contains(p.normalize(e.path))) continue;
+      final name = p.basename(e.path);
+      if (bases.any((b) => isMdxCopyFileName(name, '$b.mdx'))) continue;
+      unused.add(e);
+    }
+  } catch (_) {}
+  return unused;
+}
+
 Future<String> mdxIndexPathFor(String id) async {
   final dir = await mdxIndexDir();
   return p.join(dir.path, '$id.sqlite');
@@ -184,10 +269,23 @@ Future<String> ensurePersistentCopy(String path) async {
       Platform.isIOS ||
       Platform.isMacOS;
   if (!needsCopy) return path;
-  final dir = Directory(p.join(base.path, 'mdx_files'));
-  if (!await dir.exists()) await dir.create(recursive: true);
+  final dir = await mdxFilesDir(create: true);
   final srcLen = await File(path).length();
-  var dest = File(p.join(dir.path, p.basename(path)));
+  final primary = File(p.join(dir.path, p.basename(path)));
+  if (await primary.exists()) {
+    if (await primary.length() == srcLen) return primary.path;
+    // Same name, different bytes, and the source is a throw-away picker copy
+    // (cache/tmp): this is the same dictionary re-imported, so replace the
+    // old copy instead of keeping a second full copy. This is what used to
+    // double the space taken by every mobile re-import.
+    if (transient) {
+      try {
+        await File(path).copy(primary.path);
+        return primary.path;
+      } catch (_) {}
+    }
+  }
+  var dest = primary;
   var i = 1;
   while (await dest.exists()) {
     if (await dest.length() == srcLen) return dest.path;

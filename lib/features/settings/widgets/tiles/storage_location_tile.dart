@@ -15,11 +15,20 @@ class _DbFile {
   const _DbFile(this.name, this.bytes);
 }
 
+class _DbFolder {
+  final String name;
+  final int bytes;
+  const _DbFolder(this.name, this.bytes);
+}
+
 class _StorageInfo {
   final String path;
   final List<_DbFile> files;
-  const _StorageInfo(this.path, this.files);
-  int get totalBytes => files.fold(0, (s, f) => s + f.bytes);
+  final List<_DbFolder> folders;
+  const _StorageInfo(this.path, this.files, this.folders);
+  int get folderBytes => folders.fold(0, (s, f) => s + f.bytes);
+  int get totalBytes => files.fold(0, (s, f) => s + f.bytes) + folderBytes;
+  bool get hasMdxFiles => folders.any((f) => f.name == 'mdx_files');
 }
 
 String _formatBytes(int bytes) {
@@ -31,13 +40,35 @@ String _formatBytes(int bytes) {
   return '${(mb / 1024).toStringAsFixed(2)} GB';
 }
 
+/// Total size of every file under [dir]; 0 when it can't be read.
+Future<int> _folderSizeBytes(Directory dir) async {
+  var total = 0;
+  try {
+    await for (final e in dir.list(recursive: true, followLinks: false)) {
+      if (e is! File) continue;
+      try {
+        total += await e.length();
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return total;
+}
+
+/// The database folder's own `.db` files plus its subfolders (`mdx_files` with
+/// the imported dictionary copies, `mdx_index` with their search indexes,
+/// `gavesana`, …), each with the size it takes on disk.
 Future<_StorageInfo> _loadStorageInfo() async {
   final dir = await getDatabaseDirectory();
   final files = <_DbFile>[];
+  final folders = <_DbFolder>[];
   try {
     for (final e in dir.listSync()) {
-      if (e is! File) continue;
       final name = e.path.split(Platform.pathSeparator).last;
+      if (e is Directory) {
+        folders.add(_DbFolder(name, await _folderSizeBytes(e)));
+        continue;
+      }
+      if (e is! File) continue;
       if (!name.endsWith('.db')) continue;
       int size = 0;
       try {
@@ -47,7 +78,8 @@ Future<_StorageInfo> _loadStorageInfo() async {
     }
   } catch (_) {}
   files.sort((a, b) => a.name.compareTo(b.name));
-  return _StorageInfo(dir.path, files);
+  folders.sort((a, b) => a.name.compareTo(b.name));
+  return _StorageInfo(dir.path, files, folders);
 }
 
 Future<void> _copyPath(BuildContext context, String path) async {
@@ -117,7 +149,9 @@ void _showDetails(BuildContext context, _StorageInfo info) {
               ),
               const SizedBox(height: 12),
               Text(
-                '${info.files.length} databases • ${_formatBytes(info.totalBytes)}',
+                '${info.files.length} databases • ${_formatBytes(info.files.fold(0, (s, f) => s + f.bytes))}\n'
+                '${info.folders.length} folders • ${_formatBytes(info.folderBytes)}\n'
+                'Total: ${_formatBytes(info.totalBytes)}',
                 style: AppTypography.labelSmall.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -155,6 +189,56 @@ void _showDetails(BuildContext context, _StorageInfo info) {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
+              if (info.folders.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Text(
+                  'Folders (recursive)',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                for (final f in info.folders)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${f.name}/',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          _formatBytes(f.bytes),
+                          style: AppTypography.labelSmall.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (info.hasMdxFiles)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'mdx_files holds the imported MDX dictionaries. '
+                      'Remove a dictionary or free unused copies in '
+                      'Settings → Dictionary settings → MDX dictionaries.',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -198,9 +282,15 @@ class StorageLocationTile extends StatelessWidget {
       future: _loadStorageInfo(),
       builder: (context, snap) {
         final info = snap.data;
+        // Subfolders carry most of the weight (MDX copies, their indexes),
+        // so name them with their sizes next to the database total.
+        final folderLine = info == null || info.folders.isEmpty
+            ? ''
+            : '\n${info.folders.take(3).map((f) => '${f.name} ${_formatBytes(f.bytes)}').join(' · ')}';
         final subtitle = info == null
             ? loc.loadingDatabases
-            : '${info.files.length} databases • ${_formatBytes(info.totalBytes)}\n${info.path}';
+            : '${info.files.length} databases • ${_formatBytes(info.totalBytes)}'
+                  '$folderLine\n${info.path}';
         return InkWell(
           onTap: info == null ? null : () => _showDetails(context, info),
           child: Padding(
@@ -229,7 +319,7 @@ class StorageLocationTile extends StatelessWidget {
                           color: colors.onSurfaceVariant,
                           fontSize: 11,
                         ),
-                        maxLines: 3,
+                        maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],

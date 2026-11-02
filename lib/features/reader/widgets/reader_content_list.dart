@@ -169,6 +169,7 @@ class _ReaderContentConfig {
   final TextAlignOption textAlign;
   final int lineHeight;
   final int paragraphSpacing;
+  final int letterSpacing;
   final bool stripVariantAnnotations;
 
   const _ReaderContentConfig({
@@ -190,6 +191,7 @@ class _ReaderContentConfig {
     required this.textAlign,
     required this.lineHeight,
     required this.paragraphSpacing,
+    required this.letterSpacing,
     required this.stripVariantAnnotations,
   });
 
@@ -236,6 +238,7 @@ class _ReaderContentConfig {
       textAlign: settings.textAlign,
       lineHeight: settings.lineHeight,
       paragraphSpacing: settings.paragraphSpacing,
+      letterSpacing: settings.letterSpacing,
       stripVariantAnnotations: settings.stripVariantAnnotations,
     );
   }
@@ -262,6 +265,7 @@ class _ReaderContentConfig {
         other.textAlign == textAlign &&
         other.lineHeight == lineHeight &&
         other.paragraphSpacing == paragraphSpacing &&
+        other.letterSpacing == letterSpacing &&
         other.stripVariantAnnotations == stripVariantAnnotations;
   }
 
@@ -288,6 +292,7 @@ class _ReaderContentConfig {
     textAlign,
     lineHeight,
     paragraphSpacing,
+    letterSpacing,
     stripVariantAnnotations,
   );
 }
@@ -357,6 +362,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
     textAlign: TextAlignOption.justify,
     lineHeight: 0,
     paragraphSpacing: 8,
+    letterSpacing: 0,
   );
 
   /// Identity of the data / annotations the memo was built against. New
@@ -490,6 +496,7 @@ class _ReaderContentListState extends State<ReaderContentList> {
         textAlign: config.textAlign,
         lineHeight: config.lineHeight,
         paragraphSpacing: config.paragraphSpacing,
+        letterSpacing: config.letterSpacing,
       ),
     );
 

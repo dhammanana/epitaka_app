@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/utils/copy_types.dart';
 import '../services/app_analytics.dart';
+import '../services/google_font_service.dart';
 import '../models/context_menu_action.dart';
 import '../models/shortcut_override.dart';
 import '../models/toolbar_item.dart';
@@ -173,28 +174,80 @@ enum UiFontFamily {
   }
 }
 
-/// Font family choices for reading.
-enum ReadingFontFamily {
-  serif('serif', 'Serif'),
-  sansSerif('sans', 'Sans-Serif'),
-  mono('mono', 'Monospace');
-
+/// A font family for reading content.
+///
+/// Three bundled families ship with the app and need no download. Any family
+/// from Google Fonts can be chosen instead — the user searches the catalog in
+/// the reading settings and the `google_fonts` package fetches and caches the
+/// file the first time the family is drawn.
+///
+/// A Google font says nothing about the scripts it covers, so the bundled
+/// family for the text keeps rendering whatever glyphs the choice lacks (see
+/// [LanguageTypography.toTextStyle] and `paliFontFallback`).
+class ReadingFontFamily {
+  /// Stable id, also what [LanguageTypography] persists. Google fonts are
+  /// stored as `gf:<family name>`.
   final String code;
+
+  /// "Serif", "Sans-Serif", "Monospace", or the Google Fonts family name.
   final String label;
 
-  const ReadingFontFamily(this.code, this.label);
+  /// Google Fonts family name when this choice came from the catalog, e.g.
+  /// "Lora". Null for the bundled families.
+  final String? googleFont;
 
-  /// Returns the Flutter fontFamily string.
-  // Bundled fonts only: system font names resolve differently on every
-  // platform. OpenSans is not used because it lacks ṃ ṅ ṭ ḍ ṇ ḷ.
-  String get fontFamily {
-    switch (this) {
-      case ReadingFontFamily.serif:
-        return 'NotoSerif';
-      case ReadingFontFamily.sansSerif:
+  const ReadingFontFamily._(this.code, this.label, {this.googleFont});
+
+  static const ReadingFontFamily serif = ReadingFontFamily._(
+    'serif',
+    'Serif',
+  );
+  static const ReadingFontFamily sansSerif = ReadingFontFamily._(
+    'sans',
+    'Sans-Serif',
+  );
+  static const ReadingFontFamily mono = ReadingFontFamily._(
+    'mono',
+    'Monospace',
+  );
+
+  /// The bundled families, in the order the picker lists them.
+  static const List<ReadingFontFamily> values = <ReadingFontFamily>[
+    serif,
+    sansSerif,
+    mono,
+  ];
+
+  /// A family picked from Google Fonts, e.g. `ReadingFontFamily.google('Lora')`.
+  factory ReadingFontFamily.google(String family) => ReadingFontFamily._(
+    'gf:$family',
+    family,
+    googleFont: family,
+  );
+
+  /// Whether this is a Google Fonts choice rather than a bundled one.
+  bool get isGoogleFont => googleFont != null;
+
+  /// Flutter fontFamily string.
+  ///
+  /// Bundled fonts only resolve predictably by name: a system font name
+  /// resolves differently on every platform. OpenSans is not used because it
+  /// lacks ṃ ṅ ṭ ḍ ṇ ḷ. A Google font resolves to the name the package
+  /// registers the file under, which also starts its download.
+  String get fontFamily => googleFont == null
+      ? bundledFamily
+      : GoogleFontService.instance.familyFor(googleFont!);
+
+  /// The app's own family: this choice for a bundled font, or the serif
+  /// default behind a Google font.
+  String get bundledFamily {
+    switch (code) {
+      case 'sans':
         return 'DejaVuSans';
-      case ReadingFontFamily.mono:
+      case 'mono':
         return 'DejaVuSansMono';
+      default:
+        return 'NotoSerif';
     }
   }
 
@@ -207,38 +260,59 @@ enum ReadingFontFamily {
   /// serif → NotoSerifDevanagari; there is no bundled Devanagari
   /// monospace, so Sans-Serif and Monospace both → NotoSansDevanagari.
   String fontFamilyForLanguage(String? langCode) {
+    final google = googleFont;
+    if (google != null) return GoogleFontService.instance.familyFor(google);
+    return bundledFamilyForLanguage(langCode);
+  }
+
+  /// [bundledFamily] adjusted for [langCode]'s script.
+  String bundledFamilyForLanguage(String? langCode) {
     const devanagariLangs = {'hi', 'ne'};
     if (langCode == null || !devanagariLangs.contains(langCode)) {
-      return fontFamily;
+      return bundledFamily;
     }
-    switch (this) {
-      case ReadingFontFamily.serif:
+    switch (code) {
+      case 'serif':
         return 'NotoSerifDevanagari';
-      case ReadingFontFamily.sansSerif:
-      case ReadingFontFamily.mono:
+      default:
         return 'NotoSansDevanagari';
     }
   }
 
   // WebViews cannot load Flutter's bundled fonts, so they get the matching
-  // CSS generic family instead.
+  // CSS generic family instead. A Google font is not reachable there either,
+  // so it asks for the serif it falls back to.
   String get cssGenericFamily {
-    switch (this) {
-      case ReadingFontFamily.serif:
-        return 'serif';
-      case ReadingFontFamily.sansSerif:
+    if (googleFont != null) return 'serif';
+    switch (code) {
+      case 'sans':
         return 'sans-serif';
-      case ReadingFontFamily.mono:
+      case 'mono':
         return 'monospace';
+      default:
+        return 'serif';
     }
   }
 
   static ReadingFontFamily fromCode(String code) {
-    return ReadingFontFamily.values.firstWhere(
-      (f) => f.code == code,
-      orElse: () => ReadingFontFamily.serif,
-    );
+    for (final family in values) {
+      if (family.code == code) return family;
+    }
+    if (code.startsWith('gf:') && code.length > 3) {
+      return ReadingFontFamily.google(code.substring(3));
+    }
+    return serif;
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReadingFontFamily && other.code == code;
+
+  @override
+  int get hashCode => code.hashCode;
+
+  @override
+  String toString() => 'ReadingFontFamily($code)';
 }
 
 /// Per-language typography settings (applies to both Pali and translations).
@@ -321,14 +395,24 @@ class LanguageTypography {
   /// language (Devanagari-script translations get their bundled fonts —
   /// see [ReadingFontFamily.fontFamilyForLanguage]).
   TextStyle toTextStyle({required Color fallbackColor, String? langCode}) {
-    return TextStyle(
-      fontFamily: fontFamily.fontFamilyForLanguage(langCode),
+    final bundled = fontFamily.bundledFamilyForLanguage(langCode);
+    final style = TextStyle(
+      fontFamily: bundled,
       fontSize: fontSize,
       height: lineHeight,
       fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: italic ? FontStyle.italic : FontStyle.normal,
       decoration: underline ? TextDecoration.underline : TextDecoration.none,
       color: effectiveColor(fallbackColor),
+    );
+    final google = fontFamily.googleFont;
+    if (google == null) return style;
+    // Real 400/700/italic cuts from the chosen family, with the bundled font
+    // behind it for glyphs the Google font does not carry.
+    return GoogleFontService.instance.apply(
+      google,
+      style,
+      fallback: bundled,
     );
   }
 
@@ -660,6 +744,11 @@ class AppSettings {
   /// Defaults to 8 pixels.
   final int paragraphSpacing;
 
+  /// Letter spacing (tracking) for reading content in pixels.
+  /// Added between characters of the reader body text.
+  /// Defaults to 0 (use the font's natural spacing).
+  final int letterSpacing;
+
   /// How deeply the library browser tree expands by default.
   final LibraryExpandLevel libraryExpandLevel;
 
@@ -763,6 +852,7 @@ class AppSettings {
     this.textAlign = TextAlignOption.justify,
     this.lineHeight = 0,
     this.paragraphSpacing = 8,
+    this.letterSpacing = 0,
     this.libraryExpandLevel = LibraryExpandLevel.category,
     this.mdxCollapseByDefault = true,
     this.translationVersionMap = const {},
@@ -816,6 +906,7 @@ class AppSettings {
     TextAlignOption? textAlign,
     int? lineHeight,
     int? paragraphSpacing,
+    int? letterSpacing,
     bool? mdxCollapseByDefault,
     bool? stripVariantAnnotations,
     bool? showBookLinks,
@@ -876,6 +967,7 @@ class AppSettings {
       textAlign: textAlign ?? this.textAlign,
       lineHeight: lineHeight ?? this.lineHeight,
       paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
+      letterSpacing: letterSpacing ?? this.letterSpacing,
       mdxCollapseByDefault: mdxCollapseByDefault ?? this.mdxCollapseByDefault,
       stripVariantAnnotations:
           stripVariantAnnotations ?? this.stripVariantAnnotations,
@@ -1322,6 +1414,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
               .clamp(0, TextAlignOption.values.length - 1)],
       lineHeight: (prefs.getInt('line_height') ?? 0).clamp(0, 100),
       paragraphSpacing: (prefs.getInt('paragraph_spacing') ?? 8).clamp(0, 100),
+      letterSpacing: (prefs.getInt('letter_spacing') ?? 0).clamp(0, 10),
       translationVersionMap: _loadTranslationVersionMap(),
       leftPanelWidth: prefs.getDouble('left_panel_width') ?? 0,
       rightPanelWidth: prefs.getDouble('right_panel_width') ?? 0,
@@ -1738,6 +1831,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final clamped = spacing.clamp(0, 100);
     state = state.copyWith(paragraphSpacing: clamped);
     await _prefs?.setInt('paragraph_spacing', clamped);
+  }
+
+  /// Set the letter spacing for reading content in pixels.
+  Future<void> setLetterSpacing(int spacing) async {
+    final clamped = spacing.clamp(0, 10);
+    state = state.copyWith(letterSpacing: clamped);
+    await _prefs?.setInt('letter_spacing', clamped);
   }
 
   /// Toggle the inlined book-link chips (commentary links) in the reader.

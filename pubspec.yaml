@@ -122,6 +122,7 @@ dependencies:
   mime: ^2.1.0
   window_manager: ^0.5.2
   win32: ^5.15.0
+  google_fonts: ^8.2.1
 
 flutter:
   uses-material-design: true

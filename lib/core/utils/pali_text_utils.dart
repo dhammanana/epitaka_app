@@ -110,6 +110,10 @@ String? paliReadingFontFamily(Script script, ReadingFontFamily choice) {
   // was checked when the choice was made (see setDownloadedPaliFonts).
   final downloaded = _downloadedPaliFonts[script];
   if (downloaded != null) return downloaded;
+  // A family picked from Google Fonts draws every script it has glyphs for;
+  // whatever it lacks is rendered by the bundled font behind it (see
+  // [paliFontFallback]).
+  if (choice.isGoogleFont) return choice.fontFamily;
   switch (script) {
     case Script.roman:
     case Script.cyrillic:
@@ -123,6 +127,18 @@ String? paliReadingFontFamily(Script script, ReadingFontFamily choice) {
     default:
       return scriptFontFamily(script);
   }
+}
+
+/// Bundled families to try after [choice] for glyphs it cannot shape.
+///
+/// Empty for the bundled choices — they are the script fonts already. A Google
+/// font covers only the scripts it ships, so the bundled script font stays
+/// behind it and a Latin-only family still renders Sinhala or Thai Pāli.
+List<String> paliFontFallback(Script script, ReadingFontFamily choice) {
+  if (!choice.isGoogleFont) return const <String>[];
+  final bundled = scriptFontFamily(script);
+  if (bundled == null || bundled == choice.fontFamily) return const <String>[];
+  return [bundled];
 }
 
 /// The font choices that give a different bundled font in [script]. Empty

@@ -76,6 +76,17 @@ class AppearanceSettingsBody extends ConsumerWidget {
           ),
           const SizedBox(height: AppDimensions.md),
           _LabelRow(
+            label: loc.letterSpacing,
+            control: _Stepper(
+              value: settings.letterSpacing,
+              min: 0,
+              max: 10,
+              onChanged: (v) => ref.read(settingsProvider.notifier).setLetterSpacing(v),
+              colors: colors,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.md),
+          _LabelRow(
             label: loc.lineSpacing,
             control: _Stepper(
               value: settings.lineHeight,

@@ -115,7 +115,7 @@ void main() {
   // Literal names so the test also guards the font mapping itself. Scripts
   // not listed keep their script font whatever the choice.
   String? expectedFamily(Script script, ReadingFontFamily choice) {
-    const latin = {
+    final latin = {
       ReadingFontFamily.serif: 'NotoSerif',
       ReadingFontFamily.sansSerif: 'DejaVuSans',
       ReadingFontFamily.mono: 'DejaVuSansMono',
@@ -158,7 +158,7 @@ void main() {
 
   for (final script in Script.values) {
     for (final choice in ReadingFontFamily.values) {
-      testWidgets('${script.name} Pāli with ${choice.name}: font, size, '
+      testWidgets('${script.name} Pāli with ${choice.code}: font, size, '
           'colour and weight', (tester) async {
         final paragraph = ParagraphData(
           paraId: 1,

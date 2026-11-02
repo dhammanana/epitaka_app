@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/epitaka_database.dart';
+import '../../../core/database/nissaya_database.dart';
 import '../../../core/database/translation_database.dart';
 import '../data/book_link_data.dart';
 
@@ -133,12 +134,16 @@ class BookLinkService {
   /// extension was applied.
   ///
   /// [translationDbs] provides translation databases keyed by language code
-  /// (e.g. {'en': TranslationDatabase, 'th': TranslationDatabase}).
+  /// (e.g. {'en': TranslationDatabase, 'th': TranslationDatabase}) and
+  /// [nissayaDbs] the nissaya databases of the nissaya languages enabled for
+  /// display (e.g. {'my_nissaya': NissayaDatabase}) — the same split the reader
+  /// makes, so the sheet shows every enabled translation like the reader does.
   Future<LinkedParagraphContent?> getLinkedContent(
     String bookId,
     int paraId, {
     int? lineId,
     Map<String, TranslationDatabase>? translationDbs,
+    Map<String, NissayaDatabase>? nissayaDbs,
   }) async {
     // ── Parallelize the independent queries ────────────────────────────
     // The section heading, the book name, and (later) the sentences all
@@ -436,6 +441,26 @@ class BookLinkService {
             }
           } catch (_) {
             // Translation DB may not have this section — skip silently
+          }
+        }),
+      );
+    }
+
+    // Nissaya content lives in a differently shaped table, so it is formatted
+    // exactly as the reader formats it (pali: meaning pairs) and merged into
+    // the same lang -> para -> line map. One indexed range query per language.
+    if (nissayaDbs != null && nissayaDbs.isNotEmpty) {
+      await Future.wait(
+        nissayaDbs.entries.map((entry) async {
+          final langCode = entry.key;
+          try {
+            final paraMap = await entry.value
+                .getSentencesFormattedForParaRange(bookId, paraMin, paraMax);
+            if (paraMap.isNotEmpty) {
+              transByLang[langCode] = paraMap;
+            }
+          } catch (_) {
+            // Nissaya DB may not have this section — skip silently
           }
         }),
       );

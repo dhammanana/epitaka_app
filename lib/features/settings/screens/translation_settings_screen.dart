@@ -13,12 +13,9 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart'
     show Script, listOfScripts;
 import '../../../core/utils/pali_text_utils.dart'
-    show
-        convertPaliToScript,
-        paliFontChoices,
-        paliReadingFontFamily,
-        translationFontChoices;
+    show convertPaliToScript, paliFontFallback, paliReadingFontFamily;
 import '../providers/translation_download_provider.dart';
+import '../../fonts/widgets/google_font_picker_sheet.dart';
 import '../widgets/color_picker_section.dart';
 import '../widgets/settings_app_bar.dart';
 import '../widgets/settings_section.dart';
@@ -1506,7 +1503,6 @@ class PaliTextSection extends ConsumerWidget {
                 ? notifier.setPaliColorPair(pair.withDark(c))
                 : notifier.setPaliColor(c);
           },
-          fontChoices: paliFontChoices(settings.paliScript),
           onEnabledChanged: (v) {
             ref.read(settingsProvider.notifier).setShowPali(v);
           },
@@ -1566,7 +1562,6 @@ class TranslationTextSection extends ConsumerWidget {
                       )
                     : notifier.setTranslationColorForLang(code, c);
               },
-              fontChoices: translationFontChoices(code),
               // The card style previews resolve this language's family, so
               // Devanagari-script translations show their bundled font.
               langCode: code,
@@ -1596,9 +1591,6 @@ class _LanguageTypographyCard extends StatefulWidget {
   // colour of the current mode.
   final ColorPair colorPair;
   final ValueChanged<Color> onColorChanged;
-  // Empty hides the font family section: the text has one font whatever
-  // is chosen, so the section would do nothing visible.
-  final List<ReadingFontFamily> fontChoices;
   // Roman source text for Pāli (converted to [previewScript] and drawn in
   // its reading font, as the reader does), or ready text for translations.
   final String previewText;
@@ -1621,7 +1613,6 @@ class _LanguageTypographyCard extends StatefulWidget {
     required this.defaultColor,
     required this.colorPair,
     required this.onColorChanged,
-    required this.fontChoices,
     required this.previewText,
     this.previewScript,
     this.langCode,
@@ -1765,25 +1756,24 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                   color: colors.outlineVariant.withValues(alpha: 0.25),
                 ),
                 const SizedBox(height: AppDimensions.md),
-                if (widget.fontChoices.isNotEmpty) ...[
-                  _SectionLabel(loc.fontFamily, colors),
-                  const SizedBox(height: 8),
-                  _FontFamilySelector(
-                    choices: widget.fontChoices,
-                    // A saved choice this text cannot show (Monospace in
-                    // Tai Tham) renders as Sans-Serif, so mark that one.
-                    current: widget.fontChoices.contains(typo.fontFamily)
-                        ? typo.fontFamily
-                        : ReadingFontFamily.sansSerif,
-                    colors: colors,
-                    onChanged: (family) {
-                      widget.onTypographyChanged(
-                        typo.copyWith(fontFamily: family),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: AppDimensions.md),
-                ],
+                _SectionLabel(loc.fontFamily, colors),
+                const SizedBox(height: 8),
+                _FontChoiceTile(
+                  current: typo.fontFamily,
+                  sample: widget.previewScript == null
+                      ? widget.previewText
+                      : convertPaliToScript(
+                          widget.previewText,
+                          widget.previewScript!,
+                        ),
+                  colors: colors,
+                  onChanged: (family) {
+                    widget.onTypographyChanged(
+                      typo.copyWith(fontFamily: family),
+                    );
+                  },
+                ),
+                const SizedBox(height: AppDimensions.md),
                 _SectionLabel(loc.fontSize, colors),
                 const SizedBox(height: 8),
                 _FontSizeControl(
@@ -1840,23 +1830,23 @@ class _LanguageTypographyCardState extends State<_LanguageTypographyCard> {
                           widget.previewText,
                           widget.previewScript!,
                         ),
-                  style: typo
-                      .toTextStyle(
-                        fallbackColor: effectiveColor,
-                        langCode: widget.langCode,
-                      )
-                      .copyWith(
-                        fontFamily: widget.previewScript == null
-                            ? widget.langCode == null
-                                  ? typo.fontFamily.fontFamily
-                                  : typo.fontFamily.fontFamilyForLanguage(
-                                      widget.langCode,
-                                    )
-                            : paliReadingFontFamily(
+                  style: widget.previewScript == null
+                      ? typo.toTextStyle(
+                          fallbackColor: effectiveColor,
+                          langCode: widget.langCode,
+                        )
+                      : typo
+                            .toTextStyle(fallbackColor: effectiveColor)
+                            .copyWith(
+                              fontFamily: paliReadingFontFamily(
                                 widget.previewScript!,
                                 typo.fontFamily,
                               ),
-                      ),
+                              fontFamilyFallback: paliFontFallback(
+                                widget.previewScript!,
+                                typo.fontFamily,
+                              ),
+                            ),
                 ),
               ],
             ),
@@ -1910,56 +1900,73 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _FontFamilySelector extends StatelessWidget {
-  final List<ReadingFontFamily> choices;
+/// The reading font in use, as a tappable row. Tapping it opens the
+/// searchable Google Fonts picker, so the three bundled families are no
+/// longer the only options — any face in the catalog can be chosen for this
+/// text.
+class _FontChoiceTile extends StatelessWidget {
   final ReadingFontFamily current;
+  final String sample;
   final ColorScheme colors;
   final ValueChanged<ReadingFontFamily> onChanged;
 
-  const _FontFamilySelector({
-    required this.choices,
+  const _FontChoiceTile({
     required this.current,
+    required this.sample,
     required this.colors,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: choices.map((family) {
-        final isSelected = current == family;
-        return GestureDetector(
-          onTap: () => onChanged(family),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? colors.primaryContainer
-                  : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? colors.primary
-                    : colors.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Text(
-              family.label,
-              style: TextStyle(
-                fontFamily: family.fontFamily,
-                fontSize: 14,
-                color: isSelected
-                    ? colors.onPrimaryContainer
-                    : colors.onSurface,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
+    final loc = AppLocalizations.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final picked = await showReadingFontPicker(
+          context,
+          current: current,
+          sample: sample,
         );
-      }).toList(),
+        if (picked != null && picked != current) onChanged(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: colors.outlineVariant.withValues(alpha: 0.6),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                current.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: current.fontFamily,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
+                ),
+              ),
+            ),
+            Icon(Icons.search, size: 17, color: colors.primary),
+            const SizedBox(width: 4),
+            Text(
+              loc.searchFonts,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: colors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -335,6 +336,12 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
         continue;
       }
       for (final c in companions) {
+        // A `.mdd` resource belongs to the one dictionary with the same base
+        // name. Copying every selected `.mdd` beside every selected `.mdx`
+        // multiplied a folder of big resource files by the dictionary count.
+        if (!_companionBelongsToMdx(c, mdxSrc, onlyOne: mdxPaths.length == 1)) {
+          continue;
+        }
         try {
           await copyCompanionNextToMdx(
             companionSrc: c,
@@ -351,6 +358,24 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
     }
     if (!context.mounted) return;
     _showResult(context, added, failures);
+  }
+
+  /// Whether a selected companion file belongs to [mdxPath]. Stylesheets and
+  /// scripts are shared by the bundle and always copied; `.mdd` resources
+  /// only when their base name matches the dictionary (or when a single
+  /// `.mdx` was selected, so an oddly named bundle still keeps its images).
+  bool _companionBelongsToMdx(
+    String companionPath,
+    String mdxPath, {
+    required bool onlyOne,
+  }) {
+    final lower = companionPath.toLowerCase();
+    if (!lower.endsWith('.mdd')) return true;
+    if (onlyOne) return true;
+    final base = p.basenameWithoutExtension(mdxPath).toLowerCase();
+    final name = p.basename(lower);
+    return name == '$base.mdd' ||
+        (name.startsWith('$base.') && name.endsWith('.mdd'));
   }
 
   Future<void> _rescanFolder(BuildContext context, WidgetRef ref) async {
@@ -665,70 +690,172 @@ class _MdxSettingsSectionState extends ConsumerState<MdxSettingsSection> {
   }
 }
 
-class _DiagnosticsFooter extends ConsumerWidget {
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+}
+
+/// What the MDX feature takes on disk: the search indexes, the app-private
+/// copies of the imported dictionaries, and how much of those copies is no
+/// longer needed by any listed dictionary.
+class _MdxStorage {
+  final int indexBytes;
+  final int filesBytes;
+  final int unusedBytes;
+  const _MdxStorage({
+    required this.indexBytes,
+    required this.filesBytes,
+    required this.unusedBytes,
+  });
+}
+
+class _DiagnosticsFooter extends ConsumerStatefulWidget {
   final List<MdxDictionaryInfo> dicts;
   const _DiagnosticsFooter({required this.dicts});
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  @override
+  ConsumerState<_DiagnosticsFooter> createState() => _DiagnosticsFooterState();
+}
+
+class _DiagnosticsFooterState extends ConsumerState<_DiagnosticsFooter> {
+  late Future<_MdxStorage> _storage;
+  bool _cleaning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _storage = _load();
   }
 
-  Future<void> _openIndexFolder(BuildContext context) async {
+  Future<_MdxStorage> _load() async {
+    final notifier = ref.read(mdxDictionariesProvider.notifier);
+    return _MdxStorage(
+      indexBytes: await notifier.getTotalIndexDirSize(),
+      filesBytes: await notifier.getFilesDirSize(),
+      unusedBytes: await notifier.getUnusedFilesSize(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiagnosticsFooter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dicts.length != widget.dicts.length) {
+      setState(() => _storage = _load());
+    }
+  }
+
+  Future<void> _openFolder(BuildContext context, Future<Directory> dir) async {
     try {
-      final indexDir = await mdxIndexDir();
-      final uri = Uri.file(indexDir.path);
+      final uri = Uri.file((await dir).path);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
       }
     } catch (_) {}
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = Theme.of(context).colorScheme;
-    final totalIndexSizeFuture = ref.watch(mdxDictionariesProvider.notifier).getTotalIndexDirSize();
-    final errorCount = dicts.where((d) => d.status == MdxStatus.error).length;
+  Future<void> _cleanUpUnused() async {
+    if (_cleaning) return;
+    setState(() => _cleaning = true);
+    try {
+      final freed = await ref
+          .read(mdxDictionariesProvider.notifier)
+          .deleteUnusedFiles();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Freed ${_formatBytes(freed)}.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cleaning = false;
+          _storage = _load();
+        });
+      }
+    }
+  }
 
-    return FutureBuilder<int>(
-      future: totalIndexSizeFuture,
-      builder: (context, snapshot) {
-        final totalIndexSize = snapshot.data ?? 0;
-        return Column(
-          children: [
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final errorCount = widget.dicts
+        .where((d) => d.status == MdxStatus.error)
+        .length;
+
+    return Column(
+      children: [
+        const Divider(),
+        FutureBuilder<_MdxStorage>(
+          future: _storage,
+          builder: (context, snapshot) {
+            final s = snapshot.data;
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      '${dicts.length} dictionaries, ${_formatBytes(totalIndexSize)} index',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+                  Text(
+                    s == null
+                        ? '${widget.dicts.length} dictionaries · measuring…'
+                        : '${widget.dicts.length} dictionaries · '
+                              'index ${_formatBytes(s.indexBytes)} · '
+                              'saved copies ${_formatBytes(s.filesBytes)}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.folder_open, size: 16),
-                    label: const Text('Open index folder'),
-                    onPressed: () => _openIndexFolder(context),
-                  ),
-                  if (errorCount > 0) ...[
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      icon: const Icon(Icons.cleaning_services, size: 16),
-                      label: Text('Clear errors ($errorCount)'),
-                      onPressed: () => ref.read(mdxDictionariesProvider.notifier).clearErrorsAndRebuildAll(),
-                      style: TextButton.styleFrom(foregroundColor: colors.error),
+                  if (s != null && s.unusedBytes > 0)
+                    Text(
+                      'Unused copies: ${_formatBytes(s.unusedBytes)} '
+                      '(from removed or re-imported files)',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
-                  ],
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        icon: const Icon(Icons.folder_open, size: 16),
+                        label: const Text('Index folder'),
+                        onPressed: () => _openFolder(context, mdxIndexDir()),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.folder_open, size: 16),
+                        label: const Text('Files folder'),
+                        onPressed: () => _openFolder(context, mdxFilesDir()),
+                      ),
+                      if (s != null && s.unusedBytes > 0)
+                        TextButton.icon(
+                          icon: const Icon(Icons.cleaning_services, size: 16),
+                          label: Text(
+                            _cleaning
+                                ? 'Cleaning…'
+                                : 'Free ${_formatBytes(s.unusedBytes)}',
+                          ),
+                          onPressed: _cleaning ? null : _cleanUpUnused,
+                        ),
+                      if (errorCount > 0)
+                        TextButton.icon(
+                          icon: const Icon(Icons.error_outline, size: 16),
+                          label: Text('Clear errors ($errorCount)'),
+                          onPressed: () => ref
+                              .read(mdxDictionariesProvider.notifier)
+                              .clearErrorsAndRebuildAll(),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colors.error,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
-            ),
-          ],
-        );
-      },
+            );
+          },
+        ),
+      ],
     );
   }
 }

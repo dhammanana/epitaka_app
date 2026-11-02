@@ -60,9 +60,11 @@ class PaliText extends ConsumerWidget {
       settingsProvider.select((s) => s.typography.pali.fontFamily),
     );
     final fontFamily = paliReadingFontFamily(script, fontChoice);
-    final effectiveStyle =
-        style?.copyWith(fontFamily: fontFamily) ??
-        TextStyle(fontFamily: fontFamily);
+    final fallback = paliFontFallback(script, fontChoice);
+    final effectiveStyle = (style ?? const TextStyle()).copyWith(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fallback.isEmpty ? null : fallback,
+    );
 
     return Text(
       converted,
@@ -123,9 +125,11 @@ class PaliHtmlText extends ConsumerWidget {
       settingsProvider.select((s) => s.typography.pali.fontFamily),
     );
     final fontFamily = paliReadingFontFamily(script, fontChoice);
-    final effectiveStyle =
-        style?.copyWith(fontFamily: fontFamily) ??
-        TextStyle(fontFamily: fontFamily);
+    final fallback = paliFontFallback(script, fontChoice);
+    final effectiveStyle = (style ?? const TextStyle()).copyWith(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fallback.isEmpty ? null : fallback,
+    );
 
     return HtmlTextParser.richText(
       converted,
@@ -185,9 +189,11 @@ class PaliTextStatic extends StatelessWidget {
     final s = script ?? Script.roman;
     final converted = convertPaliToScriptPreservingHtml(data, s);
     final fontFamily = paliReadingFontFamily(s, choice);
-    final effectiveStyle =
-        style?.copyWith(fontFamily: fontFamily) ??
-        TextStyle(fontFamily: fontFamily);
+    final fallback = paliFontFallback(s, choice);
+    final effectiveStyle = (style ?? const TextStyle()).copyWith(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fallback.isEmpty ? null : fallback,
+    );
 
     return Text(
       converted,

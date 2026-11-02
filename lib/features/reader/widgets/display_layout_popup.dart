@@ -550,7 +550,7 @@ class _TranslationColorButton extends ConsumerWidget {
     return Tooltip(
       message: loc.translationTextColor,
       child: InkWell(
-        onTap: () => _showPresets(context, current),
+        onTap: () => _showPresets(context, ref, current),
         customBorder: const CircleBorder(),
         child: Padding(
           padding: const EdgeInsets.all(6),
@@ -568,9 +568,13 @@ class _TranslationColorButton extends ConsumerWidget {
     );
   }
 
-  void _showPresets(BuildContext context, Color current) {
+  void _showPresets(BuildContext context, WidgetRef ref, Color current) {
     final loc = AppLocalizations.of(context);
     final colors = Theme.of(context).colorScheme;
+    // Read the notifier while this widget is still mounted. The preset dialog
+    // is popped before the full picker opens, so a `ref` captured inside that
+    // dialog is disposed by the time Apply runs and would throw there.
+    final notifier = ref.read(settingsProvider.notifier);
 
     showDialog<void>(
       context: context,
@@ -606,14 +610,13 @@ class _TranslationColorButton extends ConsumerWidget {
                 // Watched inside the dialog so a tap immediately highlights
                 // the new preset and the reader repaints behind it.
                 Consumer(
-                  builder: (context, ref, _) {
-                    final picked = ref
+                  builder: (context, consumerRef, _) {
+                    final picked = consumerRef
                         .watch(settingsProvider)
                         .translationColorPairFor(code)
                         .light;
-                    void pick(Color c) => ref
-                        .read(settingsProvider.notifier)
-                        .setTranslationColorForLang(code, c);
+                    void pick(Color c) =>
+                        notifier.setTranslationColorForLang(code, c);
 
                     return Wrap(
                       spacing: 10,

@@ -61,8 +61,14 @@ echo "$CHANGES"
 echo "───────────────────────────────────────────────────────────────────"
 echo ""
 
-# Copy core databases into Android asset pack
+# Copy core databases into Android asset pack.
+#
+# Clear whatever a previous build left in the pack first: a retired database
+# (dpd-dictionary.db, 203 MB raw) stayed there for months and was shipped to
+# every user, even though the app deletes it and never reads it. The pack must
+# hold exactly the DBs the app copies out at first launch.
 mkdir -p "$ASSET_DIR"
+find "$ASSET_DIR" -mindepth 1 ! -name '.gitkeep' -delete
 
 for file in epitaka.db epitaka_en.db; do
     if [ ! -f "$DATA_DIR/$file" ]; then
@@ -73,6 +79,20 @@ for file in epitaka.db epitaka_en.db; do
     cp "$DATA_DIR/$file" "$ASSET_DIR/$file"
     echo "Copied $file"
 done
+
+# Fail fast if anything unexpected is still there: the pack is delivered to
+# every install, so a stray multi-hundred-MB file is pure app size.
+for f in "$ASSET_DIR"/*; do
+    case "$(basename "$f")" in
+        epitaka.db|epitaka_en.db|.gitkeep) ;;
+        *)
+            echo "ERROR: unexpected file in asset pack: $f"
+            exit 1
+            ;;
+    esac
+done
+echo "Asset pack contents:"
+ls -la "$ASSET_DIR"
 
 # Clean stale build outputs. Without this, Gradle's incremental build can
 # reuse cached native libraries from a previous release, so the freshly

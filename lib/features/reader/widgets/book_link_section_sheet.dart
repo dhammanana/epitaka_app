@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/database/nissaya_database.dart';
 import '../../../core/database/translation_database.dart';
+import '../../../core/models/translation_version.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/utils/app_localizations.dart';
@@ -11,6 +13,12 @@ import '../../dictionary/providers/dictionary_sheet_open_provider.dart';
 import '../data/book_link_data.dart';
 import '../providers/reader_tabs_provider.dart';
 import '../services/book_link_service.dart';
+
+/// Guards against stacking two book-link sheets when chips are tapped in quick
+/// succession. Kept local on purpose: [dictionarySheetOpenProvider] is shared
+/// with the dictionary sheet and drives the reader's optimisations, so a stale
+/// count there must never be able to swallow chip taps.
+bool _sheetBusy = false;
 
 /// Shows the bottom sheet with linked paragraph content.
 ///
@@ -27,7 +35,8 @@ Future<void> showBookLinkSectionSheet(
   final container = ProviderScope.containerOf(context);
   // Re-entry guard: ignore the tap while a sheet is already open (or being
   // fetched), so two chips tapped in quick succession don't stack sheets.
-  if (container.read(dictionarySheetOpenProvider) > 0) return;
+  if (_sheetBusy) return;
+  _sheetBusy = true;
 
   // Mark the sheet as open so the reader behind it drops the expensive work
   // it would otherwise keep doing (position-writes, viewInsets re-layout,
@@ -38,30 +47,51 @@ Future<void> showBookLinkSectionSheet(
 
   try {
     LinkedParagraphContent? content;
+    var langs = const <String>[];
     try {
       final db = await container.read(epitakaDbProvider.future);
       final settings = container.read(settingsProvider);
 
-      // Load only ONE translation language (the primary one), matching the
-      // search quickview. The old sheet opened a translation database for
-      // every enabled language per tap, which is what made it slow.
-      final activeLang = settings.enabledTranslations.isNotEmpty
-          ? settings.enabledTranslations.first
-          : (settings.showTranslation ? settings.primaryTranslationLang : null);
+      // Load EVERY enabled translation, exactly like the reader: nissaya
+      // languages come from their own database, everything else from the
+      // regular translation database. Only the section's paragraph range is
+      // queried, so opening all of them stays cheap.
+      langs = settings.visibleTranslationLangs;
 
       final transDbs = <String, TranslationDatabase>{};
-      if (activeLang != null) {
-        try {
-          final transDb = await container.read(
-            translationDbProvider(activeLang).future,
-          );
-          if (transDb != null) {
-            transDbs[activeLang] = transDb;
+      final nissayaDbs = <String, NissayaDatabase>{};
+      // A reader already has these databases open, so this normally resolves
+      // instantly. The timeout is a safety net: a slow or locked database must
+      // never leave the tap doing nothing — the sheet opens with whatever
+      // languages resolved in time.
+      await Future.wait<void>(
+        langs.map((langCode) async {
+          try {
+            if (TranslationFilenameParser.isNissaya(langCode)) {
+              final nissayaDb = await container.read(
+                nissayaDbByFilenameProvider(
+                  TranslationFilenameParser.build(langCode),
+                ).future,
+              );
+              if (nissayaDb != null) {
+                nissayaDbs[langCode] = nissayaDb;
+              }
+            } else {
+              final transDb = await container.read(
+                translationDbProvider(langCode).future,
+              );
+              if (transDb != null) {
+                transDbs[langCode] = transDb;
+              }
+            }
+          } catch (_) {
+            // Skip unavailable translation db
           }
-        } catch (_) {
-          // Skip unavailable translation db
-        }
-      }
+        }),
+      ).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => const <void>[],
+      );
 
       content = await BookLinkService(db).getLinkedContent(
         link.linkedBookId,
@@ -70,6 +100,7 @@ Future<void> showBookLinkSectionSheet(
         // only the lines around this one are loaded/rendered.
         lineId: link.linkedLineId,
         translationDbs: transDbs.isNotEmpty ? transDbs : null,
+        nissayaDbs: nissayaDbs.isNotEmpty ? nissayaDbs : null,
       );
     } catch (e) {
       if (context.mounted) {
@@ -90,12 +121,22 @@ Future<void> showBookLinkSectionSheet(
     // Convert the loaded lines to the shared preview format. When the linked
     // section is empty (content == null), the empty list makes the sheet show
     // its "no content available" state instead of a spinner.
+    // Per-line translations are re-keyed in the user's enabled order so the
+    // sheet stacks the languages exactly as the reader does.
     final previewLines = (content?.lines ?? const <LinkedLine>[]).map((line) {
+      final ordered = <String, String>{};
+      for (final langCode in langs) {
+        final text = line.translations[langCode];
+        if (text != null) ordered[langCode] = text;
+      }
+      for (final entry in line.translations.entries) {
+        ordered.putIfAbsent(entry.key, () => entry.value);
+      }
       return PreviewLineData(
         paraId: line.paraId,
         lineId: line.lineId,
         pali: line.paliText,
-        translations: line.translations,
+        translations: ordered,
       );
     }).toList();
 
@@ -150,7 +191,17 @@ Future<void> showBookLinkSectionSheet(
       // overlay entry, away from the reader's focus/semantics subtree.
       useRootNavigator: true,
     );
+  } catch (e) {
+    // Never fail silently: a tap that opens nothing looks like a broken chip.
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${AppLocalizations.of(context).failedToLoadPreview} $e'),
+        ),
+      );
+    }
   } finally {
+    _sheetBusy = false;
     container.read(dictionarySheetOpenProvider.notifier).state--;
   }
 }

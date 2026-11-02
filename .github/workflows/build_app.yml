@@ -75,6 +75,9 @@ jobs:
           EN_URL=$(python3 -c "import json;print(json.load(open('assets/translations_manifest.json'))['languages']['en']['versions']['default']['url'])")
 
           mkdir -p android/packs/core_db/src/main/assets
+          # Ship only the DBs the app actually copies out: a stale/retired
+          # database left in this folder rides along to every install.
+          find android/packs/core_db/src/main/assets -mindepth 1 ! -name '.gitkeep' -delete
 
           echo "Downloading $EPITAKA_URL"
           curl -fL -o /tmp/epitaka.zip "$EPITAKA_URL"

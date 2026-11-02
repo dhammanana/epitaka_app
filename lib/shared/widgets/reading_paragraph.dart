@@ -155,6 +155,7 @@ class ReadingParagraph extends StatelessWidget {
   final TextAlignOption textAlign;
   final int lineHeight; // Additional pixels for line height
   final int paragraphSpacing; // Extra space between paragraphs in pixels
+  final int letterSpacing; // Extra pixels between characters
 
   /// Converts [TextAlignOption] to Flutter's [TextAlign].
   TextAlign get _textAlign => switch (textAlign) {
@@ -220,6 +221,7 @@ class ReadingParagraph extends StatelessWidget {
     this.textAlign = TextAlignOption.justify,
     this.lineHeight = 0,
     this.paragraphSpacing = 8,
+    this.letterSpacing = 0,
     this.annotations = const [],
   });
 
@@ -339,6 +341,10 @@ class ReadingParagraph extends StatelessWidget {
     );
     final fontStyle = baseStyle.copyWith(
       fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
+      fontFamilyFallback: paliFontFallback(
+        script,
+        paliTypography.fontFamily,
+      ),
     );
 
     // Headings are anchored with lineId == -1 and segment == 'pali'.
@@ -759,8 +765,13 @@ class ReadingParagraph extends StatelessWidget {
               ? FontStyle.italic
               : FontStyle.normal,
           height: _paliLineHeight,
+          letterSpacing: letterSpacing.toDouble(),
           color: paliTypography.effectiveColor(paliColor),
           fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
+          fontFamilyFallback: paliFontFallback(
+            script,
+            paliTypography.fontFamily,
+          ),
         );
         return Text.rich(
           TextSpan(
@@ -912,12 +923,16 @@ class ReadingParagraph extends StatelessWidget {
     final style = typo != null
         ? typo
               .toTextStyle(fallbackColor: lineColor, langCode: langCode)
-              .copyWith(height: baseLineHeight)
+              .copyWith(
+                height: baseLineHeight,
+                letterSpacing: letterSpacing.toDouble(),
+              )
         : TextStyle(
             fontFamily: AppTypography.translationFont,
             fontSize: translationFontSize,
             fontWeight: FontWeight.w400,
             height: baseLineHeight,
+            letterSpacing: letterSpacing.toDouble(),
             color: lineColor.withValues(alpha: 0.8),
           );
 
@@ -1181,6 +1196,7 @@ class ReadingParagraph extends StatelessWidget {
           ? TextDecoration.underline
           : TextDecoration.none,
       height: baseLineHeight,
+      letterSpacing: letterSpacing.toDouble(),
       color: effectiveColor,
     );
 
@@ -1211,6 +1227,10 @@ class ReadingParagraph extends StatelessWidget {
     // The script-specific font must be applied to the spans directly.
     final scriptStyle = baseStyle.copyWith(
       fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
+      fontFamilyFallback: paliFontFallback(
+        script,
+        paliTypography.fontFamily,
+      ),
     );
 
     // Variant content between square brackets is styled distinctly; when

@@ -120,8 +120,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(
-      find.descendant(of: card, matching: find.text('Sans-Serif')),
+      find.descendant(of: card, matching: find.text('Serif')),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sans-Serif').last);
     await tester.pumpAndSettle();
 
     final typography = container.read(settingsProvider).typography;
@@ -141,8 +143,9 @@ void main() {
     expect(find.text('TRANSLATION TEXT'), findsNothing);
   });
 
-  // Font chips shown on a card after it is expanded by tapping its title.
-  Future<List<String>> chipsOn(
+  // Opens the font picker from a card: tap the card's title to expand it,
+  // then the current-font row.
+  Future<void> openPicker(
     WidgetTester tester,
     Key cardKey,
     String title,
@@ -152,89 +155,81 @@ void main() {
       find.descendant(of: card, matching: find.text(title)).first,
     );
     await tester.pumpAndSettle();
-    return [
-      for (final f in ReadingFontFamily.values)
-        if (find
-            .descendant(of: card, matching: find.text(f.label))
-            .evaluate()
-            .isNotEmpty)
-          f.label,
-    ];
+    await tester.tap(
+      find.descendant(of: card, matching: find.text('Serif')),
+    );
+    await tester.pumpAndSettle();
   }
+
+  const paliCard = ValueKey('pali_typography');
 
   // Section labels are drawn upper-cased.
   const fontSection = 'FONT FAMILY';
 
-  testWidgets('translation cards offer fonts only for Latin and Cyrillic', (
+  testWidgets('every card opens the picker with the bundled families', (
     tester,
   ) async {
-    await pumpBody(tester, enabled: ['en', 'ru', 'vi', 'my']);
-    const all = ['Serif', 'Sans-Serif', 'Monospace'];
+    await pumpBody(tester, enabled: ['en', 'my']);
+
+    await openPicker(
+      tester,
+      const ValueKey('translation_typography_en'),
+      'English',
+    );
+    expect(find.text('Sans-Serif'), findsOneWidget);
+    expect(find.text('Monospace'), findsOneWidget);
+  });
+
+  testWidgets('the picker searches Google Fonts and picks the match', (
+    tester,
+  ) async {
+    final container = await pumpBody(tester, enabled: const []);
+    await openPicker(tester, paliCard, 'Pāli');
+
+    await tester.enterText(find.byType(TextField).last, 'Lora');
+    await tester.pumpAndSettle();
+    final row = find.descendant(
+      of: find.byType(ListView),
+      matching: find.text('Lora'),
+    );
+    expect(row, findsOneWidget);
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
 
     expect(
-      await chipsOn(
-        tester,
-        const ValueKey('translation_typography_en'),
-        'English',
-      ),
-      all,
-    );
-    expect(
-      await chipsOn(
-        tester,
-        const ValueKey('translation_typography_ru'),
-        'Russian',
-      ),
-      all,
-    );
-    expect(
-      await chipsOn(
-        tester,
-        const ValueKey('translation_typography_vi'),
-        'Vietnamese',
-      ),
-      ['Serif', 'Sans-Serif'],
-    );
-    final myCard = const ValueKey('translation_typography_my');
-    expect(await chipsOn(tester, myCard, 'Myanmar'), isEmpty);
-    expect(
-      find.descendant(of: find.byKey(myCard), matching: find.text(fontSection)),
-      findsNothing,
+      container.read(settingsProvider).typography.pali.fontFamily,
+      ReadingFontFamily.google('Lora'),
     );
   });
 
-  const paliCard = ValueKey('pali_typography');
-
-  testWidgets('Pāli card offers all three fonts for Roman', (tester) async {
-    await pumpBody(tester, enabled: const [], script: Script.roman);
-    expect(await chipsOn(tester, paliCard, 'Pāli'), [
-      'Serif',
-      'Sans-Serif',
-      'Monospace',
-    ]);
-  });
-
-  testWidgets('Pāli card hides Monospace for Tai Tham', (tester) async {
-    await pumpBody(tester, enabled: const [], script: Script.taitham);
-    expect(await chipsOn(tester, paliCard, 'Pāli'), ['Serif', 'Sans-Serif']);
-  });
-
-  testWidgets('Pāli card hides the font family section for Myanmar', (
+  testWidgets('a Google font can be chosen for any Pāli script', (
     tester,
   ) async {
     await pumpBody(tester, enabled: const [], script: Script.myanmar);
-    expect(await chipsOn(tester, paliCard, 'Pāli'), isEmpty);
-    expect(
-      find.descendant(
-        of: find.byKey(paliCard),
-        matching: find.text(fontSection),
-      ),
-      findsNothing,
+    // A script with a single bundled font is no longer locked to it: the
+    // section is there and opens the full catalog.
+    final card = find.byKey(paliCard);
+    await tester.tap(
+      find.descendant(of: card, matching: find.text('Pāli')).first,
     );
-    // The card is open: its other controls are still there.
+    await tester.pumpAndSettle();
     expect(
-      find.descendant(of: find.byKey(paliCard), matching: find.text('FONT SIZE')),
+      find.descendant(of: card, matching: find.text(fontSection)),
       findsOneWidget,
     );
+    await tester.tap(
+      find.descendant(of: card, matching: find.text('Serif')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sans-Serif'), findsOneWidget);
+  });
+
+  testWidgets('no section when no translation is visible', (tester) async {
+    final container = await pumpBody(tester, enabled: const []);
+    await container.read(settingsProvider.notifier).setShowTranslation(false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('TRANSLATION TEXT'), findsNothing);
   });
 }

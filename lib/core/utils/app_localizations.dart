@@ -269,6 +269,7 @@ class AppLocalizations {
   String get textAlignCenter => _t('Center');
   String get textAlignEnd => _t('Right');
   String get textAlignJustify => _t('Justify');
+  String get letterSpacing => _t('Letter Spacing');
   String get lineSpacing => _t('Line Spacing');
   String get paragraphSpacing => _t('Paragraph Spacing');
   String get spacingSubtitle => _t('Additional spacing in pixels');
