@@ -15,6 +15,7 @@ import '../../../core/utils/pali_script_converter.dart'
 import '../../../core/utils/pali_text_utils.dart'
     show convertPaliToScript, paliFontFallback, paliReadingFontFamily;
 import '../providers/translation_download_provider.dart';
+import '../services/zip_import_service.dart';
 import '../../fonts/widgets/google_font_picker_sheet.dart';
 import '../widgets/color_picker_section.dart';
 import '../widgets/settings_app_bar.dart';
@@ -357,6 +358,14 @@ class _TranslationSettingsBodyState
                                 .read(translationDownloadProvider.notifier)
                                 .downloadVersion(v, ref);
                           },
+                          onImport: () => importZipWithPicker(
+                            ref: ref,
+                            title: loc.dpdImportFromFile,
+                            versionKey: versionKey,
+                            install: (path) => ref
+                                .read(translationDownloadProvider.notifier)
+                                .importVersionZip(v, ref, path),
+                          ),
                           onDelete: () => _confirmDeleteVersion(v),
                           onCancel:
                               dlState.status == DownloadStatus.downloading ||
@@ -682,6 +691,7 @@ class _TranslationVersionTile extends StatefulWidget {
   final String? selectedSuffix;
   final ColorScheme colors;
   final VoidCallback onDownload;
+  final VoidCallback onImport;
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
   final ValueChanged<bool> onEnableChanged;
@@ -694,6 +704,7 @@ class _TranslationVersionTile extends StatefulWidget {
     this.selectedSuffix,
     required this.colors,
     required this.onDownload,
+    required this.onImport,
     required this.onDelete,
     this.onCancel,
     required this.onEnableChanged,
@@ -933,11 +944,33 @@ class _TranslationVersionTileState extends State<_TranslationVersionTile> {
                 ],
               )
             else if (!isInstalled && v.hasDownloadUrl)
-              _SmallButton(
-                label: loc.download,
-                icon: Icons.download,
-                onTap: widget.onDownload,
-                colors: colors,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: widget.onImport,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: colors.primary.withValues(alpha: 0.08),
+                      ),
+                      child: Icon(
+                        Icons.folder_open,
+                        size: 15,
+                        color: colors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _SmallButton(
+                    label: loc.download,
+                    icon: Icons.download,
+                    onTap: widget.onDownload,
+                    colors: colors,
+                  ),
+                ],
               ),
             const SizedBox(width: 6),
             Icon(

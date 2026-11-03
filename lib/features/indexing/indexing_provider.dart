@@ -73,8 +73,8 @@ Future<bool> coreAssetExists(String filename) async {
   }
 }
 
-/// Provider that returns a list of core assets (epitaka, dpd_dictionary,
-/// embeddings) that are compulsory but not yet installed on disk.
+/// Provider that returns a list of core assets (epitaka, embeddings) that are
+/// compulsory but not yet installed on disk.
 ///
 /// This is used by the startup wizard to require downloading these before
 /// the index can be built.
@@ -95,15 +95,11 @@ Future<List<CoreAsset>> requiredCoreAssets(
   for (final entry in manifest.core.entries) {
     final asset = entry.value;
     if (!asset.compulsory) continue;
-    // The manifest's DPD entry is the old file, kept there for old app
-    // versions. This version needs the DPD mobile database instead.
-    if (entry.key == 'dpd_dictionary') continue;
     // Same fallback as the download path in IndexGate (_buildCoreAssetCard):
     // slugs use underscores (dpd_dictionary) but on-disk files use hyphens
     // (dpd-dictionary.db). A mismatched guess here would report an installed
     // database as missing and ask for it again every launch.
-    final filename =
-        asset.filename ?? '${entry.key.replaceAll('_', '-')}.db';
+    final filename = asset.filename ?? '${entry.key.replaceAll('_', '-')}.db';
     if (!await exists(filename)) {
       required.add(asset);
     }

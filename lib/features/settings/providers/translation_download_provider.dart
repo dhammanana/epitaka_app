@@ -196,15 +196,17 @@ class TranslationDownloadNotifier
   }
 
   /// Download and install a translation database version.
+  ///
+  /// Goes through [downloadCoreAsset], the same installer the core databases
+  /// use, so an interrupted transfer keeps a partial zip named for the release
+  /// and tapping Download again continues from that byte instead of starting
+  /// the hundreds of MB over.
   /// Pass [ref] to invalidate the registry after success.
   Future<void> downloadVersion(
     TranslationVersion version,
     WidgetRef ref,
   ) async {
-    final versionKey = version.suffix != null && version.suffix!.isNotEmpty
-        ? '${version.languageCode}_${version.suffix}'
-        : version.languageCode;
-
+    final versionKey = versionKeyFor(version);
     // Clean up any previous cancel token
     _cancelTokens.remove(versionKey);
 
@@ -221,207 +223,95 @@ class TranslationDownloadNotifier
       return;
     }
 
-    // Mark as downloading.
-    state = {
-      ...state,
-      versionKey: const TranslationDownloadState(
-        status: DownloadStatus.downloading,
-        progress: 0.0,
-      ),
-    };
-    // Show an ongoing status-bar notification. On Android this starts a
-    // real foreground service (dataSync type) that keeps the app process
-    // alive so the download continues while the user is in another app;
-    // when the service can't start (e.g. notification permission denied)
-    // it falls back to a plain local notification that only shows while
-    // the app is foregrounded.
-    final fgsActive = await _fgsStart(
-      title: 'Downloading ${version.displayName}',
-      text: '0%',
+    final installed = await downloadCoreAsset(
+      url: url,
+      filename: version.filename,
+      displayName: version.displayName,
+      ref: ref,
+      versionKey: versionKey,
+      expectedBytes: version.fileSize ?? 0,
+      resume: true,
+      // The manifest checksum is of the .db, not the zip, so it can only name
+      // the partial; the extracted file is what the checksum is checked on.
+      partialKey: version.checksum,
+      verify: (tmpDb) => _verifyTranslationDb(version, tmpDb),
     );
-    if (!fgsActive) {
-      DownloadNotificationService.instance.showTranslationProgress(
-        versionKey: versionKey,
-        displayName: version.displayName,
-        progress: 0.0,
-        isIndeterminate: false,
+    if (!installed) return;
+    await _afterVersionInstalled(version, ref);
+  }
+
+  /// Installs the zip the reader picked as [version], as [downloadVersion]
+  /// does after a transfer. The picked file is never deleted.
+  Future<bool> importVersionZip(
+    TranslationVersion version,
+    WidgetRef ref,
+    String zipPath, {
+    Directory? dbDir,
+  }) async {
+    final installed = await importCoreZip(
+      zip: File(zipPath),
+      filename: version.filename,
+      displayName: version.displayName,
+      ref: ref,
+      versionKey: versionKeyFor(version),
+      verify: (tmpDb) => _verifyTranslationDb(version, tmpDb),
+      dbDir: dbDir,
+    );
+    if (installed) await _afterVersionInstalled(version, ref);
+    return installed;
+  }
+
+  /// Checks the extracted translation database against the manifest before it
+  /// replaces the installed one: the published sizes and checksums describe
+  /// the .db inside the zip, so a damaged download stops here.
+  Future<void> _verifyTranslationDb(TranslationVersion version, File db) async {
+    final size = await db.length();
+    final expectedSize = version.dbSize;
+    if (expectedSize != null && expectedSize > 0 && size != expectedSize) {
+      throw FormatException(
+        'Size mismatch — expected $expectedSize bytes, got $size',
       );
     }
-
-    final cancelToken = CancelableCompleter();
-    _cancelTokens[versionKey] = cancelToken;
-
-    // Temp files (declared here so the catch block can clean them up).
-    File? zipFile;
-    String? tmpDbPath;
-
-    try {
-      final dbDir = await getDatabaseDirectory();
-      // Stream the .zip straight to disk: the databases are hundreds of MB
-      // and holding them in memory OOM-kills low-RAM devices (the main
-      // Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
-      zipFile = File(p.join(dbDir.path, '${version.filename}.zip.tmp'));
-      if (await zipFile.exists()) await zipFile.delete();
-      tmpDbPath = p.join(dbDir.path, '${version.filename}.tmp');
-
-      final client = http.Client();
-      var lastShownPct = -1;
-      try {
-        await _streamDownloadToFile(
-          url: url,
-          destZip: zipFile,
-          cancelToken: cancelToken,
-          client: client,
-          expectedBytes: version.fileSize ?? 0,
-          onProgress: (progress) {
-            final pct = (progress * 100).round().clamp(0, 100);
-            state = {
-              ...state,
-              versionKey: TranslationDownloadState(
-                status: DownloadStatus.downloading,
-                progress: pct / 100,
-              ),
-            };
-            if (pct == lastShownPct) return;
-            lastShownPct = pct;
-            if (fgsActive) {
-              DownloadForegroundService.instance.updateDownload(
-                title: 'Downloading ${version.displayName}',
-                text: '$pct%',
-              );
-            } else {
-              DownloadNotificationService.instance.showTranslationProgress(
-                versionKey: versionKey,
-                displayName: version.displayName,
-                progress: pct / 100,
-                isIndeterminate: false,
-              );
-            }
-          },
-        );
-      } finally {
-        client.close();
-      }
-      _cancelTokens.remove(versionKey);
-
-      if (cancelToken.isCancelled) {
-        await _fgsStop();
-        DownloadNotificationService.instance.dismissTranslation();
-        state = {
-          ...state,
-          versionKey: const TranslationDownloadState(
-            status: DownloadStatus.cancelled,
-          ),
-        };
-        return;
-      }
-
-      // Extract the .db from the zip.
-      state = {
-        ...state,
-        versionKey: const TranslationDownloadState(
-          status: DownloadStatus.extracting,
-        ),
-      };
-      if (fgsActive) {
-        DownloadForegroundService.instance.updateDownload(
-          title: 'Extracting ${version.displayName}',
-          text: '…',
-        );
-      } else {
-        DownloadNotificationService.instance.showTranslationProgress(
-          versionKey: versionKey,
-          displayName: version.displayName,
-          progress: 1.0,
-          isIndeterminate: true,
+    final expected = version.checksum;
+    if (expected != null && expected.isNotEmpty) {
+      final actual = await _sha256OfFile(db);
+      if (!_hexEquals(actual, expected)) {
+        throw FormatException(
+          'Checksum mismatch — expected $expected, got $actual',
         );
       }
+    }
+  }
 
-      // Streams the entry straight to disk and verifies size/checksum, so
-      // the ~500MB database is never held fully in memory. Throws with a
-      // human-readable message when the zip has no .db or is corrupt.
-      await _extractDbFromZip(
-        zipPath: zipFile.path,
-        tmpPath: tmpDbPath,
-        expectedChecksum: version.checksum,
-        expectedDbSize: version.dbSize,
-      );
+  /// Records the installed date, refreshes the providers that read the
+  /// database files and switches the language on, once a version is in place.
+  Future<void> _afterVersionInstalled(
+    TranslationVersion version,
+    WidgetRef ref,
+  ) async {
+    final versionKey = versionKeyFor(version);
+    if (version.updatedAt != null && version.updatedAt!.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('version_updated_$versionKey', version.updatedAt!);
+    }
 
-      // Write the .db file safely via a temp file to prevent corruption/truncation
-      final destPath = p.join(dbDir.path, version.filename);
-      final tempFile = File(tmpDbPath);
+    final invalidate = _ref?.invalidate ?? ref.invalidate;
+    invalidate(translationRegistryProvider);
+    invalidate(mergedTranslationVersionsProvider);
+    invalidate(localTranslationVersionsProvider);
+    if (version.isNissaya) {
+      invalidate(nissayaDbByFilenameProvider(version.filename));
+    } else {
+      invalidate(translationDbProvider(version.languageCode));
+    }
 
-      // Remove stale WAL/SHM files before replacing the database
-      await cleanWalFiles(destPath);
-
-      // Atomically replace destination
-      await tempFile.rename(destPath);
-
-      // Save the updatedAt metadata for update-checking
-      if (version.updatedAt != null && version.updatedAt!.isNotEmpty) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          'version_updated_$versionKey',
-          version.updatedAt!,
-        );
-      }
-
-      // Invalidate providers
-      ref.invalidate(translationRegistryProvider);
-      ref.invalidate(mergedTranslationVersionsProvider);
-      ref.invalidate(localTranslationVersionsProvider);
-
-      // Also invalidate version-specific db providers if applicable
-      if (version.isNissaya) {
-        ref.invalidate(nissayaDbByFilenameProvider(version.filename));
-      } else {
-        ref.invalidate(translationDbProvider(version.languageCode));
-      }
-
-      // Auto-enable the newly downloaded translation so the user doesn't
-      // have to manually toggle it on after waiting for the download.
-      final settingsState = ref.read(settingsProvider);
-      if (!settingsState.enabledTranslations.contains(version.languageCode)) {
-        await ref
-            .read(settingsProvider.notifier)
-            .setTranslationEnabled(version.languageCode, true);
-      }
-
-      await _fgsStop();
-      state = {
-        ...state,
-        versionKey: const TranslationDownloadState(
-          status: DownloadStatus.completed,
-          progress: 1.0,
-        ),
-      };
-      DownloadNotificationService.instance.showTranslationComplete(
-        version.displayName,
-      );
-    } catch (e) {
-      await _fgsStop();
-      if (cancelToken.isCancelled) {
-        DownloadNotificationService.instance.dismissTranslation();
-        state = {
-          ...state,
-          versionKey: const TranslationDownloadState(
-            status: DownloadStatus.cancelled,
-          ),
-        };
-      } else {
-        DownloadNotificationService.instance.showTranslationError(
-          version.displayName,
-          e.toString(),
-        );
-        state = {
-          ...state,
-          versionKey: TranslationDownloadState(
-            status: DownloadStatus.error,
-            errorMessage: e.toString(),
-          ),
-        };
-      }
-      _cancelTokens.remove(versionKey);
+    // Auto-enable the newly installed translation so the reader doesn't have
+    // to toggle it on after waiting for the download.
+    final settingsState = ref.read(settingsProvider);
+    if (!settingsState.enabledTranslations.contains(version.languageCode)) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setTranslationEnabled(version.languageCode, true);
     }
   }
 
@@ -451,6 +341,8 @@ class TranslationDownloadNotifier
   /// With [resume], an interrupted download keeps its partial file, named for
   /// the release digest, and the next call continues from that byte. A
   /// stream silent for [stallTimeout] ends the download the same way.
+  /// [partialKey] names that partial when the release digest is not a zip
+  /// digest (a translation's checksum describes its .db, not its zip).
   Future<bool> downloadCoreAsset({
     required String url,
     required String filename,
@@ -459,6 +351,7 @@ class TranslationDownloadNotifier
     String? versionKey,
     int? expectedBytes,
     String? expectedZipSha256,
+    String? partialKey,
     Future<void> Function(File tmpDb)? verify,
     Future<void> Function(
       Future<void> Function() replace,
@@ -513,7 +406,10 @@ class TranslationDownloadNotifier
       // of MB and holding them in memory OOM-kills low-RAM devices (the
       // main Tipitaka zip died at ~79% on a 2GB Android 10 tablet).
       if (resume) {
-        final partialName = partialZipName(filename, expectedZipSha256);
+        final partialName = partialZipName(
+          filename,
+          partialKey ?? expectedZipSha256,
+        );
         zipFile = File(p.join(dir.path, partialName));
         await _deleteOtherPartials(dir, filename, keep: partialName);
       } else {
@@ -650,9 +546,7 @@ class TranslationDownloadNotifier
       _reportCoreFailure(
         key,
         displayName,
-        FormatException(
-          'The file could not be found: ${p.basename(zip.path)}',
-        ),
+        FormatException('The file could not be found: ${p.basename(zip.path)}'),
       );
       return false;
     }

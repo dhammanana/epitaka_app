@@ -1,3 +1,5 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +12,7 @@ import '../../core/utils/app_localizations.dart';
 import '../../core/utils/startup_timing.dart';
 import '../../features/guide/widgets/feature_guide_while_waiting.dart';
 import '../../features/settings/providers/translation_download_provider.dart';
+import '../../features/settings/services/zip_import_service.dart';
 import '../../features/settings/widgets/color_picker_section.dart';
 import '../dpd/providers/dpd_database_provider.dart';
 import '../dpd/services/dpd_installer.dart';
@@ -955,31 +958,45 @@ class _IndexGateState extends ConsumerState<IndexGate>
                   )
                 : isComplete
                 ? const SizedBox.shrink()
-                : IconButton.filledTonal(
-                    tooltip: loc.download,
-                    onPressed: () {
-                      if (isDpd) {
-                        installDpdRelease(ref, release: dpdRelease);
-                        return;
-                      }
-                      final filename =
-                          asset.filename ??
-                          '${asset.slug.replaceAll('_', '-')}.db';
-                      ref
-                          .read(translationDownloadProvider.notifier)
-                          .downloadCoreAsset(
-                            url: asset.url,
-                            filename: filename,
-                            displayName: asset.displayName,
-                            ref: ref,
-                            versionKey: assetKey,
-                            // Manifest zip size: fallback progress
-                            // denominator when the server omits
-                            // Content-Length.
-                            expectedBytes: asset.size,
-                          );
-                    },
-                    icon: const Icon(Icons.download),
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: loc.dpdImportFromFile,
+                        onPressed: () => _importCoreAsset(asset, isDpd: isDpd),
+                        icon: const Icon(Icons.folder_open),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton.filledTonal(
+                        tooltip: loc.download,
+                        onPressed: () {
+                          if (isDpd) {
+                            installDpdRelease(ref, release: dpdRelease);
+                            return;
+                          }
+                          final filename =
+                              asset.filename ??
+                              '${asset.slug.replaceAll('_', '-')}.db';
+                          ref
+                              .read(translationDownloadProvider.notifier)
+                              .downloadCoreAsset(
+                                url: asset.url,
+                                filename: filename,
+                                displayName: asset.displayName,
+                                ref: ref,
+                                versionKey: assetKey,
+                                // Manifest zip size: fallback progress
+                                // denominator when the server omits
+                                // Content-Length.
+                                expectedBytes: asset.size,
+                                // Continues a stopped transfer instead of
+                                // starting the hundreds of MB over.
+                                resume: true,
+                              );
+                        },
+                        icon: const Icon(Icons.download),
+                      ),
+                    ],
                   ),
           ),
         ],
@@ -1191,19 +1208,66 @@ class _IndexGateState extends ConsumerState<IndexGate>
                     icon: const Icon(Icons.stop),
                   )
                 : !isComplete && version.hasDownloadUrl
-                ? IconButton.filledTonal(
-                    tooltip: loc.download,
-                    onPressed: () {
-                      ref
-                          .read(translationDownloadProvider.notifier)
-                          .downloadVersion(version, ref);
-                    },
-                    icon: const Icon(Icons.download),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: loc.dpdImportFromFile,
+                        onPressed: () => _importVersion(version, versionKey),
+                        icon: const Icon(Icons.folder_open),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton.filledTonal(
+                        tooltip: loc.download,
+                        onPressed: () {
+                          ref
+                              .read(translationDownloadProvider.notifier)
+                              .downloadVersion(version, ref);
+                        },
+                        icon: const Icon(Icons.download),
+                      ),
+                    ],
                   )
                 : const SizedBox.shrink(),
           ),
         ],
       ),
+    );
+  }
+
+  /// Installs a zip the reader already has as a core asset, through the same
+  /// picker every download in the app uses.
+  Future<void> _importCoreAsset(CoreAsset asset, {required bool isDpd}) {
+    return importZipWithPicker(
+      ref: ref,
+      title: AppLocalizations.of(context).dpdImportFromFile,
+      versionKey: asset.slug,
+      install: (path) async {
+        if (isDpd) return importDpdZip(ref, path);
+        final filename =
+            asset.filename ?? '${asset.slug.replaceAll('_', '-')}.db';
+        return ref
+            .read(translationDownloadProvider.notifier)
+            .importCoreZip(
+              zip: File(path),
+              filename: filename,
+              displayName: asset.displayName,
+              ref: ref,
+              versionKey: asset.slug,
+            );
+      },
+    );
+  }
+
+  /// Installs a zip the reader already has as a translation version.
+  Future<void> _importVersion(TranslationVersion version, String versionKey) {
+    return importZipWithPicker(
+      ref: ref,
+      title: AppLocalizations.of(context).dpdImportFromFile,
+      versionKey: versionKey,
+      install: (path) => ref
+          .read(translationDownloadProvider.notifier)
+          .importVersionZip(version, ref, path),
     );
   }
 

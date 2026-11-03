@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Downloads the core DBs (epitaka, dpd-dictionary) into assets/db so they
+# Downloads the core DB into assets/db so it
 # are bundled into the app. The URLs come from the checked-in
 # assets/translations_manifest.json (single source of truth) — the same
 # logic as the "Download core DBs" step in .github/workflows/build_app.yml.
@@ -18,7 +18,6 @@ import zipfile
 core = json.load(open('assets/translations_manifest.json'))['core']
 jobs = [
     ('epitaka', core['epitaka']['url']),
-    ('dpd_dictionary', core['dpd_dictionary']['url']),
 ]
 
 assets_db = pathlib.Path('assets/db')

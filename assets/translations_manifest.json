@@ -3,7 +3,6 @@
   "notes": {
     "epitaka": "Main Pāli Tipitaka database — REQUIRED for the app to function",
     "epitaka_en": "English translation — used by AI Q&A to search and provide answers in English",
-    "dpd_dictionary": "Digital Pāli Dictionary — REQUIRED for word lookups and definitions",
     "embeddings": "AI embedding model & vector database — used for semantic search (Gavesana)"
   },
   "languages": {
@@ -428,18 +427,6 @@
       "dbSize": 500715520,
       "filename": "epitaka.db",
       "updated": "2026-07-24",
-      "compulsory": true,
-      "checksum": ""
-    },
-    "dpd_dictionary": {
-      "displayName": "DPD Pāli Dictionary",
-      "description": "Digital Pāli Dictionary with word definitions and grammatical data",
-      "note": "Digital Pāli Dictionary — REQUIRED for word lookups and definitions",
-      "url": "https://github.com/dhammanana/epitaka_app/releases/download/latest/dpd-dictionary.zip",
-      "size": 52309558,
-      "dbSize": 200491008,
-      "filename": "dpd-dictionary.db",
-      "updated": "2026-07-18",
       "compulsory": true,
       "checksum": ""
     },

@@ -99,7 +99,7 @@ ls -la "$ASSET_DIR"
 # compiled Dart code (libapp.so) never makes it into the AAB and the upload
 # looks like a new version while still containing old code.
 
-#flutter clean
+flutter clean
 
 # Build AAB.
 #

@@ -46,9 +46,9 @@ hash_of() {
 
 # ── 2. Check if there are any matching database files ───────────────────────
 # NOTE: both epitaka*.db AND dpd-*.db are release assets (the desktop builds
-# bundle epitaka.db, epitaka_en.db and dpd-dictionary.db). The dpd glob used
-# to be missing here, so dpd-dictionary.zip could only be uploaded by hand
-# and went stale.
+# bundle epitaka.db and epitaka_en.db; dpd-mobile.db is the DPD release the app
+# downloads itself). The dpd glob used to be missing here, so dpd-mobile.zip
+# could only be uploaded by hand and went stale.
 shopt -s nullglob
 db_files=("$DATA_DIR"/epitaka*.db "$DATA_DIR"/dpd-*.db)
 if [ ${#db_files[@]} -eq 0 ]; then

@@ -202,7 +202,7 @@ class LangInfo {
   const LangInfo(this.code, this.nativeName, this.englishName);
 }
 
-/// A core asset (epitaka, dpd_dictionary, embeddings) from the manifest.
+/// A core asset (epitaka, embeddings) from the manifest.
 class CoreAsset {
   final String slug;
   final String displayName;
@@ -272,7 +272,7 @@ class TranslationManifest {
   final int version;
   final Map<String, List<TranslationVersion>> languages;
 
-  /// Core assets (epitaka, dpd_dictionary, embeddings).
+  /// Core assets (epitaka, embeddings).
   final Map<String, CoreAsset> core;
 
   /// Per-language display metadata (english + native names) parsed from the

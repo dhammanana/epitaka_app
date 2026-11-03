@@ -1,22 +1,13 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../settings/providers/translation_download_provider.dart';
+import '../../settings/services/zip_import_service.dart';
 import '../providers/dpd_database_provider.dart';
 import '../services/dpd_installer.dart';
 import '../services/dpd_release_service.dart';
-
-/// The folder the reader last imported from, so the desktop dialog opens there.
-const _kLastImportFolder = 'dpd_import_last_folder';
 
 /// The DPD download as one control: the button (Resume when a partial file is
 /// on disk), then progress with Stop, or the error with Retry. The start-up
@@ -178,58 +169,14 @@ class DpdDownloadControl extends ConsumerWidget {
     );
   }
 
-  /// The path of the zip the reader picks, or null when they cancel. A phone
-  /// uses the system picker, which copies the file into the app's cache. A
-  /// desktop uses the same picker as the MDX import: the file_picker dialog
-  /// on Linux is opened without a parent window, so the desktop leaves it
-  /// behind the app.
-  Future<String?> _pickZip(String title) async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      final picked = await FilePicker.pickFiles(
-        dialogTitle: title,
-        type: FileType.custom,
-        allowedExtensions: const ['zip'],
-      );
-      return picked?.files.firstOrNull?.path;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    final last = prefs.getString(_kLastImportFolder);
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'ZIP', extensions: ['zip']),
-      ],
-      initialDirectory: last != null && Directory(last).existsSync()
-          ? last
-          : null,
-      confirmButtonText: title,
-    );
-    if (file == null) return null;
-    await prefs.setString(_kLastImportFolder, p.dirname(file.path));
-    return file.path;
-  }
-
-  /// Installs a `dpd-mobile-db.zip` the reader already has. The picker hands
-  /// a phone a copy in the app's cache: that copy goes once the import ends,
-  /// and no other file is ever deleted.
+  /// Installs a `dpd-mobile-db.zip` the reader already has, through the same
+  /// picker every download in the app uses.
   Future<void> _importFromFile(WidgetRef ref, String title) async {
-    final notifier = ref.read(translationDownloadProvider.notifier);
-    final String? path;
-    try {
-      path = await _pickZip(title);
-    } catch (e) {
-      notifier.report(
-        kDpdDownloadKey,
-        TranslationDownloadState(
-          status: DownloadStatus.error,
-          errorMessage: 'Could not open the file picker: $e',
-        ),
-      );
-      return;
-    }
-    if (path == null) return;
-    await importDpdZip(ref, path);
-    if (Platform.isAndroid || Platform.isIOS) {
-      await deletePickerCopy(path, await getTemporaryDirectory());
-    }
+    await importZipWithPicker(
+      ref: ref,
+      title: title,
+      versionKey: kDpdDownloadKey,
+      install: (path) => importDpdZip(ref, path),
+    );
   }
 }

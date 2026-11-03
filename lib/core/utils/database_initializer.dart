@@ -279,7 +279,7 @@ Future<void> _ensureDatabasesReadyInternal() async {
 /// Copies bundled database files from assets to the app's writable database
 /// directory on first launch.
 ///
-/// CI bundles the core DBs (epitaka.db, dpd-dictionary.db) into `assets/db/`
+/// CI bundles the core DBs (epitaka.db, epitaka_en.db) into `assets/db/`
 /// for every platform, so the built app contains them inside `flutter_assets`.
 /// Flutter assets are not directly accessible as file paths (mobile) or live
 /// inside the app bundle (desktop), so this function extracts them into

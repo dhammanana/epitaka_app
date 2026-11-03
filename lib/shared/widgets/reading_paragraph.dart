@@ -25,6 +25,7 @@ import '../../features/reader/data/book_link_data.dart';
 import '../../features/reader/widgets/book_link_chip.dart';
 import '../../features/reader/widgets/book_link_section_sheet.dart';
 import '../../features/reader/widgets/section_copy_menu.dart';
+import '../../features/reader/widgets/section_description_button.dart';
 import '../../features/reader/widgets/translation_remark_dialog.dart';
 import '../../shared/widgets/pali_text.dart';
 import '../../shared/widgets/nissaya_text.dart';
@@ -341,10 +342,7 @@ class ReadingParagraph extends StatelessWidget {
     );
     final fontStyle = baseStyle.copyWith(
       fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
-      fontFamilyFallback: paliFontFallback(
-        script,
-        paliTypography.fontFamily,
-      ),
+      fontFamilyFallback: paliFontFallback(script, paliTypography.fontFamily),
     );
 
     // Headings are anchored with lineId == -1 and segment == 'pali'.
@@ -412,6 +410,13 @@ class ReadingParagraph extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: wrappedTitle),
+              // Shown beside the copy menu only when the enabled translation
+              // carries a description for this section.
+              if (showCopyMenu)
+                SectionDescriptionButton(
+                  bookId: bookId!,
+                  paraId: paragraph.paraId,
+                ),
               if (showCopyMenu)
                 SectionCopyMenuButton(bookId: bookId!, heading: heading),
             ],
@@ -858,8 +863,8 @@ class ReadingParagraph extends StatelessWidget {
         break;
       }
     }
-    final spoken = spokenLang != null &&
-            (translations[spokenLang] ?? '').trim().isNotEmpty
+    final spoken =
+        spokenLang != null && (translations[spokenLang] ?? '').trim().isNotEmpty
         ? spokenLang
         : firstRendered;
 
@@ -1227,10 +1232,7 @@ class ReadingParagraph extends StatelessWidget {
     // The script-specific font must be applied to the spans directly.
     final scriptStyle = baseStyle.copyWith(
       fontFamily: paliReadingFontFamily(script, paliTypography.fontFamily),
-      fontFamilyFallback: paliFontFallback(
-        script,
-        paliTypography.fontFamily,
-      ),
+      fontFamilyFallback: paliFontFallback(script, paliTypography.fontFamily),
     );
 
     // Variant content between square brackets is styled distinctly; when
