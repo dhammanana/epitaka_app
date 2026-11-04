@@ -1,13 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:epitaka/core/providers/settings_provider.dart';
-import 'package:epitaka/core/utils/app_localizations.dart';
-import 'package:epitaka/features/settings/screens/help_screen.dart';
 import 'package:epitaka/shared/utils/app_shortcuts.dart';
 
 const _ctrlShiftK = SingleActivator(
@@ -30,11 +25,11 @@ void main() {
   tearDown(() => AppShortcuts.overrides = const {});
 
   group('catalog', () {
-    test('holds 60 shortcuts with unique ids, 46 of them app-wide', () {
+    test('holds 61 shortcuts with unique ids, 47 of them app-wide', () {
       final catalog = AppShortcuts.shortcutCatalog;
-      expect(catalog, hasLength(60));
-      expect(catalog.map((b) => b.id).toSet(), hasLength(60));
-      expect(catalog.where((b) => b.section.isAppWide), hasLength(46));
+      expect(catalog, hasLength(61));
+      expect(catalog.map((b) => b.id).toSet(), hasLength(61));
+      expect(catalog.where((b) => b.section.isAppWide), hasLength(47));
     });
   });
 
@@ -319,56 +314,6 @@ void main() {
         hasCombo(bindings.keys, const SingleActivator(LogicalKeyboardKey.keyJ)),
         isFalse,
       );
-    });
-  });
-
-  group('help list', () {
-    testWidgets('shows a changed shortcut and splits the tab range', (
-      tester,
-    ) async {
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
-      final settings = SettingsNotifier(prefs)..init(prefs);
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [settingsProvider.overrideWith((ref) => settings)],
-          child: MaterialApp(
-            locale: const Locale('en'),
-            supportedLocales: AppLocalizationsDelegate.supportedLocales,
-            localizationsDelegates: const [
-              AppLocalizationsDelegate(),
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-            home: const Scaffold(body: HelpScreenBody()),
-          ),
-        ),
-      );
-      // The translations load asynchronously; the first frame is empty.
-      await tester.pumpAndSettle();
-      expect(find.text('Ctrl+D'), findsOneWidget);
-      expect(find.text('Switch to Tab 1-9'), findsOneWidget);
-
-      // app.dart copies the setting into AppShortcuts.overrides; do both.
-      final overrides = {
-        'dictionary': _ctrlShiftK,
-        'tab-3': const SingleActivator(LogicalKeyboardKey.f3),
-        'history': null,
-      };
-      AppShortcuts.overrides = overrides;
-      await settings.setShortcutOverride('dictionary', _ctrlShiftK);
-      await settings.setShortcutOverride('tab-3', overrides['tab-3']!);
-      await settings.setShortcutOverride('history', null);
-      await tester.pump();
-
-      expect(find.text('Ctrl+D'), findsNothing);
-      expect(find.text('Ctrl+Shift+K'), findsOneWidget);
-      expect(find.text('Switch to Tab 1-9'), findsNothing);
-      expect(find.text('Switch to Tab 3'), findsOneWidget);
-      expect(find.text('F3'), findsOneWidget);
-      // A shortcut with no keys reads "None", as on the settings page.
-      expect(find.text('None'), findsOneWidget);
     });
   });
 

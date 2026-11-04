@@ -91,7 +91,7 @@ void main() {
     for (var i = 1; i < tops.length; i++) {
       expect(tops[i], greaterThan(tops[i - 1]), reason: titles[i]);
     }
-    expect(find.byTooltip('Change'), findsNWidgets(60));
+    expect(find.byTooltip('Change'), findsNWidgets(61));
     expect(find.byTooltip('Restore default'), findsNothing);
   });
 
@@ -410,6 +410,96 @@ void main() {
         find.text('Add Ctrl, Alt or Cmd/Win, or use F1–F12'),
         findsNothing,
       );
+    });
+  });
+
+  group('search', () {
+    Future<void> type(WidgetTester tester, String text) async {
+      await tester.enterText(find.byKey(const ValueKey('shortcut-search')), text);
+      await tester.pumpAndSettle();
+    }
+
+    bool isHighlighted(InlineSpan span) {
+      var found = false;
+      span.visitChildren((s) {
+        if (s is TextSpan && s.style?.backgroundColor != null) found = true;
+        return !found;
+      });
+      return found;
+    }
+
+    testWidgets('a name hides the other sections and marks the match', (
+      tester,
+    ) async {
+      await _pumpPage(tester);
+      await type(tester, 'dictionary');
+
+      expect(find.text('Reader'), findsNothing);
+      expect(find.text('Tabs'), findsNothing);
+      expect(find.text('Dictionary panel'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is RichText && isHighlighted(w.text),
+        ),
+        findsWidgets,
+      );
+    });
+
+    testWidgets('Pāli marks and case are ignored', (tester) async {
+      await _pumpPage(tester);
+      await type(tester, 'VIMAMSA');
+
+      expect(find.text('Vīmaṃsā chat'), findsOneWidget);
+      expect(find.text('Tabs'), findsNothing);
+    });
+
+    testWidgets('a section name keeps every row of that section', (
+      tester,
+    ) async {
+      await _pumpPage(tester);
+      final inTabs = AppShortcuts.shortcutCatalog
+          .where((b) => b.section == ShortcutSection.tabs)
+          .length;
+      await type(tester, 'tabs');
+
+      expect(find.byTooltip('Change'), findsNWidgets(inTabs));
+      expect(find.text('Sidebar'), findsNothing);
+    });
+
+    testWidgets('no match shows No results and no section', (tester) async {
+      await _pumpPage(tester);
+      await type(tester, 'zzzz');
+
+      expect(find.text('No results'), findsOneWidget);
+      expect(find.text('Sidebar'), findsNothing);
+      expect(find.byTooltip('Change'), findsNothing);
+    });
+
+    testWidgets('a row can be changed while the list is filtered', (
+      tester,
+    ) async {
+      final settings = await _pumpPage(tester);
+      await type(tester, 'dictionary');
+      await tester.tap(find.byKey(const ValueKey('change-dictionary')));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(settings.state.shortcutOverrides.keys, ['dictionary']);
+      expect(find.text('Ctrl+Shift+K'), findsOneWidget);
+      expect(find.text('Tabs'), findsNothing);
+    });
+
+    testWidgets('clearing the box brings every shortcut back', (tester) async {
+      await _pumpPage(tester);
+      await type(tester, 'zzzz');
+      await type(tester, '');
+
+      expect(find.byTooltip('Change'), findsNWidgets(61));
     });
   });
 

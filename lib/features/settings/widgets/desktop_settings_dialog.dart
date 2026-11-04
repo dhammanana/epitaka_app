@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -164,8 +163,8 @@ Future<void> showDesktopSettingsDialog(BuildContext context) async {
     ),
     SettingsCategory(
       id: 'help',
-      icon: Icons.help_outline,
-      title: loc.help,
+      icon: Icons.feedback_outlined,
+      title: loc.feedback,
       body: const HelpScreenBody(),
     ),
   ];

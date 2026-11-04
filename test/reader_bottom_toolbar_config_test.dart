@@ -103,8 +103,9 @@ void main() {
                 i.id != ToolbarBuiltins.jump && i.id != ToolbarBuiltins.search,
           ),
         ].map((i) {
-          if (i.id == ToolbarBuiltins.bookmark)
+          if (i.id == ToolbarBuiltins.bookmark) {
             return i.copyWith(enabled: false);
+          }
           return i;
         }).toList();
 
@@ -185,6 +186,6 @@ void main() {
         t.message ?? '',
     ].where((m) => m.contains('Ctrl+Alt+')).toList();
     expect(tips, hasLength(1));
-    expect(tips.single, endsWith('Ctrl+Alt+1 / Ctrl+Alt+3'));
+    expect(tips.single, endsWith('Ctrl+Alt+1 / Ctrl+Alt+3 / Ctrl+Alt+4'));
   });
 }

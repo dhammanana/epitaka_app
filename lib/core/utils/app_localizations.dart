@@ -192,8 +192,8 @@ class AppLocalizations {
       _t('Sends error reports to fix bugs faster');
   String get about => _t('About ePitaka');
   String get version => _t('Version');
-  String get help => _t('Help');
   String get keyboardShortcuts => _t('Keyboard Shortcuts');
+  String get searchShortcuts => _t('Search shortcuts');
   String get keyboardShortcutsDesc =>
       _t('Click Change, then press the new keys.');
   String get changeShortcut => _t('Change');
