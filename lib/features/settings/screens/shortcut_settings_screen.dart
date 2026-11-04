@@ -7,10 +7,28 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../shared/utils/app_shortcuts.dart';
+import '../../../shared/widgets/search_box_decoration.dart';
+import '../widgets/settings_app_bar.dart';
 
-/// Settings → Keyboard Shortcuts (desktop settings window only): every
-/// shortcut in [AppShortcuts.shortcutCatalog], grouped by section, with a
-/// button to record a new combination and one to restore the default.
+/// Full-page Keyboard Shortcuts for the phone Settings screen, shown on
+/// tablets only.
+class ShortcutSettingsScreen extends StatelessWidget {
+  const ShortcutSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: SettingsAppBar(colors: colors),
+      body: const ShortcutSettingsBody(),
+    );
+  }
+}
+
+/// Settings → Keyboard Shortcuts (the desktop settings window, and tablets
+/// through [ShortcutSettingsScreen]): every shortcut in
+/// [AppShortcuts.shortcutCatalog], grouped by section, with a button to
+/// record a new combination and one to restore the default.
 class ShortcutSettingsBody extends ConsumerStatefulWidget {
   const ShortcutSettingsBody({super.key});
 
@@ -22,6 +40,8 @@ class ShortcutSettingsBody extends ConsumerStatefulWidget {
 class _ShortcutSettingsBodyState extends ConsumerState<ShortcutSettingsBody> {
   /// The row that is waiting for a new combination, if any.
   String? _recordingId;
+
+  final _search = TextEditingController();
 
   /// The row whose [_messages] are shown: why its last combination was
   /// refused, or which rows lost their keys to it or share it.
@@ -44,11 +64,28 @@ class _ShortcutSettingsBodyState extends ConsumerState<ShortcutSettingsBody> {
     LogicalKeyboardKey.altGraph,
   };
 
-  void _startRecording(String id) => setState(() {
-    _recordingId = id;
-    _messageId = null;
-    _messages = const [];
-  });
+  @override
+  void initState() {
+    super.initState();
+    _search.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _startRecording(String id) {
+    // The recorder only autofocuses when nothing holds focus, e.g. not while
+    // the search box is being typed in.
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _recordingId = id;
+      _messageId = null;
+      _messages = const [];
+    });
+  }
 
   void _stopRecording() => setState(() => _recordingId = null);
 
@@ -183,6 +220,22 @@ class _ShortcutSettingsBodyState extends ConsumerState<ShortcutSettingsBody> {
     );
     final notifier = ref.read(settingsProvider.notifier);
 
+    // Per section: a hit on the section's title keeps all its rows, otherwise
+    // only the rows whose name matches. Sections left empty are dropped.
+    final query = _fold(_search.text.trim());
+    final visible = <ShortcutSection, List<ShortcutBinding>>{};
+    for (final section in ShortcutSection.values) {
+      final titleHit =
+          query.isEmpty || _fold(_sectionTitle(loc, section)).contains(query);
+      final rows = [
+        for (final b in AppShortcuts.shortcutCatalog)
+          if (b.section == section &&
+              (titleHit || _fold(loc.t(b.label)).contains(query)))
+            b,
+      ];
+      if (rows.isNotEmpty) visible[section] = rows;
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -215,20 +268,54 @@ class _ShortcutSettingsBodyState extends ConsumerState<ShortcutSettingsBody> {
             ),
           ],
         ),
-        for (final section in ShortcutSection.values) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: AppDimensions.sm),
+          child: TextField(
+            key: const ValueKey('shortcut-search'),
+            controller: _search,
+            style: searchBoxTextStyle(context),
+            decoration: searchBoxDecoration(
+              context,
+              hintText: loc.searchShortcuts,
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: _search.clear,
+                    ),
+            ),
+          ),
+        ),
+        if (visible.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: AppDimensions.lg),
+            child: Center(
+              child: Text(
+                loc.noResults,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        for (final entry in visible.entries) ...[
           const SizedBox(height: AppDimensions.lg),
-          _SectionHeader(section: section, loc: loc, colors: colors),
+          _SectionHeader(
+            section: entry.key,
+            loc: loc,
+            colors: colors,
+            query: query,
+          ),
           const SizedBox(height: AppDimensions.sm),
           _SectionCard(
             colors: colors,
             children: [
-              for (final binding in AppShortcuts.shortcutCatalog.where(
-                (b) => b.section == section,
-              ))
+              for (final binding in entry.value)
                 _ShortcutRow(
                   binding: binding,
                   loc: loc,
                   colors: colors,
+                  query: query,
                   isCustom: overrides.containsKey(binding.id),
                   recording: _recordingId == binding.id
                       ? _Recorder(
@@ -264,20 +351,8 @@ String _sectionWhere(AppLocalizations loc, ShortcutSection section) =>
       _ => loc.shortcutsAnywhere,
     };
 
-class _SectionHeader extends StatelessWidget {
-  final ShortcutSection section;
-  final AppLocalizations loc;
-  final ColorScheme colors;
-
-  const _SectionHeader({
-    required this.section,
-    required this.loc,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final title = switch (section) {
+String _sectionTitle(AppLocalizations loc, ShortcutSection section) =>
+    switch (section) {
       ShortcutSection.sidebar => loc.shortcutsSidebar,
       ShortcutSection.reading => loc.shortcutsReading,
       ShortcutSection.tabs => loc.shortcutsTabs,
@@ -288,16 +363,79 @@ class _SectionHeader extends StatelessWidget {
       ShortcutSection.searchResults => loc.shortcutsSearchResults,
       ShortcutSection.chat => loc.shortcutsChat,
     };
+
+const _plainLetters = {
+  'ā': 'a', 'ī': 'i', 'ū': 'u', 'ṃ': 'm', 'ṁ': 'm', 'ṅ': 'n', 'ñ': 'n',
+  'ṭ': 't', 'ḍ': 'd', 'ṇ': 'n', 'ḷ': 'l',
+};
+
+/// Lower-cases [text] and drops Pāli marks, one character for one character,
+/// so a match position in the folded text is the same in the original.
+String _fold(String text) {
+  final out = StringBuffer();
+  for (final unit in text.split('')) {
+    final lower = unit.toLowerCase();
+    out.write(lower.length == 1 ? (_plainLetters[lower] ?? lower) : unit);
+  }
+  return out.toString();
+}
+
+/// [text] with the first match of the already-folded [query] marked.
+Widget _highlighted(
+  String text,
+  String query,
+  TextStyle style,
+  ColorScheme colors,
+) {
+  final at = query.isEmpty ? -1 : _fold(text).indexOf(query);
+  if (at < 0) return Text(text, style: style);
+  final end = at + query.length;
+  return Text.rich(
+    TextSpan(
+      style: style,
+      children: [
+        TextSpan(text: text.substring(0, at)),
+        TextSpan(
+          text: text.substring(at, end),
+          style: TextStyle(
+            backgroundColor: colors.primaryContainer,
+            color: colors.onPrimaryContainer,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        TextSpan(text: text.substring(end)),
+      ],
+    ),
+  );
+}
+
+class _SectionHeader extends StatelessWidget {
+  final ShortcutSection section;
+  final AppLocalizations loc;
+  final ColorScheme colors;
+  final String query;
+
+  const _SectionHeader({
+    required this.section,
+    required this.loc,
+    required this.colors,
+    required this.query,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final where = _sectionWhere(loc, section);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: AppTypography.labelMedium.copyWith(
+        _highlighted(
+          _sectionTitle(loc, section),
+          query,
+          AppTypography.labelMedium.copyWith(
             color: colors.primary,
             fontWeight: FontWeight.w600,
           ),
+          colors,
         ),
         Text(
           where,
@@ -347,6 +485,7 @@ class _ShortcutRow extends StatelessWidget {
   final ShortcutBinding binding;
   final AppLocalizations loc;
   final ColorScheme colors;
+  final String query;
   final bool isCustom;
 
   /// Shown in place of the key cap while this row records.
@@ -361,6 +500,7 @@ class _ShortcutRow extends StatelessWidget {
     required this.binding,
     required this.loc,
     required this.colors,
+    required this.query,
     required this.isCustom,
     required this.recording,
     required this.messages,
@@ -422,9 +562,11 @@ class _ShortcutRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(
+          child: _highlighted(
             loc.t(binding.label),
-            style: AppTypography.labelMedium.copyWith(color: colors.onSurface),
+            query,
+            AppTypography.labelMedium.copyWith(color: colors.onSurface),
+            colors,
           ),
         ),
         if (fixedHint != null)
@@ -509,7 +651,7 @@ class _Recorder extends StatelessWidget {
   }
 }
 
-/// The key-cap look of the Help page's shortcut list.
+/// The key-cap look of a shortcut's keys.
 class _Kbd extends StatelessWidget {
   final String text;
   final ColorScheme colors;

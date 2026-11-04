@@ -14,6 +14,7 @@ import '../features/settings/screens/appearance_settings_screen.dart';
 import '../features/settings/screens/context_menu_settings_screen.dart';
 import '../features/settings/screens/dictionary_settings_screen.dart';
 import '../features/settings/screens/help_screen.dart';
+import '../features/settings/screens/shortcut_settings_screen.dart';
 import '../features/settings/screens/reading_options_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/translation_settings_screen.dart';
@@ -49,6 +50,7 @@ class AppRoutes {
   static const toolbarSettings = '/settings/toolbar';
   static const dictionarySettings = '/settings/dictionary';
   static const help = '/settings/help';
+  static const shortcutSettings = '/settings/shortcuts';
   static const translatorSettings = '/translator';
   static const translatorRun = '/translator/run';
   static const contents = '/contents/:bookId';
@@ -186,6 +188,11 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             path: 'dictionary',
             name: 'dictionarySettings',
             builder: (context, state) => const DictionarySettingsScreen(),
+          ),
+          GoRoute(
+            path: 'shortcuts',
+            name: 'shortcutSettings',
+            builder: (context, state) => const ShortcutSettingsScreen(),
           ),
           GoRoute(
             path: 'help',

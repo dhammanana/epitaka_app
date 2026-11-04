@@ -11,6 +11,7 @@ import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/platform_info.dart';
+import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../router/app_router.dart' show AppRoutes;
 import '../../search/providers/search_provider.dart';
 import '../../ai_qa/widgets/ai_qa_settings_sheet.dart';
@@ -195,6 +196,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: loc.toolbarSubtitle,
                   onTap: () => context.push(AppRoutes.toolbarSettings),
                 ),
+                // Tablets may have a keyboard; phones have none.
+                if (!ResponsiveBreakpoint.isPhone(context))
+                  _SettingsTile(
+                    icon: Icons.keyboard_outlined,
+                    title: loc.keyboardShortcuts,
+                    onTap: () => context.push(AppRoutes.shortcutSettings),
+                  ),
               ],
             ),
 
@@ -351,9 +359,9 @@ class SettingsSystemSection extends ConsumerWidget {
           onTap: () => context.push(AppRoutes.featureGuide),
         ),
         _SettingsTile(
-          icon: Icons.help_outline,
-          title: loc.help,
-          subtitle: loc.keyboardShortcuts,
+          icon: Icons.feedback_outlined,
+          title: loc.feedback,
+          subtitle: loc.sendFeedback,
           onTap: () => context.push('/settings/help'),
         ),
         const StorageLocationTile(),

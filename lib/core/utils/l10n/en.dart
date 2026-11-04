@@ -846,6 +846,7 @@ const Map<String, String> en = {
 
   // ── Feedback ────────────────────────────────────────────────────────
   'Send Feedback': 'Send Feedback',
+  'Search shortcuts': 'Search shortcuts',
 
   // ── Page systems ────────────────────────────────────────────────────
   'Thai': 'Thai',

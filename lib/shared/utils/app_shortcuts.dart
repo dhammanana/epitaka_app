@@ -497,6 +497,15 @@ class AppShortcuts {
         SingleActivator(LogicalKeyboardKey.digit3, meta: true, alt: true),
       ],
     ),
+    ShortcutBinding(
+      id: 'display-translation',
+      label: 'Translation Only',
+      section: ShortcutSection.textDisplay,
+      activators: [
+        SingleActivator(LogicalKeyboardKey.digit4, control: true, alt: true),
+        SingleActivator(LogicalKeyboardKey.digit4, meta: true, alt: true),
+      ],
+    ),
     // No default keys: the user binds the ones they want (Phase 9).
     ShortcutBinding(
       id: 'dict-level-sankhitta',
@@ -1142,11 +1151,20 @@ class AppShortcuts {
           .onJumpTap(context, ref, positions, activeTab, readerState);
     }
 
+    // Each display mode also turns Pāli on, as the popup's buttons do, so a
+    // key press leaves "Translation Only" instead of keeping Pāli hidden.
     void hideTranslation() {
+      ref.read(settingsProvider.notifier).setShowPali(true);
       ref.read(settingsProvider.notifier).setShowTranslation(false);
     }
 
+    void viewTranslationOnly() {
+      ref.read(settingsProvider.notifier).setShowPali(false);
+      ref.read(settingsProvider.notifier).setShowTranslation(true);
+    }
+
     void viewLineByLine() {
+      ref.read(settingsProvider.notifier).setShowPali(true);
       ref.read(settingsProvider.notifier).setShowTranslation(true);
       ref
           .read(settingsProvider.notifier)
@@ -1154,6 +1172,7 @@ class AppShortcuts {
     }
 
     void viewSideBySide() {
+      ref.read(settingsProvider.notifier).setShowPali(true);
       ref.read(settingsProvider.notifier).setShowTranslation(true);
       ref
           .read(settingsProvider.notifier)
@@ -1205,6 +1224,7 @@ class AppShortcuts {
       'display-hide': hideTranslation,
       'display-line': viewLineByLine,
       'display-side': viewSideBySide,
+      'display-translation': viewTranslationOnly,
       'dict-level-sankhitta': () => dpd().setLevel(DictionaryLevel.sankhitta),
       'dict-level-majjhima': () => dpd().setLevel(DictionaryLevel.majjhima),
       'dict-level-vitthara': () => dpd().setLevel(DictionaryLevel.vitthara),

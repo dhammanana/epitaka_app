@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
-import '../../../shared/utils/app_shortcuts.dart';
 import '../widgets/settings_app_bar.dart';
 
-/// Help screen documenting keyboard shortcuts and other tips.
+/// Feedback screen: the way to send the developers an email.
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
 
@@ -23,18 +20,15 @@ class HelpScreen extends StatelessWidget {
   }
 }
 
-/// Scrollable body of the help screen — shared between the mobile screen and
-/// the desktop settings window.
-class HelpScreenBody extends ConsumerWidget {
+/// Scrollable body of the feedback screen — shared between the mobile screen
+/// and the desktop settings window.
+class HelpScreenBody extends StatelessWidget {
   const HelpScreenBody({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
-    final overrides = ref.watch(
-      settingsProvider.select((s) => s.shortcutOverrides),
-    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -45,16 +39,12 @@ class HelpScreenBody extends ConsumerWidget {
       ),
       children: [
         Text(
-          loc.help,
+          loc.feedback,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.onSurface,
           ),
         ),
         const SizedBox(height: AppDimensions.lg),
-        _ShortcutsSection(colors: colors, loc: loc, overrides: overrides),
-        const SizedBox(height: AppDimensions.lg),
-
-        // ── Send Feedback ────────────────────────────────────────
         _FeedbackTile(colors: colors, loc: loc),
       ],
     );
@@ -139,175 +129,6 @@ class _FeedbackTile extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ShortcutsSection extends StatelessWidget {
-  final ColorScheme colors;
-  final AppLocalizations loc;
-
-  /// The user's own shortcuts; any custom tab shortcut breaks the 1–9 range.
-  final Map<String, SingleActivator?> overrides;
-
-  const _ShortcutsSection({
-    required this.colors,
-    required this.loc,
-    required this.overrides,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Each row resolves its key hint from the global shortcut catalog
-    // (AppShortcuts.hintFor) instead of a hardcoded string, so this list
-    // can never drift from the real bindings. Hints render platform-
-    // appropriately (⌘⇧C on macOS, Ctrl+Shift+C elsewhere).
-    final tabIds = [for (var i = 1; i <= 9; i++) 'tab-$i'];
-    final items = [
-      _Shortcut(loc.searchInBook, 'find-in-book'),
-      _Shortcut(loc.t('Toggle Regex'), 'regex-toggle'),
-      _Shortcut(loc.globalSearch, 'find-everywhere'),
-      _Shortcut(loc.openDictionary, 'dictionary'),
-      _Shortcut(loc.libraryLabel, 'library-sidebar'),
-      _Shortcut(loc.openLibrary, 'library-open'),
-      _Shortcut(loc.annotations, 'annotations'),
-      _Shortcut(loc.history, 'history'),
-      _Shortcut(loc.contents, 'contents'),
-      _Shortcut(loc.vimamsa, 'vimamsa'),
-      _Shortcut(loc.jumpToPage, 'jump'),
-      _Shortcut(loc.goToSutta, 'go-to-sutta'),
-      _Shortcut(loc.openSettings, 'settings'),
-      _Shortcut(loc.increaseFontSize, 'font-increase'),
-      _Shortcut(loc.decreaseFontSize, 'font-decrease'),
-      _Shortcut(loc.hideTranslationMode, 'display-hide'),
-      _Shortcut(loc.lineByLine, 'display-line'),
-      _Shortcut(loc.sideBySideMode, 'display-side'),
-      _Shortcut(loc.closeFocusTab, 'close-tab'),
-      _Shortcut(loc.closeAllTabs, 'close-all-tabs'),
-      if (tabIds.any(overrides.containsKey))
-        for (var i = 0; i < tabIds.length; i++)
-          _Shortcut('Switch to Tab ${i + 1}', tabIds[i])
-      else
-        _Shortcut(
-          'Switch to Tab 1-9',
-          'tab-1',
-          keysOverride: _tabRangeHint(),
-        ),
-      _Shortcut('Next Tab', 'tab-next'),
-      _Shortcut('Previous Tab', 'tab-prev'),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(AppDimensions.md),
-            child: Text(
-              loc.keyboardShortcuts,
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ...items.asMap().entries.map((entry) {
-            final isLast = entry.key == items.length - 1;
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.md,
-                    vertical: AppDimensions.sm,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.value.label,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.onSurface,
-                          ),
-                        ),
-                      ),
-                      _Kbd(
-                        entry.value.keys.isEmpty
-                            ? loc.shortcutNone
-                            : entry.value.keys,
-                        colors,
-                      ),
-                    ],
-                  ),
-                ),
-                if (!isLast)
-                  Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: colors.outlineVariant,
-                    indent: AppDimensions.md,
-                    endIndent: AppDimensions.md,
-                  ),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-/// "⌘1" → "⌘1–9", "Ctrl+1" → "Ctrl+1–9" — derived from the catalog's
-/// tab-1 binding so the modifier style stays in sync on every platform.
-String _tabRangeHint() {
-  final base = AppShortcuts.hintFor('tab-1') ?? '';
-  if (base.isEmpty) return '1–9';
-  return base.endsWith('1') ? '${base.substring(0, base.length - 1)}1–9' : '$base 1–9';
-}
-
-class _Shortcut {
-  final String label;
-
-  /// The catalog id whose binding is shown on the right (see
-  /// [AppShortcuts.shortcutCatalog]).
-  final String id;
-
-  /// Optional replacement for the catalog hint (used for ranges like
-  /// "Switch to Tab 1-9").
-  final String? keysOverride;
-
-  const _Shortcut(this.label, this.id, {this.keysOverride});
-
-  String get keys => keysOverride ?? AppShortcuts.hintFor(id) ?? '';
-}
-
-class _Kbd extends StatelessWidget {
-  final String text;
-  final ColorScheme colors;
-
-  const _Kbd(this.text, this.colors);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Text(
-        text,
-        style: AppTypography.labelSmall.copyWith(
-          color: colors.onSurfaceVariant,
-          fontFamily: 'monospace',
-          fontWeight: FontWeight.w600,
         ),
       ),
     );

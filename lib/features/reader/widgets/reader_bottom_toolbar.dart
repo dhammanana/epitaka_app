@@ -110,9 +110,15 @@ class ReaderBottomToolbar extends StatelessWidget {
     final isPlaying = ttsPlayback == TtsPlaybackState.playing;
     final isLoading = ttsPlayback == TtsPlaybackState.loading;
 
-    // The display-layout popup offers three modes, each with its own
-    // shortcut — hint at the trio so users can learn them from the button.
-    final displayHint = ['display-hide', 'display-line', 'display-side']
+    // The display-layout popup offers four modes, each with its own
+    // shortcut — hint at all of them so users can learn them from the button.
+    const displayIds = [
+      'display-hide',
+      'display-line',
+      'display-side',
+      'display-translation',
+    ];
+    final displayHint = displayIds
         .map(AppShortcuts.hintFor)
         .whereType<String>()
         .where((hint) => hint.isNotEmpty)
