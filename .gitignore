@@ -22,6 +22,7 @@ docs/*.md
 .svn/
 .swiftpm/
 migrate_working_dir/
+secrets/*
 
 # IntelliJ related
 *.iml
