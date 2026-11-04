@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
+import '../../../core/utils/platform_info.dart';
 import '../../../core/utils/responsive_breakpoint.dart';
 import '../../../core/utils/startup_timing.dart';
 import '../../../features/guide/widgets/feature_guide_welcome_sheet.dart';
@@ -19,6 +22,7 @@ import '../../sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/app_shell.dart';
 import '../../../shared/widgets/pali_text.dart';
+import '../services/resume_last_book.dart';
 import '../widgets/history_tabs.dart';
 import '../widgets/library_browser.dart';
 import '../providers/heading_title_provider.dart';
@@ -51,6 +55,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       StartupTiming.mark('library screen first frame');
       _handleTabQueryParam();
       _maybeShowFeatureGuideWelcome();
+      if (!mounted) return;
+      // Phone: reopen the last book read, once per process. On desktop this
+      // is a no-op (desktop restores its own saved tabs in main.dart).
+      unawaited(resumeLastBook(context, ref, isDesktop: PlatformInfo.isDesktop));
     });
   }
 
