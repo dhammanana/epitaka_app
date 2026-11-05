@@ -35,8 +35,8 @@ const _sentences = <(String, int, int, String)>[
   ('vbh', 21, 1, 'ekaṃ samayaṃ bhagavā antarā ca rājagahaṃ antarā'),
 ];
 
-Future<EpitakaDatabase> _fixtureEpitakaDb() async {
-  final db = EpitakaDatabase(NativeDatabase.memory());
+Future<EpitakaDatabase> _fixtureEpitakaDb(File file) async {
+  final db = EpitakaDatabase(NativeDatabase(file));
   await db.customStatement('''
     CREATE TABLE books (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, vri_id TEXT,
@@ -95,7 +95,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('regex_search_');
     dbPath = p.join(dir.path, 'app_data.db');
     appDb = AppDatabase(NativeDatabase(File(dbPath)));
-    epiDb = await _fixtureEpitakaDb();
+    epiDb = await _fixtureEpitakaDb(File(p.join(dir.path, 'epitaka.db')));
     await appDb.buildSearchIndex(epiDb);
     scans = 0;
   });
@@ -119,7 +119,7 @@ void main() {
           await Future<void>.delayed(scanDelay);
           // A short limit, so a runaway pattern ends within the test.
           return scanPaliRegex(
-            dbPath,
+            p.join(dir.path, 'epitaka.db'),
             pattern,
             limit: const Duration(milliseconds: 200),
           );

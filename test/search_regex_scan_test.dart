@@ -31,8 +31,8 @@ const _sentences = <(String, int, int, String)>[
   ('vbh', 21, 1, 'ekaṃ samayaṃ bhagavā antarā ca rājagahaṃ antarā'),
 ];
 
-Future<EpitakaDatabase> _fixtureEpitakaDb() async {
-  final db = EpitakaDatabase(NativeDatabase.memory());
+Future<EpitakaDatabase> _fixtureEpitakaDb(File file) async {
+  final db = EpitakaDatabase(NativeDatabase(file));
   await db.customStatement('''
     CREATE TABLE books (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, vri_id TEXT,
@@ -67,6 +67,7 @@ Future<EpitakaDatabase> _fixtureEpitakaDb() async {
 void main() {
   late Directory dir;
   late String dbPath;
+  late String epitakaPath;
   late AppDatabase appDb;
 
   setUp(() async {
@@ -79,7 +80,8 @@ void main() {
         setup: (db) => db.execute('PRAGMA journal_mode=WAL'),
       ),
     );
-    final epiDb = await _fixtureEpitakaDb();
+    epitakaPath = p.join(dir.path, 'epitaka.db');
+    final epiDb = await _fixtureEpitakaDb(File(epitakaPath));
     await appDb.buildSearchIndex(epiDb);
     await epiDb.close();
   });
@@ -90,7 +92,7 @@ void main() {
   });
 
   Future<List<(String, int)>> scan(String pattern) async => [
-    for (final h in await scanPaliRegex(dbPath, pattern).result)
+    for (final h in await scanPaliRegex(epitakaPath, pattern).result)
       (h.bookId, h.paraId),
   ];
 
@@ -108,11 +110,12 @@ void main() {
     expect(await scan('Evaṃ'), [('dn1', 9)]);
   });
 
-  test('runs over the cleaned search copy: lines joined, '
-      'punctuation gone', () async {
+  test('runs over the raw text: lines joined, punctuation still there', () async {
     // Paragraph 1's two lines are one row joined by a space.
     expect(await scan(r'ca uppajjati'), [('dn1', 1)]);
-    expect(await scan(r'pavatto$'), [('dn1', 8)]);
+    // The comma after "pavatto" is kept, so `$` does not follow the word.
+    expect(await scan(r'pavatto$'), isEmpty);
+    expect(await scan(r'pavatto,$'), [('dn1', 8)]);
     // A space is the word edge: `katvāna` (kv 10) is left out.
     expect(await scan(r'^katvā '), [('dn1', 3), ('dn1', 6), ('vbh', 20)]);
   });
@@ -129,14 +132,14 @@ void main() {
   test('a scan past its time limit stops itself as too slow', () async {
     // The limit is checked before each row: with none left, the first row
     // ends the scan, which closes its database.
-    final job = scanPaliRegex(dbPath, 'katv', limit: Duration.zero);
+    final job = scanPaliRegex(epitakaPath, 'katv', limit: Duration.zero);
     await expectLater(job.result, throwsA(isA<RegexTooSlow>()));
   });
 
   test('a scan stuck inside one row is killed 2 s past its limit', () async {
     final clock = Stopwatch()..start();
     final job = scanPaliRegex(
-      dbPath,
+      epitakaPath,
       r'([^ ]+ ?)+x',
       limit: const Duration(milliseconds: 100),
     );
