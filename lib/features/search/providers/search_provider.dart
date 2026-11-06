@@ -313,7 +313,7 @@ class SearchFuzzyNotifier extends StateNotifier<bool> {
   }
 }
 
-/// Starts a regex scan of the Pāli search copy. The scan reads the text
+/// Starts a regex scan of the raw Pāli text. The scan reads the text
 /// from epitaka.db (the FTS index is contentless — no text to read), so its
 /// default needs that path. Tests replace it to scan a fixture file and to
 /// count the scans.
@@ -561,8 +561,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
   ///
   /// The Fuzzy chip ([searchFuzzyProvider]) decides how a term matches:
   /// ON, every term is a prefix (`katv*`); OFF, every term is a whole word
-  /// (exact). With [regex], [query] is a pattern run over the Pāli search
-  /// copy of every paragraph, with exact diacritics (see [scanPaliRegex]).
+  /// (exact). With [regex], [query] is a pattern run over the raw Pāli
+  /// text of every paragraph, with exact diacritics (see [scanPaliRegex]).
   /// It is kept as typed, spaces included, and stays out of the search
   /// history: re-run from there in normal mode it would mean something
   /// else.

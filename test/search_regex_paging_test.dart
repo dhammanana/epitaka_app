@@ -21,8 +21,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Book b1 has 75 paragraphs with `dhammacakka`, b2 has 40; every other
 /// paragraph has none.
-Future<EpitakaDatabase> _fixtureEpitakaDb() async {
-  final db = EpitakaDatabase(NativeDatabase.memory());
+Future<EpitakaDatabase> _fixtureEpitakaDb(File file) async {
+  final db = EpitakaDatabase(NativeDatabase(file));
   await db.customStatement('''
     CREATE TABLE books (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, vri_id TEXT,
@@ -74,7 +74,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('regex_paging_');
     dbPath = p.join(dir.path, 'app_data.db');
     appDb = AppDatabase(NativeDatabase(File(dbPath)));
-    epiDb = await _fixtureEpitakaDb();
+    epiDb = await _fixtureEpitakaDb(File(p.join(dir.path, 'epitaka.db')));
     await appDb.buildSearchIndex(epiDb);
     scans = 0;
   });
@@ -97,7 +97,7 @@ void main() {
         ),
         regexScanProvider.overrideWithValue((pattern) async {
           scans++;
-          return scanPaliRegex(dbPath, pattern);
+          return scanPaliRegex(p.join(dir.path, 'epitaka.db'), pattern);
         }),
       ],
     );

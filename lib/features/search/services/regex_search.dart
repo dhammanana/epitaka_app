@@ -4,8 +4,6 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 
-import '../../../core/utils/pali_search_utils.dart';
-
 /// One paragraph found by [scanPaliRegex].
 typedef RegexHit = ({String bookId, int paraId});
 
@@ -282,25 +280,22 @@ class RegexListFilter {
 /// Every paragraph whose Pāli text in epitaka.db's `sentences` matches
 /// [pattern], in book/paragraph order, as a [RegexJob].
 ///
-/// The scan reads all ~471,658 paragraphs (about 1 s on a desktop, a little
-/// more with the cleaning below), so it runs in its own isolate on its own
-/// read-only connection to [dbPath] — the epitaka.db file. (It used to read
-/// the cleaned search copy out of app_data.db's `search_fts`, but the FTS
-/// index is contentless since schema v3 — tokens only, no text.) On desktop
-/// the app's Drift connection runs on the main isolate, and the window would
-/// freeze for the whole scan.
+/// The pattern runs on the raw text, lines joined with a space: punctuation,
+/// capitals and page references are still there (case does not matter, the
+/// regex ignores it). Cleaning each of the ~471,000 paragraphs first took
+/// about 20 s, past [kRegexScanTimeLimit]; the raw scan is about 2 s. The
+/// FTS index is contentless since schema v3 (tokens only), so it has no text
+/// to read.
 ///
-/// Each row is lowercased and run through the same [cleanPaliForIndexing]
-/// pipeline that built the FTS index, so the text is the same "search copy"
-/// the plain search sees: punctuation gone, page references gone, lines
-/// joined with spaces. The pattern runs in Dart on rows read with a cursor,
-/// not as a `regexp` function SQLite calls back: killing an isolate inside
-/// that callback crashes the app. The scan checks [limit] between rows and
-/// stops itself, closing the database. Cancelling only drops the answer,
-/// because a killed scan leaves its connection open (about 2 file handles);
-/// the kill comes 2 s past [limit], for a pattern stuck on one row. A nested
-/// repeat sticks on any row of six or more words, so a runaway scan usually
-/// ends there.
+/// The scan runs in its own isolate on its own read-only connection to
+/// [dbPath], so the window never freezes. The pattern runs in Dart on rows
+/// read with a cursor, not as a `regexp` function SQLite calls back: killing
+/// an isolate inside that callback crashes the app. The scan checks [limit]
+/// between rows and stops itself, closing the database. Cancelling only drops
+/// the answer, because a killed scan leaves its connection open (about 2 file
+/// handles); the kill comes 2 s past [limit], for a pattern stuck on one row.
+/// A nested repeat sticks on any row of six or more words, so a runaway scan
+/// usually ends there.
 RegexJob<List<RegexHit>> scanPaliRegex(
   String dbPath,
   String pattern, {
@@ -328,13 +323,8 @@ List<RegexHit> _scan(String dbPath, String pattern, Duration limit) {
       final hits = <RegexHit>[];
       while (rows.moveNext()) {
         if (clock.elapsed > limit) throw const RegexTooSlow();
-        final raw = rows.current.columnAt(2);
-        if (raw is! String) continue;
-        // Same search copy the FTS index was built from: lowercase, then
-        // cleanPaliForIndexing (the build does it in the reverse order, but
-        // cleaning is idempotent on already-clean lowercase Pāḷi).
-        final text = cleanPaliForIndexing(raw.toLowerCase());
-        if (text.isNotEmpty && regex.hasMatch(text)) {
+        final text = rows.current.columnAt(2);
+        if (text is String && text.isNotEmpty && regex.hasMatch(text)) {
           hits.add((
             bookId: rows.current.columnAt(0) as String,
             paraId: rows.current.columnAt(1) as int,
