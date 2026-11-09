@@ -21,6 +21,7 @@ import '../../../shared/widgets/search_box_decoration.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
+import 'match_mode_switch.dart';
 import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
@@ -355,50 +356,18 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     if (context.mounted) openReaderRoute(context);
   }
 
-  void _toggleFuzzy() async {
-    final on = ref.read(searchFuzzyProvider);
-    await ref.read(searchFuzzyProvider.notifier).set(!on);
-    if (_searchController.text.isNotEmpty) _executeSearch();
-  }
-
-  /// The Fuzzy pill (smaller than the Search screen's): ON, every term is
-  /// a prefix; OFF, whole words only.
-  Widget _fuzzyChip(ColorScheme colors, AppLocalizations loc) {
-    final on = ref.watch(searchFuzzyProvider);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _toggleFuzzy,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: on ? colors.secondaryContainer : colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              on ? Icons.blur_on : Icons.center_focus_strong,
-              size: 12,
-              color: on
-                  ? colors.onSecondaryContainer
-                  : colors.onSurfaceVariant,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              on ? loc.fuzzy : loc.exact,
-              style: AppTypography.labelSmall.copyWith(
-                fontSize: 10,
-                color: on
-                    ? colors.onSecondaryContainer
-                    : colors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// Sets the mode from the Fuzzy | Exact | Rx switch. Fuzzy or Exact also
+  /// leaves rx, and the search runs again in the new mode.
+  Future<void> _selectMatchMode(MatchMode mode) async {
+    if (mode != MatchMode.regex) {
+      await ref.read(searchFuzzyProvider.notifier).set(mode == MatchMode.fuzzy);
+      if (!mounted) return;
+    }
+    if (ref.read(searchRegexProvider) != (mode == MatchMode.regex)) {
+      _toggleRegex();
+    } else if (_searchController.text.isNotEmpty) {
+      _executeSearch();
+    }
   }
 
   @override
@@ -407,6 +376,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
     final regexOn = ref.watch(searchRegexProvider);
+    final fuzzyOn = ref.watch(searchFuzzyProvider);
     // "Invalid pattern" or "Pattern too slow", while the box still holds
     // the pattern it belongs to.
     final patternMessage =
@@ -441,6 +411,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                 },
                 regexOn: regexOn,
                 onToggleRegex: _toggleRegex,
+                // The Fuzzy | Exact | Rx switch holds rx.
+                regexInMenu: false,
               ),
               errorText: patternMessage,
             ),
@@ -468,103 +440,124 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             children: [
               Row(
                 children: [
-                  // Fuzzy chip, compact for the panel (see the Search
-                  // screen's _fuzzyChip). A pattern sets its own matching.
-                  if (!regexOn) ...[
-                    _fuzzyChip(colors, loc),
-                    const SizedBox(width: 6),
-                  ],
-                  // A pattern sets its own word distance.
-                  if (!regexOn)
-                    PopupMenuButton<int>(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      initialValue: _wordDistance,
-                      onSelected: (val) {
-                        setState(() => _wordDistance = val);
-                        if (_searchController.text.isNotEmpty) _executeSearch();
-                      },
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          value: 0,
-                          child: Text(
-                            loc.anyShort,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 3,
-                          child: Text(
-                            loc.withinNShort(3),
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 1,
-                          child: Text(
-                            loc.withinNShort(1),
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 2,
-                          child: Text(
-                            loc.withinNShort(2),
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 5,
-                          child: Text(
-                            loc.withinNShort(5),
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 10,
-                          child: Text(
-                            loc.withinNShort(10),
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _wordDistance > 0
-                              ? colors.secondaryContainer
-                              : colors.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                  // A long label (Thai, Lao) on a narrow screen shrinks the
+                  // chips instead of pushing the row past its edge.
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.swap_horiz,
-                              size: 12,
-                              color: colors.onSurfaceVariant,
+                            MatchModeSwitch(
+                              mode: regexOn
+                                  ? MatchMode.regex
+                                  : (fuzzyOn
+                                        ? MatchMode.fuzzy
+                                        : MatchMode.exact),
+                              onSelected: _selectMatchMode,
+                              compact: true,
                             ),
-                            const SizedBox(width: 2),
-                            Text(
-                              loc.dist,
-                              style: AppTypography.labelSmall.copyWith(
-                                fontSize: 10,
-                                color: colors.onSurfaceVariant,
+                            const SizedBox(width: 6),
+                            // A pattern sets its own word distance.
+                            if (!regexOn)
+                              PopupMenuButton<int>(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                initialValue: _wordDistance,
+                                onSelected: (val) {
+                                  setState(() => _wordDistance = val);
+                                  if (_searchController.text.isNotEmpty) {
+                                    _executeSearch();
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  PopupMenuItem(
+                                    value: 0,
+                                    child: Text(
+                                      loc.anyShort,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 3,
+                                    child: Text(
+                                      loc.withinNShort(3),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 1,
+                                    child: Text(
+                                      loc.withinNShort(1),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 2,
+                                    child: Text(
+                                      loc.withinNShort(2),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 5,
+                                    child: Text(
+                                      loc.withinNShort(5),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 10,
+                                    child: Text(
+                                      loc.withinNShort(10),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _wordDistance > 0
+                                        ? colors.secondaryContainer
+                                        : colors.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.swap_horiz,
+                                        size: 12,
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        loc.dist,
+                                        style: AppTypography.labelSmall
+                                            .copyWith(
+                                              fontSize: 10,
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_drop_down,
+                                        size: 14,
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
-                            Icon(
-                              Icons.arrow_drop_down,
-                              size: 14,
-                              color: colors.onSurfaceVariant,
-                            ),
                           ],
                         ),
                       ),
                     ),
-                  const Spacer(),
+                  ),
                   // Filter toggle
                   IconButton(
                     icon: Icon(

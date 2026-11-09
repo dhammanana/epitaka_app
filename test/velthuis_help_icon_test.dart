@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/shared/widgets/search_box_actions.dart';
 import 'package:epitaka/shared/widgets/velthuis_help_icon.dart';
 
 Future<TextEditingController> _pumpField(
@@ -130,5 +131,44 @@ void main() {
     expect(editable.widget.focusNode.hasFocus, isTrue);
     await tester.enterText(find.byType(TextField), 'dhamma');
     expect(controller.text, 'dhamma');
+  });
+
+  testWidgets('in a box with a more menu, pointing at its help row shows the '
+      'card; a tap opens it as a dialog', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [AppLocalizationsDelegate()],
+        home: Scaffold(
+          body: TextField(
+            decoration: InputDecoration(
+              suffixIcon: SearchBoxSuffixActions(
+                onClear: () {},
+                onToggleRegex: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+
+    // The card's rule lines, not the row's own label.
+    final card = find.textContaining('.m   →  ṃ', findRichText: true);
+    expect(card, findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Velthuis typing')));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(card, findsOneWidget);
+
+    await mouse.moveTo(Offset.zero);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Velthuis typing'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(card, findsOneWidget);
   });
 }

@@ -276,7 +276,8 @@ final incomingSearchProvider = StateProvider<IncomingSearch?>((ref) => null);
 /// broken.
 final searchRegexProvider = StateProvider<bool>((ref) => false);
 
-/// The Fuzzy chip of the Search screen (on the sidebar and bottom sheet too,
+/// The Fuzzy and Exact parts of the Search screen's Fuzzy | Exact | Rx
+/// switch (on the sidebar and bottom sheet too,
 /// through [search]) — like TPR's: ON, every term is a prefix (`katv*`
 /// finds `katva`, `katvā`, `katvāna`); OFF, every term is a whole word
 /// (exact: `katvā` only, `katvāna` and bare `katv` no). Saved, because a

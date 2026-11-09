@@ -7,6 +7,7 @@ import 'package:epitaka/core/models/app_models.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/services/regex_search.dart';
+import 'package:epitaka/features/search/widgets/match_mode_switch.dart';
 import 'package:epitaka/features/search/widgets/search_panel.dart';
 import 'package:epitaka/features/search/widgets/search_screen.dart';
 import 'package:epitaka/shared/utils/app_navigation.dart';
@@ -157,14 +158,22 @@ Future<_Mounted> _pumpPanel(WidgetTester tester) async {
 }
 
 Finder get _field => find.byType(TextField).first;
-Finder get _menuButton =>
-    find.descendant(of: _field, matching: find.byIcon(Icons.more_vert));
 
 String _text(WidgetTester tester) =>
     tester.widget<TextField>(_field).controller!.text;
 
-Future<void> _toggle(WidgetTester tester) =>
-    regexToggleByTapIn(tester, _field);
+/// Flips rx by a tap on the Fuzzy | Exact | Rx switch: Rx, or back to the
+/// default Fuzzy.
+Future<void> _toggle(WidgetTester tester) async {
+  await tester.tap(
+    find.descendant(
+      of: find.byType(MatchModeSwitch),
+      matching: find.text(rxOnIn(tester, _field) ? 'Fuzzy' : 'Rx'),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -174,26 +183,27 @@ void main() {
     ('Search sidebar', _pumpPanel),
   ]) {
     group(name, () {
-      testWidgets('an empty box ends in the more menu, and it holds the '
-          'help and rx; X appears while there is text, before the menu', (
+      testWidgets('rx sits on the switch alone, so the box ends in the help '
+          'icon, not a more menu; X appears while there is text, before it', (
         tester,
       ) async {
         await pump(tester);
-        expect(_menuButton, findsOneWidget);
-        // The menu shares the Velthuis help and the rx switch.
-        await tester.tap(_menuButton);
-        await tester.pumpAndSettle();
-        expect(find.text('Velthuis typing'), findsOneWidget);
-        expect(find.text('Regular expression'), findsOneWidget);
-        // A tap outside closes the menu.
-        await closeMoreMenu(tester);
+        final help = find.descendant(
+          of: _field,
+          matching: find.byIcon(Icons.help_outline),
+        );
+        expect(help, findsOneWidget);
+        expect(
+          find.descendant(of: _field, matching: find.byIcon(Icons.more_vert)),
+          findsNothing,
+        );
 
         await typeKeys(tester, _field, 'dhamma');
         await tester.pump(const Duration(milliseconds: 200));
         final clear = find.byIcon(Icons.clear);
         expect(clear, findsOneWidget);
         expect(
-          tester.getCenter(_menuButton).dx,
+          tester.getCenter(help).dx,
           greaterThan(tester.getCenter(clear).dx),
         );
       });
@@ -443,6 +453,66 @@ void main() {
         await regexHotkeyIn(tester, _field);
         await tester.pump();
         expect(rxOnIn(tester, _field), isFalse);
+      });
+
+      testWidgets('the Fuzzy | Exact | Rx switch sets the mode in one tap, '
+          'leaves rx by Fuzzy or Exact, and runs the search again', (
+        tester,
+      ) async {
+        final (:fake, :container) = await pump(tester);
+        await typeKeys(tester, _field, 'cakka');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
+
+        Future<void> tapPart(String label) async {
+          await tester.tap(
+            find.descendant(
+              of: find.byType(MatchModeSwitch),
+              matching: find.text(label),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+        }
+
+        await tapPart('Exact');
+        expect(container.read(searchFuzzyProvider), isFalse);
+        expect(container.read(searchRegexProvider), isFalse);
+
+        await tapPart('Rx');
+        expect(container.read(searchRegexProvider), isTrue);
+        // Rx hides the distance chip but keeps the way out on screen.
+        expect(find.text('Dist'), findsNothing);
+        expect(find.text('Fuzzy'), findsOneWidget);
+
+        await tapPart('Fuzzy');
+        expect(container.read(searchRegexProvider), isFalse);
+        expect(container.read(searchFuzzyProvider), isTrue);
+
+        // The chosen part does nothing.
+        final runs = fake.calls.length;
+        await tapPart('Fuzzy');
+
+        expect(fake.calls.length, runs);
+        expect(fake.calls, [
+          (query: 'cakka', regex: false),
+          (query: 'cakka', regex: false),
+          (query: 'cakka', regex: true),
+          (query: 'cakka', regex: false),
+        ]);
+      });
+
+      testWidgets('the switch shows the mode Alt+R sets', (tester) async {
+        await pump(tester);
+        MatchMode shown() =>
+            tester.widget<MatchModeSwitch>(find.byType(MatchModeSwitch)).mode;
+        expect(shown(), MatchMode.fuzzy);
+        await regexHotkeyIn(tester, _field);
+        await tester.pump();
+        expect(shown(), MatchMode.regex);
+        await regexHotkeyIn(tester, _field);
+        await tester.pump();
+        expect(shown(), MatchMode.fuzzy);
       });
     });
   }
