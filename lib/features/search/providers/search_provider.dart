@@ -1467,12 +1467,6 @@ class SearchNotifier extends StateNotifier<SearchState> {
     required List<AiPassageRef> passages,
     List<String> highlightTerms = const [],
   }) async {
-    final q = query.trim();
-    if (q.isNotEmpty) {
-      try {
-        _ref.read(searchHistoryProvider.notifier).add(q);
-      } catch (_) {}
-    }
     _aiPassages = passages;
     _aiHighlightTerms = highlightTerms;
     await _renderAiResults(query: query);

@@ -7,6 +7,7 @@ import '../../ai_qa/models/ai_qa_models.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
 import '../../ai_qa/services/ai_api_client.dart';
 import '../../search/providers/search_provider.dart';
+import 'gavesana_history_provider.dart';
 
 /// Cap on the number of AI tool calls per Gavesana search.
 const int kAiSearchMaxToolCalls = 10;
@@ -224,13 +225,23 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
       }
 
       // ── Hand the passages to the normal search results view ─────
+      final shown = passages.take(kAiSearchMaxPassages).toList();
       await _ref
           .read(searchProvider.notifier)
           .showAiResults(
             query: trimmed,
-            passages: passages.take(kAiSearchMaxPassages).toList(),
+            passages: shown,
             // Highlight what the AI actually searched, not the question.
             highlightTerms: extractSearchTerms(toolLogs),
+          );
+      _ref
+          .read(gavesanaHistoryProvider.notifier)
+          .add(
+            encodeGavesana(
+              question: trimmed,
+              terms: extractSearchTerms(toolLogs),
+              passages: shown,
+            ),
           );
       state = AiSearchDone(
         toolLogs: [...toolLogs],
@@ -240,6 +251,31 @@ class AiSearchNotifier extends StateNotifier<AiSearchState> {
     } catch (e) {
       debugPrint('[GAVESANA] AI search failed: $e');
       state = AiSearchError('AI search failed: $e');
+    }
+  }
+
+  /// Show a finished run from the history: the same passages, no AI call.
+  /// It is [showAiResults] plus the done state; it must not clear the search
+  /// first, or a later filter toggle would run a text search on the question.
+  Future<void> restore(GavesanaEntry entry) async {
+    final search = _ref.read(searchProvider.notifier);
+    await search.showAiResults(
+      query: entry.question,
+      passages: entry.passages,
+      highlightTerms: entry.terms,
+    );
+    // A saved passage the database no longer has is dropped, so the count is
+    // what the results view shows.
+    final shown = _ref.read(searchProvider);
+    if (shown is SearchResults && shown.totalResults > 0) {
+      state = AiSearchDone(
+        toolLogs: const [],
+        passageCount: shown.totalResults,
+        termsUsed: entry.terms,
+      );
+    } else {
+      search.clear();
+      state = const AiSearchIdle();
     }
   }
 

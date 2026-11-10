@@ -255,4 +255,30 @@ void main() {
       h.dispose();
     });
   });
+
+  test('remove drops a word and the position follows the words that stay', () {
+    final h = LookupHistory()
+      ..navigateTo('dhamma')
+      ..navigateTo('kamma')
+      ..navigateTo('sati');
+    h.goBack(); // on kamma
+    h.remove('dhamma');
+    expect(h.words, ['kamma', 'sati']);
+    expect(h.current, 'kamma');
+    h.remove('kamma'); // the word on screen: no current word
+    expect(h.words, ['sati']);
+    expect(h.current, isNull);
+    h.remove('absent');
+    expect(h.words, ['sati']);
+  });
+
+  test('clear empties the list', () {
+    final h = LookupHistory()
+      ..navigateTo('dhamma')
+      ..navigateTo('kamma');
+    h.clear();
+    expect(h.words, isEmpty);
+    expect(h.current, isNull);
+    expect(h.canGoBack, isFalse);
+  });
 }

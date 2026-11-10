@@ -97,7 +97,7 @@ class DesktopActivityBar extends StatelessWidget {
         SidePanelType.gavesana,
         Icons.travel_explore,
         Icons.travel_explore,
-        loc.gavesana,
+        loc.gavesanaAiSearch,
       ),
       _ActivityItem(
         SidePanelType.dictionary,

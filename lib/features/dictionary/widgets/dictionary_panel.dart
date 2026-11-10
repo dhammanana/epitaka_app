@@ -25,6 +25,7 @@ import '../../dpd/utils/query_cleaning.dart';
 import '../providers/dictionary_header_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart';
 import 'lookup_history_buttons.dart';
+import '../../../shared/widgets/history_nav.dart';
 import 'lookup_history_list.dart';
 import 'lookup_history_chips.dart';
 import '../../mdx_dictionary/models/mdx_dictionary_info.dart';
@@ -64,6 +65,25 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
 
   /// The history list drawn over the results (the header's history icon).
   bool _historyOpen = false;
+
+  // The arrows move a highlight over the open list while the box keeps the
+  // cursor. Row `i` is word `words.length - 1 - i`: the list draws newest first.
+  final _historyScroll = ScrollController();
+  bool _boxWasEmpty = true;
+  late final HistoryNav _historyNav = HistoryNav(
+    onChanged: () {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _historyNav.scrollTo(_historyScroll),
+      );
+    },
+    onActivate: (i) {
+      final words = _lookupHistory.words;
+      if (i >= words.length) return;
+      _focusNode.unfocus();
+      _selectWord(words[words.length - 1 - i]);
+    },
+  );
 
   /// Where each summary line of the results jumps to.
   final PageAnchors _anchors = PageAnchors();
@@ -184,12 +204,19 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     _searchController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    _historyScroll.dispose();
     _suggestScroll.dispose();
     _suggestDebounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
+    if (value.isNotEmpty) _historyNav.reset();
+    // The list hides and shows with the text, not after the suggestion wait.
+    if (value.isEmpty != _boxWasEmpty) {
+      _boxWasEmpty = value.isEmpty;
+      setState(() {});
+    }
     // The suggestions drop down under the history list; typing means the user
     // is done with the list.
     if (_historyOpen) setState(() => _historyOpen = false);
@@ -231,6 +258,8 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
   }
 
   void _performSearch(String value) {
+    // The key handler already looked up a highlighted history word.
+    if (_historyVisible && _historyNav.index >= 0) return;
     if (ref.read(dictionaryRegexProvider)) {
       _submitPattern(value);
       return;
@@ -301,6 +330,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
       });
     }
     setState(() {
+      _historyNav.index = -1;
       _query = word;
       _draft = word;
       _queryIsRegex = false;
@@ -312,10 +342,45 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     });
   }
 
+  /// The list shows when the history button opens it, and also whenever the
+  /// box is empty and no word is on screen, as in Search.
+  bool get _historyVisible =>
+      (_historyOpen && _lookupHistory.words.isNotEmpty) ||
+      (_searchController.text.isEmpty &&
+          _query.isEmpty &&
+          _lookupHistory.words.isNotEmpty);
+
+  void _openHistory() {
+    _historyNav.reset();
+    setState(() => _historyOpen = true);
+    // The box keeps the cursor so the arrows reach the list. A touch device
+    // keeps its focus: moving it would close the phone's keyboard.
+    if (FocusManager.instance.highlightMode == FocusHighlightMode.traditional) {
+      _focusNode.requestFocus();
+    }
+  }
+
+  void _closeHistory() {
+    _historyNav.reset();
+    setState(() => _historyOpen = false);
+  }
+
   /// Arrow Up/Down moves through the suggestion dropdown, Enter accepts the
   /// highlighted row. Returns handled only when a suggestion consumed the
   /// key, so the caret and normal submit keep working otherwise.
   KeyEventResult _handleSearchKey(FocusNode node, KeyEvent event) {
+    // The open history list takes the arrows first; the suggestion code below
+    // only runs when it did not.
+    if (_historyVisible && mounted) {
+      if (_historyOpen &&
+          event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        _closeHistory();
+        return KeyEventResult.handled;
+      }
+      final r = _historyNav.handle(event, _lookupHistory.words.length);
+      if (r != KeyEventResult.ignored) return r;
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final isDown = event.logicalKey == LogicalKeyboardKey.arrowDown;
     final isUp = event.logicalKey == LogicalKeyboardKey.arrowUp;
@@ -516,7 +581,7 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     });
     ref.listen(dictionaryHistoryRequestProvider, (_, _) {
       if (ref.read(dictionarySheetOpenProvider) > 0) return;
-      setState(() => _historyOpen = true);
+      _openHistory();
     });
     ref.listen(dictionaryBackRequestProvider, (_, _) {
       if (ref.read(dictionarySheetOpenProvider) > 0) return;
@@ -648,16 +713,23 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                   alignment: Alignment.topCenter,
                   child: _buildSuggestionBox(colors),
                 ),
-              if (_historyOpen)
+              if (_historyVisible)
                 Positioned.fill(
                   child: LookupHistoryList(
                     words: _lookupHistory.words,
                     colors: colors,
+                    selectedIndex: _historyNav.index,
+                    onDelete: (word) {
+                      _lookupHistory.remove(word);
+                      _historyNav.clamp(_lookupHistory.words.length);
+                    },
+                    onClear: _lookupHistory.clear,
+                    controller: _historyScroll,
                     onTap: (word) {
                       _focusNode.unfocus();
                       _selectWord(word);
                     },
-                    onClose: () => setState(() => _historyOpen = false),
+                    onClose: _historyOpen ? _closeHistory : null,
                   ),
                 ),
             ],

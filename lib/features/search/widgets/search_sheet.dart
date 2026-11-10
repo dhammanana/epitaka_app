@@ -11,7 +11,9 @@ import '../../../shared/utils/html_text_parser.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
-import 'search_history_chips.dart';
+import '../../../shared/widgets/history_nav.dart';
+import '../providers/search_history_provider.dart';
+import 'search_history_rows.dart';
 
 class SearchSheet extends ConsumerStatefulWidget {
   const SearchSheet({super.key});
@@ -22,8 +24,32 @@ class SearchSheet extends ConsumerStatefulWidget {
 
 class _SearchSheetState extends ConsumerState<SearchSheet> {
   final _searchController = TextEditingController();
-  final _focusNode = FocusNode();
+  late final FocusNode _focusNode = FocusNode(onKeyEvent: _onFieldKey);
+  final _rowsScroll = ScrollController();
+  late final HistoryNav _nav = HistoryNav(
+    onChanged: () {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _nav.scrollTo(_rowsScroll),
+      );
+    },
+    onActivate: (i) {
+      final history = ref.read(searchHistoryProvider);
+      if (i < history.length) _onHistorySelected(history[i]);
+    },
+  );
   Timer? _debounce;
+
+  // The rows show while the box is empty. The box keeps the cursor and the
+  // arrow keys move a highlight over the rows.
+  bool get _showRows =>
+      _searchController.text.isEmpty &&
+      ref.read(searchHistoryProvider).isNotEmpty;
+
+  KeyEventResult _onFieldKey(FocusNode node, KeyEvent event) {
+    if (!_showRows) return KeyEventResult.ignored;
+    return _nav.handle(event, ref.read(searchHistoryProvider).length);
+  }
 
   @override
   void initState() {
@@ -38,12 +64,15 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   void dispose() {
     _searchController.dispose();
     _focusNode.dispose();
+    _rowsScroll.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
   void _onSearch(String query) {
     _debounce?.cancel();
+    if (query.isNotEmpty) _nav.reset();
+    setState(() {});
     _debounce = Timer(const Duration(milliseconds: 300), () {
       final trimmed = query.trim();
       if (trimmed.isNotEmpty && trimmed.length < 2) return;
@@ -54,6 +83,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   void _onHistorySelected(String query) {
     _debounce?.cancel();
     _searchController.text = query;
+    _nav.reset();
     setState(() {});
     ref.read(searchProvider.notifier).search(query: query);
   }
@@ -94,6 +124,8 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
+    final history = ref.watch(searchHistoryProvider);
+    _nav.clamp(history.length);
     final colors = Theme.of(context).colorScheme;
     final loc = AppLocalizations.of(context);
 
@@ -187,9 +219,15 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
             ),
           ),
           const SizedBox(height: AppDimensions.sm),
-          if (searchState is SearchIdle)
-            SearchHistoryChips(onSelected: _onHistorySelected, compact: true),
-          Expanded(child: _buildResults(searchState, colors, loc)),
+          Expanded(
+            child: _showRows
+                ? SearchHistoryRows(
+                    onSelected: _onHistorySelected,
+                    selectedIndex: _nav.index,
+                    controller: _rowsScroll,
+                  )
+                : _buildResults(searchState, colors, loc),
+          ),
         ],
       ),
     );
