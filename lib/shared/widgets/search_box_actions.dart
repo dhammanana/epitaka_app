@@ -36,6 +36,10 @@ class SearchBoxSuffixActions extends StatelessWidget {
   final bool showClear;
   final VoidCallback onClear;
 
+  /// Boxes that search only on request show a search button before the clear
+  /// button.
+  final VoidCallback? onSearch;
+
   /// Regex state of the box: on when the box takes a pattern. Without
   /// [onToggleRegex] the menu lists no regex item at all.
   final bool regexOn;
@@ -53,6 +57,7 @@ class SearchBoxSuffixActions extends StatelessWidget {
     super.key,
     required this.onClear,
     this.showClear = false,
+    this.onSearch,
     this.regexOn = false,
     this.onToggleRegex,
     this.velthuisHelp = true,
@@ -69,6 +74,13 @@ class SearchBoxSuffixActions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (onSearch != null)
+          IconButton(
+            icon: const Icon(Icons.search, size: 18),
+            tooltip: loc.search,
+            onPressed: onSearch,
+            style: _compactStyle,
+          ),
         if (showClear)
           _clearButton(loc),
         if (_hasMenu)
