@@ -17,6 +17,7 @@ import '../../../shared/widgets/font_size_adjuster.dart';
 import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../providers/search_provider.dart';
+import 'match_mode_switch.dart';
 import 'search_history_chips.dart';
 import '../../gavesana/screens/gavesana_drawer.dart';
 import 'search_results_view.dart';
@@ -237,50 +238,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_searchController.text.isNotEmpty) _executeSearch();
   }
 
-  void _toggleFuzzy() async {
-    final on = ref.read(searchFuzzyProvider);
-    await ref.read(searchFuzzyProvider.notifier).set(!on);
-    if (_searchController.text.isNotEmpty) _executeSearch();
-  }
-
-  /// The Fuzzy pill. ON (filled, the default): every term is a prefix, so
-  /// `katv` still finds `katvāna`. OFF (plain): whole words only, exact
-  /// matching. Same chip TPR has above its search results.
-  Widget _fuzzyChip(ColorScheme colors, AppLocalizations loc) {
-    final on = ref.watch(searchFuzzyProvider);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _toggleFuzzy,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: on ? colors.secondaryContainer : colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              on ? Icons.blur_on : Icons.center_focus_strong,
-              size: 14,
-              color: on
-                  ? colors.onSecondaryContainer
-                  : colors.onSurfaceVariant,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              on ? loc.fuzzy : loc.exact,
-              style: AppTypography.labelSmall.copyWith(
-                color: on
-                    ? colors.onSecondaryContainer
-                    : colors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// Sets the mode from the Fuzzy | Exact | Rx switch. Fuzzy or Exact also
+  /// leaves rx, and the search runs again in the new mode.
+  Future<void> _selectMatchMode(MatchMode mode) async {
+    if (mode != MatchMode.regex) {
+      await ref.read(searchFuzzyProvider.notifier).set(mode == MatchMode.fuzzy);
+      if (!mounted) return;
+    }
+    if (ref.read(searchRegexProvider) != (mode == MatchMode.regex)) {
+      _toggleRegex();
+    } else if (_searchController.text.isNotEmpty) {
+      _executeSearch();
+    }
   }
 
   /// Fill the search bar with a previous query from history and run it.
@@ -395,6 +364,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             },
             regexOn: regexOn,
             onToggleRegex: _toggleRegex,
+            // The Fuzzy | Exact | Rx switch holds rx.
+            regexInMenu: false,
           ),
           errorText: patternMessage,
         ),
@@ -409,6 +380,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildOptionsBar(ColorScheme colors, SearchState searchState) {
     final loc = AppLocalizations.of(context);
+    final fuzzyOn = ref.watch(searchFuzzyProvider);
+    final matchMode = ref.watch(searchRegexProvider)
+        ? MatchMode.regex
+        : (fuzzyOn ? MatchMode.fuzzy : MatchMode.exact);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppDimensions.marginMobile,
@@ -420,110 +395,141 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Row(
             children: [
-              // Fuzzy chip. ON: every term is a prefix (`katv*` finds
-              // `katvāna`); OFF: whole words only (`katvā` exactly). A
-              // pattern sets its own matching, so the chip hides for rx.
-              if (!ref.watch(searchRegexProvider)) ...[
-                _fuzzyChip(colors, loc),
-                const SizedBox(width: 8),
-              ],
-
-              // Word distance selector. A pattern sets its own distance.
-              if (!ref.watch(searchRegexProvider)) ...[
-                PopupMenuButton<int>(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: loc.wordDistance,
-                  initialValue: _wordDistance,
-                  onSelected: (val) {
-                    setState(() => _wordDistance = val);
-                    if (_searchController.text.isNotEmpty) _executeSearch();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(value: 0, child: Text(loc.anyDistance)),
-                    const PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: 3,
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.check,
-                            size: 16,
-                            color: Colors.transparent,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(loc.withinNWords(3)),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(value: 1, child: Text(loc.withinNWords(1))),
-                    PopupMenuItem(value: 2, child: Text(loc.withinNWords(2))),
-                    PopupMenuItem(value: 5, child: Text(loc.withinNWords(5))),
-                    PopupMenuItem(value: 10, child: Text(loc.withinNWords(10))),
-                  ],
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _wordDistance > 0
-                          ? colors.secondaryContainer
-                          : (_isMultiWord
-                                ? colors.tertiaryContainer
-                                : colors.surfaceContainerHighest),
-                      borderRadius: BorderRadius.circular(16),
-                      border: _isMultiWord && _wordDistance == 0
-                          ? Border.all(
-                              color: colors.tertiary.withValues(alpha: 0.5),
-                            )
-                          : null,
-                    ),
+              // A long label (Thai, Lao) on a narrow screen shrinks the
+              // chips instead of pushing the row past its edge.
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.swap_horiz,
-                          size: 14,
-                          color: _wordDistance > 0
-                              ? colors.onSecondaryContainer
-                              : (_isMultiWord
-                                    ? colors.onTertiaryContainer
-                                    : colors.onSurfaceVariant),
+                        MatchModeSwitch(
+                          mode: matchMode,
+                          onSelected: _selectMatchMode,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _wordDistance > 0
-                              ? '${loc.dist}: $_wordDistance'
-                              : loc.dist,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: _wordDistance > 0
-                                ? colors.onSecondaryContainer
-                                : (_isMultiWord
-                                      ? colors.onTertiaryContainer
-                                      : colors.onSurfaceVariant),
-                            fontWeight: _wordDistance > 0 || _isMultiWord
-                                ? FontWeight.w600
-                                : FontWeight.w400,
+                        const SizedBox(width: 8),
+
+                        // Word distance selector. A pattern sets its own distance.
+                        if (!ref.watch(searchRegexProvider)) ...[
+                          PopupMenuButton<int>(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            tooltip: loc.wordDistance,
+                            initialValue: _wordDistance,
+                            onSelected: (val) {
+                              setState(() => _wordDistance = val);
+                              if (_searchController.text.isNotEmpty) {
+                                _executeSearch();
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                value: 0,
+                                child: Text(loc.anyDistance),
+                              ),
+                              const PopupMenuDivider(),
+                              PopupMenuItem(
+                                value: 3,
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.check,
+                                      size: 16,
+                                      color: Colors.transparent,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(loc.withinNWords(3)),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 1,
+                                child: Text(loc.withinNWords(1)),
+                              ),
+                              PopupMenuItem(
+                                value: 2,
+                                child: Text(loc.withinNWords(2)),
+                              ),
+                              PopupMenuItem(
+                                value: 5,
+                                child: Text(loc.withinNWords(5)),
+                              ),
+                              PopupMenuItem(
+                                value: 10,
+                                child: Text(loc.withinNWords(10)),
+                              ),
+                            ],
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _wordDistance > 0
+                                    ? colors.secondaryContainer
+                                    : (_isMultiWord
+                                          ? colors.tertiaryContainer
+                                          : colors.surfaceContainerHighest),
+                                borderRadius: BorderRadius.circular(16),
+                                border: _isMultiWord && _wordDistance == 0
+                                    ? Border.all(
+                                        color: colors.tertiary.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.swap_horiz,
+                                    size: 14,
+                                    color: _wordDistance > 0
+                                        ? colors.onSecondaryContainer
+                                        : (_isMultiWord
+                                              ? colors.onTertiaryContainer
+                                              : colors.onSurfaceVariant),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _wordDistance > 0
+                                        ? '${loc.dist}: $_wordDistance'
+                                        : loc.dist,
+                                    style: AppTypography.labelSmall.copyWith(
+                                      color: _wordDistance > 0
+                                          ? colors.onSecondaryContainer
+                                          : (_isMultiWord
+                                                ? colors.onTertiaryContainer
+                                                : colors.onSurfaceVariant),
+                                      fontWeight:
+                                          _wordDistance > 0 || _isMultiWord
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.arrow_drop_down,
+                                    size: 16,
+                                    color: _wordDistance > 0
+                                        ? colors.onSecondaryContainer
+                                        : (_isMultiWord
+                                              ? colors.onTertiaryContainer
+                                              : colors.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                        Icon(
-                          Icons.arrow_drop_down,
-                          size: 16,
-                          color: _wordDistance > 0
-                              ? colors.onSecondaryContainer
-                              : (_isMultiWord
-                                    ? colors.onTertiaryContainer
-                                    : colors.onSurfaceVariant),
-                        ),
+                          const SizedBox(width: 8),
+                        ],
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
-
-              const Spacer(),
+              ),
 
               // Filter toggle
               IconButton(
