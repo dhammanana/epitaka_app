@@ -463,6 +463,15 @@ void main() {
         containsAll(['dhammaṃ', 'dhammā']),
       );
     });
+
+    test('Exact: assā offers only words that start with assā', () async {
+      final fuzzy = await appDb.getSearchSuggestions('assā');
+      expect(fuzzy.map((s) => s.pali), contains('assa'));
+
+      final exact = await appDb.getSearchSuggestions('assā', exact: true);
+      expect(exact, isNotEmpty);
+      expect(exact.every((s) => s.pali.startsWith('assā')), isTrue);
+    });
   });
 
   group('translation index (en)', () {

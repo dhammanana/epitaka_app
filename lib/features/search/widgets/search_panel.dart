@@ -25,7 +25,6 @@ import '../../../shared/widgets/history_nav.dart';
 import '../providers/search_history_provider.dart';
 import 'search_history_rows.dart';
 import 'match_mode_switch.dart';
-import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
 import 'search_row_list.dart';
@@ -1211,12 +1210,16 @@ class _ResultItemTile extends ConsumerWidget {
     // whole-word search never lights up a folded spelling (`assā` → `assa`).
     final List<String> searchTerms;
     final bool fuzzy;
+    final bool regex;
     if (searchState is SearchResults) {
       final q = item.highlightTerms?.join(' ') ?? searchState.query;
-      fuzzy = searchState.fuzzy;
+      // Rx terms are the matched text itself: never folded.
+      regex = searchState.regex;
+      fuzzy = regex ? false : searchState.fuzzy;
       searchTerms = paliSearchHighlightTerms(q, fuzzy: fuzzy);
     } else {
       fuzzy = true;
+      regex = false;
       searchTerms = const [];
     }
 
@@ -1290,6 +1293,7 @@ class _ResultItemTile extends ConsumerWidget {
                   line: line,
                   searchTerms: searchTerms,
                   fuzzy: fuzzy,
+                  regex: regex,
                   paliTextStyle: paliTextStyle,
                   transTextStyle: transTextStyle,
                   colors: colors,
@@ -1314,6 +1318,9 @@ class _PanelLineTile extends StatelessWidget {
   /// matches only the exact whole word.
   final bool fuzzy;
 
+  /// Whether the terms are the exact text an Rx pattern matched.
+  final bool regex;
+
   final TextStyle paliTextStyle;
   final TextStyle transTextStyle;
   final ColorScheme colors;
@@ -1324,6 +1331,7 @@ class _PanelLineTile extends StatelessWidget {
     required this.line,
     required this.searchTerms,
     this.fuzzy = true,
+    this.regex = false,
     required this.paliTextStyle,
     required this.transTextStyle,
     required this.colors,
@@ -1354,6 +1362,7 @@ class _PanelLineTile extends StatelessWidget {
               text: line.pali,
               searchTerms: searchTerms,
               fuzzy: fuzzy,
+              regex: regex,
               script: script,
               style: paliTextStyle.copyWith(
                 fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
@@ -1387,6 +1396,7 @@ class _PanelLineTile extends StatelessWidget {
     required String text,
     required List<String> searchTerms,
     required bool fuzzy,
+    bool regex = false,
     required Script script,
     required TextStyle style,
     required Color highlightColor,
@@ -1415,6 +1425,7 @@ class _PanelLineTile extends StatelessWidget {
       terms: searchTerms,
       isPali: true,
       fuzzy: fuzzy,
+      regex: regex,
       highlightColor: highlightColor,
       beforeChars: 30,
       afterChars: 45,

@@ -20,6 +20,10 @@ import '../../../shared/utils/html_text_parser.dart';
 /// diacritics folded (`assā` finds `assa`); OFF the search was a whole-word
 /// one, so a term matches only its exact, whole word — `assā` never lights up
 /// `assa`, which the search never matched either.
+///
+/// [regex] is an Rx search: a term is the exact text the pattern matched,
+/// so it lights up wherever that text stands, diacritics kept, whole word or
+/// not. The snippet window is cut around that match, not around a folded one.
 List<InlineSpan> buildSearchSnippetSpans({
   required String html,
   required TextStyle baseStyle,
@@ -29,6 +33,7 @@ List<InlineSpan> buildSearchSnippetSpans({
   int beforeChars = 40,
   int afterChars = 70,
   bool fuzzy = true,
+  bool regex = false,
 }) {
   final allSpans = HtmlTextParser.parse(html, baseStyle);
 
@@ -61,6 +66,7 @@ List<InlineSpan> buildSearchSnippetSpans({
     nterms,
     isPali: isPali,
     fuzzy: fuzzy,
+    regex: regex,
   );
   if (match == null) return allSpans;
 
@@ -86,6 +92,7 @@ List<InlineSpan> buildSearchSnippetSpans({
       baseStyle: baseStyle,
       isPali: isPali,
       fuzzy: fuzzy,
+      regex: regex,
       highlightColor: highlightColor,
     );
   }
@@ -114,6 +121,7 @@ List<InlineSpan> buildSearchSnippetSpans({
     baseStyle: baseStyle,
     isPali: isPali,
     fuzzy: fuzzy,
+    regex: regex,
     highlightColor: highlightColor,
   );
 }
@@ -125,6 +133,7 @@ List<InlineSpan> buildSearchSnippetSpans({
   List<String> nterms, {
   required bool isPali,
   required bool fuzzy,
+  bool regex = false,
 }) {
   int? bestStart;
   int bestEnd = -1;
@@ -132,7 +141,9 @@ List<InlineSpan> buildSearchSnippetSpans({
   if (isPali) {
     final lower = text.toLowerCase();
     for (final nt in nterms) {
-      final starts = fuzzy
+      final starts = regex
+          ? _substringStarts(lower, nt)
+          : fuzzy
           ? _foldedStarts(lower, nt)
           : _wholeWordStarts(lower, nt);
       if (starts.isEmpty) continue;
@@ -173,6 +184,20 @@ List<int> _foldedStarts(String text, String term) {
   return starts;
 }
 
+/// Start indices where [term] occurs in [text] exactly as written, inside a
+/// longer word too: the Rx rule. [text] is the lowercased haystack.
+List<int> _substringStarts(String text, String term) {
+  final starts = <int>[];
+  for (
+    var at = text.indexOf(term);
+    at >= 0;
+    at = text.indexOf(term, at + term.length)
+  ) {
+    starts.add(at);
+  }
+  return starts;
+}
+
 /// Start indices where [term] occurs in [text] as a whole word, exactly as
 /// spelled: the Fuzzy OFF rule. [text] is the lowercased haystack.
 List<int> _wholeWordStarts(String text, String term) {
@@ -197,6 +222,7 @@ List<InlineSpan> _highlightSpans(
   required TextStyle baseStyle,
   required bool isPali,
   required bool fuzzy,
+  bool regex = false,
   required Color highlightColor,
 }) {
   final result = <InlineSpan>[];
@@ -215,7 +241,9 @@ List<InlineSpan> _highlightSpans(
     if (isPali) {
       final lower = spanText.toLowerCase();
       for (final nt in nterms) {
-        final starts = fuzzy
+        final starts = regex
+            ? _substringStarts(lower, nt)
+            : fuzzy
             ? _foldedStarts(lower, nt)
             : _wholeWordStarts(lower, nt);
         for (final start in starts) {
