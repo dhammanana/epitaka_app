@@ -1871,12 +1871,19 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   Future<List<SearchSuggestion>> getSuggestions(String prefix) async {
     if (prefix.trim().length < kSearchSuggestionMinLength) return [];
-    final key = prefix.trim().toLowerCase();
+    // The Exact switch changes the words, so the cache keeps one entry per
+    // mode: `assā` in Exact must not reuse the folded words from Fuzzy.
+    final exact = !_ref.read(searchFuzzyProvider);
+    final key = '${exact ? 'exact' : 'fuzzy'}|${prefix.trim().toLowerCase()}';
     final cached = _suggestionCache[key];
     if (cached != null) return cached;
     try {
       final appDb = await _ref.read(appDbProvider.future);
-      final result = await appDb.getSearchSuggestions(prefix, limit: 10);
+      final result = await appDb.getSearchSuggestions(
+        prefix,
+        limit: 10,
+        exact: exact,
+      );
       while (_suggestionCache.length >= 100) {
         _suggestionCache.remove(_suggestionCache.keys.first);
       }

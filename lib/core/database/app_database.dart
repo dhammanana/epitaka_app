@@ -2174,12 +2174,42 @@ class AppDatabase extends _$AppDatabase {
   /// runs once per language per session instead of on every keystroke.
   final Set<String> _knownTranslationSuggestionTables = {};
 
+  /// Pāli words that start with exactly [prefix], diacritics kept, for the
+  /// Exact search mode, where `assā` must not offer `assa`.
+  Future<List<QueryRow>> _exactSuggestionRows(
+    String prefix,
+    String? upper,
+    int limit,
+  ) {
+    if (upper == null) {
+      return customSelect(
+        'SELECT pali, fuzzy, count FROM search_words '
+        'WHERE pali LIKE ?1 ORDER BY count DESC LIMIT ?2',
+        variables: [Variable.withString('$prefix%'), Variable.withInt(limit)],
+      ).get();
+    }
+    return customSelect(
+      'SELECT pali, fuzzy, count FROM search_words '
+      'WHERE pali LIKE ?1 AND pali >= ?2 AND pali < ?3 '
+      'ORDER BY count DESC LIMIT ?4',
+      variables: [
+        Variable.withString('$prefix%'),
+        Variable.withString(prefix),
+        Variable.withString(upper),
+        Variable.withInt(limit),
+      ],
+    ).get();
+  }
+
   /// Get word suggestions for autocomplete. Returns words that start with
-  /// [prefix] (or whose fuzzy equivalent does), ordered by frequency.
+  /// [prefix] (or whose fuzzy equivalent does), ordered by frequency. With
+  /// [exact] only words spelled with [prefix] come back, the way the Exact
+  /// search mode matches.
   Future<List<SearchSuggestion>> getSearchSuggestions(
     String prefix, {
     int limit = 10,
     String? translationLangCode,
+    bool exact = false,
   }) async {
     final trimmed = prefix.trim().toLowerCase();
     if (trimmed.isEmpty) return [];
@@ -2188,7 +2218,9 @@ class AppDatabase extends _$AppDatabase {
 
     final paliUpper = _prefixUpperBound(trimmed);
     final fuzzyUpper = _prefixUpperBound(fuzzy);
-    final rows = (paliUpper == null || fuzzyUpper == null)
+    final rows = exact
+        ? await _exactSuggestionRows(trimmed, paliUpper, limit)
+        : (paliUpper == null || fuzzyUpper == null)
         ? await customSelect(
             'SELECT pali, fuzzy, count FROM search_words '
             'WHERE pali LIKE ?1 OR fuzzy LIKE ?2 '

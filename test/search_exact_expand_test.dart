@@ -113,4 +113,21 @@ void main() {
         item.paraId,
     }, {1});
   });
+
+  test('the word list follows the switch, also for a prefix seen before', () async {
+    final container = makeContainer();
+    final notifier = container.read(searchProvider.notifier);
+
+    final fuzzy = await notifier.getSuggestions('assā');
+    expect(fuzzy.map((s) => s.pali), contains('assa'));
+
+    await container.read(searchFuzzyProvider.notifier).set(false);
+    final exact = await notifier.getSuggestions('assā');
+    expect(exact, isNotEmpty);
+    expect(exact.every((s) => s.pali.startsWith('assā')), isTrue);
+
+    await container.read(searchFuzzyProvider.notifier).set(true);
+    final again = await notifier.getSuggestions('assā');
+    expect(again.map((s) => s.pali), contains('assa'));
+  });
 }
