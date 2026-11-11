@@ -10,6 +10,8 @@
 /// Coverage:
 ///   * diacritic-insensitive matching (`katva` ↔ `katvā`, `cakkhunca` ↔
 ///     `cakkhuñca`, …) — the `remove_diacritics 1` contract
+///   * exact (Fuzzy off) matching against the strict `remove_diacritics 0`
+///     index: whole words only, diacritics kept (`assā` ≠ `assa`)
 ///   * multi-word queries (AND + prefix terms) and NEAR distance
 ///   * cross-script search — script queries converted to Roman via
 ///     [convertToRomanPali] find Roman-indexed text; raw unconverted script
@@ -116,6 +118,14 @@ Future<EpitakaDatabase> _fixtureEpitakaDb() async {
     ('dn1', 7, 1, 'namo tassa bhagavato arahato sammāsambuddhassa'),
     ('kv', 10, 1, 'katvāna katvā dhammaṃ'),
     ('vbh', 20, 1, 'katvā rūpaṃ vedanā saññā'),
+    // Exact search must tell these three apart: the word, the word inside a
+    // longer one, and the same letters without the macron.
+    ('dn1', 8, 1, 'āpatti pārājikassā ti'),
+    ('dn1', 9, 1, 'yathā assā gacchanti'),
+    ('dn1', 10, 1, 'tassa assa hoti'),
+    // The reader bolds the word and ends the bold before its "ti". Tags are
+    // removed when indexing, so the two pieces stay one searchable word.
+    ('dn1', 11, 1, 'punapi <b>tādisan</b>ti attho'),
   ];
   for (final (bookId, paraId, lineId, pali) in sentences) {
     await db.customStatement(
@@ -264,48 +274,65 @@ void main() {
       return {for (final r in rows) (r.bookId, r.firstParaId ?? -1)};
     }
 
-    test('`katva` exact matches every paragraph holding the whole token '
-        '`katva` (= `katvā`) — but not when only a longer form exists',
-        () async {
+    test('`katva` and `katvā` are different exact words', () async {
+      // diacritics are not folded when Fuzzy is off: `katva` is no token.
+      expect(await exact('katva'), isEmpty);
       // kv10 and vbh20 also carry a bare `katvā` next to their `katvāna`,
       // so they match on the bare token itself.
       expect(
-        await exact('katva'),
+        await exact('katvā'),
         {('dn1', 3), ('dn1', 6), ('kv', 10), ('vbh', 20)},
       );
     });
 
-    test('a truncated term matches nothing exact — that is what the fuzzy '
-        '(prefix) mode is for', () async {
+    test('a truncated or longer form is a different token', () async {
       expect(await exact('katv'), isEmpty);
       expect(await exact('pandit'), isEmpty); // the token is `pandito`
       expect(await exact('rup'), isEmpty); // tokens are `rupe` and `rupam`
+      expect(await exact('katvāna'), {('kv', 10)});
     });
 
-    test('`dhamma` exact means the end-less form: `dhammā`/`dhammaṃ` fold '
-        'to different tokens than the bare word', () async {
-      // dn1 5 `sabbe dhammā anattā` has the bare token (folded dhammā);
-      // dn1 4 `dhammaṃ khetta` and kv10 `dhammaṃ` fold to `dhammam` and
-      // stay out.
-      expect(await exact('dhamma'), {('dn1', 5)});
+    test('a word is found only as a whole word', () async {
+      // The same letters inside `pārājikassā` are not the word `assā`.
+      expect(await exact('assā'), {('dn1', 9)});
+      expect(await exact('assa'), {('dn1', 10)});
+      expect(await exact('pārājikassā'), {('dn1', 8)});
+    });
+
+    test('`dhamma` exact means the bare spelling, not `dhammā` or '
+        '`dhammaṃ`', () async {
+      expect(await exact('dhamma'), isEmpty);
+      expect(await exact('dhammā'), {('dn1', 5)});
+      expect(await exact('dhammaṃ'), {('dn1', 4), ('kv', 10)});
+    });
+
+    test('a word split by a bold tag is still one word', () async {
+      // `<b>tādisan</b>ti` is indexed as `tādisanti`.
+      expect(await exact('tādisanti'), {('dn1', 11)});
     });
 
     test('exact two-word query with distance still finds the pair', () async {
-      // "katvā na upeti so paṇḍito": katva … pandito are 4 tokens apart.
-      expect(await exact('katva pandito', distance: 3), {('dn1', 3)});
-      expect(await exact('katva pandito', distance: 2), isEmpty);
+      // "katvā na upeti so paṇḍito": katvā … paṇḍito are 4 tokens apart.
+      // The exact query keeps the ṇ/ḍ, because the strict index does.
+      expect(await exact('katvā paṇḍito', distance: 3), {('dn1', 3)});
+      expect(await exact('katvā paṇḍito', distance: 2), isEmpty);
     });
 
-    test('exact counts per book drop the prefix-only and folded-ṃ matches',
-        () async {
+    test('exact counts per book use the strict index too', () async {
       expect(
         await appDb.countPaliResultsByBook('katv', exact: true),
         isEmpty,
       );
       expect(
         await appDb.countPaliResultsByBook('katva', exact: true),
+        isEmpty,
+      );
+      expect(
+        await appDb.countPaliResultsByBook('katvā', exact: true),
         {'dn1': 2, 'kv': 1, 'vbh': 1},
       );
+      // Translation indexes stay diacritic-insensitive (their text is not
+      // Pāli, and non-Latin scripts have no Latin diacritics to fold).
       expect(
         await appDb
             .searchTranslationFts('en', 'dhamma', exact: true)

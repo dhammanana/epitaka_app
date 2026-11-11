@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/theme/app_dimensions.dart';
@@ -18,8 +19,11 @@ import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/native_lookup_service.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../router/app_router.dart' show AppRoutes;
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
+import '../../map/models/map_data.dart';
+import '../../map/widgets/dictionary_place_card.dart';
 import '../../search/services/regex_search.dart';
 import '../providers/dictionary_header_provider.dart';
 import 'dictionary_header_icons.dart';
@@ -827,7 +831,7 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                                   ),
                                 ),
                                 LookupHistoryButtons(
-                                                    onBack: () =>
+                                  onBack: () =>
                                       _stepHistory(_lookupHistory.goBack()),
                                   onForward: () =>
                                       _stepHistory(_lookupHistory.goForward()),
@@ -1087,7 +1091,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   ) {
     final pali = ref.watch(dictionaryPaliProvider);
     final paliSize = (pali.fontSize * 0.8).clamp(kDictionaryMinTextSize, 26.0);
-    final idlePromptSize = (pali.fontSize * 0.72).clamp(kDictionaryMinTextSize, 24.0);
+    final idlePromptSize = (pali.fontSize * 0.72).clamp(
+      kDictionaryMinTextSize,
+      24.0,
+    );
     // Attach the sheet's scroll controller even when idle: the header's
     // drag-to-resize/close reads the sheet size via the controller, and
     // DraggableScrollableController.isAttached requires the controller to
@@ -1199,7 +1206,10 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
   List<Widget> _prefixSuggestionsSlivers(ColorScheme colors, WidgetRef ref) {
     final pali = ref.watch(dictionaryPaliProvider);
 
-    final didYouMeanSize = (pali.fontSize * 0.64).clamp(kDictionaryMinTextSize, 18.0);
+    final didYouMeanSize = (pali.fontSize * 0.64).clamp(
+      kDictionaryMinTextSize,
+      18.0,
+    );
     return ref
         .watch(dpdClosestMatchesProvider(_query))
         .when(
@@ -1344,7 +1354,8 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
             // per-frame cost.
             final listKey = entries
                 .map(
-                  (e) => '${e.item.id}:${e.item.label}:${e.enabled}:${e.item.ready}',
+                  (e) =>
+                      '${e.item.id}:${e.item.label}:${e.enabled}:${e.item.ready}',
                 )
                 .join('|');
             final expandedKey = [
@@ -1415,6 +1426,21 @@ class _DictionarySheetState extends ConsumerState<DictionarySheet> {
                       anchors: _anchors,
                       onJump: (id) => _anchors.jumpTo(id, scrollController),
                       showSummary: showSummary,
+                      leading: DictionaryPlaceCard(
+                        lookup: lookup,
+                        onOpen: (name) {
+                          // The sheet is a modal on the root navigator: close
+                          // it first, then open the map, so Back returns to
+                          // the reader rather than to the sheet.
+                          final router = GoRouter.of(context);
+                          Navigator.of(context).pop();
+                          router.push(
+                            name is MapPlace
+                                ? AppRoutes.mapAt(name.slug)
+                                : AppRoutes.mapPlaceAt(name.slug),
+                          );
+                        },
+                      ),
                     ))
                       SliverToBoxAdapter(child: w),
                     if (includePrefixSuggestions)

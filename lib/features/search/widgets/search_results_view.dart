@@ -229,7 +229,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
       case SearchRowKind.bookHeader:
         final summary = row.summary!;
         dividerBelow = summary.isExpanded;
-        content = _BookResultHeader(
+        content = SearchBookHeader(
           summary: summary,
           colors: colors,
           onToggleExpanded: () {
@@ -245,9 +245,11 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
         final summary = row.summary!;
         final item = row.item!;
         dividerBelow = true;
-        content = _SearchResultItemTile(
+        content = SearchResultItemView(
           item: item,
           colors: colors,
+          query: state.query,
+          fuzzy: state.fuzzy,
           onTap: () => _onResultTap(context, ref, summary, item),
           onLongPress: () => _onResultLongPress(context, ref, summary, item),
         );
@@ -547,12 +549,17 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
 
 // ── Book Result Header (collapsible row) ──────────────────────────────
 
-class _BookResultHeader extends ConsumerWidget {
+/// The collapsible header of one book's results.
+///
+/// Public so other result lists (for example a name's occurrences) group by
+/// book exactly like the search does.
+class SearchBookHeader extends ConsumerWidget {
   final BookResultSummary summary;
   final ColorScheme colors;
   final VoidCallback onToggleExpanded;
 
-  const _BookResultHeader({
+  const SearchBookHeader({
+    super.key,
     required this.summary,
     required this.colors,
     required this.onToggleExpanded,
@@ -905,15 +912,29 @@ class _HeadingResultsCardState extends ConsumerState<_HeadingResultsCard> {
 
 // ── Search Result Item Tile (line-by-line) ───────────────────────────────
 
-class _SearchResultItemTile extends ConsumerWidget {
+/// One matching paragraph, rendered exactly like a search result.
+///
+/// Public so other result lists (for example a name's occurrences) reuse the
+/// same book/paragraph cards, script conversion and `<b>`/`<i>` support.
+class SearchResultItemView extends ConsumerWidget {
   final SearchResultItem item;
   final ColorScheme colors;
+
+  /// The words to highlight ([item.highlightTerms] takes precedence).
+  final String query;
+
+  /// Whether [query] is matched with diacritics folded.
+  final bool fuzzy;
+
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
-  const _SearchResultItemTile({
+  const SearchResultItemView({
+    super.key,
     required this.item,
     required this.colors,
+    required this.query,
+    this.fuzzy = true,
     required this.onTap,
     this.onLongPress,
   });
@@ -921,22 +942,20 @@ class _SearchResultItemTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
-    final searchState = ref.watch(searchProvider);
     final activeLang = settings.enabledTranslations.isNotEmpty
         ? settings.enabledTranslations.first
         : (settings.showTranslation ? settings.primaryTranslationLang : null);
     final script = settings.paliScript;
 
-    // Extract search terms from the current query, or in regex mode from
-    // the pieces the pattern matched. Fuzzy off keeps the diacritics, so a
-    // whole-word search never lights up a folded spelling (`assā` → `assa`).
-    final highlightQuery = searchState is SearchResults
-        ? item.highlightTerms?.join(' ') ?? searchState.query
-        : '';
-    final bool fuzzy = searchState is SearchResults ? searchState.fuzzy : true;
-    final List<String> searchTerms = searchState is SearchResults
-        ? paliSearchHighlightTerms(highlightQuery, fuzzy: fuzzy)
-        : const [];
+    // Extract search terms from the query, or in regex mode from the pieces
+    // the pattern matched. Fuzzy off keeps the diacritics, so a whole-word
+    // search never lights up a folded spelling (`assā` → `assa`).
+    final highlightQuery = item.highlightTerms?.join(' ') ?? query;
+    final bool fuzzyMatch = fuzzy;
+    final List<String> searchTerms = paliSearchHighlightTerms(
+      highlightQuery,
+      fuzzy: fuzzyMatch,
+    );
 
     // Get typography for Pali
     final paliTypo = settings.typography.pali;
@@ -1029,7 +1048,7 @@ class _SearchResultItemTile extends ConsumerWidget {
                   line: line,
                   searchTerms: searchTerms,
                   query: rawQuery,
-                  fuzzy: fuzzy,
+                  fuzzy: fuzzyMatch,
                   paliTextStyle: paliTextStyle,
                   transTextStyle: transTextStyle,
                   colors: colors,

@@ -8,6 +8,9 @@ import '../features/gavesana/screens/gavesana_screen.dart';
 import '../features/script_converter/screens/script_converter_screen.dart';
 import '../features/guide/screens/feature_guide_screen.dart';
 import '../features/library/screens/library_screen.dart';
+import '../features/map/screens/map_screen.dart';
+import '../features/map/screens/names_screen.dart';
+import '../features/map/screens/place_detail_screen.dart';
 import '../features/reader/screens/reader_screen.dart';
 import '../features/search/widgets/search_screen.dart';
 import '../features/settings/screens/appearance_settings_screen.dart';
@@ -56,7 +59,17 @@ class AppRoutes {
   static const contents = '/contents/:bookId';
   static const outline = '/outline/:bookId';
   static const gavesana = '/gavesana';
+  static const map = '/map';
+  static const mapNames = '/map/names';
+  static const mapPlace = '/map/place/:slug';
   static const aiQa = '/ai-qa';
+
+  /// The map centred on [slug] (used by the dictionary's map card).
+  static String mapAt(String slug) => '$map?place=${Uri.encodeComponent(slug)}';
+
+  /// A place's page (map marker, place list, map card details).
+  static String mapPlaceAt(String slug) =>
+      '/map/place/${Uri.encodeComponent(slug)}';
   static const featureGuide = '/guide';
 }
 
@@ -212,6 +225,23 @@ GoRouter buildRouter({GlobalKey<NavigatorState>? navigatorKey}) {
             builder: (context, state) => const TranslatorRunScreen(),
           ),
         ],
+      ),
+      GoRoute(
+        path: AppRoutes.map,
+        name: 'map',
+        builder: (context, state) =>
+            MapScreen(placeSlug: state.uri.queryParameters['place']),
+      ),
+      GoRoute(
+        path: AppRoutes.mapNames,
+        name: 'mapNames',
+        builder: (context, state) => const NamesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.mapPlace,
+        name: 'mapPlace',
+        builder: (context, state) =>
+            PlaceDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path: AppRoutes.gavesana,
