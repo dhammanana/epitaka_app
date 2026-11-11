@@ -1414,6 +1414,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
       regex: current.regex,
+      fuzzy: current.fuzzy,
     );
 
     await _loadBookPage(summaryIndex);
@@ -1443,6 +1444,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       enabledCategories: _enabledCategories,
       enabledNikayas: _enabledNikayas,
       regex: current.regex,
+      fuzzy: current.fuzzy,
     );
   }
 

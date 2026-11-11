@@ -25,7 +25,6 @@ import '../../../shared/widgets/history_nav.dart';
 import '../providers/search_history_provider.dart';
 import 'search_history_rows.dart';
 import 'match_mode_switch.dart';
-import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
 import 'search_results_navigator.dart';
 import 'search_row_list.dart';
