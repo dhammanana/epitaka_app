@@ -104,6 +104,7 @@ void main() {
 
   Future<void> typeCode(WidgetTester tester, String code) async {
     await tester.enterText(find.byType(TextField), code);
+    await tester.testTextInput.receiveAction(TextInputAction.go);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pumpAndSettle();
   }
@@ -115,6 +116,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(GoToSuttaDialog), findsNothing);
   }
+
+  testWidgets('typing alone lists nothing until Enter or the button',
+      (tester) async {
+    await pumpHost(tester);
+    await tester.enterText(find.byType(TextField), 'mn10');
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('MN10 · '), findsNothing);
+    expect(find.textContaining('No sutta found'), findsNothing);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(TextField),
+        matching: find.byIcon(Icons.search),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('MN10 · '), findsOneWidget);
+
+    // An edit drops the old list until the next search.
+    await tester.enterText(find.byType(TextField), 'mn100');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('MN10 · '), findsNothing);
+    await closeWithEscape(tester);
+  });
 
   testWidgets('Enter opens the first match in a new tab', (tester) async {
     await pumpHost(tester);
@@ -178,6 +205,7 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     await typeKeys(tester, find.byType(TextField), 'satipa.t.thaana');
+    await tester.testTextInput.receiveAction(TextInputAction.go);
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );

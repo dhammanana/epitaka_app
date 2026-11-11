@@ -191,10 +191,32 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
+  // Typing does not search: the name scan freezes the app for seconds. An edit
+  // only drops the old results and stops a scan still running for them.
+  void _clearResults() {
+    _query++;
+    _regexJob?.cancel();
+    setState(() {
+      _results = const [];
+      _resultsFor = '';
+      _failed = false;
+      _patternError = null;
+      _patternTooSlow = false;
+      _highlight = 0;
+    });
+  }
+
+  void _search() {
+    if (_controller.text.isEmpty) return;
+    _update(_controller.text);
+  }
+
   void _toggleRegex() {
     final notifier = ref.read(goToSuttaRegexProvider.notifier);
     notifier.state = !notifier.state;
     // The box text means something else in the other mode; re-run it.
+    // The old mode's results go first, so Enter cannot open one meanwhile.
+    _clearResults();
     _update(_controller.text);
   }
 
@@ -262,6 +284,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 hintText: l10n.goToSuttaHint,
                 prefixIcon: const Icon(Icons.near_me_outlined),
                 suffixIcon: SearchBoxSuffixActions(
+                  onSearch: _search,
                   showClear: _controller.text.isNotEmpty,
                   onClear: () {
                     _controller.clear();
@@ -278,9 +301,17 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                     ? l10n.invalidPattern(_patternError!)
                     : null,
               ),
-              onChanged: _update,
+              onChanged: (_) => _clearResults(),
+              // Enter now searches first, so the box must keep focus for the
+              // arrow keys and the second Enter that opens the result.
+              onEditingComplete: () {},
               onSubmitted: (_) {
-                if (_results.isNotEmpty) _open(_results[_highlight]);
+                // Results on screen always belong to the text in the box.
+                if (_results.isNotEmpty) {
+                  _open(_results[_highlight]);
+                } else {
+                  _search();
+                }
               },
             ),
           ),
