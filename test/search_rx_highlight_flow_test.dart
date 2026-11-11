@@ -1,6 +1,5 @@
 /// The whole Rx path for `assā`: the real scan, the real [SearchNotifier],
-/// and the real result card. The sentence is from DN 1 (MN 3 reads the same):
-/// `sabbadassāvī` holds the match, `ñāṇadassanaṃ` holds only `assa`.
+/// and the real result card. The sentence is real text from MN 2.
 library;
 
 import 'dart:io';
@@ -14,6 +13,7 @@ import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/search/providers/search_provider.dart';
 import 'package:epitaka/features/search/services/regex_search.dart';
+import 'package:epitaka/features/search/widgets/search_panel.dart';
 import 'package:epitaka/features/search/widgets/search_results_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -22,7 +22,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _line = '… sabbaññū sabbadassāvī, aparisesaṃ ñāṇadassanaṃ paṭijānāti.';
+/// Holds finished results, and keeps the panel off the real index build and
+/// the word list, as `search_panel_lazy_test.dart` does.
+class _FixedSearchNotifier extends SearchNotifier {
+  _FixedSearchNotifier(super.ref, SearchResults results) {
+    state = results;
+  }
+
+  @override
+  Future<void> ensureIndexBuilt() async {}
+
+  @override
+  Future<List<SearchSuggestion>> getSuggestions(String prefix) async => [];
+}
+
+/// MN 2, §9, line 3, as stored in epitaka.db: it holds one `assā`
+/// (`dukkhadomanassānaṃ`) and two plain `assa` (`ñāyassa`, `nibbānassa`).
+const _line =
+    'Yāva supaññattā cime, bhante, bhagavatā cattāro satipaṭṭhānā sattānaṃ '
+    'visuddhiyā sokaparidevānaṃ [sokapariddavānaṃ (sī. pī.)] samatikkamāya '
+    'dukkhadomanassānaṃ atthaṅgamāya ñāyassa adhigamāya nibbānassa '
+    'sacchikiriyāya.';
 
 Future<EpitakaDatabase> _fixtureEpitakaDb(File file) async {
   final db = EpitakaDatabase(NativeDatabase(file));
@@ -95,7 +115,7 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  testWidgets('Rx assā marks only assā in the drawn card', (tester) async {
+  Future<ProviderContainer> searchRx(WidgetTester tester) async {
     final container = ProviderContainer(
       overrides: [
         appDbProvider.overrideWith((ref) async => appDb),
@@ -109,7 +129,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-
     await tester.runAsync(
       () => container
           .read(searchProvider.notifier)
@@ -118,10 +137,10 @@ void main() {
     final state = container.read(searchProvider) as SearchResults;
     expect(state.regex, isTrue);
     expect(state.bookSummaries.single.totalCount, 1);
+    return container;
+  }
 
-    final focus = FocusNode();
-    addTearDown(focus.dispose);
-    await tester.pumpWidget(
+  Widget app(ProviderContainer container, Widget body) =>
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
@@ -133,15 +152,47 @@ void main() {
             GlobalCupertinoLocalizations.delegate,
           ],
           home: Scaffold(
-            body: SizedBox(
-              width: 400,
-              height: 600,
-              child: SearchResultsView(state: state, resultsFocusNode: focus),
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(width: 400, height: 600, child: body),
             ),
           ),
         ),
+      );
+
+  testWidgets('Rx assā marks only assā in the results screen card', (
+    tester,
+  ) async {
+    final container = await searchRx(tester);
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      app(
+        container,
+        SearchResultsView(
+          state: container.read(searchProvider) as SearchResults,
+          resultsFocusNode: focus,
+        ),
       ),
     );
+    await tester.pump();
+
+    expect(_highlighted(tester), ['assā']);
+  });
+
+  testWidgets('Rx assā marks only assā in the sidebar panel', (tester) async {
+    final done = await searchRx(tester);
+    final results = done.read(searchProvider) as SearchResults;
+    final container = ProviderContainer(
+      overrides: [
+        searchProvider.overrideWith(
+          (ref) => _FixedSearchNotifier(ref, results),
+        ),
+        settingsProvider.overrideWith((ref) => SettingsNotifier(null)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(app(container, const SearchPanel()));
     await tester.pump();
 
     expect(_highlighted(tester), ['assā']);
