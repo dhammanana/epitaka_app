@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/app_db_provider.dart';
 import '../../../core/utils/startup_timing.dart';
+import '../../../features/deep_links/deep_link_service.dart';
 import '../../../features/reader/providers/reader_tabs_provider.dart';
 import '../../../router/app_router.dart';
 import '../widgets/history_tabs.dart';
@@ -22,6 +23,7 @@ enum ResumeOutcome {
   historyEmpty,
   historyError,
   notMounted,
+  launchedByLink,
 }
 
 /// Once per process, on a phone, reopen the newest reading-history entry in
@@ -39,6 +41,8 @@ enum ResumeOutcome {
 ///    fresh library.
 /// 2. Skip rules before the await: `isDesktop`, or an open reader tab, or
 ///    `/reader` already in the router stack.
+///    Also skip when a link launched the app (a shared word, say): the link
+///    decides where the user lands, and a reopened book would cover it.
 /// 3. `await ref.read(historyProvider.future)`. A loading state is not empty
 ///    — the future must be awaited. On throw or an empty list, stop.
 /// 4. Re-check after the await — `!context.mounted`, or the reader is now
@@ -51,6 +55,7 @@ Future<ResumeOutcome> resumeLastBook(
   BuildContext context,
   WidgetRef ref, {
   required bool isDesktop,
+  Future<bool> Function()? launchedByLink,
 }) async {
   // 1. Once per process — before any await.
   if (ref.read(resumeAttemptedProvider)) {
@@ -67,6 +72,13 @@ Future<ResumeOutcome> resumeLastBook(
   if (_readerBusy(context, ref)) {
     StartupTiming.mark('resume last book: readerBusy');
     return ResumeOutcome.readerBusy;
+  }
+
+  // A link that launched the app opens its own screen; the reader opened here
+  // would land on top of it, because this runs after the link's screen.
+  if (await (launchedByLink ?? DeepLinkService.instance.hasLaunchLink)()) {
+    StartupTiming.mark('resume last book: launchedByLink');
+    return ResumeOutcome.launchedByLink;
   }
 
   // 3. Read the history.
