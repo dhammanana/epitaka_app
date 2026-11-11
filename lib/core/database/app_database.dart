@@ -2203,8 +2203,8 @@ class AppDatabase extends _$AppDatabase {
 
   /// Get word suggestions for autocomplete. Returns words that start with
   /// [prefix] (or whose fuzzy equivalent does), ordered by frequency. With
-  /// [exact] only words spelled with [prefix] come back, the way the Exact
-  /// search mode matches.
+  /// [exact] only Pāli words spelled with [prefix] come back, the way the
+  /// Exact search mode matches. Translation words keep their own matching.
   Future<List<SearchSuggestion>> getSearchSuggestions(
     String prefix, {
     int limit = 10,
