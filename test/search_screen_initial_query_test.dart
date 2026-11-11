@@ -101,12 +101,12 @@ void main() {
   });
 
   testWidgets(
-      'Velthuis turns into diacritics; the more menu shows, empty or with text',
+      'Velthuis turns into diacritics; the help icon shows, empty or with text',
       (tester) async {
     await _pumpSearch(tester, null);
     final help = find.descendant(
       of: find.byType(TextField),
-      matching: find.byIcon(Icons.more_vert),
+      matching: find.byIcon(Icons.help_outline),
     );
     expect(help, findsOneWidget);
 

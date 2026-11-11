@@ -122,6 +122,18 @@ class _MainDrawerState extends ConsumerState<MainDrawer> {
                   selected: _isRouteActive(context, '/search'),
                 ),
                 _DrawerItem(
+                  icon: Icons.map_outlined,
+                  title: loc.t('Map'),
+                  subtitle: loc.t('Places of the texts'),
+                  // Pushed, not gone to: the map is a leaf page, so Back
+                  // returns to the reader on phones and on desktop.
+                  onTap: () {
+                    Navigator.of(context).pop(); // close drawer
+                    context.push(AppRoutes.map);
+                  },
+                  selected: _isRouteActive(context, AppRoutes.map),
+                ),
+                _DrawerItem(
                   icon: Icons.near_me_outlined,
                   title: loc.goToSutta,
                   onTap: () {

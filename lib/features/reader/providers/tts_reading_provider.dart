@@ -126,6 +126,15 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   final Ref _ref;
   int _currentSessionId = 0;
 
+  /// Cumulative speaking time (ms) and line count used to estimate the
+  /// notification progress bar: average ms per line × line count.
+  int _estimateMs = 0;
+  int _estimateLines = 0;
+
+  /// Line index and clock at which the current measurement started.
+  int? _estimateAnchorIndex;
+  DateTime? _estimateAnchorTime;
+
   /// Subscription to Android's ACTION_AUDIO_BECOMING_NOISY broadcast
   /// (triggered when Bluetooth disconnects or the headphone jack is
   /// removed). Initialised when reading starts, cancelled on stop/finish.
@@ -145,6 +154,64 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
   int? _lastSavedListeningParaId;
 
   TtsReadingNotifier(this._ref) : super(const TtsReadingState());
+
+  int? get _avgLineMs =>
+      _estimateLines == 0 ? null : _estimateMs ~/ _estimateLines;
+
+  Duration? get _estimatedDuration {
+    final avg = _avgLineMs;
+    if (avg == null) return null;
+    return Duration(milliseconds: avg * state.lines.length);
+  }
+
+  Duration get _estimatedPosition {
+    final avg = _avgLineMs;
+    if (avg == null) return Duration.zero;
+    final index = state.currentIndex.clamp(0, state.lines.length);
+    return Duration(milliseconds: avg * index);
+  }
+
+  void _resetEstimate({int? anchorIndex}) {
+    _estimateMs = 0;
+    _estimateLines = 0;
+    _estimateAnchorIndex = anchorIndex;
+    _estimateAnchorTime = anchorIndex == null ? null : DateTime.now();
+  }
+
+  /// Fold the time since the last anchor into the running average for the
+  /// [newIndex] - [anchor] lines that just finished, then re-anchor.
+  void _accumulateEstimate(int newIndex) {
+    final anchorIndex = _estimateAnchorIndex;
+    final anchorTime = _estimateAnchorTime;
+    if (anchorIndex != null && anchorTime != null) {
+      final lines = newIndex - anchorIndex;
+      if (lines > 0) {
+        final elapsed = DateTime.now().difference(anchorTime).inMilliseconds;
+        if (elapsed > 0) {
+          _estimateMs += elapsed;
+          _estimateLines += lines;
+        }
+      }
+    }
+    _estimateAnchorIndex = newIndex;
+    _estimateAnchorTime = DateTime.now();
+  }
+
+  void _reanchorEstimate(int index) {
+    _estimateAnchorIndex = index;
+    _estimateAnchorTime = DateTime.now();
+  }
+
+  void _publishPlaybackState({required bool playing, required bool paused}) {
+    ttsAudioHandler.setPlaybackState(
+      playing: playing,
+      paused: paused,
+      hasPrev: state.currentIndex > 0,
+      hasNext: state.currentIndex < state.lines.length - 1,
+      position: _estimatedPosition,
+      duration: _estimatedDuration,
+    );
+  }
 
   /// Start reading from [lines] starting at [startIndex].
   Future<void> startReading(
@@ -203,6 +270,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       currentUnitIndex: unitIndex,
       isActive: true,
     );
+    _resetEstimate(anchorIndex: state.currentIndex);
 
     // Record the book in the listening history right away, so opening the
     // Listening history tab always shows what was played.
@@ -242,6 +310,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     ttsAudioHandler.onStopPressed = () => stopReading();
     ttsAudioHandler.onSkipNextPressed = () => skipForward();
     ttsAudioHandler.onSkipPreviousPressed = () => skipBackward();
+    ttsAudioHandler.onSeekPressed = _seekToEstimatedPosition;
     ttsAudioHandler.getIsPaused = () => state.isPaused;
 
     // Show the book title in the notification.
@@ -252,12 +321,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     );
 
     // Start foregrounding the notification.
-    ttsAudioHandler.setPlaybackState(
-      playing: true,
-      paused: false,
-      hasPrev: startIndex > 0,
-      hasNext: startIndex < lines.length - 1,
-    );
+    _publishPlaybackState(playing: true, paused: false);
     // ───────────────────────────────────────────────────────────────
 
     // ── Force media button routing ─────────────────────────────────
@@ -392,6 +456,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     await _saveListeningHistoryNow();
     await _ref.read(ttsProvider.notifier).stop();
     _clearUnitSpeechState();
+    _resetEstimate();
     state = const TtsReadingState();
     // Keep notification callbacks registered: the audio service lives for
     // the whole process (init-once), so the next startReading() reuses it.
@@ -427,14 +492,11 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _currentSessionId++;
     await _ref.read(ttsProvider.notifier).pause();
     _clearUnitSpeechState();
+    _estimateAnchorIndex = null;
+    _estimateAnchorTime = null;
     state = state.copyWith(isPaused: true);
     // Notification shows Play button + paused state.
-    ttsAudioHandler.setPlaybackState(
-      playing: false,
-      paused: true,
-      hasPrev: state.currentIndex > 0,
-      hasNext: state.currentIndex < state.lines.length - 1,
-    );
+    _publishPlaybackState(playing: false, paused: true);
   }
 
   /// Resume reading from the current position.
@@ -445,12 +507,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _currentSessionId++;
     final sessionId = _currentSessionId;
     // Update notification to show playing state.
-    ttsAudioHandler.setPlaybackState(
-      playing: true,
-      paused: false,
-      hasPrev: state.currentIndex > 0,
-      hasNext: state.currentIndex < state.lines.length - 1,
-    );
+    _publishPlaybackState(playing: true, paused: false);
     await _speakCurrent(sessionId, isResume: true);
   }
 
@@ -549,7 +606,9 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     final range = unit.lineRanges[slot];
     final global = unit.lineIndices[slot];
     if (global != state.currentIndex) {
+      _accumulateEstimate(global);
       state = state.copyWith(currentIndex: global);
+      _publishPlaybackState(playing: true, paused: false);
       _scheduleListeningHistorySave();
       // No explicit scroll call: the reader_screen TTS listener follows
       // para/line changes (same-paragraph fine-scroll included).
@@ -647,6 +706,9 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     // advance it from there. Stale word state is cleared per unit.
     if (state.currentIndex != unit.lineIndices.first) {
       state = state.copyWith(currentIndex: unit.lineIndices.first);
+    }
+    if (_estimateAnchorTime == null) {
+      _reanchorEstimate(state.currentIndex);
     }
     _ref.read(ttsWordHighlightProvider.notifier).state = null;
 
@@ -843,13 +905,9 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
         currentUnitIndex: nextUnit,
         currentIndex: state.units[nextUnit].lineIndices.first,
       );
+      _reanchorEstimate(state.currentIndex);
       _scheduleListeningHistorySave();
-      ttsAudioHandler.setPlaybackState(
-        playing: true,
-        paused: false,
-        hasPrev: true,
-        hasNext: nextUnit < state.units.length - 1,
-      );
+      _publishPlaybackState(playing: true, paused: false);
       _speakCurrent(sessionId);
     } else {
       _finishReading();
@@ -875,13 +933,9 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
         currentUnitIndex: nextUnit,
         currentIndex: state.units[nextUnit].lineIndices.first,
       );
+      _reanchorEstimate(state.currentIndex);
       _scheduleListeningHistorySave();
-      ttsAudioHandler.setPlaybackState(
-        playing: true,
-        paused: false,
-        hasPrev: true,
-        hasNext: nextUnit < state.units.length - 1,
-      );
+      _publishPlaybackState(playing: true, paused: false);
       _speakCurrent(sessionId);
     } else {
       _finishReading();
@@ -902,14 +956,45 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       currentUnitIndex: prevUnit,
       currentIndex: state.units[prevUnit].lineIndices.first,
     );
+    _reanchorEstimate(state.currentIndex);
     _scheduleListeningHistorySave();
-    ttsAudioHandler.setPlaybackState(
-      playing: true,
-      paused: false,
-      hasPrev: prevUnit > 0,
-      hasNext: prevUnit < state.units.length - 1,
-    );
+    _publishPlaybackState(playing: true, paused: false);
     _speakCurrent(sessionId);
+  }
+
+  void _seekToEstimatedPosition(Duration position) {
+    if (!state.isActive && !state.isPaused) return;
+    final avg = _avgLineMs;
+    if (avg == null || avg <= 0 || state.units.isEmpty) return;
+    final target = (position.inMilliseconds / avg)
+        .round()
+        .clamp(0, state.lines.length - 1);
+    _seekToLine(target);
+  }
+
+  Future<void> _seekToLine(int lineIndex) async {
+    if (state.units.isEmpty) return;
+    _currentSessionId++;
+    final sessionId = _currentSessionId;
+    await _ref.read(ttsProvider.notifier).stop();
+    var unitIndex = 0;
+    for (var i = 0; i < state.units.length; i++) {
+      if (state.units[i].lineIndices.first <= lineIndex) {
+        unitIndex = i;
+      } else {
+        break;
+      }
+    }
+    _clearUnitSpeechState();
+    final wasPaused = state.isPaused;
+    state = state.copyWith(
+      currentUnitIndex: unitIndex,
+      currentIndex: state.units[unitIndex].lineIndices.first,
+    );
+    _reanchorEstimate(state.currentIndex);
+    _scheduleListeningHistorySave();
+    _publishPlaybackState(playing: !wasPaused, paused: wasPaused);
+    if (!wasPaused) await _speakCurrent(sessionId);
   }
 
   void _advanceToNext(int sessionId) {
@@ -932,17 +1017,13 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
       // retain them, and the next unit's prefetched future — if any — stays
       // so the loop awaits it instead of re-speaking).
       _unitFutures.removeWhere((k, _) => k < nextUnit);
+      _accumulateEstimate(state.units[nextUnit].lineIndices.first);
       state = state.copyWith(
         currentUnitIndex: nextUnit,
         currentIndex: state.units[nextUnit].lineIndices.first,
       );
       // Update notification prev/next buttons availability.
-      ttsAudioHandler.setPlaybackState(
-        playing: true,
-        paused: false,
-        hasPrev: true,
-        hasNext: nextUnit < state.units.length - 1,
-      );
+      _publishPlaybackState(playing: true, paused: false);
       // Debounced listening-history position update.
       _scheduleListeningHistorySave();
       // Speak the next unit
@@ -998,6 +1079,7 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     _listeningSaveTimer = null;
     _saveListeningHistoryNow();
     _clearUnitSpeechState();
+    _resetEstimate();
     state = const TtsReadingState();
     // Keep callbacks + service alive for the next session (see stopReading).
     ttsAudioHandler.dismiss();

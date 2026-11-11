@@ -137,11 +137,14 @@ Future<bool> _doInitAudioService() async {
 /// to the app's TTS system without owning the TTS engine itself.
 ///
 /// Mirrors anx-reader's `TtsHandler`: the handler publishes a queue +
-/// media item (with `duration: null` so the system renders no progress bar)
-/// plus `queueIndex`/`updatePosition`, which is what makes the
+/// media item plus `queueIndex`/`updatePosition`, which is what makes the
 /// notification / lock-screen / control-center metadata actually appear
 /// on Samsung/Pixel devices. Without the queue, `playbackState` alone
 /// often shows nothing.
+///
+/// The reading notifier supplies an estimated duration and position
+/// (average spoken time per line × line count) once it has timed a line,
+/// which turns on the system seek bar/progress display.
 class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   // ── Callbacks (registered by TtsReadingNotifier) ────────────────
 
@@ -164,6 +167,9 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   /// toggle between play and pause. Set by [TtsReadingNotifier] when a
   /// reading session starts.
   bool Function()? getIsPaused;
+
+  /// Called when the user drags the notification/lock-screen seek bar.
+  void Function(Duration position)? onSeekPressed;
 
   // ── MediaSession method overrides ───────────────────────────────
 
@@ -212,6 +218,15 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
+  Future<void> seek(Duration position) async {
+    developer.log(
+      '[TTS_CTRL] seek() called position=${position.inMilliseconds}ms',
+      name: 'epitaka.tts',
+    );
+    onSeekPressed?.call(position);
+  }
+
+  @override
   Future<void> click([MediaButton button = MediaButton.media]) async {
     final state = playbackState.hasValue ? playbackState.value : null;
     developer.log(
@@ -242,14 +257,29 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       album: 'ePitaka',
       artist: artist ?? 'ePitaka',
       // Null duration = unknown/live content: the system renders no
-      // progress bar (TTS has no fixed duration). (Older code passed -1ms
-      // here; null is the supported signal on current audio_service and
-      // the native side simply omits the duration key.)
+      // progress bar (TTS has no fixed duration). The reading notifier
+      // replaces this with a live estimate once it has timed a line.
       duration: null,
       artUri: artUri != null ? Uri.tryParse(artUri) : null,
     );
+    _lastMediaItem = item;
+    _lastBroadcast = '';
     queue.add([item]);
     mediaItem.add(item);
+  }
+
+  /// Most recent [MediaItem], kept so [setPlaybackState] can update the
+  /// duration (which the system needs to render the seek bar) without
+  /// rebuilding the title/artist.
+  MediaItem? _lastMediaItem;
+
+  /// Update the seek bar's total duration. No-op until [setMediaItem] has
+  /// published an item, or when the value is unchanged.
+  void _setDuration(Duration? duration) {
+    final item = _lastMediaItem;
+    if (item == null || item.duration == duration) return;
+    _lastMediaItem = item.copyWith(duration: duration);
+    mediaItem.add(_lastMediaItem!);
   }
 
   /// Dismiss the notification WITHOUT killing the audio service.
@@ -290,6 +320,8 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     bool hasPrev = false,
     bool hasNext = false,
     AudioProcessingState? processingState,
+    Duration position = Duration.zero,
+    Duration? duration,
   }) {
     final procState =
         processingState ??
@@ -298,14 +330,17 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             : (paused
                   ? AudioProcessingState.ready
                   : AudioProcessingState.completed));
+    _setDuration(duration);
     final signature =
-        '$playing|$paused|$procState|$hasPrev|$hasNext';
+        '$playing|$paused|$procState|$hasPrev|$hasNext|${position.inMilliseconds}';
     if (signature == _lastBroadcast) return;
     _lastBroadcast = signature;
     developer.log(
       '[TTS_LIFECYCLE] setPlaybackState: '
       'playing=$playing paused=$paused procState=$procState '
-      'hasPrev=$hasPrev hasNext=$hasNext',
+      'hasPrev=$hasPrev hasNext=$hasNext '
+      'position=${position.inMilliseconds}ms '
+      'duration=${duration?.inMilliseconds}ms',
       name: 'epitaka.tts',
     );
     playbackState.add(
@@ -319,6 +354,7 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           if (hasNext) MediaControl.skipToNext,
         ],
         systemActions: const {
+          MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
           MediaAction.play,
@@ -328,8 +364,8 @@ class TtsAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           MediaAction.skipToPrevious,
         },
         queueIndex: queue.value.isNotEmpty ? 0 : null,
-        updatePosition: Duration.zero,
-        bufferedPosition: Duration.zero,
+        updatePosition: position,
+        bufferedPosition: position,
       ),
     );
   }

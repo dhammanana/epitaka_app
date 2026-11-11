@@ -269,6 +269,7 @@ class IndexService {
     final appDb = await _ref.read(appDbProvider.future);
     try {
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts');
+      await appDb.customStatement('DROP TABLE IF EXISTS search_fts_exact');
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts_map');
       await appDb.customStatement('DROP TABLE IF EXISTS search_words');
     } catch (_) {}
@@ -316,6 +317,7 @@ class IndexService {
     final appDb = await _ref.read(appDbProvider.future);
     try {
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts');
+      await appDb.customStatement('DROP TABLE IF EXISTS search_fts_exact');
       await appDb.customStatement('DROP TABLE IF EXISTS search_fts_map');
       await appDb.customStatement('DROP TABLE IF EXISTS search_words');
     } catch (_) {}

@@ -194,6 +194,7 @@ void main() {
 
     Future<void> typeInto(WidgetTester tester, String text) async {
       await tester.enterText(find.byType(TextField), text);
+      await tester.testTextInput.receiveAction(TextInputAction.go);
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );

@@ -29,7 +29,16 @@ abstract final class AppStrings {
   };
 
   /// Locale codes shown in the language picker, in display order.
-  static const List<String> supportedCodes = ['en', 'vi', 'my', 'si', 'lo', 'th', 'zh', 'hi'];
+  static const List<String> supportedCodes = [
+    'en',
+    'vi',
+    'my',
+    'si',
+    'lo',
+    'th',
+    'zh',
+    'hi',
+  ];
 
   /// Resolve the string table for a locale code, falling back to English
   /// when the code is unknown.

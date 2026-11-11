@@ -66,8 +66,7 @@ const Map<String, String> zh = {
   'Needs a Hindi voice installed (hi-IN)': '需要安装印地语语音 (hi-IN)',
   'Needs a Thai voice installed (th-TH)': '需要安装泰语语音 (th-TH)',
   'Needs a Myanmar voice installed (my-MM)': '需要安装缅甸语语音 (my-MM)',
-  'Reads with an English voice — works on every device':
-      '使用英语语音朗读——所有设备均可使用',
+  'Reads with an English voice — works on every device': '使用英语语音朗读——所有设备均可使用',
   'Install voice': '安装语音',
   'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)':
       '打开设备的文字转语音设置以安装语音（朗读 Pāli 请安装僧伽罗语/印地语）',
@@ -81,8 +80,7 @@ const Map<String, String> zh = {
   'No translations found or available for download.': '未找到可下载的译文。',
   'Checking for updates…': '正在检查更新…',
   'Check for translation updates from GitHub.': '从 GitHub 检查译文更新。',
-  'This will remove the database file from your device.':
-      '这将从您的设备中移除该数据库文件。',
+  'This will remove the database file from your device.': '这将从您的设备中移除该数据库文件。',
   'Deleted ': '已删除 ',
   'Version Info': '版本信息',
   'Filename': '文件名',
@@ -169,8 +167,7 @@ const Map<String, String> zh = {
   'Sign in failed. Please try again.': '登录失败，请重试。',
   'Sync active — highlights, notes & bookmarks are backed up':
       '同步已开启——高亮、笔记和书签已备份',
-  'Sync off — annotations are stored on this device only':
-      '同步已关闭——批注仅保存在本设备上',
+  'Sync off — annotations are stored on this device only': '同步已关闭——批注仅保存在本设备上',
 
   // ── Settings ────────────────────────────────────────────────────────
   'Settings': '设置',
@@ -241,8 +238,7 @@ const Map<String, String> zh = {
   'AI Q&A': 'AI 问答',
   'AI Q&A Settings': 'AI 问答设置',
   'API key, models, etc.': 'API 密钥、模型等',
-  'No download URL available for AI search assets':
-      '没有可用于下载 AI 搜索资源的网址',
+  'No download URL available for AI search assets': '没有可用于下载 AI 搜索资源的网址',
 
   // ── Appearance ──────────────────────────────────────────────────────
   'Accent Color': '强调色',
@@ -273,8 +269,7 @@ const Map<String, String> zh = {
   'Keep Screen On': '保持屏幕常亮',
   'Prevent screen from dimming while reading': '阅读时防止屏幕变暗',
   'Show Inline Commentaries': '显示内嵌注释',
-  'Show links to inlined commentaries & connected books':
-      '显示指向内嵌注释和关联书籍的链接',
+  'Show links to inlined commentaries & connected books': '显示指向内嵌注释和关联书籍的链接',
   'Auto hide toolbar': '自动隐藏工具栏',
   'Book ID': '书籍编号',
   'Book Name': '书名',
@@ -412,8 +407,7 @@ const Map<String, String> zh = {
   'Install Hindi voice': '安装印地语语音',
 
   // ── TTS Replacements ────────────────────────────────────────────────
-  'Replace text patterns before TTS reads them aloud.':
-      '在朗读之前替换指定的文本模式。',
+  'Replace text patterns before TTS reads them aloud.': '在朗读之前替换指定的文本模式。',
   'Add Replacement': '添加替换规则',
   'No replacement rules yet.\nTap "Add Replacement" to create one.':
       '暂无替换规则。\n点按“添加替换规则”即可创建。',
@@ -510,8 +504,7 @@ const Map<String, String> zh = {
   'complete': '已完成',
   'Starting…': '正在启动…',
   'No results for': '没有结果：',
-  'Try enabling fuzzy search or using different terms.':
-      '请尝试启用模糊搜索，或更换搜索词。',
+  'Try enabling fuzzy search or using different terms.': '请尝试启用模糊搜索，或更换搜索词。',
   'Show more': '显示更多',
   'remaining': '剩余',
   'Search failed:': '搜索失败：',
@@ -577,8 +570,7 @@ const Map<String, String> zh = {
   'Every section with its study guide': '每个章节及其学习指南',
   'Open a book to see its outline': '打开一本书即可查看其大纲',
   'No sections found for this book': '本书未找到章节',
-  'Tap a section to preview it, or read its study guide':
-      '点按章节可预览，或阅读其学习指南',
+  'Tap a section to preview it, or read its study guide': '点按章节可预览，或阅读其学习指南',
   'section': '个章节',
   'sections': '个章节',
   'Text': '原文',
@@ -669,8 +661,7 @@ const Map<String, String> zh = {
   'Get a free OpenRouter API key': '免费获取 OpenRouter API 密钥',
   'OpenRouter is free to join — just 4 easy steps:':
       'OpenRouter 可免费加入——只需简单 4 步：',
-  'Tap "Get free OpenRouter API key" below.':
-      '点按下方的“获取免费 OpenRouter API 密钥”。',
+  'Tap "Get free OpenRouter API key" below.': '点按下方的“获取免费 OpenRouter API 密钥”。',
   'Sign in with Google or GitHub (free, no credit card).':
       '使用 Google 或 GitHub 登录（免费，无需信用卡）。',
   'Tap "Create API key" and copy it (it starts with sk-or-).':
@@ -777,15 +768,13 @@ const Map<String, String> zh = {
 
   // ── Index Build Dialog ──────────────────────────────────────────────
   'Build Search Index': '构建搜索索引',
-  'Choose a translation to include in the search index.':
-      '请选择要纳入搜索索引的译文。',
+  'Choose a translation to include in the search index.': '请选择要纳入搜索索引的译文。',
   'Rebuild Search Index?': '重建搜索索引？',
   'Resetting & Rebuilding': '正在重置并重建',
   'Rebuilding Index': '正在重建索引',
   'Reset & Rebuild': '重置并重建',
   'Reset & Rebuild?': '重置并重建？',
-  'Clear bookmarks, history & rebuild search index':
-      '清除书签、历史记录并重建搜索索引',
+  'Clear bookmarks, history & rebuild search index': '清除书签、历史记录并重建搜索索引',
   'This will permanently delete all bookmarks and reading history, then rebuild the search index from scratch.':
       '这将永久删除所有书签和阅读历史，然后从头重建搜索索引。',
   'Database location:': '数据库位置：',
@@ -883,8 +872,7 @@ const Map<String, String> zh = {
       '每个对话线程都会保存，您可以随时继续。',
   'View past conversations': '查看过往对话',
   'Orthodox': '正统',
-  'Answers use only the passages found in the Tipitaka.':
-      '回答仅使用在三藏中找到的段落。',
+  'Answers use only the passages found in the Tipitaka.': '回答仅使用在三藏中找到的段落。',
   'The AI may also use its own knowledge alongside the found passages.':
       'AI 也可能在所找到的段落之外，结合自身的知识作答。',
   'Type @ to attach a heading': '输入 @ 以附加标题',
@@ -937,8 +925,7 @@ const Map<String, String> zh = {
   'Look up in device dictionary (iOS/macOS)': '在设备词典中查询（iOS/macOS）',
   'Speak the selected text (iOS/macOS)': '朗读所选文字（iOS/macOS）',
   'Reset to default': '恢复默认',
-  'Reset context menu actions and order to default?':
-      '将选区菜单的操作和顺序恢复为默认设置？',
+  'Reset context menu actions and order to default?': '将选区菜单的操作和顺序恢复为默认设置？',
   'Speak from here': '从此处开始朗读',
   'Start TTS from the selected line': '从所选行开始语音朗读',
 
@@ -986,8 +973,7 @@ const Map<String, String> zh = {
   // ── Feature Guide: Context Menu ───────────────────────────────────
   'Select any text in the reader and a toolbar of smart actions appears above it.':
       '在阅读器中选择任意文字，其上方会出现一栏智能操作工具栏。',
-  'Select text — tap and drag, or double-tap a word.':
-      '选择文字——点按并拖动，或双击某个词。',
+  'Select text — tap and drag, or double-tap a word.': '选择文字——点按并拖动，或双击某个词。',
   'Copy — copy the selection as plain text.': '复制——将所选内容复制为纯文本。',
   'Excerpt — copy with a formatted citation.': '摘录——连同格式化引文一起复制。',
   'Copy Link — copy a shareable link to this exact passage.':
@@ -1006,8 +992,7 @@ const Map<String, String> zh = {
   'Everything you need to personalize ePitaka.': '个性化 ePitaka 所需的一切设置。',
   'Language & script — choose the UI language and the Pāli script (Roman, Devanagari, Sinhala, Myanmar, Thai…).':
       '语言与文字——选择界面语言和 Pāli 文字（罗马字、天城文、僧伽罗文、缅文、泰文…）。',
-  'Appearance — themes, accent color and reading colors.':
-      '外观——主题、强调色和阅读颜色。',
+  'Appearance — themes, accent color and reading colors.': '外观——主题、强调色和阅读颜色。',
   'Translations & Downloads — download, update and reorder translation databases.':
       '译文与下载——下载、更新译文数据库并调整其顺序。',
   'Reading Options — layout, page numbering, quote format and auto-scroll.':
@@ -1050,4 +1035,49 @@ const Map<String, String> zh = {
   'No sutta found for ': '未找到经文：',
   'Could not look up sutta codes. The error is in the log.':
       '无法查询经文编号。错误详情见日志。',
+
+  // ── Map of places ───────────────────────────────────────────────────
+  'Map': '地图',
+  'Places of the texts': '经典中的地点',
+  'Places': '地点',
+  'Place': '地点',
+  'People': '人物',
+  'Person': '人物',
+  'Deity': '天神',
+  'Animals': '动物',
+  'Animal': '动物',
+  'Search names': '搜索名称',
+  'No names found': '未找到名称',
+  'People and clans': '人与氏族',
+  'Search places': '搜索地点',
+  'No places found': '未找到地点',
+  'Loading the map…': '正在加载地图…',
+  'The map could not be loaded.': '无法加载地图。',
+  'Sources of the map': '地图来源',
+  'Zoom in': '放大',
+  'Zoom out': '缩小',
+  'Show the whole map': '显示整幅地图',
+  'This name is not on the map.': '地图上没有此名称。',
+  'Overview': '概览',
+  'Details': '详情',
+  'Occurrences': '出现处',
+  'Family': '家族',
+  'Coordinates': '坐标',
+  'Accuracy': '精确度',
+  'Exact location': '确切位置',
+  'Approximate location': '大致位置',
+  'Approximate position': '大致方位',
+  'In or near another place': '位于他处或附近',
+  'Texts that name it': '提及此名的经典',
+  'Mentions': '提及次数',
+  'Scanning the texts…': '正在检索经典…',
+  'Reading the text index…': '正在读取文本索引…',
+  'The texts could not be searched.': '无法检索经典。',
+  'This name was not found in the Pāli text.': '巴利文本中未找到此名称。',
+  'This name has no word forms to search for.': '此名称没有可供检索的词形。',
+  'Open in dictionary': '在词典中打开',
+  'Open the map': '打开地图',
+  'book': '部',
+  'paragraph': '段',
+  'paragraphs': '段',
 };

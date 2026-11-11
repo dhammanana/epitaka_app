@@ -43,7 +43,13 @@ typedef IndexProgressCallback = void Function(double progress, String status);
 ///        cleaning pipeline are unchanged — this is a storage change, and
 ///        a table created with UNINDEXED columns cannot be converted in
 ///        place, so every install rebuilds once.
-const int kSearchIndexSchemaVersion = 3;
+///   v4 — a second Pāli index, `search_fts_exact`, tokenized with
+///        `remove_diacritics 0`. Fuzzy-off search is "whole words, exactly
+///        spelled" (`assā` must not find `assa`); the v3 index folds
+///        diacritics and cannot answer that. Fuzzy-on search keeps using
+///        `search_fts` (prefix, diacritics folded), so both indexes are
+///        built from the same paragraphs and share `search_fts_map`.
+const int kSearchIndexSchemaVersion = 4;
 
 /// Schema version for the per-language TRANSLATION indexes
 /// (`search_fts_<lang>`). Separate from [kSearchIndexSchemaVersion] so a
@@ -1236,6 +1242,19 @@ class AppDatabase extends _$AppDatabase {
       }
       debugPrint('[INDEX_CHECK] search_fts FOUND');
 
+      // Fuzzy-off (Exact) search reads the strict index. An install built
+      // before v4 has none, so it must rebuild even if the stamp somehow
+      // says otherwise.
+      final exactRows = await customSelect(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='search_fts_exact'",
+      ).get();
+      if (exactRows.isEmpty) {
+        debugPrint('[INDEX_CHECK] search_fts_exact table NOT FOUND');
+        return false;
+      }
+      debugPrint('[INDEX_CHECK] search_fts_exact FOUND');
+
       // Also check that search_words exists
       final wordRows = await customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_words'",
@@ -1248,9 +1267,9 @@ class AppDatabase extends _$AppDatabase {
 
       // The tables existing isn't enough: the FTS5 tokenizer options are
       // baked into each virtual table at CREATE time and can't be changed
-      // in place, so an index built by an older app version (e.g. with
-      // remove_diacritics 0) must be rebuilt. The build stamps the schema
-      // version that produced it into `index_meta`; a missing or older
+      // in place, so an index built by an older app version (different
+      // tokenizer or table layout) must be rebuilt. The build stamps the
+      // schema version that produced it into `index_meta`; a missing or older
       // stamp means this index was built by different code than what's
       // running now, so report it as "not built" to trigger the rebuild.
       final version = await _storedIndexSchemaVersion('search_index_version');
@@ -1362,6 +1381,7 @@ class AppDatabase extends _$AppDatabase {
     // was the cause of the "works, then corrupted after restart" bug).
     await transaction(() async {
       await customStatement('DROP TABLE IF EXISTS search_fts');
+      await customStatement('DROP TABLE IF EXISTS search_fts_exact');
       await customStatement('DROP TABLE IF EXISTS search_fts_map');
       await customStatement('DROP TABLE IF EXISTS search_words');
 
@@ -1378,6 +1398,17 @@ class AppDatabase extends _$AppDatabase {
         '  pali_text,'
         "  content='',"
         "  tokenize='unicode61 remove_diacritics 1'"
+        ')',
+      );
+      // Fuzzy off ("Exact"): whole words, diacritics kept. A tokenizer with
+      // remove_diacritics 0 is the only way FTS5 can tell `assā` from `assa`;
+      // the folded index above would answer both. Same rows, same rowids,
+      // same map table — only the tokens differ.
+      await customStatement(
+        'CREATE VIRTUAL TABLE search_fts_exact USING fts5('
+        '  pali_text,'
+        "  content='',"
+        "  tokenize='unicode61 remove_diacritics 0'"
         ')',
       );
       await customStatement(
@@ -1419,6 +1450,7 @@ class AppDatabase extends _$AppDatabase {
       const insertChunk = 200; // rows per multi-row INSERT (200×2 = 400 params)
       int yieldCounter = 0;
       final ftsBuffer = <Object?>[]; // flat rowid, pali_text tuples
+      final exactBuffer = <Object?>[]; // same rows, strict tokenizer
       final mapBuffer = <Object?>[]; // flat id, book_id, para_id tuples
       int nextRowId = 1; // rowids the build assigns, starting from 1
 
@@ -1439,6 +1471,9 @@ class AppDatabase extends _$AppDatabase {
           if (paliText.isEmpty) continue;
 
           ftsBuffer
+            ..add(nextRowId)
+            ..add(paliText);
+          exactBuffer
             ..add(nextRowId)
             ..add(paliText);
           mapBuffer
@@ -1471,6 +1506,12 @@ class AppDatabase extends _$AppDatabase {
               2,
             );
             await _flushBatchInsert(
+              'search_fts_exact',
+              'rowid, pali_text',
+              exactBuffer,
+              2,
+            );
+            await _flushBatchInsert(
               'search_fts_map',
               'id, book_id, para_id',
               mapBuffer,
@@ -1487,10 +1528,11 @@ class AppDatabase extends _$AppDatabase {
           }
         }
       }
+      await _flushBatchInsert('search_fts', 'rowid, pali_text', ftsBuffer, 2);
       await _flushBatchInsert(
-        'search_fts',
+        'search_fts_exact',
         'rowid, pali_text',
-        ftsBuffer,
+        exactBuffer,
         2,
       );
       await _flushBatchInsert(
@@ -1846,11 +1888,12 @@ class AppDatabase extends _$AppDatabase {
 
   /// Build an FTS5 query string from the user's raw [query].
   ///
-  /// Search is always diacritic-insensitive: the FTS5 index is built with
-  /// `unicode61 remove_diacritics 1`, so the tokenizer already normalizes
-  /// diacritics on both the indexed text and the query — there is no need
-  /// (and no longer any code) for the slow per-word search_words expansion
-  /// that used to look up every diacritic variant and OR them together.
+  /// With Fuzzy ON the FTS5 index is built with
+  /// `unicode61 remove_diacritics 1`, so the tokenizer normalizes
+  /// diacritics on both the indexed text and the query — `katva` finds
+  /// `katvā`. With Fuzzy OFF the strict `search_fts_exact` index
+  /// (`remove_diacritics 0`) is used instead, so `katva` finds only a
+  /// literal `katva` token, never `katvā`.
   ///
   /// The query is cleaned with the same [cleanPaliForIndexing] pipeline
   /// used when indexing, so a sentence pasted from a book (commas, quotes,
@@ -1861,10 +1904,10 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Words are matched as prefixes (`term*`) so that "cakk" finds
   /// "cakka", "cakkhu", "cakkuṃ". With [exact], each term is a quoted
-  /// whole word (`"term"`) instead: only the exact token matches, so
-  /// `katva` finds `katvā` (same token once diacritics are removed) but
-  /// not `katvāna`, and `katv` finds nothing. This is the "fuzzy off"
-  /// mode; the fuzzy search-screen state decides which one runs.
+  /// whole word (`"term"`) against the strict index instead: only that
+  /// exact token matches, so `katvā` does not find `katvāna` or `katva`,
+  /// and `katv` finds nothing. This is the "fuzzy off" mode; the fuzzy
+  /// search-screen state decides which one runs.
   ///
   /// With [distance] > 0 and more than one word, FTS5's NEAR() function
   /// (not the FTS3/4 infix syntax) requires the words within [distance]
@@ -1916,11 +1959,12 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return {};
+    final paliTable = exact ? 'search_fts_exact' : 'search_fts';
 
     try {
       final rows = await customSelect(
         'SELECT m.book_id, COUNT(*) as cnt '
-        'FROM search_fts f '
+        'FROM $paliTable f '
         'JOIN search_fts_map m ON m.id = f.rowid '
         'WHERE f.pali_text MATCH ? '
         'GROUP BY m.book_id '
@@ -1948,6 +1992,7 @@ class AppDatabase extends _$AppDatabase {
     bool exact = false,
   }) async {
     final paliQuery = _buildFtsQuery(query, distance: distance, exact: exact);
+    final paliTable = exact ? 'search_fts_exact' : 'search_fts';
     final transTable = 'search_fts_$langCode';
     final transQuery =
         langCode != null && await isTranslationIndexBuilt(langCode)
@@ -1961,7 +2006,7 @@ class AppDatabase extends _$AppDatabase {
     try {
       final rows = await customSelect(
         'SELECT book_id, COUNT(*) as cnt FROM ('
-        'SELECT m.book_id, m.para_id FROM search_fts f '
+        'SELECT m.book_id, m.para_id FROM $paliTable f '
         'JOIN search_fts_map m ON m.id = f.rowid '
         'WHERE f.pali_text MATCH ? '
         'UNION '
@@ -1981,7 +2026,7 @@ class AppDatabase extends _$AppDatabase {
     } catch (e) {
       debugPrint('[SEARCH] count UNION failed, Pāli only: $e');
       // A broken translation index must not hide the Pāli hits.
-      return countPaliResultsByBook(query, distance: distance);
+      return countPaliResultsByBook(query, distance: distance, exact: exact);
     }
   }
 
@@ -1999,11 +2044,12 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return [];
+    final paliTable = exact ? 'search_fts_exact' : 'search_fts';
 
     try {
       final rows = await customSelect(
         'SELECT m.book_id, m.para_id '
-        'FROM search_fts f '
+        'FROM $paliTable f '
         'JOIN search_fts_map m ON m.id = f.rowid '
         'WHERE f.pali_text MATCH ? AND m.book_id = ? '
         'ORDER BY f.rank '
@@ -2088,7 +2134,7 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Uses FTS5 prefix matching (`term*`) so that "cakk" also finds
   /// "cakka", "cakkhu", "cakkuṃ" etc. With [exact], each term is a quoted
-  /// whole word instead — see [_buildFtsQuery].
+  /// whole word against the strict index instead — see [_buildFtsQuery].
   Future<List<SearchResultRow>> searchFts(
     String query, {
     int distance = 0,
@@ -2096,11 +2142,12 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     final ftsQuery = _buildFtsQuery(query, distance: distance, exact: exact);
     if (ftsQuery.isEmpty) return [];
+    final paliTable = exact ? 'search_fts_exact' : 'search_fts';
 
     try {
       final rows = await customSelect(
         'SELECT m.book_id, m.para_id '
-        'FROM search_fts f '
+        'FROM $paliTable f '
         'JOIN search_fts_map m ON m.id = f.rowid '
         'WHERE f.pali_text MATCH ? '
         'ORDER BY f.rank '
@@ -2354,10 +2401,12 @@ class AppDatabase extends _$AppDatabase {
       String columns,
     ) async {
       try {
-        final exists = await db.customSelect(
-          "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-          variables: [Variable.withString(indexName)],
-        ).get();
+        final exists = await db
+            .customSelect(
+              "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+              variables: [Variable.withString(indexName)],
+            )
+            .get();
         if (exists.isEmpty) {
           await db.customStatement(
             'CREATE INDEX $indexName ON $tableName($columns)',
@@ -2487,7 +2536,9 @@ class AppDatabase extends _$AppDatabase {
     // Check translation FTS indexes
     if (translationDbs != null) {
       for (final langCode in translationDbs.keys) {
-        results['translation_fts_$langCode'] = await isTranslationIndexBuilt(langCode);
+        results['translation_fts_$langCode'] = await isTranslationIndexBuilt(
+          langCode,
+        );
       }
     }
 
@@ -2510,7 +2561,9 @@ class AppDatabase extends _$AppDatabase {
     // Check translation DB indexes
     if (translationDbs != null) {
       for (final entry in translationDbs.entries) {
-        results['${entry.key}_indexes'] = await _checkTranslationIndexes(entry.value);
+        results['${entry.key}_indexes'] = await _checkTranslationIndexes(
+          entry.value,
+        );
       }
     }
 
@@ -2530,10 +2583,12 @@ class AppDatabase extends _$AppDatabase {
       'idx_headings_book_level_para',
     ];
     for (final indexName in requiredIndexes) {
-      final rows = await db.customSelect(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-        variables: [Variable.withString(indexName)],
-      ).get();
+      final rows = await db
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            variables: [Variable.withString(indexName)],
+          )
+          .get();
       if (rows.isEmpty) return false;
     }
     return true;
@@ -2545,10 +2600,12 @@ class AppDatabase extends _$AppDatabase {
       'idx_sentences_book_para',
     ];
     for (final indexName in requiredIndexes) {
-      final rows = await db.customSelect(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-        variables: [Variable.withString(indexName)],
-      ).get();
+      final rows = await db
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            variables: [Variable.withString(indexName)],
+          )
+          .get();
       if (rows.isEmpty) return false;
     }
     return true;
@@ -2560,10 +2617,12 @@ class AppDatabase extends _$AppDatabase {
       'idx_sentences_book_para',
     ];
     for (final indexName in requiredIndexes) {
-      final rows = await db.customSelect(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
-        variables: [Variable.withString(indexName)],
-      ).get();
+      final rows = await db
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            variables: [Variable.withString(indexName)],
+          )
+          .get();
       if (rows.isEmpty) return false;
     }
     return true;

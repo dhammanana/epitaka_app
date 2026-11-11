@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../dpd/providers/dictionary_list_provider.dart';
 import '../providers/dictionary_panel_memory.dart';
@@ -20,8 +21,11 @@ import '../../../core/utils/velthuis.dart';
 import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../search/services/regex_search.dart';
+import '../../../router/app_router.dart' show AppRoutes;
 import '../../dpd/providers/lookup_history.dart';
 import '../../dpd/utils/query_cleaning.dart';
+import '../../map/models/map_data.dart';
+import '../../map/widgets/dictionary_place_card.dart';
 import '../providers/dictionary_header_provider.dart';
 import '../providers/dictionary_sheet_open_provider.dart';
 import 'lookup_history_buttons.dart';
@@ -132,7 +136,9 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
     final handedIn = cleanDpdQuery(widget.initialWord);
     // With no word handed in, carry on from the word the sheet or an earlier
     // panel left current.
-    final initial = handedIn.isNotEmpty ? handedIn : (_lookupHistory.current ?? '');
+    final initial = handedIn.isNotEmpty
+        ? handedIn
+        : (_lookupHistory.current ?? '');
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
@@ -620,32 +626,32 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                       ? const []
                       : const [VelthuisInputFormatter()],
                   textInputAction: TextInputAction.search,
-                    decoration: searchBoxDecoration(
-                      context,
-                      hintText: loc.searchPali,
-                      suffixIcon: SearchBoxSuffixActions(
-                        showClear: _searchController.text.isNotEmpty,
-                        onClear: () {
-                          _searchController.clear();
-                          _onSearchChanged('');
-                        },
-                        regexOn: regexOn,
-                        onToggleRegex: _toggleRegex,
-                        extraItems: [
-                          SearchBoxMoreItem(
-                            id: 'show-icons',
-                            label: loc.searchIconsShow,
-                            icon: Icons.tune,
-                            checked: ref.watch(dictionaryHeaderIconsProvider),
-                            onTap: () {
-                              final icons = ref.read(
-                                dictionaryHeaderIconsProvider.notifier,
-                              );
-                              icons.set(!ref.read(dictionaryHeaderIconsProvider));
-                            },
-                          ),
-                        ],
-                      ),
+                  decoration: searchBoxDecoration(
+                    context,
+                    hintText: loc.searchPali,
+                    suffixIcon: SearchBoxSuffixActions(
+                      showClear: _searchController.text.isNotEmpty,
+                      onClear: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                      regexOn: regexOn,
+                      onToggleRegex: _toggleRegex,
+                      extraItems: [
+                        SearchBoxMoreItem(
+                          id: 'show-icons',
+                          label: loc.searchIconsShow,
+                          icon: Icons.tune,
+                          checked: ref.watch(dictionaryHeaderIconsProvider),
+                          onTap: () {
+                            final icons = ref.read(
+                              dictionaryHeaderIconsProvider.notifier,
+                            );
+                            icons.set(!ref.read(dictionaryHeaderIconsProvider));
+                          },
+                        ),
+                      ],
+                    ),
                     errorText:
                         _patternError != null &&
                             _queryIsRegex &&
@@ -1064,6 +1070,14 @@ class _DictionaryPanelState extends ConsumerState<DictionaryPanel> {
                 anchors: _anchors,
                 onJump: (id) => _anchors.jumpTo(id, _scrollController),
                 showSummary: showSummary,
+                leading: DictionaryPlaceCard(
+                  lookup: lookup,
+                  onOpen: (name) => context.push(
+                    name is MapPlace
+                        ? AppRoutes.mapAt(name.slug)
+                        : AppRoutes.mapPlaceAt(name.slug),
+                  ),
+                ),
               ),
               if (includePrefixSuggestions)
                 ..._prefixSuggestionChildren(colors),

@@ -28,6 +28,9 @@ class SearchBoxMoreItem {
 /// shares — the Velthuis help card and the regex switch — then the box's
 /// own [extraItems] (the dictionary adds its toolbar switch).
 ///
+/// A menu that would hold only the help item gives way to the help icon
+/// itself, so the card shows on hover without a click.
+///
 /// The regex hotkey (Alt+R, `app_shortcuts.dart` 'regex-toggle') finds this
 /// widget inside the focused field and calls [onToggleRegex], so the
 /// shortcut works without any visible Rx button.
@@ -36,10 +39,18 @@ class SearchBoxSuffixActions extends StatelessWidget {
   final bool showClear;
   final VoidCallback onClear;
 
+  /// Boxes that search only on request show a search button before the clear
+  /// button.
+  final VoidCallback? onSearch;
+
   /// Regex state of the box: on when the box takes a pattern. Without
   /// [onToggleRegex] the menu lists no regex item at all.
   final bool regexOn;
   final VoidCallback? onToggleRegex;
+
+  /// Off where the box shows its regex switch elsewhere (the Search options
+  /// row's Fuzzy | Exact | Rx switch). Alt+R still reaches [onToggleRegex].
+  final bool regexInMenu;
 
   /// Whether the menu lists the Velthuis typing help, with its Sanskrit
   /// rows ([sanskrit]) or without.
@@ -53,15 +64,18 @@ class SearchBoxSuffixActions extends StatelessWidget {
     super.key,
     required this.onClear,
     this.showClear = false,
+    this.onSearch,
     this.regexOn = false,
     this.onToggleRegex,
+    this.regexInMenu = true,
     this.velthuisHelp = true,
     this.sanskrit = true,
     this.extraItems = const [],
   });
 
-  bool get _hasMenu =>
-      velthuisHelp || (onToggleRegex != null && !kIsWeb) || extraItems.isNotEmpty;
+  bool get _regexItem => onToggleRegex != null && regexInMenu && !kIsWeb;
+
+  bool get _hasMenu => _regexItem || extraItems.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +83,13 @@ class SearchBoxSuffixActions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (onSearch != null)
+          IconButton(
+            icon: const Icon(Icons.search, size: 18),
+            tooltip: loc.search,
+            onPressed: onSearch,
+            style: _compactStyle,
+          ),
         if (showClear)
           _clearButton(loc),
         if (_hasMenu)
@@ -76,7 +97,9 @@ class SearchBoxSuffixActions extends StatelessWidget {
             // A hair of stand-off from the box's rounded edge.
             padding: const EdgeInsets.only(right: 2),
             child: _menu(context, loc),
-          ),
+          )
+        else if (velthuisHelp)
+          VelthuisHelpIcon(sanskrit: sanskrit),
       ],
     );
   }
@@ -107,7 +130,7 @@ class SearchBoxSuffixActions extends StatelessWidget {
           icon: Icons.help_outline,
           onTap: () => showVelthuisHelp(context, sanskrit: sanskrit),
         ),
-      if (onToggleRegex != null && !kIsWeb)
+      if (_regexItem)
         SearchBoxMoreItem(
           id: 'regex',
           label: loc.regularExpression,
@@ -125,7 +148,14 @@ class SearchBoxSuffixActions extends StatelessWidget {
         for (final item in items)
           PopupMenuItem(
             value: item.id,
-            child: _menuRow(item, context),
+            child: item.id == 'help'
+                ? VelthuisHelpIcon.cardTooltip(
+                    context,
+                    sanskrit: sanskrit,
+                    triggerMode: TooltipTriggerMode.manual,
+                    child: _menuRow(item, context),
+                  )
+                : _menuRow(item, context),
           ),
       ],
       onSelected: (id) => items.firstWhere((item) => item.id == id).onTap(),

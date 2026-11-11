@@ -129,6 +129,7 @@ flutter:
   assets:
     - assets/db/
     - assets/fonts/
+    - assets/map/
     - assets/font_catalog.json
     - assets/changelog.md
     - assets/icon.png

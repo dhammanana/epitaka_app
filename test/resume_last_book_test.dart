@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:epitaka/core/database/app_database.dart';
 import 'package:epitaka/core/providers/app_db_provider.dart';
+import 'package:epitaka/features/deep_links/deep_link_service.dart';
 import 'package:epitaka/features/library/services/resume_last_book.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
 import 'package:epitaka/router/app_router.dart';
@@ -94,11 +95,52 @@ Future<Harness> pumpApp(WidgetTester tester,
   return Harness(hostContext!, hostRef!, router);
 }
 
+/// `resumeLastBook` with the launch-link check stubbed: the real one asks the
+/// app_links plugin, which never answers in a widget test.
+Future<ResumeOutcome> _resume(
+  BuildContext context,
+  WidgetRef ref, {
+  required bool isDesktop,
+  Future<bool> Function()? launchedByLink,
+}) =>
+    resumeLastBook(
+      context,
+      ref,
+      isDesktop: isDesktop,
+      launchedByLink: launchedByLink ?? () async => false,
+    );
+
 void main() {
+  test('a link kept for the screens counts as a launch link', () async {
+    addTearDown(DeepLinkService.instance.dispose);
+    // No navigator yet, so the service keeps the link.
+    DeepLinkService.instance.handleUri(Uri.parse('epitaka://search?q=dhamma'));
+
+    expect(await DeepLinkService.instance.hasLaunchLink(), isTrue);
+  });
+
+  testWidgets('does not reopen the last book when a link launched the app',
+      (tester) async {
+    final h = await pumpApp(tester, history: () async => [_row()]);
+    final f = _resume(
+      h.context,
+      h.ref,
+      isDesktop: false,
+      launchedByLink: () async => true,
+    );
+    await tester.pump();
+    final outcome = await f;
+    await tester.pumpAndSettle();
+
+    expect(outcome, ResumeOutcome.launchedByLink);
+    expect(h.ref.read(readerTabsProvider).tabs, isEmpty);
+    expect(h.router.state.matchedLocation, AppRoutes.library);
+  });
+
   testWidgets('opens the newest history row at its paragraph and line',
       (tester) async {
     final h = await pumpApp(tester, history: () async => [_row()]);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
     await tester.pumpAndSettle();
@@ -126,7 +168,7 @@ void main() {
       _row(bookId: 'mula_di_01', updatedAt: DateTime(2026, 11, 3)),
       _row(bookId: 'dn_1', bookName: 'Digha Nikaya', updatedAt: DateTime(2026, 1, 1)),
     ]);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
     await tester.pumpAndSettle();
@@ -138,7 +180,7 @@ void main() {
 
   testWidgets('empty history stays on the library', (tester) async {
     final h = await pumpApp(tester, history: () async => <ReadingHistoryData>[]);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
 
@@ -150,7 +192,7 @@ void main() {
   testWidgets('a history future still loading is not empty', (tester) async {
     final completer = Completer<List<ReadingHistoryData>>();
     final h = await pumpApp(tester, history: () => completer.future);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     completer.complete([_row()]);
     final outcome = await f;
@@ -164,7 +206,7 @@ void main() {
       (tester) async {
     final h = await pumpApp(
         tester, history: () async => throw Exception('database unreadable'));
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
 
@@ -180,7 +222,7 @@ void main() {
       bookId: 'other',
       bookName: 'Other book',
     ));
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
 
@@ -196,7 +238,7 @@ void main() {
       (tester) async {
     final completer = Completer<List<ReadingHistoryData>>();
     final h = await pumpApp(tester, history: () => completer.future);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     h.ref.read(readerTabsProvider.notifier).openTab(const ReaderTabInfo(
       bookId: 'other',
@@ -224,7 +266,7 @@ void main() {
         .toList(),
       [AppRoutes.library, AppRoutes.reader],
     );
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome = await f;
     await tester.pump();
@@ -241,7 +283,7 @@ void main() {
   testWidgets('the flag stops a second attempt in the same process',
       (tester) async {
     final h = await pumpApp(tester, history: () async => [_row()]);
-    final f1 = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f1 = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome1 = await f1;
     await tester.pumpAndSettle();
@@ -249,7 +291,7 @@ void main() {
     expect(outcome1, ResumeOutcome.opened);
     expect(h.ref.read(resumeAttemptedProvider), isTrue);
 
-    final f2 = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f2 = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     final outcome2 = await f2;
 
@@ -259,7 +301,7 @@ void main() {
 
   testWidgets('desktop is skipped and still marks the flag', (tester) async {
     final h = await pumpApp(tester, history: () async => [_row()]);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: true);
+    final f = _resume(h.context, h.ref, isDesktop: true);
     await tester.pump();
     final outcome = await f;
 
@@ -273,7 +315,7 @@ void main() {
       (tester) async {
     final completer = Completer<List<ReadingHistoryData>>();
     final h = await pumpApp(tester, history: () => completer.future);
-    final f = resumeLastBook(h.context, h.ref, isDesktop: false);
+    final f = _resume(h.context, h.ref, isDesktop: false);
     await tester.pump();
     // Keep the same override list so Riverpod doesn't complain about changed
     // overrides; the host context itself is disposed by the swap.

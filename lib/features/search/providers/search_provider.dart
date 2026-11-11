@@ -276,7 +276,8 @@ final incomingSearchProvider = StateProvider<IncomingSearch?>((ref) => null);
 /// broken.
 final searchRegexProvider = StateProvider<bool>((ref) => false);
 
-/// The Fuzzy chip of the Search screen (on the sidebar and bottom sheet too,
+/// The Fuzzy and Exact parts of the Search screen's Fuzzy | Exact | Rx
+/// switch (on the sidebar and bottom sheet too,
 /// through [search]) — like TPR's: ON, every term is a prefix (`katv*`
 /// finds `katva`, `katvā`, `katvāna`); OFF, every term is a whole word
 /// (exact: `katvā` only, `katvāna` and bare `katv` no). Saved, because a
@@ -555,14 +556,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Execute a search. First stage: count results per book.
   /// If total is small enough, also load the actual results.
   ///
-  /// Search is always diacritic-insensitive (fuzzy): the FTS index is
-  /// built with `remove_diacritics 1`, so the database layer normalizes
-  /// the query the same way the index text was cleaned.
-  ///
   /// The Fuzzy chip ([searchFuzzyProvider]) decides how a term matches:
-  /// ON, every term is a prefix (`katv*`); OFF, every term is a whole word
-  /// (exact). With [regex], [query] is a pattern run over the raw Pāli
-  /// text of every paragraph, with exact diacritics (see [scanPaliRegex]).
+  /// ON, every term is a prefix (`katv*`) and diacritics are folded
+  /// (`assā` finds `assa`); OFF, every term is a whole word, diacritics
+  /// and all (`assā` finds only `assā`). With [regex], [query] is a
+  /// pattern run over the raw Pāli text of every paragraph, with exact
+  /// diacritics (see [scanPaliRegex]).
   /// It is kept as typed, spaces included, and stays out of the search
   /// history: re-run from there in normal mode it would mean something
   /// else.
@@ -1140,11 +1139,21 @@ class SearchNotifier extends StateNotifier<SearchState> {
     bool fuzzy = true,
   }) async {
     final activeLang = _activeTranslationLang();
+    // Fuzzy on: terms are folded, because the index and the lines are.
+    // Fuzzy off: Pāli terms keep their diacritics (the strict index kept
+    // them too), while the translation side stays folded — its index is
+    // the diacritic-insensitive one.
     final searchWords = regex
         ? const <String>[]
-        : normalizePaliFuzzy(
-            query,
-          ).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        : (fuzzy
+                  ? normalizePaliFuzzy(query)
+                  : cleanPaliForIndexing(query).toLowerCase())
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
+    final transSearchWords = fuzzy
+        ? searchWords
+        : searchWords.map(normalizePaliFuzzy).toList();
     final listed = {...seen};
     final windowParaIds = <List<int>>[];
     final windowSnippets = <Map<int, SearchResultRow>>[];
@@ -1277,15 +1286,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final lineTrans = lineTranslations[lid];
 
       // Check if this line matches the search query (in Pali or translation).
-      // Both the line text and search words must be normalized through
-      // normalizePaliFuzzy so diacritics don't cause a mismatch — the
-      // FTS index stores normalized text, but the sentences table stores
-      // raw Pali with diacritics (ā, ṭ, ṃ, ḷ, etc.).
+      // The FTS index stores cleaned text, while the sentences table stores
+      // raw Pali with tags and diacritics (ā, ṭ, ṃ, ḷ, etc.), so both sides
+      // go through the same cleaning either way.
       // Regex mode marks its lines below, in a regex job.
       //
-      // Fuzzy off (whole-word search): a word only marks a line it makes up
-      // on its own — the same rule the quoted FTS terms used to pick this
-      // paragraph.
+      // Fuzzy on folds diacritics. Fuzzy off keeps them for Pāli, where the
+      // strict index decided the paragraph, and still folds them for the
+      // translation, whose index is the diacritic-insensitive one. In both
+      // modes a word only marks a line it makes up on its own.
       final bool isMatch;
       if (regex) {
         isMatch = false;
@@ -1294,17 +1303,19 @@ class SearchNotifier extends StateNotifier<SearchState> {
         var matched = searchWords.any((w) => paliNormalized.contains(w));
         if (!matched && lineTrans != null) {
           final transNormalized = normalizePaliFuzzy(lineTrans);
-          matched = searchWords.any((w) => transNormalized.contains(w));
+          matched = transSearchWords.any((w) => transNormalized.contains(w));
         }
         isMatch = matched;
       } else {
-        final paliTokens = normalizePaliFuzzy(pali).split(RegExp(r'\s+')).toSet();
+        final paliTokens = cleanPaliForIndexing(
+          pali.toLowerCase(),
+        ).split(RegExp(r'\s+')).toSet();
         var matched = searchWords.any(paliTokens.contains);
         if (!matched && lineTrans != null) {
           final transTokens = normalizePaliFuzzy(
             lineTrans,
           ).split(RegExp(r'\s+')).toSet();
-          matched = searchWords.any(transTokens.contains);
+          matched = transSearchWords.any(transTokens.contains);
         }
         isMatch = matched;
       }

@@ -126,6 +126,22 @@ class DeepLinkService {
     handleUri(uri);
   }
 
+  /// Whether a link launched the app. A link already kept for the screens
+  /// counts. Android keeps the launch link, so asking again is safe.
+  Future<bool> hasLaunchLink() async {
+    if (kIsWeb) return false;
+    if (_pendingUri != null) return true;
+    try {
+      return await (_appLinks ?? AppLinks()).getInitialLink() != null;
+    } catch (e) {
+      developer.log(
+        '[DEEPLINK] Launch link check failed: $e',
+        name: 'epitaka.deeplink',
+      );
+      return false;
+    }
+  }
+
   /// Resolve the current navigator context. Returns null if not mounted.
   BuildContext? get _context => _navigatorKey?.currentContext;
 

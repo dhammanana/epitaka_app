@@ -121,8 +121,7 @@ const Map<String, String> hi = {
   'Highlight': 'हाइलाइट',
   'Highlight the selected text': 'चयनित पाठ को हाइलाइट करें',
   'Note': 'नोट',
-  'Attach a markdown note to the selection':
-      'चयन के साथ मार्कडाउन नोट जोड़ें',
+  'Attach a markdown note to the selection': 'चयन के साथ मार्कडाउन नोट जोड़ें',
   'Highlight added': 'हाइलाइट जोड़ा गया',
   'Could not anchor the selection — try again.':
       'चयन को स्थिर नहीं किया जा सका — पुनः प्रयास करें।',
@@ -172,7 +171,8 @@ const Map<String, String> hi = {
   'Sign in': 'साइन इन करें',
   'Sign out': 'साइन आउट करें',
   'Sign in to sync': 'सिंक के लिए साइन इन करें',
-  'Sign in failed. Please try again.': 'साइन इन विफल रहा। कृपया पुनः प्रयास करें।',
+  'Sign in failed. Please try again.':
+      'साइन इन विफल रहा। कृपया पुनः प्रयास करें।',
   'Sync active — highlights, notes & bookmarks are backed up':
       'सिंक चालू है — हाइलाइट्स, नोट्स और बुकमार्क का बैकअप लिया जा रहा है',
   'Sync off — annotations are stored on this device only':
@@ -273,8 +273,7 @@ const Map<String, String> hi = {
   'Page Numbering': 'पृष्ठ क्रमांकन',
   'Layout': 'लेआउट',
   'Side-by-Side View': 'आमने-सामने दृश्य',
-  'Show Pāli and translation side by side':
-      'पालि और अनुवाद आमने-सामने दिखाएँ',
+  'Show Pāli and translation side by side': 'पालि और अनुवाद आमने-सामने दिखाएँ',
   'Copy / Clipboard': 'कॉपी / क्लिपबोर्ड',
   'Quote Format': 'उद्धरण प्रारूप',
   'Default Copy Scope': 'डिफ़ॉल्ट कॉपी दायरा',
@@ -330,7 +329,8 @@ const Map<String, String> hi = {
 
   // ── Translation Builder ────────────────────────────────────────────
   'Translation Builder': 'अनुवाद निर्माता',
-  'Translate books on-device with AI': 'AI से ग्रंथों का अनुवाद सीधे डिवाइस पर करें',
+  'Translate books on-device with AI':
+      'AI से ग्रंथों का अनुवाद सीधे डिवाइस पर करें',
   'Start Translation': 'अनुवाद आरंभ करें',
   'Share DB': 'DB साझा करें',
   'AI Configuration': 'AI कॉन्फ़िगरेशन',
@@ -374,8 +374,7 @@ const Map<String, String> hi = {
   'Show only Pāli text, joined as paragraphs':
       'केवल पालि पाठ अनुच्छेदों के रूप में जुड़ा हुआ दिखाएँ',
   'Line by Line': 'पंक्ति-दर-पंक्ति',
-  'Show Pāli followed by its translation':
-      'पालि के बाद उसका अनुवाद दिखाएँ',
+  'Show Pāli followed by its translation': 'पालि के बाद उसका अनुवाद दिखाएँ',
   'Side by Side': 'आमने-सामने',
   'Show Pāli and translation in two columns':
       'पालि और अनुवाद दो स्तंभों में दिखाएँ',
@@ -438,7 +437,8 @@ const Map<String, String> hi = {
   'Use Regex': 'Regex का उपयोग करें',
   'Find:': 'खोजें:',
   'Replace with:': 'इससे बदलें:',
-  'Regex uses Dart RegExp syntax.': 'Regex में Dart RegExp सिंटैक्स का उपयोग होता है।',
+  'Regex uses Dart RegExp syntax.':
+      'Regex में Dart RegExp सिंटैक्स का उपयोग होता है।',
   'Edit Replacement': 'प्रतिस्थापन संपादित करें',
   'Are you sure you want to delete this rule?':
       'क्या आप वाकई इस नियम को हटाना चाहते हैं?',
@@ -477,7 +477,7 @@ const Map<String, String> hi = {
   'Search results for': 'खोज परिणाम:',
   'No direct matches found for': 'इसके लिए कोई सीधा मिलान नहीं मिला:',
 
-    // ── Library ─────────────────────────────────────────────────────────
+  // ── Library ─────────────────────────────────────────────────────────
   'Browse': 'ब्राउज़ करें',
   'Reading': 'पठन',
   'Bookmarks': 'बुकमार्क',
@@ -503,8 +503,7 @@ const Map<String, String> hi = {
   'Error loading bookmarks:': 'बुकमार्क लोड करने में त्रुटि:',
   'Error loading history:': 'इतिहास लोड करने में त्रुटि:',
   'No books in this Piṭaka yet.': 'इस पिटक में अभी कोई ग्रंथ नहीं है।',
-  'Could not load the Tipitaka library.':
-      'तिपिटक पुस्तकालय लोड नहीं हो सका।',
+  'Could not load the Tipitaka library.': 'तिपिटक पुस्तकालय लोड नहीं हो सका।',
   'Delete bookmark': 'बुकमार्क हटाएँ',
   'Delete history entry for': 'इसकी इतिहास प्रविष्टि हटाएँ:',
   'Removed: ': 'हटाया गया: ',
@@ -592,7 +591,8 @@ const Map<String, String> hi = {
 
   // ── Outline ─────────────────────────────────────────────────────────
   'Outline': 'रूपरेखा',
-  'Every section with its study guide': 'प्रत्येक खंड अपने अध्ययन-मार्गदर्शक सहित',
+  'Every section with its study guide':
+      'प्रत्येक खंड अपने अध्ययन-मार्गदर्शक सहित',
   'Open a book to see its outline': 'रूपरेखा देखने के लिए कोई ग्रंथ खोलें',
   'No sections found for this book': 'इस ग्रंथ के लिए कोई खंड नहीं मिला',
   'Tap a section to preview it, or read its study guide':
@@ -664,7 +664,8 @@ const Map<String, String> hi = {
   'API Key': 'API कुंजी',
   'Base URL': 'बेस URL',
   'Check key & load models': 'कुंजी जाँचें और मॉडल लोड करें',
-  'Checking key & loading models...': 'कुंजी जाँची जा रही है और मॉडल लोड हो रहे हैं...',
+  'Checking key & loading models...':
+      'कुंजी जाँची जा रही है और मॉडल लोड हो रहे हैं...',
   'Tool Model (for search & function calling)':
       'टूल मॉडल (खोज और फ़ंक्शन कॉलिंग के लिए)',
   'Answer Model (for final answer generation)':
@@ -741,8 +742,7 @@ const Map<String, String> hi = {
   // ── Gavesana Screen ─────────────────────────────────────────────────
   'Ask about the Tipitaka…': 'तिपिटक के बारे में पूछें…',
 
-  'Search semantically across the Tipitaka':
-      'तिपिटक में अर्थाधारित खोज करें',
+  'Search semantically across the Tipitaka': 'तिपिटक में अर्थाधारित खोज करें',
   "Gavesana uses AI to find passages related to your\nquery, even if they don't share exact words.":
       "गवेषणा AI की सहायता से आपके प्रश्न से संबंधित अनुच्छेद खोजती है,\nभले ही उनमें ठीक वही शब्द न हों।",
 
@@ -785,8 +785,7 @@ const Map<String, String> hi = {
   'Unknown error': 'अज्ञात त्रुटि',
   'Download the required databases to get started.':
       'आरंभ करने के लिए आवश्यक डेटाबेस डाउनलोड करें।',
-  'You can add more translations later.':
-      'आप बाद में और अनुवाद जोड़ सकते हैं।',
+  'You can add more translations later.': 'आप बाद में और अनुवाद जोड़ सकते हैं।',
   'Required Databases': 'आवश्यक डेटाबेस',
   'These are needed for the app to function.':
       'ऐप के संचालन के लिए ये आवश्यक हैं।',
@@ -1041,8 +1040,7 @@ const Map<String, String> hi = {
       'उद्धरण — प्रारूपित संदर्भ सहित कॉपी करें।',
   'Copy Link — copy a shareable link to this exact passage.':
       'लिंक कॉपी करें — इसी अनुच्छेद का साझा करने योग्य लिंक कॉपी करें।',
-  'Dictionary — look up the selected word.':
-      'शब्दकोश — चयनित शब्द देखें।',
+  'Dictionary — look up the selected word.': 'शब्दकोश — चयनित शब्द देखें।',
   'Explain — ask Vīmaṃsā AI to explain the selection.':
       'व्याख्या — वीमंसा AI से चयन की व्याख्या करवाएँ।',
   'Summarize Ch. — summarize the current chapter with AI.':
@@ -1101,4 +1099,50 @@ const Map<String, String> hi = {
   'No sutta found for ': 'कोई सुत्त नहीं मिला: ',
   'Could not look up sutta codes. The error is in the log.':
       'सुत्त कोड नहीं खोजे जा सके। त्रुटि लॉग में है।',
+
+  // ── Map of places ───────────────────────────────────────────────────
+  'Map': 'नक्शा',
+  'Places of the texts': 'ग्रंथों के स्थान',
+  'Places': 'स्थान',
+  'Place': 'स्थान',
+  'People': 'लोग',
+  'Person': 'व्यक्ति',
+  'Deity': 'देवता',
+  'Animals': 'पशु',
+  'Animal': 'पशु',
+  'Search names': 'नाम खोजें',
+  'No names found': 'कोई नाम नहीं मिला',
+  'People and clans': 'लोग और कुल',
+  'Search places': 'स्थान खोजें',
+  'No places found': 'कोई स्थान नहीं मिला',
+  'Loading the map…': 'नक्शा लोड हो रहा है…',
+  'The map could not be loaded.': 'नक्शा लोड नहीं हो सका।',
+  'Sources of the map': 'नक्शे के स्रोत',
+  'Zoom in': 'बड़ा करें',
+  'Zoom out': 'छोटा करें',
+  'Show the whole map': 'पूरा नक्शा दिखाएँ',
+  'This name is not on the map.': 'यह नाम नक्शे पर नहीं है।',
+  'Overview': 'अवलोकन',
+  'Details': 'विवरण',
+  'Occurrences': 'उल्लेख',
+  'Family': 'कुल',
+  'Coordinates': 'निर्देशांक',
+  'Accuracy': 'सटीकता',
+  'Exact location': 'सटीक स्थान',
+  'Approximate location': 'अनुमानित स्थान',
+  'Approximate position': 'अनुमानित स्थिति',
+  'In or near another place': 'किसी अन्य स्थान में या उसके पास',
+  'Texts that name it': 'इसका नाम लेने वाले ग्रंथ',
+  'Mentions': 'उल्लेख',
+  'Scanning the texts…': 'ग्रंथों को खोजा जा रहा है…',
+  'Reading the text index…': 'पाठ सूचकांक पढ़ा जा रहा है…',
+  'The texts could not be searched.': 'ग्रंथों में खोज नहीं हो सकी।',
+  'This name was not found in the Pāli text.': 'यह नाम पालि पाठ में नहीं मिला।',
+  'This name has no word forms to search for.':
+      'इस नाम के लिए खोजने योग्य कोई शब्दरूप नहीं है।',
+  'Open in dictionary': 'शब्दकोश में खोलें',
+  'Open the map': 'नक्शा खोलें',
+  'book': 'पुस्तक',
+  'paragraph': 'अनुच्छेद',
+  'paragraphs': 'अनुच्छेद',
 };

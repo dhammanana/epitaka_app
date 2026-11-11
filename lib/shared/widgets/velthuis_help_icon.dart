@@ -59,17 +59,21 @@ class VelthuisHelpIcon extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
+  /// Hangs the card on [child]: pointing at it shows the card at once.
+  /// [triggerMode] sets what a touch does; the "more" menu's help row uses
+  /// [TooltipTriggerMode.manual], since a tap there opens the dialog.
+  static Widget cardTooltip(
+    BuildContext context, {
+    required bool sanskrit,
+    required TooltipTriggerMode triggerMode,
+    required Widget child,
+  }) {
+    final colors = Theme.of(context).colorScheme;
     return Tooltip(
       richMessage: message(context, sanskrit: sanskrit),
       waitDuration: Duration.zero,
       showDuration: const Duration(seconds: 10),
-      triggerMode: TooltipTriggerMode.tap,
+      triggerMode: triggerMode,
       ignorePointer: true,
       // A screen reader would read the whole card on every box.
       excludeFromSemantics: true,
@@ -79,6 +83,19 @@ class VelthuisHelpIcon extends StatelessWidget {
         border: Border.all(color: colors.primary, width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+
+    return cardTooltip(
+      context,
+      sanskrit: sanskrit,
+      triggerMode: TooltipTriggerMode.tap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Icon(

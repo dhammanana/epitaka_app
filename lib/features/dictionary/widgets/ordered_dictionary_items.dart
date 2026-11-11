@@ -38,8 +38,12 @@ List<Widget> buildOrderedDictionaryItems({
   PageAnchors? anchors,
   void Function(String targetId)? onJump,
   bool showSummary = true,
+  Widget? leading,
 }) {
   final widgets = <Widget>[];
+  // The map card (when the word is a place) sits above the dictionary
+  // entries, as the map does in tipitaka.app's paragraph panel.
+  if (leading != null) widgets.add(leading);
   var run = <String>[];
   var statusShown = false;
   final summaryEnabled = entries.any(
@@ -99,7 +103,8 @@ List<Widget> buildOrderedDictionaryItems({
     if (!item.ready) continue;
     if (item.id == kDpdSummaryId) {
       flushRun();
-      if (!summaryOnTop && (showSummary || level == DictionaryLevel.sankhitta)) {
+      if (!summaryOnTop &&
+          (showSummary || level == DictionaryLevel.sankhitta)) {
         widgets.add(summary());
       }
       continue;
@@ -132,18 +137,18 @@ List<Widget> buildOrderedDictionaryItems({
             _tappable(
               onWordTap,
               bookId == _paliDefinitionBookId
-              ? PaliDefinitionSection(
-                  searchWord: searchWord,
-                  bookName: item.label,
-                  colors: colors,
-                )
-              : DictDefinitionSection(
-                  bookId: bookId,
-                  bookName: item.label,
-                  searchWord: searchWord,
-                  colors: colors,
-                  onEntryTap: onWordTap,
-                ),
+                  ? PaliDefinitionSection(
+                      searchWord: searchWord,
+                      bookName: item.label,
+                      colors: colors,
+                    )
+                  : DictDefinitionSection(
+                      bookId: bookId,
+                      bookName: item.label,
+                      searchWord: searchWord,
+                      colors: colors,
+                      onEntryTap: onWordTap,
+                    ),
             ),
           ),
         );
