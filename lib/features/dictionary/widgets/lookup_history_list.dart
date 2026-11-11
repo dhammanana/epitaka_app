@@ -1,140 +1,64 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_localizations.dart';
-import 'dictionary_search_shared.dart';
+import '../../../shared/widgets/history_list.dart';
+import '../providers/dictionary_font_scale_provider.dart';
 
 /// The whole lookup history as a list over the results, newest first, drawn
-/// like the suggestion box. A tap on a word looks it up. [words] come oldest
-/// first, as the history keeps them.
+/// with the shared history rows. A tap on a word looks it up. [words] come
+/// oldest first, as the history keeps them.
 ///
-/// With a keyboard or mouse the newest word takes focus when the list opens,
-/// so Down, Up and Enter work at once, and Escape closes the list.
-class LookupHistoryList extends StatefulWidget {
+/// The text box keeps the cursor. The host moves [selectedIndex] with the
+/// arrow keys (row `i` is word `words.length - 1 - i`) and closes the list
+/// on Escape.
+class LookupHistoryList extends ConsumerWidget {
   const LookupHistoryList({
     super.key,
     required this.words,
     required this.colors,
     required this.onTap,
-    required this.onClose,
+    this.onClose,
+    this.onDelete,
+    this.onClear,
+    this.selectedIndex = -1,
+    this.controller,
   });
 
   final List<String> words;
   final ColorScheme colors;
   final void Function(String word) onTap;
-  final VoidCallback onClose;
+  /// Null when the list shows because the box is empty: nothing to close.
+  final VoidCallback? onClose;
+  final void Function(String word)? onDelete;
+  final VoidCallback? onClear;
+  final int selectedIndex;
+  final ScrollController? controller;
 
   @override
-  State<LookupHistoryList> createState() => _LookupHistoryListState();
-}
-
-class _LookupHistoryListState extends State<LookupHistoryList> {
-  final _listNode = FocusNode(
-    debugLabel: 'lookup history list',
-    skipTraversal: true,
-  );
-  final _firstRowNode = FocusNode(debugLabel: 'lookup history first row');
-  // Where the keyboard was before the list took it, for Escape to hand back.
-  FocusNode? _previousFocus;
-
-  @override
-  void initState() {
-    super.initState();
-    _previousFocus = FocusManager.instance.primaryFocus;
-    // Touch leaves focus alone: moving it would close the phone's keyboard.
-    if (FocusManager.instance.highlightMode != FocusHighlightMode.traditional) {
-      return;
-    }
-    // After the first frame, so the first row exists to take the focus.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      (widget.words.isEmpty ? _listNode : _firstRowNode).requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _listNode.dispose();
-    _firstRowNode.dispose();
-    super.dispose();
-  }
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.escape) {
-      return KeyEventResult.ignored;
-    }
-    widget.onClose();
-    // A node whose widget is gone keeps its context but loses its parent;
-    // asking it for focus would only be deferred until it came back.
-    if (_previousFocus?.parent != null) _previousFocus!.requestFocus();
-    return KeyEventResult.handled;
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final loc = AppLocalizations.of(context);
-    final words = widget.words;
-    final colors = widget.colors;
-    return Focus(
-      focusNode: _listNode,
-      onKeyEvent: _onKey,
-      child: Material(
-        color: colors.surface,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-          decoration: BoxDecoration(
-            color: colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-            border: Border.all(
-              color: colors.outlineVariant.withValues(alpha: 0.4),
+    final pali = ref.watch(dictionaryPaliProvider);
+    final style = historyTitleStyle(
+      colors,
+    ).copyWith(fontFamily: pali.fontFamily.fontFamily);
+    return Material(
+      color: colors.surface,
+      child: HistoryList(
+        title: loc.dictionaryHeaderHistoryTitle,
+        onClear: onClear,
+        onClose: onClose,
+        controller: controller,
+        selectedIndex: selectedIndex < 0 ? null : selectedIndex,
+        items: [
+          for (final word in words.reversed)
+            HistoryItem(
+              key: word,
+              title: Text(word, style: style),
+              onTap: () => onTap(word),
+              onDelete: onDelete == null ? null : () => onDelete!(word),
             ),
-          ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 12, right: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        loc.dictionaryHeaderHistoryTitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      iconSize: 18,
-                      visualDensity: VisualDensity.compact,
-                      tooltip: loc.closePanel,
-                      onPressed: widget.onClose,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  itemCount: words.length,
-                  itemBuilder: (context, i) {
-                    final word = words[words.length - 1 - i];
-                    return SuggestionTile(
-                      word: word,
-                      colors: colors,
-                      focusNode: i == 0 ? _firstRowNode : null,
-                      onTap: () => widget.onTap(word),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }

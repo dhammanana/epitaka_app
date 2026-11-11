@@ -776,6 +776,8 @@ class AppLocalizations {
   String get resultSingular => _t('result');
   String get recentSearches => _t('Recent searches');
   String get clearHistory => _t('Clear history');
+  String get recentSuttas => _t('Recent suttas');
+  String get recentQuestions => _t('Recent questions');
 
   /// `Within N words`
   String withinNWords(int n) => '${_t('Within')} $n ${_t('words')}';

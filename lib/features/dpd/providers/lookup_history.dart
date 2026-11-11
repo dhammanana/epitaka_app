@@ -66,6 +66,28 @@ class LookupHistory extends ChangeNotifier {
     _changed();
   }
 
+  /// Drops [word] from the list. The position follows the words that stay; if
+  /// [word] was the one on screen, no word is current, as after
+  /// [resetPosition].
+  void remove(String word) {
+    final i = _words.indexOf(word);
+    if (i < 0) return;
+    _words.removeAt(i);
+    if (_index > i) {
+      _index--;
+    } else if (_index == i) {
+      _index = _words.isEmpty ? -1 : _words.length;
+    }
+    _changed();
+  }
+
+  void clear() {
+    if (_words.isEmpty) return;
+    _words.clear();
+    _index = -1;
+    _changed();
+  }
+
   /// Moves the position and returns the word to show, or null at an end.
   String? goBack() {
     if (!canGoBack) return null;

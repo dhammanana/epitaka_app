@@ -21,6 +21,9 @@ import '../../../shared/widgets/search_box_decoration.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../providers/search_provider.dart';
+import '../../../shared/widgets/history_nav.dart';
+import '../providers/search_history_provider.dart';
+import 'search_history_rows.dart';
 import 'match_mode_switch.dart';
 import 'search_history_chips.dart';
 import 'search_result_highlight.dart';
@@ -59,6 +62,27 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   /// The suggestion the arrow keys have reached; -1 means none.
   int _suggestionIndex = -1;
   final GlobalKey _suggestionKey = GlobalKey();
+
+  // History rows show while the box is empty and no suggestion list is open.
+  // The box keeps the cursor; the arrows move a highlight over the rows.
+  final _rowsScroll = ScrollController();
+  late final HistoryNav _nav = HistoryNav(
+    onChanged: () {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _nav.scrollTo(_rowsScroll),
+      );
+    },
+    onActivate: (i) {
+      final history = ref.read(searchHistoryProvider);
+      if (i < history.length) _onHistorySelected(history[i]);
+    },
+  );
+  bool _boxWasEmpty = true;
+  bool get _showRows =>
+      _searchController.text.isEmpty &&
+      !_showSuggestions &&
+      ref.read(searchHistoryProvider).isNotEmpty;
   bool _isMultiWord = false;
   bool _showFilters = false;
 
@@ -89,6 +113,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     _searchNav.removeListener(_onNavChanged);
     _resultsFocusNode.dispose();
     _resultsScrollController.dispose();
+    _rowsScroll.dispose();
     _searchController.dispose();
     _focusNode.dispose();
     _debounce?.cancel();
@@ -156,6 +181,12 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
 
   void _onSearchChanged(String value) {
     _suggestionIndex = -1;
+    if (value.isNotEmpty) _nav.reset();
+    // The rows appear and hide with the text, not after the suggestion wait.
+    if (value.isEmpty != _boxWasEmpty) {
+      _boxWasEmpty = value.isEmpty;
+      setState(() {});
+    }
     if (ref.read(searchRegexProvider)) {
       // A pattern has no suggestions and sets its own word distance.
       _debounce?.cancel();
@@ -222,6 +253,10 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   /// work; the box keeps the cursor after a search, so this is the way in.
   KeyEventResult _onFieldKey(FocusNode node, KeyEvent event) {
     final key = event.logicalKey;
+    if (_showRows) {
+      final r = _nav.handle(event, ref.read(searchHistoryProvider).length);
+      if (r != KeyEventResult.ignored) return r;
+    }
     if (_showSuggestions && _suggestions.isNotEmpty) {
       if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
         return KeyEventResult.ignored;
@@ -308,6 +343,8 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   void _onHistorySelected(String query) {
     ref.read(searchRegexProvider.notifier).state = false;
     _searchController.text = query;
+    _boxWasEmpty = query.isEmpty;
+    _nav.reset();
     final wordCount = query.trim().isEmpty
         ? 0
         : query.trim().split(RegExp(r'\s+')).length;
@@ -385,6 +422,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
         ? searchState.patternMessage(loc)
         : null;
     _syncNavigator(searchState);
+    _nav.clamp(ref.watch(searchHistoryProvider).length);
 
     return Column(
       children: [
@@ -423,10 +461,6 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
             onEditingComplete: () {},
           ),
         ),
-
-        // Recent search history (visible until a search runs).
-        if (searchState is SearchIdle && !_showSuggestions)
-          SearchHistoryChips(onSelected: _onHistorySelected, compact: true),
 
         // Options bar
         Padding(
@@ -698,22 +732,30 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
         const Divider(height: 1),
         // Results — wrapped in a Focus so j/k navigate the list (desktop).
         Expanded(
-          child: Focus(
-            focusNode: _resultsFocusNode,
-            onFocusChange: (has) {
-              if (has) _searchNav.selectFirst();
-              setState(() {});
-            },
-            onKeyEvent: (node, event) => handleSearchNavKey(
-              event,
-              _searchNav,
-              onActivate: _activateSelectedRow,
-              onEscape: () => _focusNode.requestFocus(),
-              onExpandBook: ref.read(searchProvider.notifier).expandBook,
-              onCollapseBook: ref.read(searchProvider.notifier).collapseBook,
-            ),
-            child: _buildResults(searchState, colors),
-          ),
+          child: _showRows
+              ? SearchHistoryRows(
+                  onSelected: _onHistorySelected,
+                  selectedIndex: _nav.index,
+                  controller: _rowsScroll,
+                )
+              : Focus(
+                  focusNode: _resultsFocusNode,
+                  onFocusChange: (has) {
+                    if (has) _searchNav.selectFirst();
+                    setState(() {});
+                  },
+                  onKeyEvent: (node, event) => handleSearchNavKey(
+                    event,
+                    _searchNav,
+                    onActivate: _activateSelectedRow,
+                    onEscape: () => _focusNode.requestFocus(),
+                    onExpandBook: ref.read(searchProvider.notifier).expandBook,
+                    onCollapseBook: ref
+                        .read(searchProvider.notifier)
+                        .collapseBook,
+                  ),
+                  child: _buildResults(searchState, colors),
+                ),
         ),
       ],
     );

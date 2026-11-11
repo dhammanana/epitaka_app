@@ -8,9 +8,9 @@ import 'package:epitaka/features/dictionary/providers/dictionary_header_provider
 import 'package:epitaka/features/dictionary/providers/dictionary_sheet_open_provider.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_header_icons.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_panel.dart';
-import 'package:epitaka/features/dictionary/widgets/dictionary_search_shared.dart';
 import 'package:epitaka/features/dictionary/widgets/dictionary_sheet.dart';
 import 'package:epitaka/features/dictionary/widgets/lookup_history_list.dart';
+import 'package:epitaka/shared/widgets/history_list.dart';
 import 'package:epitaka/features/dpd/providers/lookup_history.dart';
 import 'package:epitaka/features/settings/screens/dictionary_settings_screen.dart';
 import 'package:epitaka/features/settings/widgets/settings_section.dart';
@@ -111,13 +111,9 @@ void main() {
       await settleShell(tester, frames: 3);
       expect(find.byType(LookupHistoryList), findsOneWidget);
       final shown = tester
-          .widgetList<SuggestionTile>(
-            find.descendant(
-              of: find.byType(LookupHistoryList),
-              matching: find.byType(SuggestionTile),
-            ),
-          )
-          .map((t) => t.word)
+          .widget<HistoryList>(find.byType(HistoryList))
+          .items
+          .map((i) => i.key)
           .toList();
       expect(shown, ['dhamma', 'kamma', 'citta']);
     });
@@ -183,10 +179,10 @@ void main() {
     final row = tester.widget<InkWell>(
       find
           .descendant(
-            of: find.byType(LookupHistoryList),
+            of: find.byKey(const ValueKey('kamma')),
             matching: find.byType(InkWell),
           )
-          .at(1),
+          .first,
     );
     final scheme = Theme.of(
       tester.element(find.byType(LookupHistoryList)),
@@ -238,6 +234,54 @@ void main() {
     });
   });
 
+  group('history list in an empty box', () {
+    testWidgets('shows with no word on screen, hides when a word is typed', (
+      tester,
+    ) async {
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(wrapShell(c, const DictionaryPanel()));
+      await settleShell(tester);
+      // The panel opens on the current word; the user clears the box.
+      await tester.enterText(find.byType(TextField).first, '');
+      await settleShell(tester, frames: 3);
+      expect(find.byType(LookupHistoryList), findsOneWidget);
+      // Shown because the box is empty, so it has nothing to close.
+      expect(
+        find.descendant(
+          of: find.byType(LookupHistoryList),
+          matching: find.byIcon(Icons.close),
+        ),
+        findsNothing,
+      );
+      final list = tester.widget<HistoryList>(find.byType(HistoryList));
+      expect(list.items.map((i) => i.key).toList(), ['dhamma', 'kamma', 'citta']);
+
+      await tester.enterText(find.byType(TextField).first, 'k');
+      await tester.pump();
+      expect(find.byType(LookupHistoryList), findsNothing);
+    });
+
+    testWidgets('the trash icon removes a word and Clear empties the list', (
+      tester,
+    ) async {
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(wrapShell(c, const DictionaryPanel()));
+      await settleShell(tester);
+      // The panel opens on the current word; the user clears the box.
+      await tester.enterText(find.byType(TextField).first, '');
+      await settleShell(tester, frames: 3);
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await settleShell(tester, frames: 3);
+      expect(c.read(lookupHistoryProvider).words, ['citta', 'kamma']);
+      await tester.tap(find.text('Clear history'));
+      await settleShell(tester, frames: 3);
+      expect(c.read(lookupHistoryProvider).words, isEmpty);
+      expect(find.byType(LookupHistoryList), findsNothing);
+    });
+  });
+
   group('history list keys', () {
     void keyboardInput() {
       FocusManager.instance.highlightStrategy =
@@ -257,7 +301,7 @@ void main() {
       expect(find.byType(LookupHistoryList), findsOneWidget);
     }
 
-    testWidgets('Down then Enter looks up the next word at once', (
+    testWidgets('Down, Down, Enter looks up the second newest word', (
       tester,
     ) async {
       keyboardInput();
@@ -271,6 +315,9 @@ void main() {
       await tester.pump();
       await openList(tester, c);
 
+      // The box keeps the cursor; the first Down highlights the newest row
+      // (dhamma, the word on screen), the second the one before it.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await settleShell(tester);
@@ -278,7 +325,7 @@ void main() {
       expect(fieldText(tester), 'kamma');
     });
 
-    testWidgets('Escape closes the list and the field gets its focus back', (
+    testWidgets('Escape closes the list and the field keeps its focus', (
       tester,
     ) async {
       keyboardInput();
@@ -291,13 +338,65 @@ void main() {
       await tester.tap(find.byType(TextField).first);
       await tester.pump();
       await openList(tester, c);
-      expect(searchNode(tester).hasFocus, isFalse);
+      expect(searchNode(tester).hasFocus, isTrue);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await settleShell(tester, frames: 3);
       expect(find.byType(LookupHistoryList), findsNothing);
       expect(searchNode(tester).hasFocus, isTrue);
       expect(fieldText(tester), 'dhamma');
+    });
+
+    testWidgets('Down, Down, Up, Up leaves no highlight and typing works', (
+      tester,
+    ) async {
+      keyboardInput();
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+      int? selected() =>
+          tester.widget<HistoryList>(find.byType(HistoryList)).selectedIndex;
+
+      expect(selected(), isNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(selected(), 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(selected(), 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(selected(), isNull);
+
+      await tester.enterText(find.byType(TextField).first, 'k');
+      await settleShell(tester, frames: 3);
+      expect(find.byType(LookupHistoryList), findsNothing);
+    });
+
+    testWidgets('Down never goes past the oldest word', (tester) async {
+      keyboardInput();
+      screen(tester);
+      final c = await container(tester);
+      await tester.pumpWidget(
+        wrapShell(c, withIcons(const DictionaryPanel(initialWord: 'dhamma'))),
+      );
+      await settleShell(tester);
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await openList(tester, c);
+      for (var i = 0; i < 8; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      }
+      await tester.pump();
+      final list = tester.widget<HistoryList>(find.byType(HistoryList));
+      expect(list.selectedIndex, list.items.length - 1);
     });
 
     testWidgets('Escape closes the list in the sheet too', (tester) async {
@@ -342,68 +441,11 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pump(const Duration(milliseconds: 60));
       }
-      final row = FocusManager.instance.primaryFocus!.context!
-          .findAncestorWidgetOfExactType<SuggestionTile>();
-      expect(row?.word, 'w10');
+      // Thirty Downs from no highlight reach row 29, which is w11.
+      final list = tester.widget<HistoryList>(find.byType(HistoryList));
+      expect(list.selectedIndex, 29);
+      expect(list.items[29].key, 'w11');
     });
-
-    testWidgets(
-      'Escape does not hand focus to a node that has left the screen',
-      (tester) async {
-        keyboardInput();
-        screen(tester);
-        final c = await container(tester);
-        final before = FocusNode();
-        addTearDown(before.dispose);
-        late StateSetter set;
-        var holderShown = true;
-        var listOpen = false;
-        await tester.pumpWidget(
-          wrapShell(
-            c,
-            StatefulBuilder(
-              builder: (context, setState) {
-                set = setState;
-                return Column(
-                  children: [
-                    if (holderShown)
-                      Focus(
-                        focusNode: before,
-                        child: const SizedBox(height: 10),
-                      ),
-                    if (listOpen)
-                      Expanded(
-                        child: LookupHistoryList(
-                          words: const ['kamma'],
-                          colors: Theme.of(context).colorScheme,
-                          onTap: (_) {},
-                          onClose: () => setState(() => listOpen = false),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        );
-        before.requestFocus();
-        await tester.pump();
-        set(() => listOpen = true);
-        await settleShell(tester, frames: 3);
-        expect(before.hasFocus, isFalse);
-
-        set(() => holderShown = false);
-        await tester.pump();
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await settleShell(tester, frames: 3);
-        expect(find.byType(LookupHistoryList), findsNothing);
-
-        // The node comes back later: it must not grab focus by an old request.
-        set(() => holderShown = true);
-        await settleShell(tester, frames: 3);
-        expect(before.hasFocus, isFalse);
-      },
-    );
 
     testWidgets('a touch device keeps its focus when the list opens', (
       tester,

@@ -6,6 +6,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/pali_script_converter.dart';
 import '../../../core/utils/velthuis.dart';
+import '../../../shared/widgets/history_list.dart';
+import '../../../shared/widgets/history_nav.dart';
 import '../../../shared/widgets/search_box_actions.dart';
 import '../../../shared/widgets/search_box_decoration.dart';
 import '../../ai_qa/providers/ai_qa_settings_provider.dart';
@@ -15,6 +17,7 @@ import '../../shared/widgets/ai_error_card.dart';
 import '../../search/widgets/search_filter_panel.dart';
 import '../../search/widgets/search_results_view.dart';
 import '../providers/ai_search_provider.dart';
+import '../providers/gavesana_history_provider.dart';
 
 /// Shared Gavesana AI search UI.
 ///
@@ -45,7 +48,41 @@ class GavesanaSearchView extends ConsumerStatefulWidget {
 
 class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   final _queryController = TextEditingController();
-  final _focusNode = FocusNode();
+  late final _focusNode = FocusNode(onKeyEvent: _onFieldKey);
+  final _rowsScroll = ScrollController();
+
+  // The history rows show in the idle area while the box is empty. The box
+  // keeps the cursor; the arrows move a highlight over the rows.
+  late final HistoryNav _nav = HistoryNav(
+    onChanged: () {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _nav.scrollTo(_rowsScroll),
+      );
+    },
+    onActivate: (i) {
+      final entries = _historyEntries();
+      if (i < entries.length) _restore(entries[i].entry);
+    },
+  );
+
+  List<({String raw, GavesanaEntry entry})> _historyEntries() => [
+    for (final raw in ref.read(gavesanaHistoryProvider))
+      if (decodeGavesana(raw) case final e?) (raw: raw, entry: e),
+  ];
+
+  /// The rows share the idle area with the hint: they show only where the
+  /// idle state itself shows.
+  bool get _rowsVisible =>
+      _queryController.text.isEmpty &&
+      ref.read(aiSearchProvider) is AiSearchIdle &&
+      ref.read(searchProvider) is! SearchResults &&
+      _historyEntries().isNotEmpty;
+
+  KeyEventResult _onFieldKey(FocusNode node, KeyEvent event) {
+    if (!_rowsVisible) return KeyEventResult.ignored;
+    return _nav.handle(event, _historyEntries().length);
+  }
 
   /// Whether the category / nikaya chips are shown under the search box.
   bool _showFilters = false;
@@ -66,12 +103,14 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   @override
   void dispose() {
     _queryController.dispose();
+    _rowsScroll.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
-    // Refresh the suffix (clear) button visibility.
+    // Refresh the suffix (clear) button visibility and the history rows.
+    if (value.isNotEmpty) _nav.reset();
     setState(() {});
   }
 
@@ -80,6 +119,15 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
     if (query.isEmpty) return;
     _focusNode.unfocus();
     ref.read(aiSearchProvider.notifier).search(query);
+  }
+
+  /// Show the saved results of a finished run: no AI call.
+  void _restore(GavesanaEntry entry) {
+    _queryController.text = entry.question;
+    _nav.reset();
+    _focusNode.unfocus();
+    setState(() {});
+    ref.read(aiSearchProvider.notifier).restore(entry);
   }
 
   void _clearSearch() {
@@ -92,6 +140,8 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   /// Run a new AI search for [term] (used by the term chips).
   void _searchTerm(String term) {
     _queryController.text = term;
+    _nav.reset();
+    setState(() {});
     ref.read(aiSearchProvider.notifier).search(term);
   }
 
@@ -180,7 +230,11 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
       ),
       style: searchBoxTextStyle(context, size: _boxSize),
       onChanged: _onSearchChanged,
-      onSubmitted: (_) => _executeSearch(),
+      onSubmitted: (_) {
+        // The key handler already restored a highlighted history row.
+        if (_nav.index >= 0 && _rowsVisible) return;
+        _executeSearch();
+      },
     );
   }
 
@@ -195,6 +249,11 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
         // Show any existing search results first; otherwise the idle hint.
         if (searchState is SearchResults) {
           return SearchResultsView(state: searchState);
+        }
+        // A saved run is being shown: the box holds its question already.
+        if (searchState is SearchLoading &&
+            _queryController.text.isNotEmpty) {
+          return const Center(child: CircularProgressIndicator());
         }
         return _buildIdleState(colors, loc);
 
@@ -221,6 +280,43 @@ class _GavesanaSearchViewState extends ConsumerState<GavesanaSearchView> {
   }
 
   Widget _buildIdleState(ColorScheme colors, AppLocalizations loc) {
+    final entries = [
+      for (final raw in ref.watch(gavesanaHistoryProvider))
+        if (decodeGavesana(raw) case final e?) (raw: raw, entry: e),
+    ];
+    _nav.clamp(entries.length);
+    final hint = _buildIdleHint(colors, loc);
+    if (_queryController.text.isNotEmpty || entries.isEmpty) return hint;
+    final notifier = ref.read(gavesanaHistoryProvider.notifier);
+    return Column(
+      children: [
+        Flexible(
+          flex: 3,
+          child: HistoryList(
+            title: loc.recentQuestions,
+            onClear: notifier.clear,
+            controller: _rowsScroll,
+            selectedIndex: _nav.index < 0 ? null : _nav.index,
+            items: [
+              for (final e in entries)
+                HistoryItem(
+                  key: e.raw,
+                  title: Text(
+                    e.entry.question,
+                    style: historyTitleStyle(colors),
+                  ),
+                  onTap: () => _restore(e.entry),
+                  onDelete: () => notifier.remove(e.raw),
+                ),
+            ],
+          ),
+        ),
+        Flexible(flex: 2, child: hint),
+      ],
+    );
+  }
+
+  Widget _buildIdleHint(ColorScheme colors, AppLocalizations loc) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppDimensions.xl),

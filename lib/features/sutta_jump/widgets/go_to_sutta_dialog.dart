@@ -8,10 +8,13 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
 import '../../../shared/utils/app_navigation.dart';
+import '../../../shared/widgets/history_list.dart';
+import '../../../shared/widgets/history_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/search_box_actions.dart';
 import '../../reader/providers/reader_tabs_provider.dart';
 import '../../search/services/regex_search.dart';
+import '../providers/sutta_history_provider.dart';
 import '../services/sutta_code_service.dart';
 
 /// Whether "Go to sutta" takes a regex over sutta names (spec G). Session
@@ -48,6 +51,7 @@ Future<void> showGoToSuttaDialog(BuildContext context) async {
   if (target == null || !rootContext.mounted) return;
 
   final container = ProviderScope.containerOf(rootContext, listen: false);
+  container.read(suttaHistoryProvider.notifier).add(encodeSutta(target));
   final bookName = await _bookNameFor(container, target.bookId);
   if (!rootContext.mounted) return;
   container
@@ -113,6 +117,29 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
   RegexJob<Object?>? _regexJob;
   // A second Enter during the closing animation would pop the page below.
   bool _closing = false;
+
+  // The suttas opened before show as rows while the box is empty. The box
+  // keeps the cursor; the arrows move a highlight over the rows.
+  late final HistoryNav _nav = HistoryNav(
+    onChanged: () {
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _nav.scrollTo(_scroll),
+      );
+    },
+    onActivate: (i) {
+      final history = _historyTargets();
+      if (i < history.length) _open(history[i]);
+    },
+  );
+
+  List<SuttaTarget> _historyTargets() => [
+    for (final s in ref.read(suttaHistoryProvider))
+      ?decodeSutta(s),
+  ];
+
+  bool get _showRows =>
+      _controller.text.isEmpty && ref.read(suttaHistoryProvider).isNotEmpty;
 
   Future<SuttaLookupCache> _lookup() async {
     final cached = _lookupFuture;
@@ -242,6 +269,10 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (_showRows) {
+      final r = _nav.handle(event, _historyTargets().length);
+      if (r != KeyEventResult.ignored) return r;
+    }
     if (_results.isEmpty) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       _moveHighlight((_highlight + 1) % _results.length);
@@ -260,6 +291,12 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     final theme = Theme.of(context);
     final text = _controller.text;
     final regexOn = ref.watch(goToSuttaRegexProvider);
+    final historyTargets = [
+      for (final s in ref.watch(suttaHistoryProvider))
+        ?decodeSutta(s),
+    ];
+    _nav.clamp(historyTargets.length);
+    final showRows = text.isEmpty && historyTargets.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -288,6 +325,9 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                   showClear: _controller.text.isNotEmpty,
                   onClear: () {
                     _controller.clear();
+                    _nav.reset();
+                    // The rows show now, not after the lookup.
+                    setState(() {});
                     _update('');
                   },
                   regexOn: regexOn,
@@ -338,7 +378,33 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                 style: theme.textTheme.bodyMedium,
               ),
             ),
-          if (_results.isNotEmpty)
+          if (showRows)
+            Flexible(
+              child: HistoryList(
+                title: l10n.recentSuttas,
+                onClear: ref.read(suttaHistoryProvider.notifier).clear,
+                controller: _scroll,
+                selectedIndex: _nav.index < 0 ? null : _nav.index,
+                items: [
+                  for (final t in historyTargets)
+                    HistoryItem(
+                      key: '${t.bookId}|${t.paraId}',
+                      title: PaliText(
+                        t.title,
+                        style: historyTitleStyle(theme.colorScheme),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(t.label),
+                      onTap: () => _open(t),
+                      onDelete: () => ref
+                          .read(suttaHistoryProvider.notifier)
+                          .remove(encodeSutta(t)),
+                    ),
+                ],
+              ),
+            ),
+          if (_results.isNotEmpty && !showRows)
             Flexible(
               child: ListView.builder(
                 controller: _scroll,
