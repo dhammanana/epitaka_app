@@ -15,6 +15,9 @@ import java.io.File
 import java.io.InputStream
 
 class MainActivity : FlutterActivity() {
+    /** ML Kit GenAI TTS bridge; created only on API 26+ where the SDK works. */
+    private var genAiTts: GenAiTtsHandler? = null
+
     // TTS lifecycle ownership:
     // - Dart `TtsNotifier` owns the speech engines, `TtsReadingNotifier`
     //   owns the reading session + notification callbacks.
@@ -43,6 +46,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        genAiTts?.release()
+        genAiTts = null
         // Swipe-kill: stop the audio foreground service so the notification
         // goes away with the task. The Dart `detached` handler stops the
         // speech engines themselves.
@@ -90,6 +95,14 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // GenAI (ML Kit) TTS: only available from Android 8.0 (API 26); on
+        // older devices the Dart side never calls this channel.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            genAiTts = GenAiTtsHandler(
+                applicationContext,
+                flutterEngine.dartExecutor.binaryMessenger,
+            )
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_SETTINGS_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

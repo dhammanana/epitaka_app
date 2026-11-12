@@ -88,6 +88,30 @@ enum TranslationDisplayMode { hideJoinLines, lineByLine, sideBySide }
 /// - [both]: Pāli first, then its translation.
 enum TtsSpeakMode { translation, pali, both }
 
+/// Which engine synthesizes TTS audio.
+///
+/// - [system]: the device's installed TTS engine (flutter_tts / platform
+///   synthesizer). Works offline on every platform and supports every voice
+///   the user has installed.
+/// - [genai]: Google's on-device GenAI voice through ML Kit (Android, a few
+///   supported Pixel/Galaxy models, 21 locales). Falls back to [system] when
+///   the device or the spoken language isn't supported.
+/// - [translate]: Google Translate's online voice. Speaks every language
+///   Translate supports (including Sinhala and Myanmar) but needs a network
+///   connection and has no word highlighting.
+///
+/// Values are appended (never reordered/removed) and stored by name, so the
+/// default stays [system] for existing installs.
+enum TtsBackend {
+  system,
+  genai,
+  translate;
+
+  /// Whether this backend can report word progress (used to decide between
+  /// paragraph batching and one-line units).
+  bool get supportsWordProgress => this == TtsBackend.system;
+}
+
 /// How a tap on reader text opens the dictionary.
 ///
 /// Values are appended (never reordered/removed) so the integer stored in
@@ -816,6 +840,10 @@ class AppSettings {
   /// 'hi' (Hindi/Sanskrit). Hindi enables Devanagari conversion + replacement.
   final String ttsScript;
 
+  /// Engine that synthesizes speech (see [TtsBackend]). Defaults to the
+  /// device's system TTS engine.
+  final TtsBackend ttsBackend;
+
   static const Color defaultPaliColor = Color(0xFF000000);
   static const Color defaultTranslationColor = Color(0xFF33312E);
 
@@ -844,6 +872,7 @@ class AppSettings {
     this.ttsSpeakMode = TtsSpeakMode.translation,
     this.ttsFirstTranslationOnly = false,
     this.ttsScript = 'hi',
+    this.ttsBackend = TtsBackend.system,
     this.copyQuoteFormat = CopyQuoteFormat.none,
     this.copyDefaultScope = CopyScope.both,
     this.paliScript = Script.roman,
@@ -901,6 +930,7 @@ class AppSettings {
     TtsSpeakMode? ttsSpeakMode,
     bool? ttsFirstTranslationOnly,
     String? ttsScript,
+    TtsBackend? ttsBackend,
     CopyQuoteFormat? copyQuoteFormat,
     CopyScope? copyDefaultScope,
     Script? paliScript,
@@ -962,6 +992,7 @@ class AppSettings {
       ttsFirstTranslationOnly:
           ttsFirstTranslationOnly ?? this.ttsFirstTranslationOnly,
       ttsScript: ttsScript ?? this.ttsScript,
+      ttsBackend: ttsBackend ?? this.ttsBackend,
       copyQuoteFormat: copyQuoteFormat ?? this.copyQuoteFormat,
       copyDefaultScope: copyDefaultScope ?? this.copyDefaultScope,
       paliScript: paliScript ?? this.paliScript,
@@ -1392,6 +1423,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       ttsFirstTranslationOnly:
           prefs.getBool('tts_first_translation_only') ?? false,
       ttsScript: prefs.getString('tts_script') ?? 'hi',
+      ttsBackend: _parseTtsBackend(prefs.getString('tts_backend')),
       copyQuoteFormat: _parseCopyQuoteFormat(
         prefs.getString('copy_quote_format') ?? 'none',
       ),
@@ -1792,6 +1824,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await _prefs?.setString('tts_script', script);
   }
 
+  /// Select which engine synthesizes speech.
+  Future<void> setTtsBackend(TtsBackend backend) async {
+    state = state.copyWith(ttsBackend: backend);
+    await _prefs?.setString('tts_backend', backend.name);
+  }
+
   Future<void> setCopyQuoteFormat(CopyQuoteFormat format) async {
     state = state.copyWith(copyQuoteFormat: format);
     await _prefs?.setString('copy_quote_format', format.name);
@@ -2079,6 +2117,14 @@ Script _parseScript(String? value) {
   return Script.values.firstWhere(
     (s) => s.name == value,
     orElse: () => Script.roman,
+  );
+}
+
+TtsBackend _parseTtsBackend(String? value) {
+  if (value == null || value.isEmpty) return TtsBackend.system;
+  return TtsBackend.values.firstWhere(
+    (b) => b.name == value,
+    orElse: () => TtsBackend.system,
   );
 }
 

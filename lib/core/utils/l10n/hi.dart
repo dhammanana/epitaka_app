@@ -1145,4 +1145,40 @@ const Map<String, String> hi = {
   'book': 'पुस्तक',
   'paragraph': 'अनुच्छेद',
   'paragraphs': 'अनुच्छेद',
+
+  // ── TTS settings ────────────────────────────────────────────────
+  'Could not check the GenAI voice on this phone.': 'इस फ़ोन पर GenAI आवाज़ की जाँच नहीं हो सकी।',
+  'Google GenAI voice': 'Google GenAI आवाज़',
+  'Natural on-device voice from Google ML Kit. Android only, and only on supported Pixel/Galaxy devices and languages — otherwise the device voice is used automatically.': 'Google ML Kit की प्राकृतिक ऑन-डिवाइस आवाज़। केवल Android पर, और केवल समर्थित Pixel/Galaxy डिवाइस और भाषाओं पर — अन्यथा डिवाइस की आवाज़ अपने आप इस्तेमाल होती है।',
+  'The voice is not downloaded yet — tap to download it (about 100 MB).': 'आवाज़ अभी डाउनलोड नहीं हुई है — डाउनलोड करने के लिए टैप करें (लगभग 100 MB)।',
+  'Downloading the GenAI voice… the device voice is used until it is ready.': 'GenAI आवाज़ डाउनलोड हो रही है… तैयार होने तक डिवाइस की आवाज़ इस्तेमाल होगी।',
+  'Word highlighting is not available with this engine.': 'इस इंजन के साथ शब्द हाइलाइटिंग उपलब्ध नहीं है।',
+  'Voice engine': 'आवाज़ इंजन',
+  'Device voice': 'डिवाइस की आवाज़',
+  "Your device's installed Text-to-Speech engine. Works offline in every language that has a voice installed.": 'आपके डिवाइस का इंस्टॉल किया हुआ टेक्स्ट-टू-स्पीच इंजन। हर उस भाषा में ऑफ़लाइन काम करता है जिसमें आवाज़ इंस्टॉल है।',
+  'Google Translate voice': 'Google अनुवाद आवाज़',
+  'Online voice from Google Translate. Works for Sinhala, Myanmar and other languages without an installed voice, but needs internet.': 'Google अनुवाद से ऑनलाइन आवाज़। सिंहली, बर्मी और उन भाषाओं के लिए काम करती है जिनमें आवाज़ इंस्टॉल नहीं है, लेकिन इंटरनेट चाहिए।',
+  'Not supported on this device': 'इस डिवाइस पर समर्थित नहीं है',
+  'The GenAI voice does not speak this language — the device voice will be used.': 'GenAI आवाज़ यह भाषा नहीं बोलती — डिवाइस की आवाज़ इस्तेमाल होगी।',
+  'This phone model does not support the GenAI voice — the device voice will be used.': 'यह फ़ोन मॉडल GenAI आवाज़ का समर्थन नहीं करता — डिवाइस की आवाज़ इस्तेमाल होगी।',
+  'Pāli TTS Script': 'पालि TTS लिपि',
+
+  // ── AI (Vīmaṃsā) screen ─────────────────────────────────────────
+  'fallback': 'फ़ॉलबैक',
+  'If the primary answer model fails (e.g. unknown version or quota), Vīmaṃsā retries with fallback 1 (same Flash, lower version) then fallback 2 (Flash-Lite). Saved automatically when you tap Save.': 'यदि प्राथमिक उत्तर मॉडल विफल होता है (जैसे अज्ञात संस्करण या कोटा), तो Vīmaṃsā फ़ॉलबैक 1 (वही Flash, निचला संस्करण) और फिर फ़ॉलबैक 2 (Flash-Lite) के साथ पुनः प्रयास करता है। सहेजें पर टैप करने पर अपने आप सहेजा जाता है।',
+  'Enter an answer model to preview fallbacks.': 'फ़ॉलबैक देखने के लिए उत्तर मॉडल दर्ज करें।',
+  'primary': 'प्राथमिक',
+  'Answer fallback chain (tried in order)': 'उत्तर फ़ॉलबैक श्रृंखला (क्रम से प्रयास)',
+  'No results found': 'कोई परिणाम नहीं मिला',
+  'Pin thread': 'थ्रेड पिन करें',
+  'Search history…': 'खोज इतिहास…',
+  'Search in thread…': 'थ्रेड में खोजें…',
+  'Strict': 'सख़्त',
+  'Unpin thread': 'थ्रेड अनपिन करें',
+
+  'Citations': 'उद्धरण',
+  'models found': 'मॉडल मिले',
+
+  'User': 'उपयोगकर्ता',
+  'Assistant': 'सहायक',
 };

@@ -408,6 +408,33 @@ const Map<String, String> en = {
   'Translation + Pāli': 'Translation + Pāli',
   'Reads the Pāli first, then its translation':
       'Reads the Pāli first, then its translation',
+
+  // ── Voice engine (TTS backend) ───────────────────────────────────────
+  'Voice engine': 'Voice engine',
+  'Device voice': 'Device voice',
+  "Your device's installed Text-to-Speech engine. Works offline in every language that has a voice installed.":
+      "Your device's installed Text-to-Speech engine. Works offline in every language that has a voice installed.",
+  'Google GenAI voice': 'Google GenAI voice',
+  'Natural on-device voice from Google ML Kit. Android only, and only on supported Pixel/Galaxy devices and languages — otherwise the device voice is used automatically.':
+      'Natural on-device voice from Google ML Kit. Android only, and only on supported Pixel/Galaxy devices and languages — otherwise the device voice is used automatically.',
+  'Google Translate voice': 'Google Translate voice',
+  'Online voice from Google Translate. Works for Sinhala, Myanmar and other languages without an installed voice, but needs internet.':
+      'Online voice from Google Translate. Works for Sinhala, Myanmar and other languages without an installed voice, but needs internet.',
+  'Not supported on this device': 'Not supported on this device',
+  'The GenAI voice does not speak this language — the device voice will be used.':
+      'The GenAI voice does not speak this language — the device voice will be used.',
+  'This phone model does not support the GenAI voice — the device voice will be used.':
+      'This phone model does not support the GenAI voice — the device voice will be used.',
+  'Could not check the GenAI voice on this phone.':
+      'Could not check the GenAI voice on this phone.',
+  'The voice is not downloaded yet — tap to download it (about 100 MB).':
+      'The voice is not downloaded yet — tap to download it (about 100 MB).',
+  'Downloading the GenAI voice… the device voice is used until it is ready.':
+      'Downloading the GenAI voice… the device voice is used until it is ready.',
+  'Google Translate voice needs an internet connection.':
+      'Google Translate voice needs an internet connection.',
+  'Word highlighting is not available with this engine.':
+      'Word highlighting is not available with this engine.',
   'Translation note': 'Translation note',
   'Translation remark': 'Translation remark',
   'Edit translation info': 'Edit translation info',
@@ -1170,4 +1197,7 @@ const Map<String, String> en = {
   'book': 'book',
   'paragraph': 'paragraph',
   'paragraphs': 'paragraphs',
+
+  'User': 'User',
+  'Assistant': 'Assistant',
 };

@@ -1371,7 +1371,9 @@ class _InThreadSearchSheetState extends State<_InThreadSearchSheet> {
                         ),
                         title: preview,
                         subtitle: Text(
-                          msg.isUser ? 'User' : 'Assistant',
+                          msg.isUser
+                              ? AppLocalizations.of(ctx).roleUser
+                              : AppLocalizations.of(ctx).roleAssistant,
                           style: AppTypography.labelSmall.copyWith(
                             fontSize: 10,
                             color: widget.colors.onSurfaceVariant.withValues(

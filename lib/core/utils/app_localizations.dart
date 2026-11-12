@@ -571,6 +571,48 @@ class AppLocalizations {
   String get ttsFirstTranslationOnly => _t('Only first translation');
   String get ttsSpeakBothDesc =>
       _t('Reads the Pāli first, then its translation');
+
+  // ── Voice engine ─────────────────────────────────────────────────────
+  String get ttsEngineSection => _t('Voice engine');
+  String get ttsEngineSystem => _t('Device voice');
+  String get ttsEngineSystemDesc => _t(
+    'Your device\'s installed Text-to-Speech engine. Works offline in every '
+    'language that has a voice installed.',
+  );
+  String get ttsEngineGenAi => _t('Google GenAI voice');
+  String get ttsEngineGenAiDesc => _t(
+    'Natural on-device voice from Google ML Kit. Android only, and only on '
+    'supported Pixel/Galaxy devices and languages — otherwise the device '
+    'voice is used automatically.',
+  );
+  String get ttsEngineTranslate => _t('Google Translate voice');
+  String get ttsEngineTranslateDesc => _t(
+    'Online voice from Google Translate. Works for Sinhala, Myanmar and '
+    'other languages without an installed voice, but needs internet.',
+  );
+  String get ttsEngineUnavailableHere =>
+      _t('Not supported on this device');
+  String get ttsEngineUnavailableLanguage => _t(
+    'The GenAI voice does not speak this language — the device voice will be used.',
+  );
+  String get ttsEngineUnsupportedDevice => _t(
+    'This phone model does not support the GenAI voice — the device voice will be used.',
+  );
+  String get ttsEngineCheckFailed => _t(
+    'Could not check the GenAI voice on this phone.',
+  );
+  String get ttsEngineGenAiDownloadable => _t(
+    'The voice is not downloaded yet — tap to download it (about 100 MB).',
+  );
+  String get ttsEngineGenAiDownloading => _t(
+    'Downloading the GenAI voice… the device voice is used until it is ready.',
+  );
+  String get ttsEngineTranslateNoInternet => _t(
+    'Google Translate voice needs an internet connection.',
+  );
+  String get ttsEngineNoWordHighlight => _t(
+    'Word highlighting is not available with this engine.',
+  );
   String get ttsInstallVoice => _t('Install voice');
   String get ttsInstallVoiceHint => _t(
     'Open your device Text-to-speech settings to install voices (Sinhala/Hindi for Pāli)',
@@ -953,8 +995,12 @@ class AppLocalizations {
   String get generatingAnswer => _t('Generating answer...');
   String get passageNotFound => _t('Passage not found in the database');
 
+  /// Chat bubble / search-result speaker labels.
+  String get roleUser => _t('User');
+  String get roleAssistant => _t('Assistant');
+
   /// `Citations (N)`
-  String citationsCount(int count) => 'Citations ($count)';
+  String citationsCount(int count) => '${_t('Citations')} ($count)';
 
   // ═══════════════════════════════════════════════════════════════════════
   //  AI SETTINGS SHEET
@@ -1078,7 +1124,7 @@ class AppLocalizations {
   String get clearAll => _t('Clear all');
 
   /// `${count} models found`
-  String modelsFound(int count) => '$count models found';
+  String modelsFound(int count) => '$count ${_t('models found')}';
 
   /// `Failed to save: $error`
   String failedToSave(String error) => '${_t('Failed to save: ')}$error';

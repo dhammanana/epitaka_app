@@ -17,6 +17,8 @@ import '../../reader/providers/tts_speak_unit.dart'
         TtsUtteranceQueue,
         kTtsWordHighlightEnabled,
         mapSpokenOffsetToSource;
+import '../services/genai_tts_service.dart';
+import '../services/google_translate_tts.dart';
 import '../services/system_tts_availability.dart';
 import '../services/tts_audio_handler.dart';
 
@@ -76,8 +78,14 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// Whether queue-ahead prefetch is usable (QUEUE_ADD accepted, Android
   /// flutter_tts). Read by the reading loop to decide between overlapping
   /// and strictly sequential speaks.
-  bool get supportsPrefetch => _queuePrefetchReady;
+  bool get supportsPrefetch =>
+      _queuePrefetchReady &&
+      _ref.read(settingsProvider).ttsBackend == TtsBackend.system;
   bool _queuePrefetchReady = false;
+
+  /// Google Translate's online voice player (used when the user selects the
+  /// [TtsBackend.translate] engine).
+  final GoogleTranslateTts _translateTts = GoogleTranslateTts();
 
   /// Cached flutter_tts platform channel values to avoid redundant
   /// MethodChannel calls on every line. Only updated when the user
@@ -158,6 +166,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     } catch (_) {
       // Ignore errors when stopping
     }
+    await _stopAltEngines();
     _utterances.resolveAll();
     // Drain: a callback sent just before the flush can still arrive; with
     // an empty queue it is ignored instead of popping a newer entry.
@@ -432,6 +441,150 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
   }
 
+  /// Stop the alternative engines (GenAI / Google Translate). Never throws.
+  Future<void> _stopAltEngines() async {
+    try {
+      await GenAiTtsService.stop();
+    } catch (_) {}
+    try {
+      await _translateTts.stop();
+    } catch (_) {}
+  }
+
+  /// Speak with the user-selected alternative engine.
+  ///
+  /// Returns the queued entry when the engine accepted the line, or null when
+  /// this device/language can't use it and the caller must fall back to the
+  /// system engine.
+  Future<TtsQueuedUtterance?> _speakAlternative(
+    TtsBackend backend,
+    String text,
+    String? language,
+    String? paliRoman,
+    VoidCallback? onStarted,
+  ) async {
+    final settings = _ref.read(settingsProvider);
+    final isPaliLine = paliRoman != null && paliRoman.isNotEmpty;
+    var speakText = text;
+    var effectiveLang = language ?? _ttsLanguageFromSettings(settings);
+    if (isPaliLine) {
+      final plan = await _paliSpeechPlan(text, paliRoman);
+      speakText = plan.text;
+      effectiveLang = plan.language;
+    }
+
+    if (backend == TtsBackend.genai) {
+      final bcp47 = _bcp47ForLanguage(effectiveLang);
+      if (bcp47 == null || !await GenAiTtsService.isAvailable(bcp47)) {
+        developer.log(
+          '[TTS] GenAI voice unavailable for "$effectiveLang" — falling back',
+          name: 'epitaka.tts',
+        );
+        return null;
+      }
+      var downloading = false;
+      final entry = await _speakWithAltEngine(
+        speakText,
+        sourceText: text,
+        start: () async {
+          final res = await GenAiTtsService.speak(
+            speakText,
+            language: bcp47,
+            onStarted: onStarted,
+            onCompletion: _routeDone,
+          );
+          downloading = res == GenAiSpeakResult.downloading;
+          return res == GenAiSpeakResult.started;
+        },
+      );
+      if (entry == null && downloading) {
+        _noteEngineFallback(
+          isPaliLine,
+          'Downloading the Google GenAI voice — using your device voice until '
+              'it is ready.',
+        );
+      }
+      return entry;
+    }
+
+    if (backend == TtsBackend.translate) {
+      final speed = isPaliLine ? settings.ttsPaliSpeed : settings.ttsSpeed;
+      final entry = await _speakWithAltEngine(
+        speakText,
+        sourceText: text,
+        start: () => _translateTts.speak(
+          speakText,
+          language: _translateLanguage(effectiveLang),
+          speed: speed,
+          onStarted: onStarted,
+          onCompletion: _routeDone,
+        ),
+      );
+      if (entry == null) {
+        _noteEngineFallback(
+          isPaliLine,
+          'Google Translate voice is unavailable — using your device voice.',
+        );
+      }
+      return entry;
+    }
+
+    return null;
+  }
+
+  /// Queue a unit for an alternative engine and start it. Returns null (and
+  /// leaves nothing queued) when the engine refused to start.
+  Future<TtsQueuedUtterance?> _speakWithAltEngine(
+    String speakText, {
+    required String sourceText,
+    required Future<bool> Function() start,
+  }) async {
+    final entry = _utterances.enqueue(speakText, sourceText: sourceText);
+    await _configureAudioSession();
+    if (_disposed) {
+      _utterances.removeEntry(entry);
+      entry.resolve();
+      return null;
+    }
+    if (!_audioFocusClaimed) {
+      try {
+        await (await AudioSession.instance).setActive(true);
+        _audioFocusClaimed = true;
+      } catch (_) {}
+    }
+    state = TtsPlaybackState.playing;
+    _broadcastToAudioService();
+
+    var ok = false;
+    try {
+      ok = await start();
+    } catch (e) {
+      developer.log('[TTS] alternative engine failed: $e', name: 'epitaka.tts');
+      ok = false;
+    }
+    if (!ok) {
+      _utterances.removeEntry(entry);
+      entry.resolve();
+      if (_utterances.isEmpty) {
+        state = TtsPlaybackState.stopped;
+        _broadcastToAudioService();
+      }
+      return null;
+    }
+    return entry;
+  }
+
+  /// Record a one-shot notice explaining why an alternative engine was
+  /// skipped (the system engine keeps playing meanwhile).
+  void _noteEngineFallback(bool isPaliLine, String message) {
+    if (isPaliLine) {
+      paliFallbackNotice ??= message;
+    } else {
+      translationIssueNotice ??= message;
+    }
+    developer.log('[TTS] $message', name: 'epitaka.tts');
+  }
+
   /// Speak using system TTS (flutter_tts) or NativeSpeechService.
   ///
   /// On macOS/iOS, uses NativeSpeechService as a better alternative.
@@ -448,6 +601,20 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   ) async {
     final settings = _ref.read(settingsProvider);
     final start = DateTime.now();
+
+    // The user can pick an alternative engine in Settings. When this device
+    // (or the spoken language) can't use it, _speakAlternative returns null
+    // and we continue down the normal system path — the "smart fallback".
+    if (settings.ttsBackend != TtsBackend.system) {
+      final entry = await _speakAlternative(
+        settings.ttsBackend,
+        text,
+        language,
+        paliRoman,
+        onStarted,
+      );
+      if (entry != null) return entry;
+    }
 
     // Use NativeSpeechService on macOS/iOS for better integration
     if (NativeSpeechService.isSupported) {
@@ -553,7 +720,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     String speakText = text;
     String effectiveLang = ttsLangCode;
     if (isPaliLine) {
-      final plan = await _paliSpeechForSystem(tts, text, paliRoman);
+      final plan = await _paliSpeechPlan(text, paliRoman);
       speakText = plan.text;
       effectiveLang = plan.language;
       // The chosen script is always spoken as-is — no availability
@@ -805,21 +972,24 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
   /// voice is missing (a stale voice binding or a network voice can make
   /// it fail even though the voice speaks fine), and treating it as
   /// "unavailable" wrongly demoted working scripts (e.g. Kannada) to the
-  /// Roman fallback. 'roman' just uses an English locale. Resolved once
-  /// per session ([_paliPlan]) and invalidated when the setting changes
-  /// or [stop] runs.
-  Future<({String text, String language, String script})> _paliSpeechForSystem(
-    FlutterTts tts,
+  /// Roman fallback. 'roman' just uses an English locale.
+  ///
+  /// Resolved once per session ([_paliPlan]) and invalidated when the setting
+  /// changes or [stop] runs. Shared by the system engine and the alternative
+  /// engines so Pāli lines are spoken in the same script whichever engine
+  /// plays them.
+  Future<({String text, String language, String script})> _paliSpeechPlan(
     String sinhalaText,
     String romanText,
   ) async {
-    final script = _ref.read(settingsProvider).ttsScript;
+    final settings = _ref.read(settingsProvider);
+    final script = settings.ttsScript;
     if (_paliPlan == null || _paliPlan!.script != script) {
-      if (script == 'roman') {
-        _paliPlan = await _resolvePaliScript(tts);
-      } else {
-        _paliPlan = (script: script, language: script);
-      }
+      // Roman Pāli is read by an English voice (Latin script, diacritics
+      // stripped); every other script uses its own language.
+      _paliPlan = script == 'roman'
+          ? (script: 'roman', language: _ttsLanguageFromSettings(settings))
+          : (script: script, language: script);
     }
     final plan = _paliPlan!;
     final speech = paliSpeechText(
@@ -829,16 +999,6 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       language: plan.language,
     );
     return (text: speech.text, language: speech.language, script: plan.script);
-  }
-
-  /// Resolve the language used for Roman Pāli: an English voice reads
-  /// Latin best. The language setting is only used if no English variant
-  /// is enabled. Pure decision — no engine probing.
-  Future<({String script, String language})> _resolvePaliScript(
-    FlutterTts tts,
-  ) async {
-    final settings = _ref.read(settingsProvider);
-    return (script: 'roman', language: _ttsLanguageFromSettings(settings));
   }
 
   /// Adjust Devanagari Pāli specifically for the Hindi TTS engine.
@@ -1012,6 +1172,29 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
     }
   }
 
+  /// Whether the ML Kit GenAI voice can speak [langCode] on this device right
+  /// now (device support + installed Speech Services app + downloaded voice).
+  /// Used by the settings screen to label the engine option.
+  Future<bool> isGenAiAvailable(String langCode) async {
+    final status = await genAiStatus(langCode);
+    return status == GenAiVoiceStatus.available;
+  }
+
+  /// The exact reason the GenAI voice is (not) usable for [langCode], so the
+  /// settings screen can say "this phone" instead of always "this language".
+  Future<GenAiVoiceStatus> genAiStatus(String langCode) async {
+    final bcp47 = _bcp47ForLanguage(langCode);
+    if (bcp47 == null) return GenAiVoiceStatus.languageUnsupported;
+    return GenAiTtsService.statusFor(bcp47);
+  }
+
+  /// Asks the device to download the GenAI voice for [langCode].
+  Future<GenAiVoiceStatus> downloadGenAiVoice(String langCode) async {
+    final bcp47 = _bcp47ForLanguage(langCode);
+    if (bcp47 == null) return GenAiVoiceStatus.languageUnsupported;
+    return GenAiTtsService.download(bcp47);
+  }
+
   Future<List<String>> getEngines() async {
     try {
       final tts = await _getFlutterTts();
@@ -1083,6 +1266,7 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
 
   /// Stop current TTS playback.
   Future<void> stop() async {
+    await _stopAltEngines();
     // Forget the Pāli script decision + fallback notice + voice cache so
     // the next session re-probes (picks up a newly-installed voice).
     _paliPlan = null;
@@ -1127,6 +1311,12 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         NativeSpeechService.stop();
       } catch (_) {}
     }
+    try {
+      GenAiTtsService.stop();
+    } catch (_) {}
+    try {
+      _translateTts.stop();
+    } catch (_) {}
     _noisySubscription?.cancel();
     _noisySubscription = null;
     if (!_disposed) {
@@ -1189,6 +1379,13 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
         NativeSpeechService.stop();
       } catch (_) {}
     }
+    try {
+      GenAiTtsService.stop();
+    } catch (_) {}
+    try {
+      _translateTts.stop();
+    } catch (_) {}
+    _translateTts.dispose();
     _utterances.resolveAll();
     _noisySubscription?.cancel();
     _noisySubscription = null;
@@ -1253,6 +1450,50 @@ class TtsNotifier extends StateNotifier<TtsPlaybackState> {
       'zh': 'zh-CN',
     };
     return map[langCode] ?? 'en-US';
+  }
+
+  /// BCP-47 locale for the ML Kit GenAI voice, or null when that voice does
+  /// not speak [langCode]. Deliberately strict (no `en-US` default): speaking
+  /// Sinhala text with an English voice would be worse than the fallback.
+  static String? _bcp47ForLanguage(String langCode) {
+    const map = <String, String>{
+      'ar': 'ar-XA',
+      'da': 'da-DK',
+      'de': 'de-DE',
+      'en': 'en-US',
+      'es': 'es-ES',
+      'fr': 'fr-FR',
+      'hi': 'hi-IN',
+      'id': 'id-ID',
+      'it': 'it-IT',
+      'ja': 'ja-JP',
+      'ko': 'ko-KR',
+      'nb': 'nb-NO',
+      'nl': 'nl-NL',
+      'pl': 'pl-PL',
+      'pt': 'pt-BR',
+      'ru': 'ru-RU',
+      'sv': 'sv-SE',
+      'tr': 'tr-TR',
+    };
+    final code = langCode.trim().toLowerCase();
+    if (code.isEmpty) return null;
+    final prefix = code.split(RegExp(r'[-_]')).first;
+    if (!map.containsKey(prefix)) return null;
+    if (code.contains('-') || code.contains('_')) {
+      return code.replaceAll('_', '-');
+    }
+    return map[prefix];
+  }
+
+  /// Google Translate `tl` code for [langCode] (Pāli scripts included).
+  static String _translateLanguage(String langCode) {
+    const map = <String, String>{
+      'zh': 'zh-CN',
+    };
+    final code = langCode.trim().toLowerCase().replaceAll('_', '-');
+    if (code.contains('-')) return code.split('-').first;
+    return map[code] ?? (code.isEmpty ? 'en' : code);
   }
 
   /// Determine which language the TTS should speak based on the first

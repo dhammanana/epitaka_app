@@ -542,7 +542,13 @@ class TtsReadingNotifier extends StateNotifier<TtsReadingState> {
     int lineIdOf(TtsLineItem l) => l.lineId;
     String? languageOf(TtsLineItem l) => l.language;
     String? paliRomanOf(TtsLineItem l) => l.paliRoman;
-    if (NativeSpeechService.isSupported) {
+    // Batching needs word progress to move the highlight inside a unit.
+    // Apple's native channel and the alternative engines (ML Kit GenAI /
+    // Google Translate) report none, so keep one-line units there.
+    final backend = _ref.read(settingsProvider).ttsBackend;
+    final hasWordProgress =
+        backend == TtsBackend.system && !NativeSpeechService.isSupported;
+    if (!hasWordProgress) {
       return [
         for (var i = 0; i < lines.length; i++)
           if (lines[i].text.trim().isNotEmpty)

@@ -1080,4 +1080,40 @@ const Map<String, String> zh = {
   'book': '部',
   'paragraph': '段',
   'paragraphs': '段',
+
+  // ── TTS settings ────────────────────────────────────────────────
+  'Could not check the GenAI voice on this phone.': '无法在此手机上检查 GenAI 语音。',
+  'Google GenAI voice': 'Google GenAI 语音',
+  'Natural on-device voice from Google ML Kit. Android only, and only on supported Pixel/Galaxy devices and languages — otherwise the device voice is used automatically.': '来自 Google ML Kit 的自然设备端语音。仅限 Android，且仅在受支持的 Pixel/Galaxy 设备和语言上可用——否则会自动使用设备语音。',
+  'The voice is not downloaded yet — tap to download it (about 100 MB).': '语音尚未下载——点按下载（约 100 MB）。',
+  'Downloading the GenAI voice… the device voice is used until it is ready.': '正在下载 GenAI 语音……在就绪前将使用设备语音。',
+  'Word highlighting is not available with this engine.': '此引擎不支持单词高亮。',
+  'Voice engine': '语音引擎',
+  'Device voice': '设备语音',
+  "Your device's installed Text-to-Speech engine. Works offline in every language that has a voice installed.": '您的设备已安装的文字转语音引擎。在所有已安装语音的语言中可离线使用。',
+  'Google Translate voice': 'Google 翻译语音',
+  'Online voice from Google Translate. Works for Sinhala, Myanmar and other languages without an installed voice, but needs internet.': '来自 Google 翻译的在线语音。适用于僧伽罗语、缅甸语等未安装语音的语言，但需要联网。',
+  'Not supported on this device': '此设备不支持',
+  'The GenAI voice does not speak this language — the device voice will be used.': 'GenAI 语音不支持此语言——将使用设备语音。',
+  'This phone model does not support the GenAI voice — the device voice will be used.': '此手机型号不支持 GenAI 语音——将使用设备语音。',
+  'Pāli TTS Script': '巴利语 TTS 文字',
+
+  // ── AI (Vīmaṃsā) screen ─────────────────────────────────────────
+  'fallback': '备用',
+  'If the primary answer model fails (e.g. unknown version or quota), Vīmaṃsā retries with fallback 1 (same Flash, lower version) then fallback 2 (Flash-Lite). Saved automatically when you tap Save.': '如果主回答模型失败（例如版本未知或配额用尽），Vīmaṃsā 会用备用 1（同款 Flash，较低版本）重试，然后用备用 2（Flash-Lite）。点按“保存”时自动保存。',
+  'Enter an answer model to preview fallbacks.': '输入一个回答模型以预览备用项。',
+  'primary': '主',
+  'Answer fallback chain (tried in order)': '回答备用链（按顺序尝试）',
+  'No results found': '未找到结果',
+  'Pin thread': '固定对话',
+  'Search history…': '搜索历史…',
+  'Search in thread…': '在对话中搜索…',
+  'Strict': '严格',
+  'Unpin thread': '取消固定对话',
+
+  'Citations': '引用',
+  'models found': '个模型',
+
+  'User': '用户',
+  'Assistant': '助手',
 };

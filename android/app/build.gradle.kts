@@ -28,7 +28,12 @@ android {
 
     defaultConfig {
         applicationId = "com.dn.epitaka"
-        minSdk = flutter.minSdkVersion
+        // 26 (Android 8.0) is required by the ML Kit GenAI Text-to-Speech SDK
+        // (com.google.mlkit:genai-text-to-speech declares minSdk 26). Bumping
+        // from Flutter's default 24 dropped Android 7 users; the GenAI engine
+        // itself additionally needs a supported device + Speech Services app,
+        // and falls back to the system engine everywhere else.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -84,6 +89,12 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // On-device GenAI text-to-speech (alpha). Unbundled: the voice models are
+    // downloaded on demand, so the SDK itself is small. Requires Kotlin 2.3+
+    // — see android/settings.gradle.kts.
+    implementation("com.google.mlkit:genai-text-to-speech:1.0.0-alpha1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }
 
 kotlin {

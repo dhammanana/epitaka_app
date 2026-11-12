@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../shared/widgets/tts_speed_control.dart';
 import '../providers/tts_provider.dart';
+import '../services/genai_tts_service.dart';
 import '../services/system_tts_availability.dart';
 import '../services/system_tts_settings.dart';
 import '../widgets/settings_app_bar.dart';
@@ -136,6 +139,12 @@ class _TtsSettingsBodyState extends ConsumerState<TtsSettingsBody> {
             ),
           ],
         ),
+        const SizedBox(height: AppDimensions.md),
+
+        // ── Voice engine ─────────────────────────────────────────────
+        // Which synthesizer speaks. The alternative engines fall back to the
+        // device voice per line when they can't handle it.
+        const _VoiceEngineSection(),
         const SizedBox(height: AppDimensions.md),
 
         // ── TTS Script/Language for Pāli ────────────────────────────
@@ -993,6 +1002,261 @@ class _EngineTileState extends ConsumerState<_EngineTile> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Voice Engine Section ─────────────────────────────────────────────────
+
+/// Engine picker: device voice, ML Kit GenAI voice or Google Translate voice.
+class _VoiceEngineSection extends ConsumerStatefulWidget {
+  const _VoiceEngineSection();
+
+  @override
+  ConsumerState<_VoiceEngineSection> createState() => _VoiceEngineSectionState();
+}
+
+class _VoiceEngineSectionState extends ConsumerState<_VoiceEngineSection> {
+  /// null while the device/language check is running.
+  /// null while the first check runs.
+  GenAiVoiceStatus? _genAiStatus;
+  Timer? _poll;
+  int _polls = 0;
+
+  /// The language the reader actually speaks (what the engine will be asked
+  /// to pronounce), not the whole list.
+  String get _language {
+    final settings = ref.read(settingsProvider);
+    return settings.visibleTranslationLangs.isNotEmpty
+        ? settings.visibleTranslationLangs.first
+        : settings.primaryTranslationLang;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkGenAi());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkGenAi() async {
+    final status = await ref
+        .read(ttsProvider.notifier)
+        .genAiStatus(_language);
+    if (!mounted) return;
+    setState(() => _genAiStatus = status);
+    if (status == GenAiVoiceStatus.downloading) _startPolling();
+  }
+
+  /// A voice download is long; keep the tile honest while it runs.
+  void _startPolling() {
+    _poll?.cancel();
+    _polls = 0;
+    _poll = Timer.periodic(const Duration(seconds: 4), (timer) async {
+      if (!mounted || ++_polls > 60) {
+        timer.cancel();
+        return;
+      }
+      final status = await ref
+          .read(ttsProvider.notifier)
+          .genAiStatus(_language);
+      if (!mounted) return;
+      setState(() => _genAiStatus = status);
+      if (status != GenAiVoiceStatus.downloading) timer.cancel();
+    });
+  }
+
+  Future<void> _select(TtsBackend backend) async {
+    ref.read(settingsProvider.notifier).setTtsBackend(backend);
+    if (backend != TtsBackend.genai) return;
+    // Re-check: the status is per language and may have changed since this
+    // screen opened.
+    await _checkGenAi();
+    if (_genAiStatus == GenAiVoiceStatus.downloadable) {
+      final status = await ref
+          .read(ttsProvider.notifier)
+          .downloadGenAiVoice(_language);
+      if (!mounted) return;
+      setState(() => _genAiStatus = status);
+      if (status == GenAiVoiceStatus.downloading) _startPolling();
+    }
+  }
+
+  /// What the GenAI tile says. Every failure gets its own sentence, because
+  /// "not available for this language" was shown even when the phone model
+  /// (or a missing download) was the real reason.
+  String _genAiNote(AppLocalizations loc) {
+    if (!GenAiTtsService.isSupported) return loc.ttsEngineUnavailableHere;
+    switch (_genAiStatus) {
+      case null:
+        return loc.ttsEngineGenAiDesc;
+      case GenAiVoiceStatus.available:
+        return loc.ttsEngineNoWordHighlight;
+      case GenAiVoiceStatus.downloadable:
+        return loc.ttsEngineGenAiDownloadable;
+      case GenAiVoiceStatus.downloading:
+        return loc.ttsEngineGenAiDownloading;
+      case GenAiVoiceStatus.languageUnsupported:
+        return loc.ttsEngineUnavailableLanguage;
+      case GenAiVoiceStatus.deviceUnsupported:
+        return loc.ttsEngineUnsupportedDevice;
+      case GenAiVoiceStatus.unknown:
+        return loc.ttsEngineCheckFailed;
+    }
+  }
+
+  /// Whether to offer the GenAI engine at all. A phone that cannot run it
+  /// (wrong model, or a check that failed) gets no dead option; a supported
+  /// phone keeps it visible while the voice downloads, and if the language is
+  /// unsupported the row still explains that — the phone could use it with a
+  /// different reading language.
+  bool _showGenAi(AppSettings settings) {
+    if (!GenAiTtsService.isSupported) return false;
+    // If it is the saved choice, keep it visible so it can be switched off.
+    if (settings.ttsBackend == TtsBackend.genai) return true;
+    switch (_genAiStatus) {
+      case null:
+      case GenAiVoiceStatus.available:
+      case GenAiVoiceStatus.downloadable:
+      case GenAiVoiceStatus.downloading:
+      case GenAiVoiceStatus.languageUnsupported:
+        return true;
+      case GenAiVoiceStatus.deviceUnsupported:
+      case GenAiVoiceStatus.unknown:
+        return false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final colors = Theme.of(context).colorScheme;
+    final loc = AppLocalizations.of(context);
+
+    const divider = Divider(
+      height: 1,
+      indent: AppDimensions.md,
+      endIndent: AppDimensions.md,
+    );
+
+    return SettingsSection(
+      title: loc.ttsEngineSection,
+      colors: colors,
+      children: [
+        _EngineOptionTile(
+          label: loc.ttsEngineSystem,
+          description: loc.ttsEngineSystemDesc,
+          icon: Icons.smartphone,
+          isSelected: settings.ttsBackend == TtsBackend.system,
+          colors: colors,
+          onTap: () => _select(TtsBackend.system),
+        ),
+        if (_showGenAi(settings)) divider,
+        if (_showGenAi(settings))
+          _EngineOptionTile(
+            label: loc.ttsEngineGenAi,
+            description: _genAiNote(loc),
+            icon: Icons.auto_awesome,
+            isSelected: settings.ttsBackend == TtsBackend.genai,
+            colors: colors,
+            trailing: _genAiStatus == null
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : null,
+            onTap: () => _select(TtsBackend.genai),
+          ),
+        divider,
+        _EngineOptionTile(
+          label: loc.ttsEngineTranslate,
+          description: loc.ttsEngineTranslateDesc,
+          icon: Icons.cloud_queue,
+          isSelected: settings.ttsBackend == TtsBackend.translate,
+          colors: colors,
+          onTap: () => _select(TtsBackend.translate),
+        ),
+      ],
+    );
+  }
+}
+
+/// One engine row (radio + icon + title + description).
+class _EngineOptionTile extends StatelessWidget {
+  final String label;
+  final String description;
+  final IconData icon;
+  final bool isSelected;
+  final ColorScheme colors;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+
+  const _EngineOptionTile({
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.isSelected,
+    required this.colors,
+    this.onTap,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimensions.md,
+          vertical: AppDimensions.md,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isSelected ? colors.primary : colors.onSurfaceVariant,
+              size: 20,
+            ),
+            const SizedBox(width: AppDimensions.md),
+            Icon(
+              icon,
+              color: enabled ? colors.primary : colors.onSurfaceVariant,
+              size: 20,
+            ),
+            const SizedBox(width: AppDimensions.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: AppTypography.labelMedium.copyWith(
+                      color: isSelected ? colors.primary : colors.onSurface,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ?trailing,
+          ],
+        ),
       ),
     );
   }
