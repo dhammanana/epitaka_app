@@ -250,6 +250,7 @@ class _SearchResultsViewState extends ConsumerState<SearchResultsView> {
           colors: colors,
           query: state.query,
           fuzzy: state.fuzzy,
+          regex: state.regex,
           onTap: () => _onResultTap(context, ref, summary, item),
           onLongPress: () => _onResultLongPress(context, ref, summary, item),
         );
@@ -926,6 +927,9 @@ class SearchResultItemView extends ConsumerWidget {
   /// Whether [query] is matched with diacritics folded.
   final bool fuzzy;
 
+  /// Whether the terms are the exact text an Rx pattern matched.
+  final bool regex;
+
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -935,6 +939,7 @@ class SearchResultItemView extends ConsumerWidget {
     required this.colors,
     required this.query,
     this.fuzzy = true,
+    this.regex = false,
     required this.onTap,
     this.onLongPress,
   });
@@ -951,7 +956,8 @@ class SearchResultItemView extends ConsumerWidget {
     // the pattern matched. Fuzzy off keeps the diacritics, so a whole-word
     // search never lights up a folded spelling (`assā` → `assa`).
     final highlightQuery = item.highlightTerms?.join(' ') ?? query;
-    final bool fuzzyMatch = fuzzy;
+    // Rx terms are the matched text itself: never folded.
+    final bool fuzzyMatch = regex ? false : fuzzy;
     final List<String> searchTerms = paliSearchHighlightTerms(
       highlightQuery,
       fuzzy: fuzzyMatch,
@@ -1049,6 +1055,7 @@ class SearchResultItemView extends ConsumerWidget {
                   searchTerms: searchTerms,
                   query: rawQuery,
                   fuzzy: fuzzyMatch,
+                  regex: regex,
                   paliTextStyle: paliTextStyle,
                   transTextStyle: transTextStyle,
                   colors: colors,
@@ -1077,6 +1084,9 @@ class _LineTile extends StatelessWidget {
   /// matches only the exact whole word.
   final bool fuzzy;
 
+  /// Whether the terms are the exact text an Rx pattern matched.
+  final bool regex;
+
   final TextStyle paliTextStyle;
   final TextStyle transTextStyle;
   final ColorScheme colors;
@@ -1088,6 +1098,7 @@ class _LineTile extends StatelessWidget {
     required this.searchTerms,
     required this.query,
     this.fuzzy = true,
+    this.regex = false,
     required this.paliTextStyle,
     required this.transTextStyle,
     required this.colors,
@@ -1121,6 +1132,7 @@ class _LineTile extends StatelessWidget {
               searchTerms: searchTerms,
               query: query,
               fuzzy: fuzzy,
+              regex: regex,
               script: script,
               style: paliTextStyle.copyWith(
                 fontSize: (paliTextStyle.fontSize ?? 14) * 0.95,
@@ -1158,6 +1170,7 @@ class _LineTile extends StatelessWidget {
     required String query,
     required Script script,
     required bool fuzzy,
+    bool regex = false,
     required TextStyle style,
     required Color highlightColor,
   }) {
@@ -1195,6 +1208,7 @@ class _LineTile extends StatelessWidget {
       terms: terms.isEmpty ? searchTerms : terms,
       isPali: true,
       fuzzy: fuzzy,
+      regex: regex,
       highlightColor: highlightColor,
       beforeChars: 40,
       afterChars: 60,

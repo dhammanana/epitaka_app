@@ -126,6 +126,7 @@ void main() {
 
   Future<void> typeCode(WidgetTester tester, String code) async {
     await tester.enterText(find.byType(TextField), code);
+    await tester.testTextInput.receiveAction(TextInputAction.go);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pumpAndSettle();
   }
@@ -225,6 +226,23 @@ void main() {
     expect(highlighted(tester, 'M-i|280'), isFalse);
     await typeCode(tester, 'mn10');
     expect(find.textContaining('MN10 · '), findsOneWidget);
+    await closeWithEscape(tester);
+  });
+
+  testWidgets('typing drops the highlight, so the rows come back unlit', (
+    tester,
+  ) async {
+    await pumpHost(tester);
+    await loadHistory(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(highlighted(tester, 'M-ii|1653'), isTrue);
+    await tester.enterText(find.byType(TextField), 'mn10');
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump();
+    expect(find.text('MN100'), findsOneWidget);
+    expect(highlighted(tester, 'M-ii|1653'), isFalse);
     await closeWithEscape(tester);
   });
 

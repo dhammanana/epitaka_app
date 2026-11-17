@@ -25,6 +25,7 @@ List<InlineSpan> _snippet(
   String text, {
   required List<String> terms,
   required bool fuzzy,
+  bool regex = false,
 }) => buildSearchSnippetSpans(
   html: text,
   baseStyle: const TextStyle(),
@@ -32,6 +33,7 @@ List<InlineSpan> _snippet(
   isPali: true,
   highlightColor: const Color(0x33000000),
   fuzzy: fuzzy,
+  regex: regex,
 );
 
 void main() {
@@ -82,6 +84,42 @@ void main() {
         fuzzy: true,
       );
       expect(_highlighted(spans), ['assa', 'assā']);
+    });
+  });
+
+  group('Rx (the exact text the pattern matched)', () {
+    // The first assa is far from the real assā, so a window cut around a
+    // folded match would leave the assā out of the snippet.
+    final line = 'jātisahassampi ${List.filled(30, 'ca').join(' ')} lokassā ti';
+
+    test('only the matched text is lit, diacritics kept', () {
+      final spans = _snippet(
+        line,
+        terms: const ['assā'],
+        fuzzy: false,
+        regex: true,
+      );
+      expect(_highlighted(spans), ['assā']);
+    });
+
+    test('the match is lit inside a longer word', () {
+      final spans = _snippet(
+        'lokassāya ti',
+        terms: const ['assā'],
+        fuzzy: false,
+        regex: true,
+      );
+      expect(_highlighted(spans), ['assā']);
+    });
+
+    test('a plain assa is not lit', () {
+      final spans = _snippet(
+        'tassa assa hoti',
+        terms: const ['assā'],
+        fuzzy: false,
+        regex: true,
+      );
+      expect(_highlighted(spans), isEmpty);
     });
   });
 

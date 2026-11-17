@@ -341,11 +341,16 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
                     ? l10n.invalidPattern(_patternError!)
                     : null,
               ),
-              onChanged: (_) => _clearResults(),
+              onChanged: (t) {
+                if (t.isNotEmpty) _nav.reset();
+                _clearResults();
+              },
               // Enter now searches first, so the box must keep focus for the
               // arrow keys and the second Enter that opens the result.
               onEditingComplete: () {},
               onSubmitted: (_) {
+                // The key handler already opened a highlighted history row.
+                if (_nav.index >= 0 && _showRows) return;
                 // Results on screen always belong to the text in the box.
                 if (_results.isNotEmpty) {
                   _open(_results[_highlight]);
