@@ -72,6 +72,27 @@ class AppLocalizations {
   String get later => _t('Later');
   String get dontAskForThisVersion => _t("Don't ask for this version");
 
+  /// Desktop notices after the start-up guard changed the settings file.
+  /// [date] is when the restored settings were saved.
+  String startupRestoredAfterUnfinished(String date) => _t(
+    'ePitaka did not finish starting last time, so it went back to your settings from $date.',
+  );
+  String get startupEmptyAfterOneUnfinished => _t(
+    'ePitaka did not finish starting last time, and no earlier settings were kept, so it started with default settings.',
+  );
+  String get startupEmptyAfterTwoUnfinished => _t(
+    'ePitaka did not finish starting twice, so it started with default settings.',
+  );
+  String startupStillFailing(int count) => _t(
+    'ePitaka did not finish starting $count times in a row, and default settings did not help.',
+  );
+  String startupRestoredAfterUnreadable(String date) => _t(
+    'ePitaka could not read its settings file, so it went back to your settings from $date.',
+  );
+  String get startupEmptyAfterUnreadable => _t(
+    'ePitaka could not read its settings file, so it started with default settings.',
+  );
+
   /// Error prefix for `Error: $message` lines.
   String errorMessage(String message) => '${_t('Error')}: $message';
 

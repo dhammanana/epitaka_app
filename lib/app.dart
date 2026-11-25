@@ -31,6 +31,7 @@ import 'features/changelog/changelog_service.dart';
 import 'features/update/app_update_dialog.dart';
 import 'features/update/app_update_service.dart';
 import 'features/deep_links/deep_link_service.dart';
+import 'features/desktop/startup_recovery_notice.dart';
 import 'features/mcp/widgets/mcp_autostart.dart';
 import 'features/indexing/index_gate.dart';
 import 'router/app_router.dart';
@@ -316,8 +317,10 @@ class _EpitakaAppState extends ConsumerState<EpitakaApp> {
                     GlobalWidgetsLocalizations.delegate,
                     GlobalCupertinoLocalizations.delegate,
                   ],
-                  builder: (context, child) => IndexGate(
-                    child: PendingDeepLinkRunner(child: child!),
+                  builder: (context, child) => StartupRecoveryNotice(
+                    child: IndexGate(
+                      child: PendingDeepLinkRunner(child: child!),
+                    ),
                   ),
                 ),
               );

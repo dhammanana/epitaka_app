@@ -29,6 +29,14 @@ class StartupTiming {
   static final Stopwatch _sw = Stopwatch();
   static bool _started = false;
 
+  /// The first lines printed, so the start-up log can write the ones made
+  /// before it opened. Capped because marks fire on every book load.
+  static final List<String> lines = [];
+  static const _keptLines = 200;
+
+  /// Gets every line printed from now on.
+  static void Function(String line)? sink;
+
   /// Start the clock. No-op if already started, so it is safe to call from
   /// more than one entry point.
   static void start() {
@@ -41,9 +49,11 @@ class StartupTiming {
   /// first use if [start] was not called explicitly.
   static void mark(String label) {
     if (!_started) start();
-    debugPrint(
-      '[STARTUP] +${_sw.elapsedMilliseconds.toString().padLeft(6)}ms  $label',
-    );
+    final line =
+        '[STARTUP] +${_sw.elapsedMilliseconds.toString().padLeft(6)}ms  $label';
+    if (lines.length < _keptLines) lines.add(line);
+    debugPrint(line);
+    sink?.call(line);
   }
 
   /// Elapsed milliseconds since [start].
