@@ -18,6 +18,8 @@ import 'core/utils/frame_stats.dart';
 import 'core/utils/platform_info.dart';
 import 'core/utils/startup_timing.dart';
 import 'features/desktop/single_instance.dart';
+import 'features/desktop/startup_guard.dart';
+import 'features/desktop/startup_log.dart';
 import 'features/desktop/window_state.dart';
 import 'features/dpd/utils/feedback_urls.dart';
 import 'features/reader/providers/reader_tabs_persistence.dart';
@@ -54,6 +56,7 @@ void _handleFlutterError(FlutterErrorDetails details) {
   _errorCounts[hash] = count;
 
   if (count <= _kMaxRepeatedErrors) {
+    startupLog.error(details.exception, details.stack);
     // Print the full error with stack trace for the first few occurrences
     developer.log(
       '[FLUTTER_ERROR #$count] ${details.exception}\n'
@@ -90,9 +93,12 @@ Future<void> main() async {
   // without writing the saved window or tab state.
   if (PlatformInfo.isDesktop && !await _isFirstCopy()) exit(0);
 
+  final guard = await _beginStartupGuard();
+
   if (PlatformInfo.isDesktop) await _restoreDesktopWindow();
 
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    startupLog.error(error, stack);
     AppAnalytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
@@ -118,9 +124,10 @@ Future<void> main() async {
   runApp(ProviderScope(overrides: overrides, child: const EpitakaApp()));
   if (!kReleaseMode) FrameStats.start();
   unawaited(loadFeedbackAppVersion());
-  WidgetsBinding.instance.addPostFrameCallback(
-    (_) => StartupTiming.mark('first frame painted'),
-  );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    StartupTiming.mark('first frame painted');
+    if (guard != null) Timer(const Duration(seconds: 10), guard.finish);
+  });
 
   unawaited(_initBackgroundAsync());
 
@@ -134,6 +141,27 @@ Future<void> main() async {
   if (kDebugMode && Platform.isMacOS) {
     _nudgeMacDebugRepaints();
   }
+}
+
+/// Windows and Linux keep settings in a JSON file the app can move; macOS
+/// and phones do not, so they start as before.
+Future<StartupGuard?> _beginStartupGuard() async {
+  if (kIsWeb || !(Platform.isWindows || Platform.isLinux)) return null;
+  final StartupGuard guard;
+  try {
+    final dir = await getApplicationSupportDirectory();
+    startupLog.open(dir);
+    guard = StartupGuard.begin(dir, detectCrashes: !kDebugMode, log: startupLog);
+  } catch (e) {
+    developer.log('Start-up guard failed, starting as before: $e',
+        name: 'epitaka.startup');
+    return null;
+  }
+  pendingStartupRecovery = guard.recovery;
+  // Outside the try: a settings file that still cannot be read fails the
+  // start as it did before.
+  await guard.openSettings();
+  return guard;
 }
 
 /// A failed check lets the app start: a second window is better than none.
