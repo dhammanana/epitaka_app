@@ -46,6 +46,8 @@ void main() {
       tester,
       dbFile,
       words: ['dhamma', 'kamma', 'citta'],
+      // The icon row is hidden by default, and these tests are about the row.
+      showIconRow: true,
     );
     final history = c.read(lookupHistoryProvider);
     for (final w in ['citta', 'kamma', 'dhamma']) {
@@ -537,7 +539,7 @@ void main() {
 
   testWidgets('the Settings item shows and hides the row', (tester) async {
     screen(tester, h: 1400);
-    final c = await makeShellContainer(tester, dbFile);
+    final c = await makeShellContainer(tester, dbFile, showIconRow: true);
     await tester.pumpWidget(wrapShell(c, const DictionarySettingsBody()));
     await settleShell(tester);
     final tile = find.text('Show the icons in the dictionary header');

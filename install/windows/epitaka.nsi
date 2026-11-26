@@ -42,6 +42,12 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ePitaka" "Publisher" "Dhammanana"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ePitaka" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ePitaka" "DisplayIcon" "$INSTDIR\epitaka.exe"
+
+  ; epitaka:// links (a DPD page, a browser) start this app with the link as
+  ; the argument. HKLM, as the installer already runs as admin.
+  WriteRegStr HKLM "Software\Classes\epitaka" "" "URL:ePitaka"
+  WriteRegStr HKLM "Software\Classes\epitaka" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\epitaka\shell\open\command" "" '"$INSTDIR\epitaka.exe" "%1"'
 SectionEnd
 
 Section "Uninstall"
@@ -51,4 +57,5 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\ePitaka"
   Delete "$DESKTOP\ePitaka.lnk"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ePitaka"
+  DeleteRegKey HKLM "Software\Classes\epitaka"
 SectionEnd

@@ -7,3 +7,6 @@
 test/fixtures/*.sql text eol=lf
 test/fixtures/*.json text eol=lf
 test/fixtures/*.tsv text eol=lf
+
+# The app parses this asset line by line; a stray \r would end up in the last column.
+assets/sutta_code_cells.tsv text eol=lf

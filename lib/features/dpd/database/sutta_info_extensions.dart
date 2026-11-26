@@ -271,6 +271,20 @@ extension SuttaInfoExtensions on SuttaInfoData {
     return names.any((n) => n.contains('nipāta'));
   }
 
+  bool get isPannasaka => [dpdSutta, dpdSuttaVar ?? ''].any(
+    (n) => n.contains('paṇṇāsapāḷi') || n.contains('paṇṇāsaka'),
+  );
+
+  /// The code an `epitaka://sutta` link carries, or null on a group page
+  /// (saṃyutta, nipāta, vagga, paṇṇāsaka), which has no sutta to open. It is
+  /// DPD's own code, which follows the CST numbering ePitaka's texts follow.
+  /// The SuttaCentral code is off by one or two in the Saṃyutta and Aṅguttara
+  /// nikāyas, so it must not be used. Mirrors Python `SuttaInfo.epitaka_code`.
+  String? get epitakaLinkCode {
+    if (isSamyutta || isNipata || isVagga || isPannasaka) return null;
+    return _notEmpty(dpdCode) ? dpdCode!.toLowerCase() : null;
+  }
+
   // Mirrors Python SuttaInfo.sc_vagga_link — constructs SC vagga/saṃyutta URL.
   String? get scVaggaLink {
     final bookCode = _scBookCode;

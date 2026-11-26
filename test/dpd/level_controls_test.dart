@@ -47,6 +47,8 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
+    // The icon row is hidden by default, and these tests are about the row.
+    await container.read(dictionaryHeaderIconsProvider.notifier).set(true);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,

@@ -33,6 +33,7 @@ SuttaLookupCache _fixture() {
       row('S-iv', 1570, 'Sāmaṇḍakasuttaṃ', 'sn39.1 sn39 sn39.1-2 =sn39.1-15'),
       // Bare ranges with no member tokens of their own.
       row('A-ii', 35, 'Adhikaraṇavagga', 'an2.11-21'),
+      row('A-iv', 1114, '6. Dutiyamettāsuttaṃ', 'an4.126'),
       row('A-iv', 100, 'Outer range', 'an4.274-783'),
       row('A-iv', 200, 'Inner range', 'an4.277-303'),
     ],
@@ -72,6 +73,34 @@ void main() {
       final payload = parseToken('an5.303-1151=an5.303');
       expect(payload.key, 'an5.303-1151');
       expect(payload.payload, 'an5.303');
+    });
+  });
+
+  group('resolveSuttaCode', () {
+    test('an exact code opens its own paragraph, in any case', () {
+      for (final input in ['an4.126', 'AN4.126', 'AN 4.126']) {
+        final target = resolveSuttaCode(cache, input)!;
+        expect((target.bookId, target.paraId), ('A-iv', 1114));
+      }
+    });
+
+    test('a member with no token of its own opens the covering range', () {
+      final target = resolveSuttaCode(cache, 'an2.15')!;
+      expect((target.bookId, target.paraId), ('A-ii', 35));
+    });
+
+    test('a prefix, an unknown code and empty input give null', () {
+      expect(resolveSuttaCode(cache, 'sn'), isNull);
+      expect(resolveSuttaCode(cache, 'ud1'), isNull);
+      expect(resolveSuttaCode(cache, '  '), isNull);
+    });
+
+    test('agrees with the first hit of searchSuttaCodes', () {
+      for (final input in ['an4.126', 'an2.15']) {
+        final one = resolveSuttaCode(cache, input)!;
+        final first = searchSuttaCodes(cache, input).first;
+        expect((one.bookId, one.paraId), (first.bookId, first.paraId));
+      }
     });
   });
 

@@ -9,6 +9,7 @@ Future<void> main(List<String> args) async {
   final claimed = await claimSingleInstance(
     Directory(args.single),
     onAnotherLaunch: () => stdout.writeln('nudged'),
+    onLink: (uri) => stdout.writeln('link:$uri'),
   );
   stdout.writeln('claimed:$claimed');
   await Completer<void>().future;

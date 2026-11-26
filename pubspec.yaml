@@ -131,6 +131,7 @@ flutter:
     - assets/fonts/
     - assets/map/
     - assets/font_catalog.json
+    - assets/sutta_code_cells.tsv
     - assets/changelog.md
     - assets/icon.png
 
@@ -286,3 +287,5 @@ msix_config:
   # carries the build number.
   logo_path: assets/icon.png
   store: true
+  # Registers epitaka:// links so a DPD page or a browser can open the app.
+  protocol_activation: epitaka

@@ -8,10 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/supabase_config.dart';
-import '../../core/providers/database_provider.dart';
 import '../../core/utils/pali_search_utils.dart';
 import '../annotations/services/auth_service.dart';
 import '../reader/providers/reader_tabs_provider.dart';
+import '../sutta_jump/providers/sutta_lookup_provider.dart';
+import '../sutta_jump/services/open_sutta.dart';
+import '../sutta_jump/services/sutta_code_service.dart';
+import '../sutta_jump/widgets/go_to_sutta_dialog.dart';
 import '../../router/app_router.dart';
 import '../../shared/utils/app_navigation.dart';
 
@@ -28,7 +31,11 @@ import '../../shared/utils/app_navigation.dart';
 ///     On Android, `ShareTextActivity` turns text from the share sheet or
 ///     the text-selection menu into this link.
 ///
-///   The route name is the link's HOST (`search`, `reader`); see
+///   - `epitaka://sutta?code={code}` — open a sutta by its code (`an4.126`,
+///     `thag1.1`). A code that finds no sutta opens "Go to sutta" with the
+///     code typed in.
+///
+///   The route name is the link's HOST (`search`, `reader`, `sutta`); see
 ///   [routeSegments].
 ///
 /// **2. Universal / App Links** (`https://epitaka.org/app/...`):
@@ -60,6 +67,28 @@ class DeepLinkService {
   /// is kept: a second share before the screens appear replaces the first.
   Uri? _pendingUri;
 
+  /// The `epitaka://` link `main` found in the command-line arguments: how a
+  /// desktop launch carries a link (`xdg-open`, a Windows protocol start).
+  /// Set before `runApp`.
+  static Uri? launchArgLink;
+
+  /// The first `epitaka://` argument of a launch, or null.
+  static String? launchLinkOf(List<String> args) {
+    for (final arg in args) {
+      if (arg.startsWith('epitaka://')) return arg;
+    }
+    return null;
+  }
+
+  /// Stands in for `AppLinks.getInitialLink` in tests, which have no plugin.
+  @visibleForTesting
+  static Future<Uri?> Function()? initialLinkOverride;
+
+  /// The launch link as `app_links` sees it. Throws when the plugin fails.
+  Future<Uri?> _pluginInitialLink() async =>
+      initialLinkOverride?.call() ??
+      (_appLinks ?? AppLinks()).getInitialLink();
+
   /// Initialise the deep link listener. Call from a post-frame callback
   /// in the app's top-level widget.
   ///
@@ -78,7 +107,17 @@ class DeepLinkService {
       _appLinks = AppLinks();
 
       // ── Handle link that launched the app ──────────────────────────
-      final initialUri = await _appLinks!.getInitialLink();
+      // The argument link counts only when app_links gave nothing, so a link
+      // both of them deliver opens once. A plugin failure still lets the
+      // argument link open; it only ends the setup, as it always did.
+      Uri? fromPlugin;
+      Object? pluginError;
+      try {
+        fromPlugin = await _pluginInitialLink();
+      } catch (e) {
+        pluginError = e;
+      }
+      final initialUri = fromPlugin ?? launchArgLink;
       if (initialUri != null) {
         developer.log(
           '[DEEPLINK] Initial link: $initialUri',
@@ -86,6 +125,7 @@ class DeepLinkService {
         );
         handleUri(initialUri);
       }
+      if (pluginError != null) throw pluginError;
 
       // ── Subscribe to subsequent links ──────────────────────────────
       _linkSub = dropRepeatedInitialLink(
@@ -132,13 +172,13 @@ class DeepLinkService {
     if (kIsWeb) return false;
     if (_pendingUri != null) return true;
     try {
-      return await (_appLinks ?? AppLinks()).getInitialLink() != null;
+      return (await _pluginInitialLink() ?? launchArgLink) != null;
     } catch (e) {
       developer.log(
         '[DEEPLINK] Launch link check failed: $e',
         name: 'epitaka.deeplink',
       );
-      return false;
+      return launchArgLink != null;
     }
   }
 
@@ -160,8 +200,8 @@ class DeepLinkService {
   /// so rapid duplicate deliveries can't race each other.
   bool _oauthExchangeInFlight = false;
 
-  /// Parse an incoming [uri] and navigate accordingly.
-  @visibleForTesting
+  /// Parse an incoming [uri] and navigate accordingly. Also used by in-app
+  /// links (the sutta row, dictionary cards) that open without the system.
   void handleUri(Uri uri) {
     developer.log(
       '[DEEPLINK] Handling URI: scheme=${uri.scheme} host=${uri.host} '
@@ -233,6 +273,8 @@ class DeepLinkService {
       // legacy ones start with the bookId or the old 'reader' prefix.
       if (effectiveSegments.first == 'search') {
         _handleSearchLink(uri, ctx);
+      } else if (effectiveSegments.first == 'sutta') {
+        unawaited(_handleSuttaLink(uri, ctx));
       } else {
         unawaited(_handleReaderLink(uri, effectiveSegments, ctx));
       }
@@ -245,6 +287,9 @@ class DeepLinkService {
         break;
       case 'search':
         _handleSearchLink(uri, ctx);
+        break;
+      case 'sutta':
+        unawaited(_handleSuttaLink(uri, ctx));
         break;
       default:
         developer.log(
@@ -349,7 +394,7 @@ class DeepLinkService {
     // old approach of writing bookId/paraId/lineId into the route query
     // string was never read back, so the book never opened.
     final container = ProviderScope.containerOf(context);
-    final bookName = await _bookNameFor(container, bookId);
+    final bookName = await suttaBookName(container, bookId);
     if (!context.mounted) return;
 
     container.read(readerTabsProvider.notifier).openTab(
@@ -397,24 +442,39 @@ class DeepLinkService {
     'pi',
   };
 
-  /// Resolve the display name for [bookId] so the newly opened reader tab
-  /// shows a proper title immediately. Falls back to the raw bookId.
-  Future<String> _bookNameFor(ProviderContainer container, String bookId) async {
+  /// Handle a sutta deep link: `epitaka://sutta?code={code}`. A hit opens the
+  /// sutta like "Go to sutta" does; a miss opens that box with the code typed
+  /// in, so the reader sees what ePitaka does hold under it.
+  Future<void> _handleSuttaLink(Uri uri, BuildContext context) async {
+    final code = uri.queryParameters['code'] ?? '';
+    developer.log('[DEEPLINK] Sutta link: code=$code', name: 'epitaka.deeplink');
+    final container = ProviderScope.containerOf(context, listen: false);
+    SuttaTarget? target;
+    // The lookup provider disposes itself without a listener, which could
+    // drop it between the read and the end of the load.
+    final keepAlive = container.listen(suttaLookupProvider, (_, _) {});
     try {
-      final db = await container.read(epitakaDbProvider.future);
-      final rows = await (db.select(db.books)
-            ..where((b) => b.bookId.equals(bookId))
-            ..limit(1))
-          .get();
-      final name = rows.isNotEmpty ? rows.first.bookName : null;
-      if (name != null && name.isNotEmpty) return name;
+      final cache = await container.read(suttaLookupProvider.future);
+      target = resolveSuttaCode(cache, code);
     } catch (e) {
       developer.log(
-        '[DEEPLINK] Book name lookup failed for $bookId: $e',
+        '[DEEPLINK] Sutta lookup failed for "$code": $e',
         name: 'epitaka.deeplink',
       );
+    } finally {
+      keepAlive.close();
     }
-    return bookId;
+    if (!context.mounted) return;
+    if (target == null) {
+      developer.log('[DEEPLINK] Sutta miss: $code', name: 'epitaka.deeplink');
+      await showGoToSuttaDialog(context, initialText: code);
+      return;
+    }
+    developer.log(
+      '[DEEPLINK] Sutta hit: $code -> ${target.bookId}:${target.paraId}',
+      name: 'epitaka.deeplink',
+    );
+    await openSuttaTarget(context, target);
   }
 
   /// Handle a search deep link.

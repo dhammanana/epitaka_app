@@ -87,9 +87,12 @@ void main() {
 
     await open(appearanceCard);
     await open(translationsCard);
+    // The current font row opens the picker, which lists the families.
     await tester.tap(
-      find.descendant(of: appearanceCard, matching: find.text('Sans-Serif')),
+      find.descendant(of: appearanceCard, matching: find.text('Serif')),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sans-Serif'));
     await tester.pumpAndSettle();
 
     expect(

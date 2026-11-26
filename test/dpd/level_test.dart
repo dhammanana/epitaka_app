@@ -76,6 +76,8 @@ void main() {
         tester,
         dbFile,
         words: ['dhamma'],
+        // The level control sits in the icon row, hidden by default.
+        showIconRow: true,
       );
       await tester.pumpWidget(
         wrapShell(container, const DictionarySheet(initialWord: 'dhamma')),
@@ -98,6 +100,8 @@ void main() {
         tester,
         dbFile,
         words: ['dhamma'],
+        // The level control sits in the icon row, hidden by default.
+        showIconRow: true,
       );
       await tester.pumpWidget(
         wrapShell(container, const DictionarySheet(initialWord: 'dhamma')),

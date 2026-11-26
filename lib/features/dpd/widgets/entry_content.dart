@@ -154,13 +154,15 @@ TableRow? buildKvRichRow(
 
 /// Builds a nullable link [TableRow]; returns null when [url] is empty or null.
 ///
-/// Tapping calls [onOpen] with the resolved URL.
+/// Tapping calls [onOpen] with the resolved URL. [displayText] replaces the
+/// shown URL when the link is not meant to be read.
 TableRow? buildKvLinkRow(
   BuildContext context,
   String label,
   String? url, {
   required void Function(String) onOpen,
   TextStyle? labelStyle,
+  String? displayText,
 }) {
   if (url == null || url.isEmpty) return null;
   final palette = context.palette;
@@ -175,7 +177,7 @@ TableRow? buildKvLinkRow(
           child: GestureDetector(
             onTap: () => onOpen(url),
             child: Text(
-              url,
+              displayText ?? url,
               maxLines: 1,
               softWrap: false,
               style: TextStyle(

@@ -49,6 +49,30 @@ On Android, `ShareTextActivity` receives text from the share sheet
 forwards it to `MainActivity` as this link. Other platforms can feed the same
 link later.
 
+## Sutta links
+
+`epitaka://sutta?code={code}` opens a sutta by its code, offline, with the
+lookup held in the app's own database. The route name is the host, like
+`search` and `reader`. The same link as `https://epitaka.org/app/sutta?code=`
+goes to the same handler. Pages that cannot pass an `epitaka://` link on (the
+GoldenDict page of the Digital Pāḷi Dictionary) carry this web form: the website
+page `/app/sutta` turns it into the app link, and Android opens the app directly.
+
+- The code is DPD's own code in lower case (`an4.126`, `th141`, `sn45.172`).
+  It follows the CST numbering that ePitaka's texts follow; the SuttaCentral
+  number is off by one or two in the Saṃyutta and Aṅguttara nikāyas, so it is
+  not used. Case and spaces do not matter (`normaliseCode`). The code is matched exactly, then against a
+  range that covers it (`an2.15` in `an2.11-21`). A prefix never opens a sutta.
+- A hit opens the sutta as the "Go to sutta" box does: a history entry, a
+  reader tab at the paragraph, the reader screen.
+- A miss opens "Go to sutta" with the code typed in and its code search already
+  run (no name search). A link with no code opens the empty box. If that box is
+  already open the link is ignored and logged.
+- A link that arrives before the app screens exist is kept and runs once they
+  appear, like every other link.
+- Release order: an older ePitaka only logs "Unknown path" for this link, so
+  release ePitaka first, then the DPD row that carries it.
+
 ## Behavior
 
 - **Mobile with the app installed:** tapping an `/app/...` link opens the app
@@ -69,6 +93,7 @@ after it untouched:
 | `/app/{lang}/{bookId}` | `/{lang}/book/{bookId}` |
 | `/app/{bookId}/{paraId}/{lineId}` (legacy) | `/{lang}/book/{bookId}#{paraId}-{lineId}` (web picks `{lang}`) |
 | `/app/reader/{bookId}` (legacy) | `/{lang}/book/{bookId}` |
+| `/app/sutta?code={code}` | no web page for a code: the page's app button opens `epitaka://sutta?code={code}`, its browser button goes to `/{lang}/` |
 
 **Important:** the URL fragment (`#paraId-lineId`) is never sent to the
 server, and an HTTP redirect without a fragment drops it — which would lose

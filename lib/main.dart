@@ -17,6 +17,7 @@ import 'core/utils/app_initializer.dart';
 import 'core/utils/frame_stats.dart';
 import 'core/utils/platform_info.dart';
 import 'core/utils/startup_timing.dart';
+import 'features/deep_links/deep_link_service.dart';
 import 'features/desktop/single_instance.dart';
 import 'features/desktop/window_state.dart';
 import 'features/dpd/utils/feedback_urls.dart';
@@ -74,11 +75,16 @@ void _handleFlutterError(FlutterErrorDetails details) {
   // After _kMaxRepeatedErrors + 1, silently drop the error to prevent flooding
 }
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   // Start the cold-start stopwatch first so every later milestone is
   // reported relative to process start.
   StartupTiming.start();
   StartupTiming.mark('main() entered');
+
+  final launchLink = DeepLinkService.launchLinkOf(args);
+  DeepLinkService.launchArgLink = launchLink == null
+      ? null
+      : Uri.tryParse(launchLink);
 
   // Capture full stack traces for framework assertion errors.
   // Crashlytics is attached inside [_handleFlutterError] once ready.
@@ -88,7 +94,7 @@ Future<void> main() async {
 
   // Before the window is restored, so a second copy quits with no window and
   // without writing the saved window or tab state.
-  if (PlatformInfo.isDesktop && !await _isFirstCopy()) exit(0);
+  if (PlatformInfo.isDesktop && !await _isFirstCopy(launchLink)) exit(0);
 
   if (PlatformInfo.isDesktop) await _restoreDesktopWindow();
 
@@ -137,11 +143,14 @@ Future<void> main() async {
 }
 
 /// A failed check lets the app start: a second window is better than none.
-Future<bool> _isFirstCopy() async {
+Future<bool> _isFirstCopy(String? launchLink) async {
   try {
     return await claimSingleInstance(
       await getApplicationSupportDirectory(),
+      launchLink: launchLink,
       onAnotherLaunch: _bringWindowForward,
+      // Kept until the screens exist when this copy is still starting.
+      onLink: DeepLinkService.instance.handleUri,
     );
   } catch (e) {
     developer.log('Single-copy check failed, starting anyway: $e',
@@ -154,7 +163,20 @@ Future<void> _bringWindowForward() async {
   try {
     await windowManager.ensureInitialized();
     await windowManager.show();
-    await windowManager.focus();
+    if (Platform.isLinux) {
+      // An X11 window manager ignores a plain focus request from a program the
+      // user did not just click on, and a link in a browser starts this call.
+      // "Keep above" raises the window at once; it is switched off again after.
+      await windowManager.setAlwaysOnTop(true);
+      try {
+        await windowManager.focus();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      } finally {
+        await windowManager.setAlwaysOnTop(false);
+      }
+    } else {
+      await windowManager.focus();
+    }
   } catch (e) {
     developer.log('Could not bring the window forward: $e',
         name: 'epitaka.single_instance');

@@ -4,6 +4,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' show parse;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../deep_links/deep_link_service.dart';
 import '../../dictionary/providers/dictionary_font_scale_provider.dart';
 import '../../dictionary/widgets/dictionary_search_shared.dart'
     show DictHtmlContent;
@@ -218,7 +219,10 @@ class _DictHtmlCardState extends ConsumerState<DictHtmlCard> {
             return;
           }
           final uri = Uri.tryParse(url);
-          if (uri != null && uri.hasScheme) {
+          if (uri != null && uri.scheme == 'epitaka') {
+            // An ePitaka link opens in this app, not through the system.
+            DeepLinkService.instance.handleUri(uri);
+          } else if (uri != null && uri.hasScheme) {
             launchUrl(uri, mode: LaunchMode.externalApplication);
           }
         },

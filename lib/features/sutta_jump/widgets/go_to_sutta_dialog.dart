@@ -7,14 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/app_localizations.dart';
 import '../../../core/utils/velthuis.dart';
-import '../../../shared/utils/app_navigation.dart';
 import '../../../shared/widgets/history_list.dart';
 import '../../../shared/widgets/history_nav.dart';
 import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/search_box_actions.dart';
-import '../../reader/providers/reader_tabs_provider.dart';
 import '../../search/services/regex_search.dart';
 import '../providers/sutta_history_provider.dart';
+import '../providers/sutta_lookup_provider.dart';
+import '../services/open_sutta.dart';
 import '../services/sutta_code_service.dart';
 
 /// Whether "Go to sutta" takes a regex over sutta names (spec G). Session
@@ -24,9 +24,19 @@ final goToSuttaRegexProvider = StateProvider<bool>((ref) => false);
 
 bool _dialogOpen = false;
 
-/// Opens the "Go to sutta" box. A second call while it is open does nothing.
-Future<void> showGoToSuttaDialog(BuildContext context) async {
-  if (_dialogOpen) return;
+/// Opens the "Go to sutta" box. A second call while it is open logs and does
+/// nothing. [initialText] fills the box and runs the code search at once.
+Future<void> showGoToSuttaDialog(
+  BuildContext context, {
+  String? initialText,
+}) async {
+  if (_dialogOpen) {
+    developer.log(
+      '[GO TO SUTTA] Box already open — ignoring a second open',
+      name: 'epitaka.sutta_jump',
+    );
+    return;
+  }
   // Callers such as the phone side menu are gone once the dialog closes, so
   // everything after it runs on the root navigator's context.
   final rootContext = Navigator.of(context, rootNavigator: true).context;
@@ -41,7 +51,7 @@ Future<void> showGoToSuttaDialog(BuildContext context) async {
         insetPadding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: const GoToSuttaDialog(),
+          child: GoToSuttaDialog(initialText: initialText),
         ),
       ),
     );
@@ -49,44 +59,15 @@ Future<void> showGoToSuttaDialog(BuildContext context) async {
     _dialogOpen = false;
   }
   if (target == null || !rootContext.mounted) return;
-
-  final container = ProviderScope.containerOf(rootContext, listen: false);
-  container.read(suttaHistoryProvider.notifier).add(encodeSutta(target));
-  final bookName = await _bookNameFor(container, target.bookId);
-  if (!rootContext.mounted) return;
-  container
-      .read(readerTabsProvider.notifier)
-      .openTab(
-        ReaderTabInfo(
-          bookId: target.bookId,
-          bookName: bookName,
-          initialParaId: target.paraId,
-        ),
-      );
-  openReaderRoute(rootContext);
-}
-
-Future<String> _bookNameFor(ProviderContainer container, String bookId) async {
-  try {
-    final db = await container.read(epitakaDbProvider.future);
-    final rows = await (db.select(db.books)
-          ..where((b) => b.bookId.equals(bookId))
-          ..limit(1))
-        .get();
-    final name = rows.isNotEmpty ? rows.first.bookName : null;
-    if (name != null && name.isNotEmpty) return name;
-  } catch (e) {
-    developer.log(
-      '[GO TO SUTTA] Book name lookup failed for $bookId: $e',
-      name: 'epitaka.sutta_jump',
-    );
-  }
-  return bookId;
+  await openSuttaTarget(rootContext, target);
 }
 
 /// The text field and live match list. Pops with the chosen [SuttaTarget].
 class GoToSuttaDialog extends ConsumerStatefulWidget {
-  const GoToSuttaDialog({super.key});
+  const GoToSuttaDialog({super.key, this.initialText});
+
+  /// Typed into the box when it opens, with the code search already run.
+  final String? initialText;
 
   @override
   ConsumerState<GoToSuttaDialog> createState() => _GoToSuttaDialogState();
@@ -151,7 +132,19 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
 
   Future<SuttaLookupCache> _loadLookup() async {
     final db = await ref.read(epitakaDbProvider.future);
-    return loadSuttaLookup(db);
+    final cells = await ref.read(suttaCodeCellsProvider.future);
+    return loadSuttaLookup(db, cells: cells);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialText;
+    if (initial != null && initial.isNotEmpty) {
+      _controller.text = initial;
+      // Rx never applies to a typed-in link code, so the search is by code.
+      _update(initial, codesOnly: true);
+    }
   }
 
   @override
@@ -162,7 +155,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
     super.dispose();
   }
 
-  Future<void> _update(String text) async {
+  Future<void> _update(String text, {bool codesOnly = false}) async {
     final query = ++_query;
     _regexJob?.cancel();
     final regexOn = ref.read(goToSuttaRegexProvider);
@@ -174,7 +167,7 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
       final cache = await _lookup();
       // Keystrokes made while the list loaded: only the newest starts a job.
       if (!mounted || query != _query) return;
-      if (regexOn) {
+      if (regexOn && !codesOnly) {
         // Regex over sutta and book names only (spec G); codes are exact.
         if (text.isNotEmpty) {
           final error = regexError(text);
@@ -191,7 +184,8 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
       } else {
         // Codes first (`mn10`); sutta and book names when no code matches.
         results = searchSuttaCodes(cache, text);
-        if (results.isEmpty && text.trim().isNotEmpty) {
+        // Not for a link's code: the name scan freezes the app for seconds.
+        if (results.isEmpty && !codesOnly && text.trim().isNotEmpty) {
           results = searchSuttaNames(cache, text);
         }
       }
