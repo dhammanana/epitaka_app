@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show QueryRow;
+import 'package:drift/drift.dart' show QueryRow, Variable;
 
 import '../../../core/database/epitaka_database.dart';
 import '../../search/services/regex_search.dart';
@@ -278,26 +278,104 @@ SuttaTarget _targetFor(
   title: row.title,
 );
 
+List<SuttaToken> _parseCell(String cell) => [
+  for (final part in cell.split(RegExp(r'\s+')))
+    if (part.isNotEmpty) parseToken(part),
+];
+
 List<SuttaLookupRow> _lookupRows(List<QueryRow> headingRows) => [
   for (final row in headingRows)
     SuttaLookupRow(
       bookId: row.read<String>('book_id'),
       paraId: row.read<int>('para_id'),
       title: row.read<String?>('title') ?? '',
-      tokens: [
-        for (final part in (row.read<String?>('sc_id') ?? '').split(
-          RegExp(r'\s+'),
-        ))
-          if (part.isNotEmpty) parseToken(part),
-      ],
+      tokens: _parseCell(row.read<String?>('sc_id') ?? ''),
     ),
 ];
+
+/// One heading's code cell from `assets/sutta_code_cells.tsv`.
+class SuttaCodeCell {
+  const SuttaCodeCell({required this.title, required this.cell});
+
+  /// The heading title when the cell was built: a database whose heading at
+  /// the same paragraph has another title is not the one the cell was built
+  /// for.
+  final String title;
+  final String cell;
+}
+
+/// The code cells shipped with the app, one per heading of the books in the
+/// DPD sutta sheet, keyed by book and paragraph. DPD's codes follow the CST
+/// numbering. The codes inside an older `epitaka.db` can be one off from it
+/// (its `sn45.172` is the Yogasutta, DPD's is the Oghasutta), and a new
+/// database means a large download, so a fresh set ships with the app. A
+/// cell fits only a database with the same paragraph numbers: see
+/// [suttaCellsFit].
+class SuttaCodeCells {
+  SuttaCodeCells(this.rows);
+
+  /// Reads the TSV: `book_id`, `para_id`, `title`, token cell. Lines that
+  /// start with `#` are comments.
+  factory SuttaCodeCells.parse(String tsv) {
+    final rows = <(String, int), SuttaCodeCell>{};
+    for (final line in tsv.split('\n')) {
+      if (line.isEmpty || line.startsWith('#')) continue;
+      final parts = line.split('\t');
+      final paraId = parts.length >= 4 ? int.tryParse(parts[1]) : null;
+      if (paraId == null) continue;
+      rows[(parts[0], paraId)] = SuttaCodeCell(
+        title: parts[2],
+        cell: parts[3].trim(),
+      );
+    }
+    return SuttaCodeCells(rows);
+  }
+
+  final Map<(String, int), SuttaCodeCell> rows;
+
+  /// The books the cells cover. For these, the database's own codes are
+  /// ignored, so an old stale code cannot sit beside a fresh one.
+  late final Set<String> books = {for (final key in rows.keys) key.$1};
+}
+
+/// Whether [cells] were built for the paragraph numbers of [db]: about 40
+/// spread-out cells must find a heading with the same title at the same
+/// paragraph. A database release that renumbers paragraphs fails this, and
+/// the database's own codes are used instead.
+Future<bool> suttaCellsFit(EpitakaDatabase db, SuttaCodeCells cells) async {
+  final keys = cells.rows.keys.toList();
+  if (keys.isEmpty) return false;
+  final step = (keys.length / 40).ceil();
+  var probed = 0;
+  var found = 0;
+  for (var i = 0; i < keys.length; i += step) {
+    final key = keys[i];
+    probed++;
+    final hit = await db
+        .customSelect(
+          'SELECT 1 FROM headings WHERE book_id = ? AND para_id = ? '
+          "AND COALESCE(title, '') = ? LIMIT 1",
+          variables: [
+            Variable<String>(key.$1),
+            Variable<int>(key.$2),
+            Variable<String>(cells.rows[key]!.title),
+          ],
+        )
+        .get();
+    if (hit.isNotEmpty) found++;
+  }
+  return found * 10 >= probed * 9;
+}
 
 /// Load every heading up to level 10 plus the book names. Level-10 rows
 /// are the individual suttas inside a vagga (`an1.1-10` members); without
 /// them only the range row resolves. One round trip per dialog opening;
-/// keystrokes then filter [SuttaLookupCache] in memory.
-Future<SuttaLookupCache> loadSuttaLookup(EpitakaDatabase db) async {
+/// keystrokes then filter [SuttaLookupCache] in memory. With [cells] that fit
+/// the database, the codes of the books they cover come from [cells].
+Future<SuttaLookupCache> loadSuttaLookup(
+  EpitakaDatabase db, {
+  SuttaCodeCells? cells,
+}) async {
   final headingRows = await db
       .customSelect(
         'SELECT book_id, para_id, title, sc_id FROM headings '
@@ -307,8 +385,24 @@ Future<SuttaLookupCache> loadSuttaLookup(EpitakaDatabase db) async {
   final bookRows = await db
       .customSelect('SELECT book_id, book_name FROM books')
       .get();
+  var rows = _lookupRows(headingRows);
+  if (cells != null && await suttaCellsFit(db, cells)) {
+    final books = cells.books;
+    rows = [
+      for (final row in rows)
+        if (!books.contains(row.bookId))
+          row
+        else
+          SuttaLookupRow(
+            bookId: row.bookId,
+            paraId: row.paraId,
+            title: row.title,
+            tokens: _cellTokens(cells, row),
+          ),
+    ];
+  }
   return SuttaLookupCache(
-    rows: _lookupRows(headingRows),
+    rows: rows,
     bookNames: {
       for (final row in bookRows)
         row.read<String>('book_id'):
@@ -317,11 +411,46 @@ Future<SuttaLookupCache> loadSuttaLookup(EpitakaDatabase db) async {
   );
 }
 
-/// Only the headings that carry a code (about 10,000 of 160,000 rows, about
-/// 30 ms instead of 600 ms). [resolveSuttaCode] reads tokens only, so it gives
-/// the same target as on [loadSuttaLookup]; titles and book names are not
-/// searchable on this cache.
-Future<SuttaLookupCache> loadSuttaCodeLookup(EpitakaDatabase db) async {
+/// The cell's tokens for [row], or none when the cell is for another heading.
+List<SuttaToken> _cellTokens(SuttaCodeCells cells, SuttaLookupRow row) {
+  final cell = cells.rows[(row.bookId, row.paraId)];
+  if (cell == null || cell.title != row.title) return const [];
+  return _parseCell(cell.cell);
+}
+
+/// Only the headings that carry a code, which is quick: about 30 ms instead
+/// of 600 ms for [loadSuttaLookup]. [resolveSuttaCode] reads tokens only, so
+/// it gives the same target as on [loadSuttaLookup]; titles and book names are
+/// not searchable on this cache. With [cells] that fit the database, the books
+/// they cover come from [cells] and need no database read.
+Future<SuttaLookupCache> loadSuttaCodeLookup(
+  EpitakaDatabase db, {
+  SuttaCodeCells? cells,
+}) async {
+  if (cells != null && await suttaCellsFit(db, cells)) {
+    final covered = cells.books.toList();
+    final others = await db
+        .customSelect(
+          'SELECT book_id, para_id, title, sc_id FROM headings '
+          'WHERE level <= 10 AND sc_id IS NOT NULL AND book_id NOT IN '
+          '(${List.filled(covered.length, '?').join(',')}) ORDER BY rowid',
+          variables: [for (final book in covered) Variable<String>(book)],
+        )
+        .get();
+    return SuttaLookupCache(
+      rows: [
+        for (final entry in cells.rows.entries)
+          SuttaLookupRow(
+            bookId: entry.key.$1,
+            paraId: entry.key.$2,
+            title: entry.value.title,
+            tokens: _parseCell(entry.value.cell),
+          ),
+        ..._lookupRows(others),
+      ],
+      bookNames: const {},
+    );
+  }
   final headingRows = await db
       .customSelect(
         'SELECT book_id, para_id, title, sc_id FROM headings '

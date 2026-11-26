@@ -13,6 +13,7 @@ import '../../../shared/widgets/pali_text.dart';
 import '../../../shared/widgets/search_box_actions.dart';
 import '../../search/services/regex_search.dart';
 import '../providers/sutta_history_provider.dart';
+import '../providers/sutta_lookup_provider.dart';
 import '../services/open_sutta.dart';
 import '../services/sutta_code_service.dart';
 
@@ -131,7 +132,8 @@ class _GoToSuttaDialogState extends ConsumerState<GoToSuttaDialog> {
 
   Future<SuttaLookupCache> _loadLookup() async {
     final db = await ref.read(epitakaDbProvider.future);
-    return loadSuttaLookup(db);
+    final cells = await ref.read(suttaCodeCellsProvider.future);
+    return loadSuttaLookup(db, cells: cells);
   }
 
   @override

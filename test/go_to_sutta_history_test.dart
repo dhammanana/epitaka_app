@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:epitaka/core/database/epitaka_database.dart';
 import 'package:epitaka/core/providers/database_provider.dart';
+import 'package:epitaka/features/sutta_jump/providers/sutta_lookup_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
 import 'package:epitaka/features/reader/providers/reader_tabs_provider.dart';
@@ -87,6 +88,8 @@ void main() {
   }) async {
     container = ProviderContainer(
       overrides: [
+        // The asset cannot load on the fake clock; the seeded database holds the codes.
+        suttaCodeCellsProvider.overrideWith((ref) async => null),
         epitakaDbProvider.overrideWith(
           (ref) => (dbOverride ?? () async => db)(),
         ),

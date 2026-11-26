@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:epitaka/core/database/epitaka_database.dart';
 import 'package:epitaka/core/providers/database_provider.dart';
+import 'package:epitaka/features/sutta_jump/providers/sutta_lookup_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/theme/app_theme.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
@@ -83,6 +84,8 @@ Future<ProviderContainer> pumpSuttaLinkApp(
   addTearDown(() => DeepLinkService.instance.dispose());
   final container = ProviderContainer(
     overrides: [
+      // The asset cannot load on the fake clock; the seeded database holds the codes.
+      suttaCodeCellsProvider.overrideWith((ref) async => null),
       epitakaDbProvider.overrideWith((ref) async => db),
       settingsProvider.overrideWith((ref) => SettingsNotifier(null)),
     ],

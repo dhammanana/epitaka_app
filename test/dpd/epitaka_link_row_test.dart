@@ -52,7 +52,18 @@ const _th1 = SuttaInfoData(
   scVagga: 'Ekakanipāta, Paṭhamavagga',
   bjtVagga: '4. mahāvaggo',
 );
-// A real row with no SuttaCentral code: the DPD code is the fallback.
+// A real row whose SuttaCentral code is one lower than its DPD (CST) code.
+const _sn45172 = SuttaInfoData(
+  dpdCode: 'SN45.172',
+  dpdSutta: 'oghasutta',
+  dpdSuttaVar: '',
+  scCode: 'SN45.171',
+  cstCode: 'SN5.1.8.1',
+  cstVagga: '8. Oghavaggo',
+  scVagga: '14. Oghavagga',
+  bjtVagga: '16. oghavaggo',
+);
+// A real row with no SuttaCentral code at all.
 const _sn4636 = SuttaInfoData(
   dpdCode: 'SN46.36',
   dpdSutta: 'yonisomanasikārasutta',
@@ -66,12 +77,16 @@ const _sn4636 = SuttaInfoData(
 
 void main() {
   group('epitakaLinkCode', () {
-    test('the SuttaCentral code, lower case, when DPD has one', () {
+    test('the DPD code, in lower case', () {
       expect(_an4126.epitakaLinkCode, 'an4.126');
-      expect(_th1.epitakaLinkCode, 'thag1.1');
+      expect(_th1.epitakaLinkCode, 'th1');
     });
 
-    test('the DPD code when the SuttaCentral code is empty', () {
+    test('the DPD code wins where the SuttaCentral code is one off', () {
+      expect(_sn45172.epitakaLinkCode, 'sn45.172');
+    });
+
+    test('a row with no SuttaCentral code still links by its DPD code', () {
       expect(_sn4636.epitakaLinkCode, 'sn46.36');
     });
 

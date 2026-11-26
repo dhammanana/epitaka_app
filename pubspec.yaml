@@ -131,6 +131,7 @@ flutter:
     - assets/fonts/
     - assets/map/
     - assets/font_catalog.json
+    - assets/sutta_code_cells.tsv
     - assets/changelog.md
     - assets/icon.png
 

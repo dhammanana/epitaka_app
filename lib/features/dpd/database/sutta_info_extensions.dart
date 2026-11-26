@@ -276,14 +276,13 @@ extension SuttaInfoExtensions on SuttaInfoData {
   );
 
   /// The code an `epitaka://sutta` link carries, or null on a group page
-  /// (saṃyutta, nipāta, vagga, paṇṇāsaka), which has no sutta to open. DPD's
-  /// SuttaCentral code comes first: ePitaka stores those codes, and DPD's own
-  /// code opens a neighbouring sutta in about 125 cases. Mirrors Python
-  /// `SuttaInfo.epitaka_link`.
+  /// (saṃyutta, nipāta, vagga, paṇṇāsaka), which has no sutta to open. It is
+  /// DPD's own code, which follows the CST numbering ePitaka's texts follow.
+  /// The SuttaCentral code is off by one or two in the Saṃyutta and Aṅguttara
+  /// nikāyas, so it must not be used. Mirrors Python `SuttaInfo.epitaka_code`.
   String? get epitakaLinkCode {
     if (isSamyutta || isNipata || isVagga || isPannasaka) return null;
-    final code = _notEmpty(scCode) ? scCode : dpdCode;
-    return _notEmpty(code) ? code!.toLowerCase() : null;
+    return _notEmpty(dpdCode) ? dpdCode!.toLowerCase() : null;
   }
 
   // Mirrors Python SuttaInfo.sc_vagga_link — constructs SC vagga/saṃyutta URL.

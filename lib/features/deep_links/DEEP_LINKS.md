@@ -58,9 +58,10 @@ goes to the same handler. Pages that cannot pass an `epitaka://` link on (the
 GoldenDict page of the Digital Pāḷi Dictionary) carry this web form: the website
 page `/app/sutta` turns it into the app link, and Android opens the app directly.
 
-- The code is DPD's SuttaCentral code in lower case when DPD has one
-  (`thag1.141`, `an4.126`), else DPD's own code (`mn10`). Case and spaces do
-  not matter (`normaliseCode`). The code is matched exactly, then against a
+- The code is DPD's own code in lower case (`an4.126`, `th141`, `sn45.172`).
+  It follows the CST numbering that ePitaka's texts follow; the SuttaCentral
+  number is off by one or two in the Saṃyutta and Aṅguttara nikāyas, so it is
+  not used. Case and spaces do not matter (`normaliseCode`). The code is matched exactly, then against a
   range that covers it (`an2.15` in `an2.11-21`). A prefix never opens a sutta.
 - A hit opens the sutta as the "Go to sutta" box does: a history entry, a
   reader tab at the paragraph, the reader screen.
