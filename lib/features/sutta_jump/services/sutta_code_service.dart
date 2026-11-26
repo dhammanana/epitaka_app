@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart' show QueryRow;
+
 import '../../../core/database/epitaka_database.dart';
 import '../../search/services/regex_search.dart';
 import '../../../core/utils/fuzzy_matcher/fuzzy_matcher_library.dart'
@@ -276,6 +278,21 @@ SuttaTarget _targetFor(
   title: row.title,
 );
 
+List<SuttaLookupRow> _lookupRows(List<QueryRow> headingRows) => [
+  for (final row in headingRows)
+    SuttaLookupRow(
+      bookId: row.read<String>('book_id'),
+      paraId: row.read<int>('para_id'),
+      title: row.read<String?>('title') ?? '',
+      tokens: [
+        for (final part in (row.read<String?>('sc_id') ?? '').split(
+          RegExp(r'\s+'),
+        ))
+          if (part.isNotEmpty) parseToken(part),
+      ],
+    ),
+];
+
 /// Load every heading up to level 10 plus the book names. Level-10 rows
 /// are the individual suttas inside a vagga (`an1.1-10` members); without
 /// them only the range row resolves. One round trip per dialog opening;
@@ -291,26 +308,56 @@ Future<SuttaLookupCache> loadSuttaLookup(EpitakaDatabase db) async {
       .customSelect('SELECT book_id, book_name FROM books')
       .get();
   return SuttaLookupCache(
-    rows: [
-      for (final row in headingRows)
-        SuttaLookupRow(
-          bookId: row.read<String>('book_id'),
-          paraId: row.read<int>('para_id'),
-          title: row.read<String?>('title') ?? '',
-          tokens: [
-            for (final part in (row.read<String?>('sc_id') ?? '').split(
-              RegExp(r'\s+'),
-            ))
-              if (part.isNotEmpty) parseToken(part),
-          ],
-        ),
-    ],
+    rows: _lookupRows(headingRows),
     bookNames: {
       for (final row in bookRows)
         row.read<String>('book_id'):
             row.read<String?>('book_name') ?? row.read<String>('book_id'),
     },
   );
+}
+
+/// Only the headings that carry a code (about 10,000 of 160,000 rows, about
+/// 30 ms instead of 600 ms). [resolveSuttaCode] reads tokens only, so it gives
+/// the same target as on [loadSuttaLookup]; titles and book names are not
+/// searchable on this cache.
+Future<SuttaLookupCache> loadSuttaCodeLookup(EpitakaDatabase db) async {
+  final headingRows = await db
+      .customSelect(
+        'SELECT book_id, para_id, title, sc_id FROM headings '
+        'WHERE level <= 10 AND sc_id IS NOT NULL ORDER BY rowid',
+      )
+      .get();
+  return SuttaLookupCache(rows: _lookupRows(headingRows), bookNames: const {});
+}
+
+/// The one sutta a code opens: the first exact token match in canonical
+/// (rowid) order, then the heading whose DPD range covers it. No prefix
+/// list, so a link never opens a guess. Null when nothing matches.
+SuttaTarget? resolveSuttaCode(SuttaLookupCache cache, String input) {
+  final code = normaliseCode(input);
+  if (code.isEmpty) return null;
+  // Exact match (members included: `an1.5` opens its own paragraph).
+  for (final row in cache.rows) {
+    for (final token in row.tokens) {
+      if (token.key == code) return _targetFor(cache, row, token);
+    }
+  }
+  // Range synthesis: a member code with no stored token still opens the
+  // heading whose range covers it, the way the old asset's expanded member
+  // keys did. Stored tokens always win — this only runs on an exact miss.
+  if (!code.contains('-')) {
+    final covering = _coveringRow(cache, code);
+    if (covering != null) {
+      return SuttaTarget(
+        bookId: covering.row.bookId,
+        paraId: covering.row.paraId,
+        displayCode: '${code.toUpperCase()} (${covering.range.toUpperCase()})',
+        title: covering.row.title,
+      );
+    }
+  }
+  return null;
 }
 
 /// Code lookup over the `headings.sc_id` token cells: the exact match
@@ -326,37 +373,8 @@ List<SuttaTarget> searchSuttaCodes(SuttaLookupCache cache, String input) {
     if (seen.add(target._identity)) results.add(target);
   }
 
-  // Exact match (members included: `an1.5` opens its own paragraph).
-  for (final row in cache.rows) {
-    SuttaToken? match;
-    for (final token in row.tokens) {
-      if (token.key == code) {
-        match = token;
-        break;
-      }
-    }
-    if (match != null) {
-      add(_targetFor(cache, row, match));
-      break;
-    }
-  }
-  // Range synthesis: a member code with no stored token still opens the
-  // heading whose range covers it, the way the old asset's expanded member
-  // keys did. Stored tokens always win — this only runs on an exact miss.
-  if (results.isEmpty && !code.contains('-')) {
-    final covering = _coveringRow(cache, code);
-    if (covering != null) {
-      add(
-        SuttaTarget(
-          bookId: covering.row.bookId,
-          paraId: covering.row.paraId,
-          displayCode:
-              '${code.toUpperCase()} (${covering.range.toUpperCase()})',
-          title: covering.row.title,
-        ),
-      );
-    }
-  }
+  final resolved = resolveSuttaCode(cache, code);
+  if (resolved != null) add(resolved);
   // Prefix matches, skipping range members: listing them all would push
   // the next ranges (`an10…` after `an1…`) out of the 20.
   for (final row in cache.rows) {

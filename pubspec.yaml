@@ -286,3 +286,5 @@ msix_config:
   # carries the build number.
   logo_path: assets/icon.png
   store: true
+  # Registers epitaka:// links so a DPD page or a browser can open the app.
+  protocol_activation: epitaka

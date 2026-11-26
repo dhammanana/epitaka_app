@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../deep_links/deep_link_service.dart';
 import '../database/dpd_database.dart';
 import '../database/sutta_info_extensions.dart';
 import '../theme/dpd_colors.dart';
@@ -58,6 +59,7 @@ class SuttaInfoSection extends StatelessWidget {
           _linkRow(context, 'Digital Pali Reader', s.dprLink),
           _linkRow(context, 'Tipiṭaka Pāḷi Reader', s.tprLink),
           _linkRow(context, 'TipitakaPali.org', s.tppOrg),
+          _epitakaRow(context, s.epitakaLinkCode),
         ]),
       ],
 
@@ -260,6 +262,23 @@ class SuttaInfoSection extends StatelessWidget {
 
   TableRow? _linkRow(BuildContext context, String label, String? url) =>
       buildKvLinkRow(context, label, url, onOpen: _openUrl);
+
+  // Opens in this app through the same handler as an `epitaka://` link, so a
+  // code ePitaka does not hold opens "Go to sutta" with the code typed in.
+  TableRow? _epitakaRow(BuildContext context, String? code) {
+    if (code == null) return null;
+    return buildKvLinkRow(
+      context,
+      'ePitaka',
+      Uri(
+        scheme: 'epitaka',
+        host: 'sutta',
+        queryParameters: {'code': code},
+      ).toString(),
+      displayText: 'Open in ePitaka',
+      onOpen: (link) => DeepLinkService.instance.handleUri(Uri.parse(link)),
+    );
+  }
 
   TableRow? _multiLinkRow(
     BuildContext context,

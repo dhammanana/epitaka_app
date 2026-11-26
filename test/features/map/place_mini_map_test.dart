@@ -14,12 +14,15 @@ void main() {
     tester,
   ) async {
     // Asset bundles only complete inside the test's real async zone; loading
-    // them in fake async would hang before the widget is ever built.
+    // them in fake async would hang before the widget is ever built. No
+    // cache: an earlier test in the same process may have started the same
+    // load on the fake clock (the dictionary panel does, through the map
+    // provider), and the bundle then hands back that load, which never ends.
     final payloads = (await tester.runAsync(
       () => Future.wait([
-        rootBundle.loadString('assets/map/places.json'),
-        rootBundle.loadString('assets/map/names.json'),
-        rootBundle.loadString('assets/map/basemap.json'),
+        rootBundle.loadString('assets/map/places.json', cache: false),
+        rootBundle.loadString('assets/map/names.json', cache: false),
+        rootBundle.loadString('assets/map/basemap.json', cache: false),
       ]),
     ))!;
     final data = MapData.fromAssets(

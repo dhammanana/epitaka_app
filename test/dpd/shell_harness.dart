@@ -8,6 +8,7 @@ import 'package:epitaka/core/providers/dictionary_books_provider.dart';
 import 'package:epitaka/core/providers/settings_provider.dart';
 import 'package:epitaka/core/theme/app_theme.dart';
 import 'package:epitaka/core/utils/app_localizations.dart';
+import 'package:epitaka/features/dictionary/providers/dictionary_header_provider.dart';
 import 'package:epitaka/features/dpd/providers/dictionary_list_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_database_provider.dart';
 import 'package:epitaka/features/dpd/providers/dpd_lookup_provider.dart';
@@ -32,7 +33,8 @@ Future<void> preloadDictionaryList(ProviderContainer container) async {
 /// Real file work never finishes on the test's fake clock, so every lookup in
 /// [words] and every suggestion list in [prefixes] is loaded first, inside
 /// `runAsync`, and kept alive for the widget to read. [closest] lists the
-/// misses whose "Did you mean" matches are loaded the same way.
+/// misses whose "Did you mean" matches are loaded the same way. [showIconRow]
+/// turns the dictionary's icon row on, which is hidden by default.
 Future<ProviderContainer> makeShellContainer(
   WidgetTester tester,
   File dbFile, {
@@ -43,6 +45,7 @@ Future<ProviderContainer> makeShellContainer(
   bool online = false,
   List<Override> overrides = const [],
   bool summary = false,
+  bool showIconRow = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final container = ProviderContainer(
@@ -64,6 +67,9 @@ Future<ProviderContainer> makeShellContainer(
   // Most tests are about the cards, so the summary above them is off unless
   // the test asks for it.
   container.read(dpdSettingsProvider.notifier).setShowSummary(summary);
+  if (showIconRow) {
+    await container.read(dictionaryHeaderIconsProvider.notifier).set(true);
+  }
   await tester.runAsync(() async {
     await preloadDictionaryList(container);
     for (final w in words) {
