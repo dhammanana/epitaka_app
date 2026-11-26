@@ -138,23 +138,24 @@ void main() {
           ]));
     });
 
-    test('one unfinished start and no last good copy: starts with no '
-        'settings', () {
-      writeJson(settings(), {'flutter.a': 'b'});
-      marker().writeAsStringSync('1');
+    for (final unfinished in [1, 2]) {
+      test('$unfinished unfinished start(s) and no last good copy: the '
+          'settings are left alone', () {
+        writeJson(settings(), {'flutter.a': 'b'});
+        final before = settings().readAsStringSync();
+        marker().writeAsStringSync('$unfinished');
 
-      final r = begin().recovery!;
+        final guard = begin();
 
-      expect(r.cause, StartupRecoveryCause.unfinishedStart);
-      expect(r.outcome, StartupRecoveryOutcome.startedEmpty);
-      expect(r.failedStarts, 1);
-      expect(settings().existsSync(), isFalse);
-      expect(failedCopies(), hasLength(1));
-      expect(marker().readAsStringSync(), '2');
-    });
+        expect(guard.recovery, isNull);
+        expect(settings().readAsStringSync(), before);
+        expect(failedCopies(), isEmpty);
+        expect(marker().readAsStringSync(), '${unfinished + 1}');
+      });
+    }
 
-    test('two unfinished starts: starts with no settings and drops the last '
-        'good copy', () {
+    test('two unfinished starts with a last good copy: the copy goes back, '
+        'and it is kept', () {
       writeJson(settings(), {'flutter.a': 'b'});
       writeJson(lastGood(), {'flutter.a': 'c'});
       marker().writeAsStringSync('2');
@@ -162,30 +163,62 @@ void main() {
       final r = begin().recovery!;
 
       expect(r.cause, StartupRecoveryCause.unfinishedStart);
-      expect(r.outcome, StartupRecoveryOutcome.startedEmpty);
+      expect(r.outcome, StartupRecoveryOutcome.restored);
       expect(r.failedStarts, 2);
-      expect(settings().existsSync(), isFalse);
-      expect(lastGood().existsSync(), isFalse);
+      expect(json.decode(settings().readAsStringSync()), {'flutter.a': 'c'});
+      expect(lastGood().existsSync(), isTrue);
       expect(failedCopies(), hasLength(1));
       expect(marker().readAsStringSync(), '3');
     });
 
-    test('three unfinished starts: no settings file is touched', () {
+    test('three unfinished starts: starts with no settings and drops the '
+        'last good copy', () {
       writeJson(settings(), {'flutter.a': 'b'});
       writeJson(lastGood(), {'flutter.a': 'c'});
-      final settingsBefore = settings().readAsStringSync();
-      final lastGoodBefore = lastGood().readAsStringSync();
       marker().writeAsStringSync('3');
 
       final r = begin().recovery!;
 
       expect(r.cause, StartupRecoveryCause.unfinishedStart);
-      expect(r.outcome, StartupRecoveryOutcome.stillFailing);
+      expect(r.outcome, StartupRecoveryOutcome.startedEmpty);
       expect(r.failedStarts, 3);
+      expect(settings().existsSync(), isFalse);
+      expect(lastGood().existsSync(), isFalse);
+      expect(failedCopies(), hasLength(1));
+      expect(marker().readAsStringSync(), '4');
+    });
+
+    test('three unfinished starts and no last good copy: the settings are '
+        'set aside', () {
+      writeJson(settings(), {'flutter.a': 'b'});
+      marker().writeAsStringSync('3');
+
+      final r = begin().recovery!;
+
+      expect(r.cause, StartupRecoveryCause.unfinishedStart);
+      expect(r.outcome, StartupRecoveryOutcome.startedEmpty);
+      expect(r.failedStarts, 3);
+      expect(settings().existsSync(), isFalse);
+      expect(failedCopies(), hasLength(1));
+      expect(marker().readAsStringSync(), '4');
+    });
+
+    test('four unfinished starts: no settings file is touched', () {
+      writeJson(settings(), {'flutter.a': 'b'});
+      writeJson(lastGood(), {'flutter.a': 'c'});
+      final settingsBefore = settings().readAsStringSync();
+      final lastGoodBefore = lastGood().readAsStringSync();
+      marker().writeAsStringSync('4');
+
+      final r = begin().recovery!;
+
+      expect(r.cause, StartupRecoveryCause.unfinishedStart);
+      expect(r.outcome, StartupRecoveryOutcome.stillFailing);
+      expect(r.failedStarts, 4);
       expect(settings().readAsStringSync(), settingsBefore);
       expect(lastGood().readAsStringSync(), lastGoodBefore);
       expect(failedCopies(), isEmpty);
-      expect(marker().readAsStringSync(), '4');
+      expect(marker().readAsStringSync(), '5');
     });
 
     for (final (label, bytes) in [
@@ -394,11 +427,11 @@ void main() {
       expect(log.lines, contains('[GUARD] settings open failed: FormatException'));
     }, skip: _cannotBlockWrites ? 'needs chmod, and not root' : null);
 
-    test('two unfinished starts and a failed set-aside keep the last good '
+    test('three unfinished starts and a failed set-aside keep the last good '
         'copy', () {
       settings().writeAsStringSync('{"flutter.a":"b"}');
       writeJson(lastGood(), {'flutter.a': 'c'});
-      marker().writeAsStringSync('2');
+      marker().writeAsStringSync('3');
       Process.runSync('chmod', ['555', dir.path]);
       addTearDown(() => Process.runSync('chmod', ['755', dir.path]));
 
@@ -408,5 +441,25 @@ void main() {
       expect(lastGood().existsSync(), isTrue);
       expect(settings().existsSync(), isTrue);
     }, skip: _cannotBlockWrites ? 'needs chmod, and not root' : null);
+
+    for (final unfinished in [1, 2]) {
+      test('$unfinished unfinished start(s) and a failed set-aside keep the '
+          'settings and the last good copy', () {
+        const text = '{"flutter.a":"b"}';
+        settings().writeAsStringSync(text);
+        writeJson(lastGood(), {'flutter.a': 'c'});
+        marker().writeAsStringSync('$unfinished');
+        Process.runSync('chmod', ['555', dir.path]);
+        addTearDown(() => Process.runSync('chmod', ['755', dir.path]));
+
+        final guard = begin();
+
+        // Nothing is copied over a file that could not be moved.
+        expect(guard.recovery, isNull);
+        expect(settings().readAsStringSync(), text);
+        expect(lastGood().existsSync(), isTrue);
+        expect(failedCopies(), isEmpty);
+      }, skip: _cannotBlockWrites ? 'needs chmod, and not root' : null);
+    }
   });
 }

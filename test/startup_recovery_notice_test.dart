@@ -45,26 +45,28 @@ void main() {
           'settings from 11/20/2026 09:30.',
     ),
     (
-      'did not finish once, no last good copy',
+      'did not finish three times, started empty',
+      const StartupRecovery(
+        cause: StartupRecoveryCause.unfinishedStart,
+        outcome: StartupRecoveryOutcome.startedEmpty,
+        folder: _folder,
+        failedStarts: 3,
+      ),
+      'ePitaka did not finish starting last time, so it started with '
+          'default settings.',
+    ),
+    (
+      // A copy put back after one unfinished start that does not read gets
+      // the same text, which is why it names no count.
+      'did not finish once, started empty',
       const StartupRecovery(
         cause: StartupRecoveryCause.unfinishedStart,
         outcome: StartupRecoveryOutcome.startedEmpty,
         folder: _folder,
         failedStarts: 1,
       ),
-      'ePitaka did not finish starting last time, and no earlier settings '
-          'were kept, so it started with default settings.',
-    ),
-    (
-      'did not finish twice',
-      const StartupRecovery(
-        cause: StartupRecoveryCause.unfinishedStart,
-        outcome: StartupRecoveryOutcome.startedEmpty,
-        folder: _folder,
-        failedStarts: 2,
-      ),
-      'ePitaka did not finish starting twice, so it started with default '
-          'settings.',
+      'ePitaka did not finish starting last time, so it started with '
+          'default settings.',
     ),
     (
       'still failing',
@@ -72,9 +74,9 @@ void main() {
         cause: StartupRecoveryCause.unfinishedStart,
         outcome: StartupRecoveryOutcome.stillFailing,
         folder: _folder,
-        failedStarts: 3,
+        failedStarts: 4,
       ),
-      'ePitaka did not finish starting 3 times in a row, and default settings '
+      'ePitaka did not finish starting 4 times in a row, and default settings '
           'did not help.',
     ),
     (

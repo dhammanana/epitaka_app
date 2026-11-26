@@ -11,6 +11,12 @@ const _markerName = 'startup_pending';
 const _lastGoodName = 'shared_preferences.last_good.json';
 const _lastGoodTmpName = 'shared_preferences.last_good.json.tmp';
 const _keptFailedCopies = 3;
+
+/// Starts in a row that did not finish before the settings are dropped. Fewer
+/// than this put the last good copy back when there is one, and leave the
+/// settings alone when there is none, because one or two can be quick quits
+/// and not a crash.
+const _unfinishedBeforeEmptyStart = 3;
 final _failedCopyName = RegExp(r'^shared_preferences\.failed-.+\.json$');
 
 enum StartupRecoveryCause { unfinishedStart, unreadableFile }
@@ -46,11 +52,12 @@ StartupRecovery? pendingStartupRecovery;
 /// Gets a desktop start past a settings file that stops it, on Windows and
 /// Linux, where the settings live in a JSON file in the app support folder.
 ///
-/// A marker file counts the starts that did not reach [finish]. After one,
-/// the last good copy of the settings goes back in place; after two, the
-/// start goes ahead with no settings. A file that does not read as a JSON
-/// object is set aside at once. Every file step is guarded on its own: a
-/// failure is logged and skipped, so the guard never stops a start.
+/// A marker file counts the starts that did not reach [finish]. After one or
+/// two, the last good copy of the settings goes back in place (with no copy,
+/// nothing is touched); after three, the start goes ahead with no settings. A
+/// file that does not read as a JSON object is set aside at once. Every file
+/// step is guarded on its own: a failure is logged and skipped, so the guard
+/// never stops a start.
 class StartupGuard {
   StartupGuard._(this.dir, this.detectCrashes, this._log, this._now);
 
@@ -153,7 +160,7 @@ class StartupGuard {
     if (n == 0) return;
     _failedStarts = n;
     _note('[GUARD] the last $n start(s) did not finish');
-    if (n >= 3) {
+    if (n > _unfinishedBeforeEmptyStart) {
       // Those starts already began with no settings, so the settings are not
       // what stops them.
       _note('[GUARD] settings left as they are');
@@ -162,13 +169,21 @@ class StartupGuard {
     }
     final lastGood = _file(_lastGoodName);
     final hasLastGood = _exists(lastGood);
+    final emptyStart = n == _unfinishedBeforeEmptyStart;
+    if (!emptyStart && !hasLastGood) {
+      // Quitting soon after launch counts as an unfinished start, and a
+      // restart after a build does it twice. With no good copy to go back to,
+      // setting the file aside would turn that into a loss of every setting.
+      _note('[GUARD] no $_lastGoodName, settings left as they are');
+      return;
+    }
     if (hasLastGood) {
       _logKeyChanges();
     } else {
       _note('[GUARD] no $_lastGoodName to compare');
     }
     final placeFree = _setAside();
-    if (n == 1 && hasLastGood) {
+    if (!emptyStart) {
       if (placeFree && _restoreLastGood()) {
         _crashOutcome = StartupRecoveryOutcome.restored;
       } else if (placeFree) {

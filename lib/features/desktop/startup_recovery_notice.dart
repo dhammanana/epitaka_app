@@ -78,9 +78,7 @@ String startupRecoveryText(AppLocalizations l, StartupRecovery r) {
       return switch (r.outcome) {
         StartupRecoveryOutcome.restored =>
           l.startupRestoredAfterUnfinished(date),
-        StartupRecoveryOutcome.startedEmpty => r.failedStarts >= 2
-            ? l.startupEmptyAfterTwoUnfinished
-            : l.startupEmptyAfterOneUnfinished,
+        StartupRecoveryOutcome.startedEmpty => l.startupEmptyAfterUnfinished,
         StartupRecoveryOutcome.stillFailing =>
           l.startupStillFailing(r.failedStarts),
       };

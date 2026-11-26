@@ -77,11 +77,8 @@ class AppLocalizations {
   String startupRestoredAfterUnfinished(String date) => _t(
     'ePitaka did not finish starting last time, so it went back to your settings from $date.',
   );
-  String get startupEmptyAfterOneUnfinished => _t(
-    'ePitaka did not finish starting last time, and no earlier settings were kept, so it started with default settings.',
-  );
-  String get startupEmptyAfterTwoUnfinished => _t(
-    'ePitaka did not finish starting twice, so it started with default settings.',
+  String get startupEmptyAfterUnfinished => _t(
+    'ePitaka did not finish starting last time, so it started with default settings.',
   );
   String startupStillFailing(int count) => _t(
     'ePitaka did not finish starting $count times in a row, and default settings did not help.',
